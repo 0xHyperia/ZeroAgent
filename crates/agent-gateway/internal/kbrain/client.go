@@ -51,6 +51,7 @@ type Session struct {
 	MessageCount      int32     `json:"message_count"`
 	Pinned            bool      `json:"pinned"`
 	Shared            bool      `json:"shared"`
+	Archived          bool      `json:"archived,omitempty"`
 	Messages          []Message `json:"messages,omitempty"`
 	TotalMessageCount int32     `json:"total_message_count,omitempty"`
 }
@@ -125,7 +126,13 @@ type Message struct {
 	HostedSearch []json.RawMessage `json:"hosted_search,omitempty"`
 	StopReason   string            `json:"stop_reason,omitempty"`
 	CreatedAt    time.Time         `json:"created_at,omitempty"`
+	// Origin is "background" on a user-role notice K-brain delivered on its own
+	// (a wait result, a process exit, a background task report).
+	Origin string `json:"origin,omitempty"`
 }
+
+// OriginBackground marks a user-role message the user did not write.
+const OriginBackground = "background"
 
 type ContentBlock struct {
 	Type     string `json:"type"`
@@ -140,6 +147,30 @@ type ToolCall struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments,omitempty"`
+	// ExitCode, TimedOut and DurationMs describe how the call ran (history only;
+	// a shell tool's exit status, 0 included). Display only.
+	ExitCode   *int  `json:"exit_code,omitempty"`
+	TimedOut   bool  `json:"timed_out,omitempty"`
+	DurationMs int64 `json:"duration_ms,omitempty"`
+	// QuestionAnswers are the answers recorded on a question or AskUserQuestion
+	// call (Stack-Cairn/K-brain#168), as in question.resolved. Display only.
+	QuestionAnswers []QuestionAnswer `json:"question_answers,omitempty"`
+	// Elicitations are the MCP forms the call asked the user to fill in
+	// (Stack-Cairn/K-brain#174), sensitive values removed. Display only.
+	Elicitations []json.RawMessage `json:"elicitations,omitempty"`
+}
+
+// QuestionAnswer is one answer to question.requested, as K-brain records it.
+// SelectedLabels (capability question_selected_labels) are the options picked;
+// with them, SelectedLabel is the user's own text and only set with Custom.
+// Old-style answers have no SelectedLabels: SelectedLabel is the typed text
+// when Custom, otherwise the option picked.
+type QuestionAnswer struct {
+	QuestionID     string   `json:"question_id"`
+	Prompt         string   `json:"prompt,omitempty"`
+	SelectedLabel  string   `json:"selected_label,omitempty"`
+	SelectedLabels []string `json:"selected_labels,omitempty"`
+	Custom         bool     `json:"custom,omitempty"`
 }
 
 type Usage struct {
@@ -160,7 +191,10 @@ type RunOptions struct {
 	WorkspaceRoots  []WorkspaceRoot `json:"workspace_roots,omitempty"`
 	Tools           *ToolSelection  `json:"tools,omitempty"`
 	PlanModeEnabled bool            `json:"plan_mode_enabled,omitempty"`
-	MCPServerIDs    []string        `json:"mcp_server_ids,omitempty"`
+	// MCPElicitation is set by withMCPElicitation from capability mcp_elicitation;
+	// callers leave it false.
+	MCPElicitation bool     `json:"mcp_elicitation,omitempty"`
+	MCPServerIDs   []string `json:"mcp_server_ids,omitempty"`
 	// Sandbox confines the run's commands with the backend's OS sandbox
 	// (capability run_sandbox). Runs asking for it are refused, never started
 	// unconfined, when the backend cannot enforce it.
@@ -187,6 +221,14 @@ type PromptRequest struct {
 	ConversationID  string `json:"conversation_id"`
 	ClientRequestID string `json:"client_request_id"`
 	Prompt          string `json:"prompt,omitempty"`
+	// Content follows Prompt in the user message: attachments as canonical blocks.
+	Content []ContentBlock `json:"content,omitempty"`
+	// TurnID names the user message, so checkpoints and rewind find the turn.
+	TurnID string `json:"turn_id,omitempty"`
+	// HookPolicy "backend" runs the session hooks in K-brain; HookScopeID groups
+	// the hook state of one Gateway conversation.
+	HookPolicy  string `json:"hook_policy,omitempty"`
+	HookScopeID string `json:"hook_scope_id,omitempty"`
 	// PromptCommand 表示 Prompt 是 "/name args" 提示词指令，由 K-brain 展开，历史保留原文。
 	PromptCommand bool        `json:"prompt_command,omitempty"`
 	Model         *ModelRef   `json:"model,omitempty"`
@@ -280,6 +322,29 @@ func (c *Client) ListSessions(ctx context.Context, page, pageSize int, cwd strin
 	}
 	if resp.StatusCode != http.StatusOK {
 		return out, fmt.Errorf("kbrain list sessions: %s", resp.Status)
+	}
+	if out.TotalCount == 0 {
+		out.TotalCount = int32(len(out.Sessions))
+	}
+	return out, nil
+}
+
+// ListArchivedSessions lists only archived sessions (capability session_archive).
+func (c *Client) ListArchivedSessions(ctx context.Context, page, pageSize int) (SessionPage, error) {
+	query := url.Values{}
+	query.Set("page", strconv.Itoa(max(page, 1)))
+	if pageSize < 1 {
+		pageSize = 50
+	}
+	query.Set("page_size", strconv.Itoa(pageSize))
+	query.Set("archived", "only")
+	var out SessionPage
+	resp, err := c.request(ctx, http.MethodGet, "/v1/sessions?"+query.Encode(), nil, &out)
+	if err != nil {
+		return out, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return out, fmt.Errorf("kbrain list archived sessions: %s", resp.Status)
 	}
 	if out.TotalCount == 0 {
 		out.TotalCount = int32(len(out.Sessions))
@@ -407,6 +472,7 @@ func (c *Client) StartRun(ctx context.Context, sessionID string, in PromptReques
 		return out, 0, err
 	}
 	in = c.withReviewScope(ctx, in)
+	in = c.withMCPElicitation(ctx, in)
 	resp, err := c.request(ctx, http.MethodPost, "/v1/sessions/"+sessionID+"/runs", in, &out)
 	if err != nil {
 		return out, 0, err

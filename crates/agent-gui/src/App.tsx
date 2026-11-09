@@ -1,3 +1,4 @@
+import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import type { Context } from "@liveagent/app/lib/agentTypes";
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import { listen } from "@liveagent/app/shims/tauriEvent";
@@ -31,6 +32,7 @@ import {
   useState,
 } from "react";
 import { useDesktopImageStudioHost } from "./agent-ui-adapters/imageStudio";
+import { kbrainMcpStatusAdapter } from "./agent-ui-adapters/kbrainMcpStatus";
 import { settingsHostAdapter } from "./agent-ui-adapters/kbrainSettings";
 import { kbrainSkillsAdapter } from "./agent-ui-adapters/kbrainSkills";
 import { AppUpdateButton } from "./components/AppUpdateButton";
@@ -103,6 +105,7 @@ import type { SectionId } from "./pages/settings/types";
 const guiResourceHostCapabilities: ResourceHostCapabilities = {
   ...kbrainResourceHostCapabilities,
   skillsAdapter: kbrainSkillsAdapter,
+  mcpStatusAdapter: kbrainMcpStatusAdapter,
 };
 configureResourceHostCapabilities(guiResourceHostCapabilities);
 
@@ -1237,55 +1240,59 @@ export default function App() {
               fallback={<AppBootShell loadingLabel={translate("app.loading", settings.locale)} />}
             >
               <>
-                <ChatPage
-                  settingsNavigation={settingsNavigation}
-                  active={!cloudSelected && localExecutionSelected}
-                  relayUser={relayUser}
-                  relayStats={relayStats}
-                  onRefreshRelayAccount={refreshRelayAccount}
-                  headerLeadingActions={executionSwitcher}
-                  registerExecutionDeparture={registerExecutionDeparture}
-                  renderScheduledTasks={
-                    isTauriHost()
-                      ? (navigation) => (
-                          <Suspense
-                            fallback={
-                              navigation.sidebarOnly ? null : (
-                                <div
-                                  className="grid flex-1 place-items-center text-sm text-muted-foreground"
-                                  role="status"
-                                >
-                                  {translate("app.loading", settings.locale)}
-                                </div>
-                              )
-                            }
-                          >
-                            <DesktopScheduledTasks
-                              key={relayUser.id}
-                              owner={relayUser.id}
-                              settings={settings}
-                              {...navigation}
-                            />
-                          </Suspense>
-                        )
-                      : undefined
-                  }
-                  settings={settings}
-                  setSettings={setSettings}
-                  resourceHost={guiResourceHostCapabilities}
-                  imageStudioHost={imageStudioHost}
-                  conversationImageStudioHost={conversationImageStudioHost}
-                  onImageStudioWorkspaceChange={setImageStudioWorkspace}
-                  sttProviderOverride={sttProviderOverride}
-                  getMcpSettings={getMcpSettings}
-                  getToolPolicies={getToolPolicies}
-                  context={context}
-                  setContext={setContext}
-                  onOpenSettings={openSettings}
-                  onToggleTheme={toggleTheme}
-                  appUpdate={appUpdate}
-                  onRunningConversationCountChange={handleRunningConversationCountChange}
-                />
+                <ProcessDisclosureProvider
+                  expandByDefault={settings.customSettings.chatTranscript.expandProcessByDefault}
+                >
+                  <ChatPage
+                    settingsNavigation={settingsNavigation}
+                    active={!cloudSelected && localExecutionSelected}
+                    relayUser={relayUser}
+                    relayStats={relayStats}
+                    onRefreshRelayAccount={refreshRelayAccount}
+                    headerLeadingActions={executionSwitcher}
+                    registerExecutionDeparture={registerExecutionDeparture}
+                    renderScheduledTasks={
+                      isTauriHost()
+                        ? (navigation) => (
+                            <Suspense
+                              fallback={
+                                navigation.sidebarOnly ? null : (
+                                  <div
+                                    className="grid flex-1 place-items-center text-sm text-muted-foreground"
+                                    role="status"
+                                  >
+                                    {translate("app.loading", settings.locale)}
+                                  </div>
+                                )
+                              }
+                            >
+                              <DesktopScheduledTasks
+                                key={relayUser.id}
+                                owner={relayUser.id}
+                                settings={settings}
+                                {...navigation}
+                              />
+                            </Suspense>
+                          )
+                        : undefined
+                    }
+                    settings={settings}
+                    setSettings={setSettings}
+                    resourceHost={guiResourceHostCapabilities}
+                    imageStudioHost={imageStudioHost}
+                    conversationImageStudioHost={conversationImageStudioHost}
+                    onImageStudioWorkspaceChange={setImageStudioWorkspace}
+                    sttProviderOverride={sttProviderOverride}
+                    getMcpSettings={getMcpSettings}
+                    getToolPolicies={getToolPolicies}
+                    context={context}
+                    setContext={setContext}
+                    onOpenSettings={openSettings}
+                    onToggleTheme={toggleTheme}
+                    appUpdate={appUpdate}
+                    onRunningConversationCountChange={handleRunningConversationCountChange}
+                  />
+                </ProcessDisclosureProvider>
                 {cloudMountedOwner === relayUser.id && (
                   <DesktopCloudWorkbench
                     key={relayUser.id}
@@ -1312,7 +1319,8 @@ export default function App() {
                     onUserChange={acceptRelayUser}
                   />
                 )}
-                {!cloudSelected && !localExecutionSelected &&
+                {!cloudSelected &&
+                  !localExecutionSelected &&
                   (selectedExecutionEnvironment ? (
                     <RemoteDeviceWorkbench
                       settingsNavigation={settingsNavigation}
@@ -1331,9 +1339,7 @@ export default function App() {
                           reason,
                         )
                       }
-                      onReconnect={() =>
-                        handleExecutionSwitch(selectedExecutionEnvironment, true)
-                      }
+                      onReconnect={() => handleExecutionSwitch(selectedExecutionEnvironment, true)}
                       selectionLease={selectedRemoteLease?.lease ?? ""}
                       headerLeadingActions={executionSwitcher}
                     />

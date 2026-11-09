@@ -65,7 +65,7 @@ index 0000000000000000000000000000000000000000..faef68b21fd25212e146221b001e051b
 +	}
 +}
 diff --git a/internal/backend/skills_http.go b/internal/backend/skills_http.go
-index 6f12f4fadead0043018b2e7f1d0ce821a007366b..c765f019f377c517e92b95d1a17ace703d36e2b7 100644
+index ef42f1ca08453a5251e96935ff3a276aa43bdd52..e74eee38fd0439d20a1d1ba5d0cfcb7d7d21ec7f 100644
 --- a/internal/backend/skills_http.go
 +++ b/internal/backend/skills_http.go
 @@ -5,6 +5,7 @@ import (
@@ -76,7 +76,7 @@ index 6f12f4fadead0043018b2e7f1d0ce821a007366b..c765f019f377c517e92b95d1a17ace70
  
  	"github.com/Stack-Cairn/K-brain/internal/skills"
  )
-@@ -73,7 +74,15 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
+@@ -78,7 +79,15 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
  		return
  	}
  	if r.URL.Path == "/v1/skills/store/search" && r.Method == http.MethodGet {
@@ -95,7 +95,7 @@ index 6f12f4fadead0043018b2e7f1d0ce821a007366b..c765f019f377c517e92b95d1a17ace70
  			writeJSONError(w, http.StatusBadGateway, "ClawHub search failed: "+e.Error())
 diff --git a/internal/skills/clawhub_download.go b/internal/skills/clawhub_download.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..53320141a7f5979df8c2c2b48eb8b92c9d20b136
+index 0000000000000000000000000000000000000000..7db2e7b17256280c96dc873dd060276368e01464
 --- /dev/null
 +++ b/internal/skills/clawhub_download.go
 @@ -0,0 +1,65 @@
@@ -161,7 +161,7 @@ index 0000000000000000000000000000000000000000..53320141a7f5979df8c2c2b48eb8b92c
 +		return InstallResult{}, true, err
 +	}
 +	defer os.RemoveAll(extracted)
-+	result, err := m.installDir(ctx, extracted, name, meta, conflict)
++	result, err := m.installDir(ctx, extracted, name, "", meta, conflict)
 +	return result, true, err
 +}
 diff --git a/internal/skills/clawhub_store_test.go b/internal/skills/clawhub_store_test.go
@@ -482,10 +482,10 @@ index 0000000000000000000000000000000000000000..bf96e4e8aee779346815c72b75019b48
 +	}
 +}
 diff --git a/internal/skills/managed.go b/internal/skills/managed.go
-index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5039eb77b 100644
+index ba06900415296c0f8645c8cfd2f70448a4ddf3d5..8df6c1b1c686e87d4d5d06e4cda6798b7d4e6c80 100644
 --- a/internal/skills/managed.go
 +++ b/internal/skills/managed.go
-@@ -111,15 +111,18 @@ type ExternalScan struct {
+@@ -135,15 +135,18 @@ type ExternalScan struct {
  	Errors  []string        `json:"errors"`
  }
  type ClawHubCard struct {
@@ -513,8 +513,8 @@ index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5
  }
  type ManagerResponse struct {
  	Action            string          `json:"action"`
-@@ -570,6 +573,9 @@ func (m *Manager) installDir(ctx context.Context, src, name string, meta *Source
- 	return InstallResult{Name: name, Target: target, SkillFile: name + "/SKILL.md", Backup: backup}, nil
+@@ -744,6 +747,9 @@ func (m *Manager) commitInstall(ctx context.Context, stage, dest, name, conflict
+ 	return target, backup, nil
  }
  func (m *Manager) zipSource(src string) (string, error) {
 +	return m.zipSourceFolder(src, "")
@@ -523,7 +523,7 @@ index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5
  	r, err := zip.OpenReader(src)
  	if err != nil {
  		return "", err
-@@ -590,8 +596,31 @@ func (m *Manager) zipSource(src string) (string, error) {
+@@ -764,8 +770,31 @@ func (m *Manager) zipSource(src string) (string, error) {
  	if len(r.File) > maxArchiveFiles {
  		return "", errors.New("too many archive entries")
  	}
@@ -551,11 +551,11 @@ index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5
 +			if name == "" {
 +				continue
 +			}
-+		}
- 		rel, e := childPath(name)
- 		if e != nil {
- 			return "", e
-@@ -665,6 +694,11 @@ func (m *Manager) Install(ctx context.Context, source, name, conflict string, me
++	}
+ 		if dotEntry(name) {
+ 			continue
+ 		}
+@@ -867,6 +896,11 @@ func (m *Manager) Install(ctx context.Context, source, name, conflict string, me
  			return InstallResult{}, err
  		}
  		defer os.Remove(source)
@@ -567,7 +567,7 @@ index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5
  	}
  	st, err := os.Lstat(source)
  	if err != nil {
-@@ -1092,9 +1126,12 @@ func (m *Manager) Manage(ctx context.Context, args map[string]any) (ManagerRespo
+@@ -1362,9 +1396,12 @@ func (m *Manager) Manage(ctx context.Context, args map[string]any) (ManagerRespo
  			if slug == "" || owner == "" {
  				err = errors.New("clawhub_install requires ownerHandle and slug")
  			} else {
@@ -581,7 +581,7 @@ index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5
  		v, e := m.installArgs(ctx, args, nil)
  		r.Installed = []InstallResult{v}
  		if err == nil {
-@@ -1274,13 +1311,19 @@ func (m *Manager) download(ctx context.Context, raw string, progress func(int64,
+@@ -1544,13 +1581,19 @@ func (m *Manager) download(ctx context.Context, raw string, progress func(int64,
  	}
  	defer resp.Body.Close()
  	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -603,7 +603,7 @@ index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5
  	var total int64 = -1
  	if resp.ContentLength >= 0 {
  		total = resp.ContentLength
-@@ -1311,6 +1354,10 @@ func (m *Manager) download(ctx context.Context, raw string, progress func(int64,
+@@ -1581,6 +1624,10 @@ func (m *Manager) download(ctx context.Context, raw string, progress func(int64,
  			return "", er
  		}
  	}
@@ -614,7 +614,7 @@ index 228a6c01ae3b97f3d1c56795ed900b78f12f7140..e89ecc476ffd3256d61ca6341b56b2e5
  	return f.Name(), nil
  }
  func (m *Manager) installArgs(ctx context.Context, a map[string]any, progress func(int64, int64)) (InstallResult, error) {
-@@ -1320,57 +1367,19 @@ func (m *Manager) installArgs(ctx context.Context, a map[string]any, progress fu
+@@ -1590,57 +1637,19 @@ func (m *Manager) installArgs(ctx context.Context, a map[string]any, progress fu
  		meta.OwnerHandle = owner
  		meta.Slug = stringArg(a, "slug")
  		meta.Version = stringArg(a, "version")

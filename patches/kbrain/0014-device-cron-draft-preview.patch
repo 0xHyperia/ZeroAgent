@@ -1,6 +1,6 @@
 diff --git a/internal/backend/cron_preview.go b/internal/backend/cron_preview.go
 new file mode 100644
-index 0000000..b946b36
+index 0000000000000000000000000000000000000000..b946b362aaf063f73e5d80e33fe0a96a3d7c3e99
 --- /dev/null
 +++ b/internal/backend/cron_preview.go
 @@ -0,0 +1,97 @@
@@ -103,7 +103,7 @@ index 0000000..b946b36
 +}
 diff --git a/internal/backend/cron_preview_test.go b/internal/backend/cron_preview_test.go
 new file mode 100644
-index 0000000..c4114f8
+index 0000000000000000000000000000000000000000..c4114f86304eca25406b768eb082858fce437e93
 --- /dev/null
 +++ b/internal/backend/cron_preview_test.go
 @@ -0,0 +1,73 @@
@@ -181,7 +181,7 @@ index 0000000..c4114f8
 +	}
 +}
 diff --git a/internal/backend/cron_validate.go b/internal/backend/cron_validate.go
-index b5345ab..476161b 100644
+index b5345ab682117e23685b6259b90d426943a384e4..476161b19d3ee225b329358f860e50603feb01b2 100644
 --- a/internal/backend/cron_validate.go
 +++ b/internal/backend/cron_validate.go
 @@ -229,14 +229,18 @@ func parseCronField(raw string, minValue, maxValue int) (cronField, error) {
@@ -211,7 +211,7 @@ index b5345ab..476161b 100644
  		return day || weekday
  	}
 diff --git a/internal/backend/planning.go b/internal/backend/planning.go
-index 3826809..9fa4d7b 100644
+index 3826809c2d1b10e83ec57ab78c06223d3b7aff31..9fa4d7b03a203fb42c360df0d879bb613eed500f 100644
 --- a/internal/backend/planning.go
 +++ b/internal/backend/planning.go
 @@ -6,6 +6,7 @@ import (

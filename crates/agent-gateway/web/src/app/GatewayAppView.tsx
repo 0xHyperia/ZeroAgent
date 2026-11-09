@@ -64,6 +64,7 @@ import {
   formatCheckpointRewoundNotification,
 } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type { ComposerCommandHost } from "@liveagent/ui/lib/chat/composerCommands";
+import { rememberSshHostNames } from "@liveagent/ui/lib/chat/sshManagerDisplay";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { mergePendingUploadedFiles } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { parseModelValue } from "@liveagent/ui/lib/models/modelValue";
@@ -164,6 +165,7 @@ import { useWindowFileDropGuard } from "./hooks/useWindowFileDropGuard";
 import { sendComposerCommandTurn } from "./sendComposerCommandTurn";
 import { GatewaySidebarContainer } from "./sidebar/GatewaySidebarContainer";
 import { UserMenu } from "./UserMenu";
+import { WebGoalBarHost } from "./WebGoalBarHost";
 import { createWebComposerCommandHost } from "./webComposerCommandHost";
 import {
   GatewayConversationPaneHost,
@@ -563,6 +565,8 @@ export function GatewayAppView({
   });
   const showTaskSidebar = shownSidebar === "cron-hub" && !!taskOwner && !!taskDeviceId;
   const [taskSidebarTarget, setTaskSidebarTarget] = useState<HTMLDivElement | null>(null);
+  // SSHManager rows name hosts by their configured name rather than the opaque id.
+  rememberSshHostNames(settings.ssh.hosts);
   const sttSettingsService = useMemo<SttSettingsService>(
     () => ({
       runtimeLabel: "设备 WebUI",
@@ -2220,6 +2224,19 @@ export function GatewayAppView({
                                   searchMentionableConversations={searchMentionableConversations}
                                   mentionApps={mentionApps}
                                   commandHost={composerCommandHost}
+                                  goalBar={
+                                    <WebGoalBarHost
+                                      key={`goal-${displayedConversationId}`}
+                                      conversationId={
+                                        isLocalDraftConversationId(displayedConversationId)
+                                          ? undefined
+                                          : displayedConversationId
+                                      }
+                                      client={api ?? undefined}
+                                      commandHost={composerCommandHost}
+                                      running={composerIsSending}
+                                    />
+                                  }
                                   executionMode={settings.system.executionMode}
                                   hasModels={modelOptions.length > 0}
                                   currentModelLabel={currentModelLabel}

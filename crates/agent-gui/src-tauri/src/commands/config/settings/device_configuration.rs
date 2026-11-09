@@ -68,6 +68,9 @@ impl ProfileBackupBackend {
         if let Some(enabled) = documents.settings["memory"]["enabled"].as_bool() {
             snapshot["kbrainMemory"] = json!({ "enabled": enabled });
         }
+        if let Some(organizer) = crate::services::gateway::kbrain_memory::organizer_from_settings(&documents.settings) {
+            snapshot["kbrainMemoryOrganizer"] = organizer;
+        }
         if let Some(projects) = documents.prompts["projectPrompts"].as_object() {
             let system = snapshot["system"].as_object_mut().ok_or("系统设置无效")?;
             let resources = system
@@ -223,6 +226,7 @@ impl ProfileBackupBackend {
                 "aiApproval",
                 "computer",
                 "kbrainMemory",
+                "kbrainMemoryOrganizer",
                 "remote",
                 "automationCron",
                 "automationHooks",
@@ -447,6 +451,12 @@ fn device_backend_settings(
             .as_bool()
             .ok_or("kbrainMemory must be an object with boolean enabled")?;
         settings.insert("memory".into(), json!({ "enabled": enabled }));
+    }
+    if let Some(organizer) = input.get("kbrainMemoryOrganizer") {
+        let mut update = json!({ "kbrainMemoryOrganizer": organizer });
+        if let Some(organizer) = crate::services::gateway::kbrain_memory::take_organizer_update(&mut update)? {
+            settings.insert("memoryOrganizer".into(), organizer);
+        }
     }
     for field in ["aiApproval", "computer"] {
         if let Some(value) = input.get(field) {

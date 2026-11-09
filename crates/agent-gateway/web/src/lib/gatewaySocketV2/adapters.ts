@@ -35,6 +35,7 @@ import {
   ChatCommandRequestSchema,
   ChatConversationReferenceSchema,
   ChatFileOpenRequestSchema,
+  ChatMcpServerSelectionSchema,
   ChatMessageRefSchema,
   ChatQueueRequestSchema,
   ChatRequestSchema,
@@ -161,6 +162,12 @@ function permissionRulesInput(body: Record<string, unknown>): Record<string, str
     if (value) out[key] = value;
   }
   return out;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function trimStr(value: unknown): string {
@@ -440,6 +447,11 @@ function buildChatCommand(body: J) {
       goalText: str(inner.goal_text),
       promptCommand: bool(inner.prompt_command),
       planCommand: bool(inner.plan_command),
+      mcpServers: inner.mcp_servers
+        ? create(ChatMcpServerSelectionSchema, {
+            serverIds: stringList(rec(inner.mcp_servers).server_ids),
+          })
+        : undefined,
     }),
     baseMessageRef: inner.base_message_ref
       ? buildMessageRef(rec(inner.base_message_ref))
@@ -603,6 +615,35 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
         value: create(MemoryManageRequestSchema, {
           command: "history_shared_list",
           argsJson: JSON.stringify({ page: n32(body.page), page_size: n32(body.page_size) }),
+        }),
+      };
+    // Archive commands share the memory_manage passthrough; the desktop answers them
+    // through its K-brain history bridge and a direct K-brain relay answers them itself.
+    case "history.archive_supported":
+      return {
+        case: "memoryManage",
+        value: create(MemoryManageRequestSchema, {
+          command: "history_archive_supported",
+          argsJson: "{}",
+        }),
+      };
+    case "history.archived_list":
+      return {
+        case: "memoryManage",
+        value: create(MemoryManageRequestSchema, {
+          command: "history_archived_list",
+          argsJson: JSON.stringify({ page: n32(body.page), page_size: n32(body.page_size) }),
+        }),
+      };
+    case "history.archive_set":
+      return {
+        case: "memoryManage",
+        value: create(MemoryManageRequestSchema, {
+          command: "history_archive_set",
+          argsJson: JSON.stringify({
+            conversation_id: trimStr(body.conversation_id),
+            archived: bool(body.archived),
+          }),
         }),
       };
     case "history.get":
@@ -778,6 +819,7 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
         value: create(GoalManageRequestSchema, {
           conversationId: trimStr(body.conversationId),
           action: trimStr(body.action),
+          goal: trimStr(body.goal),
         }),
       };
     case "loops.manage":
@@ -1489,6 +1531,7 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
         round: payload.value.round,
         maxRounds: payload.value.maxRounds,
         reason: payload.value.reason,
+        startedAt: payload.value.startedAt,
       };
     case "loopManageResp":
       return {

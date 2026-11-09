@@ -15,6 +15,7 @@ pub mod gateway;
 pub mod gateway_bridge;
 pub mod kbrain_backend;
 pub mod kbrain_health;
+pub mod kbrain_ssh_sync;
 pub mod local_gateway;
 pub mod managed_model_broker;
 pub mod mcp_oauth;

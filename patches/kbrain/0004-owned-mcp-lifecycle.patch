@@ -400,15 +400,10 @@ index 3e0324f903143c380f2938fb1841b9a47c0d968c..8d667b53bf74cd02bd85df95ff1dedf4
 +	}
 +}
 diff --git a/internal/mcp/manager.go b/internal/mcp/manager.go
-index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565cbf11452 100644
+index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d54077458804b67 100644
 --- a/internal/mcp/manager.go
 +++ b/internal/mcp/manager.go
-@@ -3,11 +3,11 @@ package mcp
- import (
- 	"context"
- 	"encoding/json"
-+	"errors"
- 	"fmt"
+@@ -8,7 +8,6 @@ import (
  	"maps"
  	"net/http"
  	"os"
@@ -416,7 +411,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  	"sort"
  	"strconv"
  	"strings"
-@@ -58,14 +58,17 @@ type server struct {
+@@ -59,14 +58,17 @@ type server struct {
  	name string
  	cfg  ServerConfig
  
@@ -442,7 +437,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  
  	ready   chan struct{}
  	settled bool
-@@ -218,9 +221,11 @@ func (m *Manager) RemoveServers(names ...string) {
+@@ -225,9 +227,11 @@ func (m *Manager) RemoveServers(names ...string) {
  		s.mu.Lock()
  		s.cfg.Enabled = new(false)
  		old := s.sess
@@ -454,16 +449,16 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  		if old != nil {
  			_ = old.Close()
  		}
-@@ -318,7 +323,7 @@ func (s *server) connect(ctx context.Context, m *Manager) {
- 
- 	transport, err := m.connectTransport(ctx, cfg, s.stderr)
- 	if err == nil {
--		client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "k-brain", Title: "k-brain"}, nil)
-+		client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "ZeroAgent", Title: "ZeroAgent"}, nil)
+@@ -332,7 +336,7 @@ func (s *server) connect(ctx context.Context, m *Manager) {
+ 			transport = tap.wrap(transport)
+ 			opts = &sdkmcp.ClientOptions{ElicitationHandler: s.elicitHandler(tap)}
+ 		}
+-		client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "k-brain", Title: "k-brain"}, opts)
++		client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "ZeroAgent", Title: "ZeroAgent"}, opts)
  		var sess *sdkmcp.ClientSession
  		sess, err = client.Connect(ctx, transport, nil)
  		if err == nil {
-@@ -340,6 +345,9 @@ func (s *server) connect(ctx context.Context, m *Manager) {
+@@ -354,6 +358,9 @@ func (s *server) connect(ctx context.Context, m *Manager) {
  				s.defs = listed.Tools
  				s.instr = instr
  				s.sess = sess
@@ -473,7 +468,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  				s.gen++
  				s.autoTries = 0
  				gen := s.gen
-@@ -351,6 +359,7 @@ func (s *server) connect(ctx context.Context, m *Manager) {
+@@ -365,6 +372,7 @@ func (s *server) connect(ctx context.Context, m *Manager) {
  					s.mu.Lock()
  					stale := !m.ownsLocked(s) || s.gen != gen
  					if !stale {
@@ -481,7 +476,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  						s.sess = nil
  						s.defs = nil
  						s.instr = ""
-@@ -452,23 +461,30 @@ func (s *server) bridge(d *sdkmcp.Tool) tools.Tool {
+@@ -466,23 +474,30 @@ func (s *server) bridge(d *sdkmcp.Tool) tools.Tool {
  const connectGrace = 5 * time.Second
  
  func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (output string, callErr error) {
@@ -519,7 +514,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  	if !settled {
  
  		grace, cancel := context.WithTimeout(ctx, connectGrace)
-@@ -477,9 +493,9 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
+@@ -491,9 +506,9 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
  		case <-grace.Done():
  			cancel()
  			if ctx.Err() != nil {
@@ -531,7 +526,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  		}
  		cancel()
  		s.mu.Lock()
-@@ -490,13 +506,13 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
+@@ -504,13 +519,13 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
  		switch status {
  		case StatusFailed:
  			if errMsg != "" {
@@ -549,15 +544,18 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  		}
  	}
  
-@@ -504,24 +520,55 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
+@@ -518,13 +533,35 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
  	case s.calling <- struct{}{}:
  		defer func() { <-s.calling }()
  	case <-ctx.Done():
 -		return "", ctx.Err()
 +		return nil, ctx.Err()
  	}
- 	ctx, cancel := context.WithTimeout(ctx, toolTimeout)
- 	defer cancel()
+ 	// The timeout pauses while the user answers an elicitation form.
+ 	ctx, cancel := context.WithCancelCause(ctx)
+ 	defer cancel(nil)
+ 	deadline := startDeadline(toolTimeout, func() { cancel(errToolTimeout) })
+ 	defer deadline.stop()
 +	// Cancel calls before the SDK's graceful Close waits for them. A queued
 +	// invocation cannot migrate to a different session after a restart.
 +	s.mu.Lock()
@@ -572,14 +570,18 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
 +		return nil, errors.New("MCP session changed")
 +	}
 +	defer workers.Done()
-+	stop := context.AfterFunc(callCtx, cancel)
++	stop := context.AfterFunc(callCtx, func() { cancel(context.Canceled) })
 +	defer stop()
 +	if callCtx.Err() != nil {
-+		cancel()
++		cancel(context.Canceled)
 +	}
 +	if err := ctx.Err(); err != nil {
 +		return nil, err
 +	}
+ 	call := &activeCall{ctx: ctx, tool: tool, deadline: deadline}
+ 	s.mu.Lock()
+ 	s.active = call
+@@ -539,17 +576,26 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
  	var argMap map[string]any
  	if len(args) > 0 {
  		if err := json.Unmarshal(args, &argMap); err != nil {
@@ -589,7 +591,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  	}
  	res, err := sess.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: argMap})
  	if err != nil {
- 		if ctx.Err() == context.DeadlineExceeded {
+ 		if errors.Is(context.Cause(ctx), errToolTimeout) {
 -			return "", fmt.Errorf("mcp tool %s timed out after %s", tool, toolTimeout)
 +			return nil, fmt.Errorf("mcp tool %s timed out after %s", tool, toolTimeout)
  		}
@@ -610,7 +612,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  }
  
  func flattenResult(res *sdkmcp.CallToolResult) string {
-@@ -612,11 +659,13 @@ func (m *Manager) Disable(name string) bool {
+@@ -640,11 +686,13 @@ func (m *Manager) Disable(name string) bool {
  		s.connectCancel()
  	}
  	old := s.sess
@@ -624,7 +626,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  	if old != nil {
  		_ = old.Close()
  	}
-@@ -726,6 +775,7 @@ func (m *Manager) Reconnect(name string) bool {
+@@ -754,6 +802,7 @@ func (m *Manager) Reconnect(name string) bool {
  		s.connectCancel()
  	}
  	old := s.sess
@@ -632,7 +634,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  	s.sess, s.defs, s.instr = nil, nil, ""
  	s.gen++
  	s.autoTries = 0
-@@ -735,6 +785,7 @@ func (m *Manager) Reconnect(name string) bool {
+@@ -763,6 +812,7 @@ func (m *Manager) Reconnect(name string) bool {
  	s.mu.Unlock()
  	m.startLocked(context.Background(), s)
  	m.onChangeMu.Unlock()
@@ -640,7 +642,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  	if old != nil {
  		_ = old.Close()
  	}
-@@ -749,12 +800,17 @@ func (m *Manager) Close() {
+@@ -777,12 +827,17 @@ func (m *Manager) Close() {
  	m.closeOnce.Do(func() {
  		m.onChangeMu.Lock()
  		m.closed = true
@@ -660,7 +662,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  			}
  			s.sess, s.defs, s.instr = nil, nil, ""
  			s.gen++
-@@ -763,7 +819,8 @@ func (m *Manager) Close() {
+@@ -791,7 +846,8 @@ func (m *Manager) Close() {
  		}
  		m.onChangeMu.Unlock()
  		for _, sess := range sessions {
@@ -670,7 +672,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  		}
  		m.workers.Wait()
  	})
-@@ -795,6 +852,7 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+@@ -823,6 +879,7 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
  			client.Transport = &nativeCredentialTransport{base: client.Transport, endpoint: cfg.URL, resolve: cfg.nativeCredential, history: cfg.nativeHistory}
  			client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
  		}
@@ -678,7 +680,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  		if cfg.remoteTransport == "sse" {
  			return &ownedSSEClientTransport{endpoint: cfg.URL, client: client}, nil
  		}
-@@ -806,7 +864,10 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+@@ -834,7 +891,10 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
  		}, nil
  	}
  
@@ -690,7 +692,7 @@ index e0d66d98d97737a6ca5afe9faa288ad20ff962bb..0fba2bc348b147bb0400d9c84af5f565
  
  	env, err := config.ResolveEnvMapContext(ctx, cfg.Env)
  	if err != nil {
-@@ -814,15 +875,12 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+@@ -842,15 +902,12 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
  	}
  
  	cmd.Env = append(os.Environ(), envPairs(env)...)

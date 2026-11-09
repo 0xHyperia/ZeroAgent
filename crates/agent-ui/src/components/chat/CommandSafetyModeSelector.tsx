@@ -1,4 +1,4 @@
-import { useSandboxCapability } from "@liveagent/adapters/sandboxCapability";
+import { setUpOfflineSandbox, useSandboxCapability } from "@liveagent/adapters/sandboxCapability";
 import type { CommandSafetyMode } from "@liveagent/app/lib/settings";
 import {
   Check,
@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   ShieldOff,
   SquarePen,
+  Wrench,
   Zap,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
@@ -22,6 +23,7 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { COMPOSER_CONTROL_TRIGGER_CLASS } from "@liveagent/ui/lib/chat/composerControlStyles";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useState } from "react";
+import { OfflineSandboxSetupDialog } from "./OfflineSandboxSetupDialog";
 
 const MODE_I18N_KEYS: Record<CommandSafetyMode, string> = {
   ask: "chat.safety.ask",
@@ -106,8 +108,12 @@ export function CommandSafetyModeSelector(props: {
   const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const capability = useSandboxCapability();
+  const [setupOpen, setSetupOpen] = useState(false);
+  const canSetUpOffline =
+    !disabled && capability?.path_protection !== false && capability?.setup_available === true;
   // Only the execution backend can confirm that it can enforce the requested isolation.
-  const sandboxUnavailable = capability?.supported !== true;
+  const sandboxUnavailable =
+    capability?.supported !== true || capability?.path_protection === false;
   const offlineUnavailable = sandboxUnavailable || capability?.network_control !== true;
   const sandboxLacksReadMasking =
     capability === null ||
@@ -140,87 +146,107 @@ export function CommandSafetyModeSelector(props: {
   );
 
   return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            disabled={disabled}
-            className={cn(
-              COMPOSER_CONTROL_TRIGGER_CLASS,
-              "w-8 justify-center gap-0 px-0",
-              "data-popup-open:bg-muted/60 web:max-480:flex-none web:max-480:w-8 web:max-480:min-w-8 web:max-480:justify-center web:max-480:gap-0 web:max-480:px-0",
-            )}
-          />
-        }
-        title={selectedLabel}
-        aria-label={`${t("chat.safety.label")}: ${selectedLabel}`}
-      >
-        {planModeEnabled ? (
-          <Lightbulb className="size-4 shrink-0 text-sky-600" />
-        ) : (
-          modeIcon(selected, triggerIconClass(selected))
-        )}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        variant="soft"
-        className="flex w-[324px] max-w-[calc(100vw-16px)] flex-col gap-0.5"
-        side="top"
-        align="start"
-      >
-        {onPlanModeChange ? (
-          <DropdownMenuItem
-            onSelect={() => onPlanModeChange(true)}
-            className="h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal"
-          >
-            <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="font-medium leading-4">{t("chat.runtime.planModeTitle")}</span>
-              <span className="text-tiny font-normal leading-4 text-muted-foreground">
-                {t("chat.runtime.planModeHint")}
-              </span>
-            </span>
-            {planModeEnabled ? <Check className="mt-0.5 size-3.5 shrink-0 text-primary" /> : null}
-          </DropdownMenuItem>
-        ) : null}
-        {SAFETY_MODES.map((mode) => {
-          const entryDisabled =
-            mode === "sandbox"
-              ? sandboxUnavailable
-              : mode === "sandboxOffline"
-                ? offlineUnavailable
-                : false;
-          const isSelected = !planModeEnabled && mode === selected;
-          return (
-            <DropdownMenuItem
-              key={mode}
-              disabled={entryDisabled}
-              onSelect={() => {
-                if (entryDisabled) return;
-                onPlanModeChange?.(false);
-                onChange(mode);
-              }}
+    <>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              disabled={disabled}
               className={cn(
-                "h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal",
-                isSelected && "bg-accent text-accent-foreground",
+                COMPOSER_CONTROL_TRIGGER_CLASS,
+                "w-8 justify-center gap-0 px-0",
+                "data-popup-open:bg-muted/60 web:max-480:flex-none web:max-480:w-8 web:max-480:min-w-8 web:max-480:justify-center web:max-480:gap-0 web:max-480:px-0",
               )}
+            />
+          }
+          title={selectedLabel}
+          aria-label={`${t("chat.safety.label")}: ${selectedLabel}`}
+        >
+          {planModeEnabled ? (
+            <Lightbulb className="size-4 shrink-0 text-sky-600" />
+          ) : (
+            modeIcon(selected, triggerIconClass(selected))
+          )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          variant="soft"
+          className="flex w-[324px] max-w-[calc(100vw-16px)] flex-col gap-0.5"
+          side="top"
+          align="start"
+        >
+          {onPlanModeChange ? (
+            <DropdownMenuItem
+              onSelect={() => onPlanModeChange(true)}
+              className="h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal"
             >
-              {modeIcon(mode, "mt-0.5 size-3.5 shrink-0 text-muted-foreground")}
+              <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-medium leading-4">{t(MODE_I18N_KEYS[mode])}</span>
+                <span className="font-medium leading-4">{t("chat.runtime.planModeTitle")}</span>
                 <span className="text-tiny font-normal leading-4 text-muted-foreground">
-                  {entryDisabled ? disabledHint : t(modeDescKey(mode))}
+                  {t("chat.runtime.planModeHint")}
                 </span>
               </span>
-              {isSelected ? (
-                <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
-              ) : (
-                <span className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              )}
+              {planModeEnabled ? <Check className="mt-0.5 size-3.5 shrink-0 text-primary" /> : null}
             </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          ) : null}
+          {canSetUpOffline && offlineUnavailable && (
+            <DropdownMenuItem onSelect={() => setSetupOpen(true)}>
+              <Wrench className="size-3.5" />
+              {t("chat.safety.setupOffline")}
+            </DropdownMenuItem>
+          )}
+          {SAFETY_MODES.map((mode) => {
+            const entryDisabled =
+              mode === "sandbox"
+                ? sandboxUnavailable
+                : mode === "sandboxOffline"
+                  ? offlineUnavailable
+                  : false;
+            const isSelected = !planModeEnabled && mode === selected;
+            return (
+              <DropdownMenuItem
+                key={mode}
+                disabled={entryDisabled}
+                onSelect={() => {
+                  if (entryDisabled) return;
+                  onPlanModeChange?.(false);
+                  onChange(mode);
+                }}
+                className={cn(
+                  "h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal",
+                  isSelected && "bg-accent text-accent-foreground",
+                )}
+              >
+                {modeIcon(mode, "mt-0.5 size-3.5 shrink-0 text-muted-foreground")}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-medium leading-4">{t(MODE_I18N_KEYS[mode])}</span>
+                  <span className="text-tiny font-normal leading-4 text-muted-foreground">
+                    {entryDisabled ? disabledHint : t(modeDescKey(mode))}
+                  </span>
+                </span>
+                {isSelected ? (
+                  <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                ) : (
+                  <span className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                )}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {setupOpen && (
+        <OfflineSandboxSetupDialog
+          open={setupOpen}
+          hint={capability?.setup_hint}
+          onOpenChange={setSetupOpen}
+          onRun={setUpOfflineSandbox}
+          onUseOffline={() => {
+            onPlanModeChange?.(false);
+            onChange("sandboxOffline");
+          }}
+        />
+      )}
+    </>
   );
 }

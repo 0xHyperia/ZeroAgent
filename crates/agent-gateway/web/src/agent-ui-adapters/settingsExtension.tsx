@@ -7,6 +7,7 @@ import {
 import type { GatewaySettingsSyncUpdatePayload } from "@liveagent/ui/lib/settings/sync";
 import type {
   KBrainMemoryConfig,
+  KBrainMemoryOrganizerConfig,
   KBrainSettingsAdapter,
   PermissionRule,
 } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
@@ -104,11 +105,18 @@ const computerSettingsAdapter: KBrainSettingsAdapter = {
       aiApproval: document.aiApproval,
       computer: document.computer,
       memory: document.kbrainMemory,
+      memoryOrganizer: document.kbrainMemoryOrganizer,
     };
   },
   async updateSettings(update, baseline) {
-    const { memory, ...rest } = update as GatewaySettingsSyncUpdatePayload & {
+    // Gateway carries the K-brain memory switch as `kbrainMemory` and the organizer
+    // schedule as `kbrainMemoryOrganizer`: its `memory` key is ZeroAgent's own settings.
+    const { memory, memoryOrganizer, ...rest } = update as Omit<
+      GatewaySettingsSyncUpdatePayload,
+      "kbrainMemoryOrganizer"
+    > & {
       memory?: KBrainMemoryConfig;
+      memoryOrganizer?: Partial<KBrainMemoryOrganizerConfig>;
     };
     await getGatewayWebSocketClient(loadToken().trim()).updateSettings({
       ...rest,
@@ -119,6 +127,10 @@ const computerSettingsAdapter: KBrainSettingsAdapter = {
             configurationRevision: baseline.configurationRevision,
             uiPreferencesRevision: baseline.uiPreferencesRevision,
           }
+        : {}),
+      // A partial schedule is forwarded as is; K-brain keeps the field left out.
+      ...(memoryOrganizer
+        ? { kbrainMemoryOrganizer: memoryOrganizer as KBrainMemoryOrganizerConfig }
         : {}),
     });
     return this.getSettings();

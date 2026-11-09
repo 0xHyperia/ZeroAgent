@@ -16,6 +16,7 @@ import type { SidebarBatchDeleteOptions } from "@liveagent/ui/lib/sidebar/batchD
 import { deleteSidebarConversations } from "@liveagent/ui/lib/sidebar/batchDelete";
 import type { SidebarStore } from "@liveagent/ui/lib/sidebar/store";
 import type { SidebarConversation } from "@liveagent/ui/lib/sidebar/types";
+import { useSidebarArchive } from "@liveagent/ui/lib/sidebar/useSidebarArchive";
 import { useSidebarContainerState } from "@liveagent/ui/lib/sidebar/useSidebarContainerState";
 import { sortWorkspaceProjectsByActivity } from "@liveagent/ui/lib/workspaceProjects";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -130,6 +131,7 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
     workspaceHistory,
   } = useSidebarContainerState(store, props.showProjects);
 
+  const archive = useSidebarArchive(store, listState.status);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const approvalConversationIds = useBlockedConversationIds(items, approvalStore);
@@ -295,6 +297,8 @@ export function ChatSidebarContainer(props: ChatSidebarContainerProps) {
         onCommitRename: handleCommitRename,
         onCancelRename: handleCancelRename,
         onSetPinned: handleSetPinned,
+        onSetArchived: archive.archive ? archive.setArchived : undefined,
+        archivedConversations: archive.archive,
         onMoveToWorkspace: handleMoveToWorkspace,
         onMoveConversationsToWorkspace: handleMoveConversationsToWorkspace,
         onDeleteConversation: handleDeleteConversation,

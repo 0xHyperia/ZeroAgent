@@ -12,7 +12,12 @@ import {
   shouldDisplayToolTraceItem,
 } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
 import { type ChatFileLink, parseChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import { hasPendingMcpElicitation } from "@liveagent/ui/lib/chat/mcpElicitation";
 import { type CompactionSeam, getCompactionSeam } from "@liveagent/ui/lib/chat/replyContinuity";
+import {
+  KBRAIN_SUBAGENT_FOLLOWUP_TOOL_NAME,
+  subagentControlAction,
+} from "@liveagent/ui/lib/chat/subagentControlTools";
 import { isTaskToolBlock } from "@liveagent/ui/lib/chat/taskProgress";
 import { readToolApprovalPending } from "@liveagent/ui/lib/chat/toolApprovalArgs";
 import type {
@@ -20,9 +25,11 @@ import type {
   SubagentReportDetails,
 } from "@liveagent/ui/lib/subagents/protocol";
 import {
+  AppWindow,
   Bot,
   Braces,
   Brain,
+  CalendarDays,
   CircleHelp,
   Clock3,
   Eye,
@@ -36,10 +43,14 @@ import {
   Link2,
   ListChecks,
   Plug,
+  RotateCcw,
+  ScrollText,
   Search,
   Server,
   Terminal,
+  Timer,
   Trash2,
+  Waypoints,
   Wrench,
 } from "../../IconSet";
 
@@ -57,6 +68,17 @@ export const TOOL_ACTIVITY_CATEGORIES = [
   "code",
   "fetch",
   "agent",
+  "planning",
+  "wait",
+  "workflow",
+  "result",
+  "memory",
+  "context",
+  "browser",
+  "computer",
+  "ssh",
+  "terminal",
+  "tunnel",
   "other",
 ] as const;
 
@@ -76,6 +98,7 @@ export function isWebFetchToolName(name: string) {
 
 export function getToolActivityCategory(name: string): ToolActivityCategory {
   if (isTaskToolName(name)) return "other";
+  if (subagentControlAction(name)) return "agent";
   if (isWebFetchToolName(name)) return "fetch";
   switch (name) {
     case "Read":
@@ -86,6 +109,12 @@ export function getToolActivityCategory(name: string): ToolActivityCategory {
     case "Image":
     case "SkillsManager":
       return "read";
+    // Desktop terminal reads and Remote tunnels, run by K-brain through the
+    // desktop host bridge (or by the legacy frontend runtime).
+    case "ReadTerminal":
+      return "terminal";
+    case "TunnelManager":
+      return "tunnel";
     case "Glob":
     case "web_search":
     case "fetch_page":
@@ -106,16 +135,39 @@ export function getToolActivityCategory(name: string): ToolActivityCategory {
     case "ManagedProcess":
     case "ProcessWait":
     case "ProcessStop":
+    case "TerminalSession":
+      return "command";
     case "SSHManager":
     case "SshManager":
-      return "command";
+      return "ssh";
     case "List":
       return "list";
     case LSP_TOOL_NAME:
       return "code";
     case "Agent":
     case "SendMessage":
+    case KBRAIN_SUBAGENT_TOOL_NAME:
       return "agent";
+    // K-brain 后端自带、旧前端 runtime 没有的工具（#1194 之后补齐）。
+    case "PlanningQuery":
+    case "PlanningMutate":
+      return "planning";
+    case "wait":
+      return "wait";
+    case "workflow":
+      return "workflow";
+    case "structured_output":
+      return "result";
+    case "remember":
+    case "forget":
+    case "memory_manager":
+      return "memory";
+    case "new_context":
+      return "context";
+    case "browser_exec":
+      return "browser";
+    case "computer_exec":
+      return "computer";
     default:
       return "other";
   }
@@ -132,6 +184,8 @@ export function isUserInteractionToolName(name: string) {
  * question / plan card, or an ordinary tool held at the approval gate. The
  * gate fires *before* the call executes, so approval-pending items are not in
  * `runningToolCallIds` and are recognised by the synced argument marker.
+ * MCP elicitation forms count too: the tool is running, but its server is
+ * waiting for the user.
  */
 export function hasActiveUserInteraction(items: ToolTraceItem[], runningToolCallIds: string[]) {
   if (items.length === 0) return false;
@@ -139,6 +193,8 @@ export function hasActiveUserInteraction(items: ToolTraceItem[], runningToolCall
   return items.some((item) => {
     if (item.toolResult) return false;
     if (readToolApprovalPending(item.toolCall.arguments)) return true;
+    // An MCP server is waiting on a form the user has to fill in.
+    if (hasPendingMcpElicitation(item.toolCall.arguments)) return true;
     return (
       isUserInteractionToolName(item.toolCall.name) &&
       Boolean(item.toolCall.id && runningIds.has(item.toolCall.id))
@@ -173,7 +229,27 @@ export function getToolMeta(name: string): {
     case "ManagedProcess":
     case "ProcessWait":
     case "ProcessStop":
+    case "TerminalSession":
       return { Icon: Terminal, accent: "var(--tool-bash-accent)", category: "terminal" };
+    case "ReadTerminal":
+      return { Icon: ScrollText, accent: "var(--tool-bash-accent)", category: "terminal" };
+    case "wait":
+      return { Icon: Timer, accent: "var(--tool-bash-accent)", category: "terminal" };
+    case "PlanningQuery":
+    case "PlanningMutate":
+      return { Icon: CalendarDays, accent: "var(--tool-list-accent)", category: "system" };
+    case "workflow":
+      return { Icon: Waypoints, accent: "var(--tool-list-accent)", category: "system" };
+    case "structured_output":
+      return { Icon: Braces, accent: "var(--tool-list-accent)", category: "system" };
+    case "new_context":
+      return { Icon: RotateCcw, accent: "var(--tool-list-accent)", category: "system" };
+    case "remember":
+    case "forget":
+    case "memory_manager":
+      return { Icon: Brain, accent: "var(--tool-list-accent)", category: "system" };
+    case "browser_exec":
+      return { Icon: AppWindow, accent: "var(--tool-search-accent)", category: "web" };
     case "Read":
       return { Icon: Eye, accent: "var(--tool-file-accent)", category: "file" };
     case "Image":
@@ -196,6 +272,12 @@ export function getToolMeta(name: string): {
       return { Icon: Bot, accent: "var(--tool-list-accent)", category: "system" };
     case "SendMessage":
       return { Icon: Bot, accent: "var(--tool-list-accent)", category: "system" };
+    case KBRAIN_SUBAGENT_TOOL_NAME:
+    case KBRAIN_SUBAGENT_FOLLOWUP_TOOL_NAME:
+    case "subagent_status":
+    case "subagent_steer":
+    case "subagent_cancel":
+      return { Icon: Bot, accent: "var(--tool-list-accent)", category: "agent" };
     case "Write":
       return { Icon: FileText, accent: "var(--tool-file-accent)", category: "file" };
     case "Edit":
@@ -510,15 +592,21 @@ export function resolveActiveWorkEntry(
  * answered card trailing the whole turn.
  */
 export function isPendingUserInteractionBlock(block: GroupedRoundBlock) {
-  if (block.kind === "tool") {
-    return isUserInteractionToolName(block.item.toolCall.name) && !block.item.toolResult;
-  }
-  if (block.kind === "toolGroup") {
-    return block.items.some(
-      (item) => isUserInteractionToolName(item.toolCall.name) && !item.toolResult,
-    );
-  }
+  if (block.kind === "tool") return isPendingUserInteractionItem(block.item);
+  if (block.kind === "toolGroup") return block.items.some(isPendingUserInteractionItem);
   return false;
+}
+
+/**
+ * An unanswered question / plan card, or a tool whose MCP server is waiting on a form
+ * (elicitation): both block the run until the user answers.
+ */
+function isPendingUserInteractionItem(item: ToolTraceItem) {
+  if (item.toolResult) return false;
+  return (
+    isUserInteractionToolName(item.toolCall.name) ||
+    hasPendingMcpElicitation(item.toolCall.arguments)
+  );
 }
 
 function splitInteractionEntries(entries: readonly AssistantTurnLayoutEntry[]) {
@@ -686,21 +774,38 @@ export function getToolTraceKey(item: ToolTraceItem, index: number) {
   return `${item.toolCall.name}-${index}-${getStableValueSignature(item.toolCall.arguments)}`;
 }
 
+/** K-brain's tool for delegating to a subagent; each call is one subagent card. */
+export const KBRAIN_SUBAGENT_TOOL_NAME = "subagent";
+
 export function isAgentToolName(name: string) {
-  return name === "Agent";
+  return (
+    name === "Agent" ||
+    name === KBRAIN_SUBAGENT_TOOL_NAME ||
+    // A follow-up renders as its subagent's card, so it stands alone like the call that started it.
+    name === KBRAIN_SUBAGENT_FOLLOWUP_TOOL_NAME
+  );
 }
 
 /**
- * 拆开动态 MCP 工具名。命名规则见 `mcpTools.ts`：
- * `mcp_<sanitizedServerId>_<sanitizedToolName>`。
+ * 拆开动态 MCP 工具名。两种命名都会出现：
  *
- * 两段本身都可能含下划线，所以按第一个 `_` 切分是启发式而非精确解析。
- * 实践中 server id 是 kebab-case（sanitize 保留 `-`），切分正确；即便切
- * 错也只影响标题渲染，不参与任何判定或 key。
+ * - K-brain（internal/mcp/config.go `ToolName`）：`mcp__<serverKey>__<tool>`。
+ *   serverKey 保证不含 `__`，所以按第一个 `__` 切分是精确的；工具段自身可以
+ *   含 `__`，归入 tool。
+ * - 旧前端 runtime（`mcpTools.ts`）：`mcp_<sanitizedServerId>_<sanitizedToolName>`。
+ *   两段本身都可能含下划线，按第一个 `_` 切分是启发式而非精确解析。实践中
+ *   server id 是 kebab-case（sanitize 保留 `-`），切分正确；即便切错也只影响
+ *   标题渲染，不参与任何判定或 key。
  */
 export function parseDynamicMcpToolName(name: string): { serverId: string; tool: string } | null {
   const trimmed = name.trim();
   if (!isDynamicMcpToolName(trimmed)) return null;
+  if (trimmed.startsWith("mcp__")) {
+    const rest = trimmed.slice("mcp__".length);
+    const separator = rest.indexOf("__");
+    if (separator <= 0 || separator + 2 >= rest.length) return null;
+    return { serverId: rest.slice(0, separator), tool: rest.slice(separator + 2) };
+  }
   const rest = trimmed.slice("mcp_".length);
   const separator = rest.indexOf("_");
   if (separator <= 0 || separator === rest.length - 1) return null;
@@ -854,6 +959,31 @@ export function getManagerToolActionName(toolCall: {
   return "";
 }
 
+/** TunnelManager actions with their own row titles (`chat.tool.tunnel.<action>.<phase>`). */
+export const TUNNEL_TOOL_ACTIONS = ["list", "create", "close", "check"] as const;
+export type TunnelToolAction = (typeof TUNNEL_TOOL_ACTIONS)[number];
+
+export type ToolActivityPhase = "running" | "completed" | "failed";
+
+/**
+ * Translation key for a tool row's verb: the TunnelManager action when known,
+ * otherwise the activity category; `null` for the generic `other` category,
+ * whose rows keep the tool's own name.
+ */
+export function getToolActivityTitleKey(
+  toolCall: { name: string; arguments?: Record<string, unknown> },
+  phase: ToolActivityPhase,
+): string | null {
+  const category = getToolActivityCategory(toolCall.name);
+  if (category === "tunnel") {
+    const action = displayString(toolCall.arguments?.action);
+    if ((TUNNEL_TOOL_ACTIONS as readonly string[]).includes(action)) {
+      return `chat.tool.tunnel.${action}.${phase}`;
+    }
+  }
+  return category === "other" ? null : `chat.tool.activity.${category}.${phase}`;
+}
+
 export function getToolDisplayTitle(toolCall: {
   name: string;
   arguments?: Record<string, unknown>;
@@ -906,6 +1036,9 @@ export function groupRoundBlocks(blocks: UiRound["blocks"]): GroupedRoundBlock[]
         isConversationImageTool(block.item.toolCall.name) ||
         isTaskToolName(block.item.toolCall.name) ||
         isUserInteractionToolName(block.item.toolCall.name) ||
+        // A pending MCP form stands alone so it can be pinned outside the trace; once
+        // answered the call flows back into the activity group.
+        isPendingUserInteractionItem(block.item) ||
         block.item.toolCall.name === "ProcessWait" ||
         block.item.toolCall.name === "ProcessStop" ||
         isAgentToolName(block.item.toolCall.name)
@@ -998,6 +1131,18 @@ export function isBuiltinShareToolName(name: string) {
     "lsp",
     "web_fetch",
     "WebFetch",
+    // K-brain-only built-ins: their arguments and results carry workspace commands,
+    // memory text and page content just like the tools above.
+    "TerminalSession",
+    "browser_exec",
+    "computer_exec",
+    "forget",
+    "memory_manager",
+    "new_context",
+    "remember",
+    "structured_output",
+    "wait",
+    "workflow",
   ].includes(trimmed);
 }
 

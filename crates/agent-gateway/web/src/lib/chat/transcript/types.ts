@@ -86,6 +86,7 @@ export type TranscriptRow =
       copyContent?: () => Promise<boolean>;
       copyDisabledReason?: string;
       timestamp?: number;
+      backgroundNotice?: boolean;
     }
   | {
       key: string;

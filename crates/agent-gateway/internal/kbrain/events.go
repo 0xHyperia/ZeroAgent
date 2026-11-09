@@ -12,6 +12,12 @@ import (
 // event vocabulary. Provider-specific response/chat-message fields never cross
 // this boundary.
 func ToChatEvent(event Event) (*v2.ChatEvent, *v2.ChatControlEvent, error) {
+	return toChatEvent(event, nil)
+}
+
+// toChatEvent is ToChatEvent with the recorded arguments of a tool call, which
+// the question tool's plain-text result is read against.
+func toChatEvent(event Event, callArgs func(id string) map[string]any) (*v2.ChatEvent, *v2.ChatControlEvent, error) {
 	payload := map[string]any{}
 	if len(event.Payload) != 0 && string(event.Payload) != "null" {
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
@@ -32,6 +38,13 @@ func ToChatEvent(event Event) (*v2.ChatEvent, *v2.ChatControlEvent, error) {
 		base.Type = v2.ChatEvent_TOKEN
 	case "assistant.message.created":
 		base.Type = v2.ChatEvent_TOKEN
+		if usage, ok := payload["usage"].(map[string]any); ok {
+			payload["usage"] = liveAgentUsage(usage)
+		}
+	case "usage.updated":
+		// One report per model call; the WebUI anchors its live context ring on it.
+		base.Type = v2.ChatEvent_TOKEN
+		payload = map[string]any{"text": "", "usage": liveAgentUsage(payload), "usageLive": true}
 	case "assistant.thinking.delta":
 		base.Type = v2.ChatEvent_THINKING
 	case "assistant.sources":
@@ -46,8 +59,33 @@ func ToChatEvent(event Event) (*v2.ChatEvent, *v2.ChatControlEvent, error) {
 	case "tool.result":
 		base.Type = v2.ChatEvent_TOOL_RESULT
 		if result, ok := payload["tool_result"].(map[string]any); ok {
-			payload["id"], payload["name"] = result["id"], result["name"]
-			payload["isError"] = result["failed"] == true || result["cancelled"] == true
+			name, _ := result["name"].(string)
+			id, _ := result["id"].(string)
+			isError := result["failed"] == true || result["cancelled"] == true
+			payload["id"], payload["name"] = result["id"], toolResultName(name)
+			payload["isError"] = isError
+			output, _ := result["output"].(string)
+			var args map[string]any
+			if callArgs != nil && id != "" {
+				args = callArgs(id)
+			}
+			details := resultDetails(name, output, args, isError, decodeQuestionAnswers(result["question_answers"]))
+			var exitCode *int
+			if code, ok := result["exit_code"].(float64); ok {
+				value := int(code)
+				exitCode = &value
+			}
+			timedOut := result["timed_out"] == true
+			duration, _ := result["duration_ms"].(float64)
+			details = withRunInfo(name, details, exitCode, timedOut, int64(duration))
+			// The raw tool_result is forwarded too, so its copy loses sensitive values as well.
+			elicitations := sanitizeElicitationRecords(result["elicitations"])
+			if elicitations != nil {
+				result["elicitations"] = elicitations
+			}
+			if details = withElicitationDetails(details, elicitations); details != nil {
+				payload["details"] = details
+			}
 			content := []any{map[string]any{"type": "text", "text": result["output"]}}
 			if blocks, ok := result["content"].([]any); ok {
 				for _, value := range blocks {
@@ -66,9 +104,6 @@ func ToChatEvent(event Event) (*v2.ChatEvent, *v2.ChatControlEvent, error) {
 			}
 			payload["content"] = content
 		}
-	case "permission.requested":
-		base.Type = v2.ChatEvent_TOOL_STATUS
-		payload["status"] = "Manual approval required. This WebUI transport cannot confirm permissions; the action was rejected. Retry in LiveAgent desktop or K-brain TUI."
 	case "approval.reviewed":
 		base.Type = v2.ChatEvent_TOOL_STATUS
 		if object, ok := payloadAsMap(payload); ok {
@@ -103,3 +138,24 @@ func ToChatEvent(event Event) (*v2.ChatEvent, *v2.ChatControlEvent, error) {
 }
 
 func payloadAsMap(payload map[string]any) (map[string]any, bool) { return payload, payload != nil }
+
+// liveAgentUsage maps a K-brain usage report to LiveAgent's usage fields. K-brain's
+// input_tokens include cache reads and writes; LiveAgent's input excludes them.
+func liveAgentUsage(usage map[string]any) map[string]any {
+	count := func(key string) int64 {
+		value, _ := usage[key].(float64)
+		if value < 0 {
+			return 0
+		}
+		return int64(value)
+	}
+	input, output := count("input_tokens"), count("output_tokens")
+	cacheRead, cacheWrite := count("cached_tokens"), count("cache_write_tokens")
+	return map[string]any{
+		"input":       max(0, input-cacheRead-cacheWrite),
+		"output":      output,
+		"cacheRead":   cacheRead,
+		"cacheWrite":  cacheWrite,
+		"totalTokens": input + output,
+	}
+}

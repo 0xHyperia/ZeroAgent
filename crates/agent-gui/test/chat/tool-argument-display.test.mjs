@@ -250,6 +250,11 @@ function createToolCallItemRenderer() {
           }
           return "other";
         },
+        getToolActivityTitleKey(toolCall, phase) {
+          return ["Bash", "ManagedProcess", "ProcessWait", "ProcessStop"].includes(toolCall.name)
+            ? `chat.tool.activity.command.${phase}`
+            : null;
+        },
         getBuiltinResultKind() {
           return null;
         },
@@ -773,7 +778,7 @@ test("shell session snapshots show status without a permanent spinner", () => {
   assert.doesNotMatch(pending, /session-1|cursor=|session=/);
 });
 
-test("Bash collapsed summary keeps the full first line in DOM and title instead of a 48-char cut", () => {
+test("Bash collapsed summary shows a concise first line and keeps the full command in the title", () => {
   const renderToolCallItem = createToolCallItemRenderer();
   const command = `echo ${"a".repeat(140)}-command-tail`;
   const html = renderToolCallItem({
@@ -783,10 +788,11 @@ test("Bash collapsed summary keeps the full first line in DOM and title instead 
     arguments: { command },
   });
 
-  // Once in the hover title, once in the visible summary text.
-  assert.equal(html.split(command).length - 1, 2);
+  // The visible target is cut to 48 columns; the hover title keeps every character.
+  assert.ok(html.includes(`>echo ${"a".repeat(42)}…<`));
+  assert.equal(html.split(command).length - 1, 1);
+  assert.match(html, new RegExp(`title="[^"]*${command}`));
   assert.ok(!html.includes(`$ ${command}`));
-  assert.ok(!html.includes("…"));
 });
 
 test("Bash collapsed summary bounds pathological single-line commands in DOM and title", () => {
@@ -904,4 +910,23 @@ test("failed file operations keep an expandable error disclosure", () => {
   assert.match(html, /chat\.tool\.file\.edit\.failed/);
   assert.match(html, /aria-expanded="false"/);
   assert.doesNotMatch(html, /data-chat-file-link/);
+});
+
+test("generic results show K-brain run info as one line instead of raw details JSON", () => {
+  const renderToolDisplay = createToolArgsRenderer();
+  const toolCall = { type: "toolCall", id: "native-bash", name: "bash", arguments: { command: "exit 3" } };
+  const onlyRunInfo = renderToolDisplay.renderResult(toolCall, { kbrainRun: { exitCode: 3, durationMs: 16 } });
+  assert.match(onlyRunInfo, /data-tool-run-info=""/);
+  assert.match(onlyRunInfo, /3 · 16ms/);
+  assert.doesNotMatch(onlyRunInfo, /kbrainRun|exitCode|durationMs/);
+
+  const withOther = renderToolDisplay.renderResult(toolCall, {
+    kbrainRun: { exitCode: 0 },
+    note: "kept",
+  });
+  assert.match(withOther, /data-tool-run-info=""/);
+  assert.match(withOther, /note/);
+  assert.doesNotMatch(withOther, /kbrainRun/);
+
+  assert.equal(renderToolDisplay.renderResult(toolCall, {}), "");
 });

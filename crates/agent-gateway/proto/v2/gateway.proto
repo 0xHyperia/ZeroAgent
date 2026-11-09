@@ -767,6 +767,14 @@ message ChatRequest {
   bool prompt_command = 15;
   // A single /plan task, distinct from ordinary chat with plan mode enabled.
   bool plan_command = 16;
+  // The project's MCP server choice (Project settings, custom or off). Absent
+  // means the project inherits the global MCP settings; present with no ids
+  // means the run offers no MCP server.
+  ChatMcpServerSelection mcp_servers = 17;
+}
+
+message ChatMcpServerSelection {
+  repeated string server_ids = 1;
 }
 
 message ChatMessageRef {
@@ -1192,11 +1200,13 @@ message PromptTemplateExpandResponse {
   string text = 2;
 }
 
-// 会话目标的非运行动作（目前只有 clear）。set/resume 会开始一轮运行，走
+// 会话目标的非运行动作：get、pause、update 与 clear。set/resume 会开始一轮运行，走
 // ChatRequest 的 goal_action，复用聊天的流式与镜像链路。
 message GoalManageRequest {
   string conversation_id = 1;
   string action = 2;
+  // update 的新目标正文；其余动作为空。
+  string goal = 3;
 }
 
 message GoalManageResponse {
@@ -1207,6 +1217,8 @@ message GoalManageResponse {
   int32 round = 4;
   int32 max_rounds = 5;
   string reason = 6;
+  // 目标设定或最近一次恢复的时间（RFC3339），目标栏据此显示已运行时长。
+  string started_at = 7;
 }
 
 // 桌面端“/”指令目录：动作由客户端按名称处理，prompt 由 K-brain 展开。

@@ -24,6 +24,8 @@ import {
 import { readModelTypes } from "@liveagent/ui/lib/models/modelTypes";
 import {
   providerSupportsNativeWebSearch,
+  resolveKBrainProviderType,
+  resolveKBrainRequestFormat,
   resolveProviderApi,
 } from "@liveagent/ui/lib/providers/providerCapabilities";
 import {
@@ -58,14 +60,7 @@ import {
   RIGHT_DOCK_SINGLETON_TAB_IDS,
 } from "./rightDockNormalization";
 import { normalizeSidebarShortcuts } from "./sidebarShortcuts";
-import {
-  computeNextMemoryOrganizerRunAt,
-  normalizeMemoryOrganizerMode,
-  normalizeMemoryOrganizerSchedule,
-  normalizeMemoryOrganizerScope,
-  normalizeOptionalTimestamp,
-  normalizeTheme,
-} from "./themeAndMemory";
+import { normalizeTheme } from "./themeAndMemory";
 import type {
   AgentPromptTemplate,
   AppSettings,
@@ -180,11 +175,8 @@ export {
   rightDockToolKindForTabId,
 } from "./rightDockNormalization";
 export {
-  computeNextMemoryOrganizerRunAt,
-  getDefaultMemoryOrganizerSchedule,
   getNextTheme,
   normalizeTheme,
-  rescheduleOrganizerForTimeZone,
   resolveEffectiveTheme,
   subscribeToSystemThemePreference,
 } from "./themeAndMemory";
@@ -1289,14 +1281,20 @@ export function normalizeProviderRetryPolicy(input: unknown): ProviderRetryPolic
 
 export function normalizeCustomProvider(input: unknown): CustomProvider {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-  const type = normalizeProviderId(obj.type);
+  // A K-brain provider entry (it names its wire protocol in `api`) resolves its
+  // type and request format the way K-brain does — the same rule the desktop
+  // app applies — so a hand-written provider without `type` gets the same
+  // type on every client. Plain ZeroAgent entries keep the legacy default.
+  const kBrainEntry = typeof obj.api === "string" && obj.api.trim() !== "";
+  const type = kBrainEntry ? resolveKBrainProviderType(obj) : normalizeProviderId(obj.type);
+  const requestFormat = kBrainEntry ? resolveKBrainRequestFormat(obj) : obj.requestFormat;
   const isFullUrl = obj.isFullUrl === true;
   const codexRouting =
     type === "codex" || type === "xai"
       ? normalizeCodexRouting(
           obj.baseUrl,
           // xAI / Grok 固定走 Responses；忽略历史配置中的 completions。
-          type === "xai" ? "openai-responses" : obj.requestFormat,
+          type === "xai" ? "openai-responses" : requestFormat,
           isFullUrl,
         )
       : undefined;
@@ -1713,6 +1711,9 @@ export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
   };
   const env = privateMap("env");
   const headers = privateMap("headers");
+  const policy = normalizeToolPolicies(obj.policy);
+  const workspaceRoots = normalizeStringArray(obj.workspaceRoots);
+  const backendFields = normalizeMcpBackendFields(obj.backendFields);
 
   return {
     id,
@@ -1731,7 +1732,41 @@ export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
     timeoutMs: normalizeTimeoutMs(obj.timeoutMs),
     messageUrl: messageUrl || undefined,
     ...(auth ? { auth } : {}),
+    ...(policy ? { policy } : {}),
+    ...(workspaceRoots.length > 0 ? { workspaceRoots } : {}),
+    ...(backendFields ? { backendFields } : {}),
   };
+}
+
+/** Server fields ZeroAgent edits or derives itself; anything else K-brain returns is kept as is. */
+export const MCP_SERVER_CONFIG_FIELDS: readonly string[] = [
+  "id",
+  "description",
+  "docsUrl",
+  "enabled",
+  "transport",
+  "command",
+  "args",
+  "url",
+  "env",
+  "cwd",
+  "headers",
+  "timeoutMs",
+  "messageUrl",
+  "auth",
+  "policy",
+  "workspaceRoots",
+  "backendFields",
+];
+
+function normalizeMcpBackendFields(input: unknown): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!key || MCP_SERVER_CONFIG_FIELDS.includes(key) || value === undefined) continue;
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export function normalizeMcpSettings(input: unknown): McpSettings {
@@ -1760,10 +1795,22 @@ export function normalizeAgentPromptTemplates(input: unknown): AgentPromptTempla
 
 export function normalizeSkillsSettings(input: unknown): SkillsSettings {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const packs = normalizeSkillPackSwitches(obj.packs);
   return {
     enabled: obj.enabled !== false,
     selected: mergeAlwaysEnabledSkillNames(normalizeStringArray(obj.selected)),
+    ...(packs ? { packs } : {}),
   };
+}
+
+/** Keeps `packs` only as an object of booleans; anything else drops it. */
+function normalizeSkillPackSwitches(input: unknown): Record<string, boolean> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const packs: Record<string, boolean> = {};
+  for (const [name, value] of Object.entries(input as Record<string, unknown>)) {
+    if (name.trim() && typeof value === "boolean") packs[name] = value;
+  }
+  return packs;
 }
 
 export function normalizeSelectedModel(input: unknown): SelectedModel | undefined {
@@ -1824,32 +1871,15 @@ export function normalizeMemorySettings(
   customProviders: CustomProvider[],
 ): MemorySettings {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-  const organizerModel = normalizeSelectedModelForProviders(
-    normalizeSelectedModel(obj.organizerModel),
-    customProviders,
-  );
-  const organizerSchedule = normalizeMemoryOrganizerSchedule(obj.organizerSchedule);
-  const organizerEnabled =
-    obj.organizerEnabled === true &&
-    Boolean(organizerModel) &&
-    organizerSchedule.frequency !== "none";
-  const organizerNextRunAt = organizerEnabled
-    ? (normalizeOptionalTimestamp(obj.organizerNextRunAt) ??
-      computeNextMemoryOrganizerRunAt(organizerSchedule) ??
-      undefined)
-    : undefined;
   return {
-    organizerModel,
+    organizerModel: normalizeSelectedModelForProviders(
+      normalizeSelectedModel(obj.organizerModel),
+      customProviders,
+    ),
     summaryModel: normalizeSelectedModelForProviders(
       normalizeSelectedModel(obj.summaryModel),
       customProviders,
     ),
-    organizerEnabled,
-    organizerSchedule,
-    organizerScope: normalizeMemoryOrganizerScope(obj.organizerScope),
-    organizerMode: normalizeMemoryOrganizerMode(obj.organizerMode),
-    organizerLastRunAt: normalizeOptionalTimestamp(obj.organizerLastRunAt),
-    organizerNextRunAt,
   };
 }
 
@@ -2215,6 +2245,21 @@ export function resolveEffectivePromptSettings(
     projectPromptStrategy,
     prompt,
   };
+}
+
+/**
+ * The MCP servers a run may use under the workspace's resource mode: undefined
+ * for inherit (the backend's own selection), otherwise the enabled servers the
+ * workspace picked, where an empty pick or mode off means none.
+ */
+export function workspaceMcpServerIds(
+  resources: Pick<EffectiveWorkspaceResources, "mode"> & {
+    mcpServers: readonly Pick<McpServerConfig, "id">[];
+  },
+): string[] | undefined {
+  if (resources.mode === "inherit") return undefined;
+  if (resources.mode === "off") return [];
+  return resources.mcpServers.map((server) => server.id).filter(Boolean);
 }
 
 export function filterMcpSettingsForWorkspace(

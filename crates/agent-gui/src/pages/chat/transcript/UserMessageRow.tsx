@@ -1,3 +1,4 @@
+import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/BackgroundNoticeMessage";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
 import { type ChatFileLink, chatAttachmentFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
@@ -54,6 +55,10 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
     item.attachments,
     item.text,
   );
+
+  if (item.backgroundNotice) {
+    return <BackgroundNoticeMessage text={item.text} className={compactedClass} />;
+  }
 
   if (isEditing && effectiveMessageRef) {
     return (

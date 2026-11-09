@@ -1,7 +1,18 @@
 import {
+  KBRAIN_QUESTION_SELECTED_LABELS_CAPABILITY,
+  legacyKBrainQuestionAnswer,
+} from "@liveagent/ui/lib/chat/askUserQuestion";
+import {
+  MCP_ELICITATION_CAPABILITY,
+  type McpElicitationAction,
+  type McpElicitationContent,
+  type McpElicitationSubmitOutcome,
+} from "@liveagent/ui/lib/chat/mcpElicitation";
+import {
   hasFrozenCapability,
   type KBrainHealth,
   readKBrainHealthResponse,
+  runSandboxLacksPathProtection,
   supportsPermissionMode,
   supportsRunSandbox,
 } from "@liveagent/ui/lib/kbrain/health";
@@ -40,6 +51,8 @@ import {
   type KBrainSharedProjection,
   type KBrainShareStatus,
   type KBrainSlashCommand,
+  type KBrainSubagentList,
+  type KBrainSubagentTranscript,
   type KBrainSyncSnapshot,
   type KBrainSyncSnapshotPage,
   type KBrainTextGenerateRequest,
@@ -274,6 +287,8 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       cwdEmpty?: boolean;
       shared?: boolean;
       pinned?: boolean;
+      /** Archive filter (capability `session_archive`); omitted means exclude. */
+      archived?: "exclude" | "include" | "only";
     } = {},
   ): Promise<KBrainSessionPage> {
     const query = new URLSearchParams();
@@ -283,6 +298,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     if (params.cwdEmpty !== undefined) query.set("cwd_empty", String(params.cwdEmpty));
     if (params.shared !== undefined) query.set("shared", String(params.shared));
     if (params.pinned !== undefined) query.set("pinned", String(params.pinned));
+    if (params.archived !== undefined) query.set("archived", params.archived);
     const result = await request<KBrainSessionPage | KBrainSession[]>(`/v1/sessions?${query}`);
     return Array.isArray(result)
       ? { sessions: result, total_count: result.length }
@@ -417,6 +433,11 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       body: JSON.stringify(input),
       headers: configurationVersionHeaders(configurationVersion),
     });
+  }
+
+  /** Re-reads K-brain's saved MCP settings and restarts every server (POST /v1/mcp/reload). */
+  async function reloadMcp(): Promise<unknown> {
+    return request<unknown>("/v1/mcp/reload", { method: "POST" });
   }
 
   async function discoverMcpTools(
@@ -706,6 +727,11 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     });
   }
 
+  async function supportsMcpElicitation(signal?: AbortSignal): Promise<boolean> {
+    const health = await readRunHealth(signal);
+    return health ? hasFrozenCapability(health, MCP_ELICITATION_CAPABILITY) : false;
+  }
+
   /** Include optional run fields only when the current backend advertises them. */
   async function scopedRunOptions<T extends KBrainRunOptions | undefined>(
     options: T,
@@ -717,6 +743,9 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     if (health && hasFrozenCapability(health, "ai_review_per_run")) scoped.review_scope = "per_run";
     if (!health || !hasFrozenCapability(health, "zeroagent_conversation_images")) {
       delete scoped.image_creation;
+    }
+    if (!health || !hasFrozenCapability(health, MCP_ELICITATION_CAPABILITY)) {
+      delete scoped.mcp_elicitation;
     }
     return scoped;
   }
@@ -737,13 +766,18 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       }
     }
     const sandbox = input.options?.sandbox;
-    if (sandbox && !supportsRunSandbox(await getHealth(signal), sandbox)) {
-      // Never drop the field and run the commands unconfined.
-      throw new Error(
-        sandbox.network
-          ? "K-brain cannot sandbox commands on this machine; choose another execution mode or update the backend."
-          : "K-brain cannot run an offline sandbox on this machine; choose another execution mode or update the backend.",
-      );
+    if (sandbox) {
+      const health = await getHealth(signal);
+      if (!supportsRunSandbox(health, sandbox)) {
+        // Never drop the field and run the commands unconfined.
+        throw new Error(
+          runSandboxLacksPathProtection(health.capabilities.run_sandbox)
+            ? "K-brain cannot sandbox commands on this machine: its sandbox cannot keep protected paths (.liveagent, .git/hooks) read-only; install bubblewrap or allow unprivileged user namespaces, or choose another execution mode."
+            : sandbox.network
+              ? "K-brain cannot sandbox commands on this machine; choose another execution mode or update the backend."
+              : "K-brain cannot run an offline sandbox on this machine; choose another execution mode or update the backend.",
+        );
+      }
     }
     const body = { ...input, options: await scopedRunOptions(input.options, signal) };
     const path = `/v1/sessions/${encodeURIComponent(input.conversation_id)}/runs`;
@@ -899,12 +933,30 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     });
   }
 
+  /**
+   * Capability question_selected_labels: multi-select answers go as `selected_labels`.
+   * Older backends reject the field as unknown (400), so without the capability, or when
+   * /v1/health cannot be read, the answers go as joined labels marked custom. Read fresh
+   * for each answer that needs it, so a backend updated mid-session is seen.
+   */
+  async function answersForBackend(
+    answers: KBrainQuestionAnswer[],
+  ): Promise<KBrainQuestionAnswer[]> {
+    if (!answers.some((answer) => (answer.selected_labels?.length ?? 0) > 0)) return answers;
+    const structured = await getHealth().then(
+      (health) => hasFrozenCapability(health, KBRAIN_QUESTION_SELECTED_LABELS_CAPABILITY),
+      () => false,
+    );
+    return structured ? answers : answers.map(legacyKBrainQuestionAnswer);
+  }
+
   async function resolveQuestion(
     conversationId: string,
     questionId: string,
     runId: string,
-    answers: KBrainQuestionAnswer[],
+    input: KBrainQuestionAnswer[],
   ): Promise<void> {
+    const answers = await answersForBackend(input);
     await request<unknown>(
       `/v1/sessions/${encodeURIComponent(conversationId)}/questions/${encodeURIComponent(questionId)}`,
       {
@@ -917,6 +969,61 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
         }),
       },
     );
+  }
+
+  /**
+   * Answers an MCP form elicitation. `content` goes only with accept. A 400 leaves the form
+   * pending and carries K-brain's per-field messages; 404 and 409 mean the request is gone
+   * (unknown, already answered or no longer pending). Only the MCP server keeps the content:
+   * nothing here logs or stores it.
+   */
+  async function answerElicitation(
+    conversationId: string,
+    elicitationId: string,
+    runId: string,
+    action: McpElicitationAction,
+    content?: McpElicitationContent,
+  ): Promise<McpElicitationSubmitOutcome> {
+    let response: Response;
+    try {
+      response = await fetchKBrain(
+        `/v1/sessions/${encodeURIComponent(conversationId)}/elicitations/${encodeURIComponent(elicitationId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            run_id: runId,
+            elicitation_id: elicitationId,
+            action,
+            ...(action === "accept" ? { content: content ?? {} } : {}),
+          }),
+        },
+        inputOptions,
+      );
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+    if (response.ok) return { ok: true };
+    const body = await response.text().catch(() => "");
+    let message = body.trim();
+    let fieldErrors: Record<string, string> | undefined;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown; field_errors?: unknown };
+      if (typeof parsed.error === "string" && parsed.error) message = parsed.error;
+      if (isRecord(parsed.field_errors)) {
+        fieldErrors = {};
+        for (const [name, text] of Object.entries(parsed.field_errors)) {
+          if (name && typeof text === "string") fieldErrors[name] = text;
+        }
+      }
+    } catch {
+      // Keep the raw body for non-JSON errors.
+    }
+    return {
+      ok: false,
+      message: message || `K-brain request failed (${response.status})`,
+      ...(fieldErrors && Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
+    };
   }
 
   async function resolveClientTool(
@@ -960,14 +1067,75 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     );
   }
 
-  async function subscribe(
+  function subscribe(
     conversationId: string,
     afterSeq: number,
     handlers: KBrainEventHandlers,
     signal?: AbortSignal,
   ): Promise<void> {
-    const response = await fetchKBrain(
+    return readEventStream(
       `/v1/sessions/${encodeURIComponent(conversationId)}/events?after_seq=${encodeURIComponent(String(afterSeq))}`,
+      conversationId,
+      afterSeq,
+      true,
+      handlers,
+      signal,
+    );
+  }
+
+  /** The session's subagents, foreground and background, oldest first. */
+  function listSubagents(conversationId: string, signal?: AbortSignal) {
+    return request<KBrainSubagentList>(
+      `/v1/sessions/${encodeURIComponent(conversationId)}/subagents`,
+      { signal },
+    );
+  }
+
+  /** One subagent's read-only transcript so far, running or ended. */
+  function getSubagentTranscript(conversationId: string, taskId: string, signal?: AbortSignal) {
+    return request<KBrainSubagentTranscript>(
+      `/v1/sessions/${encodeURIComponent(conversationId)}/subagents/${encodeURIComponent(taskId)}`,
+      { signal },
+    );
+  }
+
+  /** Stops one subagent; the parent run goes on. */
+  async function cancelSubagent(conversationId: string, taskId: string): Promise<void> {
+    await request<unknown>(
+      `/v1/sessions/${encodeURIComponent(conversationId)}/subagents/${encodeURIComponent(taskId)}/cancel`,
+      { method: "POST", body: "{}" },
+    );
+  }
+
+  /** Follows one subagent's events; the stream ends after its terminal event. Its
+   *  sequence numbers are the session's, so they increase but skip other events. */
+  function subscribeSubagent(
+    conversationId: string,
+    taskId: string,
+    afterSeq: number,
+    handlers: KBrainEventHandlers,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return readEventStream(
+      `/v1/sessions/${encodeURIComponent(conversationId)}/subagents/${encodeURIComponent(taskId)}/events?after_seq=${encodeURIComponent(String(afterSeq))}`,
+      conversationId,
+      afterSeq,
+      false,
+      handlers,
+      signal,
+    );
+  }
+
+  async function readEventStream(
+    path: string,
+    conversationId: string,
+    afterSeq: number,
+    contiguous: boolean,
+    handlers: KBrainEventHandlers,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await fetchKBrain(
+      path,
       {
         headers: { Accept: "text/event-stream" },
         signal,
@@ -998,7 +1166,10 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
         if (event.conversation_id !== conversationId) {
           throw new Error("ZeroAgent engine event belongs to a different conversation");
         }
-        if (!Number.isSafeInteger(event.seq) || event.seq !== lastSeq + 1) {
+        if (
+          !Number.isSafeInteger(event.seq) ||
+          (contiguous ? event.seq !== lastSeq + 1 : event.seq <= lastSeq)
+        ) {
           throw new Error(
             `Malformed ZeroAgent engine event sequence: expected ${lastSeq + 1}, got ${String(event.seq)}`,
           );
@@ -1051,6 +1222,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     updateSettings,
     getMcpSettings,
     updateMcpSettings,
+    reloadMcp,
     discoverMcpTools,
     searchMcpTools,
     callMcpTool,
@@ -1076,6 +1248,8 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     resolvePermission,
     resolveQuestion,
     resolveClientTool,
+    answerElicitation,
+    supportsMcpElicitation,
     getHistory,
     listCheckpoints,
     checkpointPreview,
@@ -1087,6 +1261,10 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     setShare,
     resolveShareToken,
     subscribe,
+    listSubagents,
+    getSubagentTranscript,
+    cancelSubagent,
+    subscribeSubagent,
   };
 }
 

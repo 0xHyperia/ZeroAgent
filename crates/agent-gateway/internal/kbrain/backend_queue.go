@@ -66,7 +66,7 @@ func (r *Relay) startBackendQueuedRun(ctx context.Context, gatewayRunID, convers
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if strings.TrimSpace(gatewayRunID) == "" || strings.TrimSpace(conversationID) == "" || strings.TrimSpace(requestID) == "" || strings.TrimSpace(prompt.Prompt) == "" {
+	if strings.TrimSpace(gatewayRunID) == "" || strings.TrimSpace(conversationID) == "" || strings.TrimSpace(requestID) == "" || !prompt.hasInput() {
 		return false, errors.New("queue run identity and prompt are required")
 	}
 	if policy == "" || policy == "auto" {
@@ -85,6 +85,7 @@ func (r *Relay) startBackendQueuedRun(ctx context.Context, gatewayRunID, convers
 		return false, err
 	}
 	prompt = r.client.withReviewScope(ctx, prompt)
+	prompt = r.client.withMCPElicitation(ctx, prompt)
 	// Serialize session mapping before the backend acceptance; no local FIFO is created.
 	r.backendSubmitMu.Lock()
 	defer r.backendSubmitMu.Unlock()
@@ -404,19 +405,14 @@ func (r *Relay) watchBackendQueuedRun(binding backendQueueRun, cb Callbacks) {
 							r.emitBackendQueue(cb, backendQueueResponse{Accepted: true, Snapshot: snapshot})
 						}
 						if event.RunID == run.RunID {
-							if event.Type == "permission.requested" {
-								if err := r.client.rejectUnsupportedPermission(ctx, event); err != nil {
-									return err
+							gatewayRunID := binding.GatewayRunID
+							control, mapErr := r.relayRunEvent(ctx, event, binding.ConversationID, func(chat *gatewayv2.ChatEvent) {
+								if chat != nil && cb.OnEvent != nil {
+									cb.OnEvent(gatewayRunID, chat)
 								}
-							}
-							mapped := event
-							mapped.ConversationID = binding.ConversationID
-							chat, control, mapErr := ToChatEvent(mapped)
+							})
 							if mapErr != nil {
 								return mapErr
-							}
-							if chat != nil && cb.OnEvent != nil {
-								cb.OnEvent(binding.GatewayRunID, chat)
 							}
 							if control != nil {
 								control.RequestId = binding.GatewayRunID

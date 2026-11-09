@@ -1,11 +1,24 @@
-import type { AssistantMessage, ToolCall, ToolResultMessage } from "@liveagent/app/lib/agentTypes";
-import { ASK_USER_QUESTION_TOOL_NAME } from "@liveagent/ui/lib/chat/askUserQuestion";
+import type {
+  AssistantMessage,
+  Message,
+  ToolCall,
+  ToolResultMessage,
+} from "@liveagent/app/lib/agentTypes";
+import {
+  ASK_USER_QUESTION_TOOL_NAME,
+  kbrainQuestionAnswerPayload,
+} from "@liveagent/ui/lib/chat/askUserQuestion";
 import type { ComposerTurnCommand } from "@liveagent/ui/lib/chat/composerCommands";
+import {
+  MCP_ELICITATION_DETAILS_KEY,
+  MCP_ELICITATION_SYNTHETIC_ARG_KEYS,
+} from "@liveagent/ui/lib/chat/mcpElicitation";
 import {
   resolveKBrainPermissionMode,
   resolveKBrainRunSandbox,
 } from "@liveagent/ui/lib/chat/permissionModes";
 import {
+  approvalPreviewFromKBrain,
   approvalPreviewFromToolCall,
   clampApprovalText,
 } from "@liveagent/ui/lib/chat/toolApprovalArgs";
@@ -30,6 +43,7 @@ import {
 } from "../../../lib/kbrain/goalStore";
 import { getKBrainHistoryWindow } from "../../../lib/kbrain/history";
 import { getKBrainSessionId } from "../../../lib/kbrain/mapping";
+import { kbrainRunMcpServerIds } from "../../../lib/kbrain/mcp";
 import { canonicalKBrainToolPolicies } from "../../../lib/kbrain/toolPolicies";
 import { type KBrainPermissionAutoResolved, runKBrainTurn } from "../../../lib/kbrain/turn";
 import type {
@@ -42,7 +56,19 @@ import {
   resolveUploadStagingRoot,
   withUploadStagingRoot,
 } from "../../../lib/kbrain/uploadStagingRoot";
+import {
+  ingestKBrainSubagentEvent,
+  linkKBrainSubagentToolCalls,
+  noteKBrainSubagentTurnEnded,
+  noteKBrainSubagentTurnStarted,
+} from "../../../lib/subagents/kbrainSubagentStore";
 import { requestBackendQuestion } from "../../../lib/tools/askUserQuestionTools";
+import {
+  clearMcpElicitationsForConversation,
+  mcpElicitationArgsOverlay,
+  recordMcpElicitationResolution,
+  registerMcpElicitation,
+} from "../../../lib/tools/mcpElicitations";
 import { recordPermissionAutoResolved } from "../../../lib/tools/permissionAutoResolved";
 import { projectBackendPlan } from "../../../lib/tools/planModeTools";
 import { hasPendingToolApproval, requestToolApproval } from "../../../lib/tools/toolApproval";
@@ -78,6 +104,7 @@ export function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrai
   const safety = agentMode && "commandSafetyMode" in params ? params.commandSafetyMode : undefined;
   const reasoning = params.runtime.reasoning;
   const sandbox = agentMode ? resolveKBrainRunSandbox(safety) : undefined;
+  const mcpServerIds = agentMode ? kbrainRunMcpServerIds(params.mcpServerIds) : undefined;
   return {
     mode: agentMode ? "agent" : "chat",
     ...(params.imageCreation ? { image_creation: params.imageCreation } : {}),
@@ -91,6 +118,7 @@ export function canonicalRunOptions(params: Params, uploadsRoot?: string): KBrai
     ...(roots.length ? { workspace_roots: roots } : {}),
     ...(sandbox ? { sandbox } : {}),
     ...(Object.keys(policies).length ? { tools: { policies } } : {}),
+    ...(mcpServerIds ? { mcp_server_ids: mcpServerIds } : {}),
     ...(agentMode && params.planModeEnabled !== undefined
       ? { plan_mode_enabled: params.planModeEnabled }
       : {}),
@@ -173,11 +201,42 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
       round: callRounds.get(call.id) ?? round,
     });
   };
+  // The call as the live transcript shows it: the model's arguments without any
+  // elicitation keys of its own, plus the forms the desktop store holds for it.
+  const withElicitationArgs = (call: ToolCall): ToolCall => {
+    const overlay = mcpElicitationArgsOverlay(call.id);
+    const args = call.arguments ?? {};
+    const hasModelKeys = MCP_ELICITATION_SYNTHETIC_ARG_KEYS.some((key) => key in args);
+    if (!hasModelKeys && Object.keys(overlay).length === 0) return call;
+    const stripped = Object.fromEntries(
+      Object.entries(args).filter(
+        ([key]) => !(MCP_ELICITATION_SYNTHETIC_ARG_KEYS as readonly string[]).includes(key),
+      ),
+    );
+    return { ...call, arguments: { ...stripped, ...overlay } };
+  };
+  // Re-renders a call after its elicitation forms changed, locally and on the WebUI.
+  const syncElicitationCall = (toolCallId: string) => {
+    const call = calls.get(toolCallId);
+    const callRound = callRounds.get(toolCallId);
+    if (!call || callRound === undefined) return;
+    if (!results.has(toolCallId)) {
+      params.batchLiveRoundsUpdate(
+        (previous) =>
+          updateLiveRound(previous, callRound, (target) =>
+            upsertToolCallToRound(target, withElicitationArgs(call)),
+          ),
+        transcriptStore,
+      );
+    }
+    pushGatewayToolCall(call);
+  };
   const onToolCall = (call: ToolCall) => {
     calls.set(call.id, call);
     callRounds.set(call.id, round);
+    linkKBrainSubagentToolCalls(params.conversationId, [call]);
     update((target) => ({
-      ...upsertToolCallToRound(collapseThinking(target), call),
+      ...upsertToolCallToRound(collapseThinking(target), withElicitationArgs(call)),
       runningToolCallIds: [...new Set([...target.runningToolCallIds, call.id])],
     }));
     gatewayBridgeEvents.queueEvent({
@@ -207,15 +266,22 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
       prior?.details && !result.details ? { ...result, details: prior.details } : result;
     results.set(call.id, enriched);
     update((target) => ({
-      ...attachToolResultToRound(target, call, enriched),
+      ...attachToolResultToRound(target, withElicitationArgs(call), enriched),
       runningToolCallIds: target.runningToolCallIds.filter((id) => id !== call.id),
     }));
     // WebUI reads `content`/`isError` and attaches the result in the call's round;
     // an Image call also needs its display_image details to render at all.
+    // MCP elicitation records (sensitive values already removed by K-brain) go along so
+    // the WebUI shows the same summaries.
+    const elicitationRecords = (enriched.details as Record<string, unknown> | undefined)?.[
+      MCP_ELICITATION_DETAILS_KEY
+    ];
     const displayImage =
       (enriched.details as { kind?: unknown } | undefined)?.kind === "display_image"
         ? { details: enriched.details }
-        : {};
+        : Array.isArray(elicitationRecords)
+          ? { details: { [MCP_ELICITATION_DETAILS_KEY]: elicitationRecords } }
+          : {};
     gatewayBridgeEvents.queueEvent({
       type: "tool_result",
       id: call.id,
@@ -235,7 +301,8 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
       });
     } else projectToolResult(call, result);
   };
-  // 运行中命令的输出快照只更新实时轮次里的工具卡，不进历史，也不转发给 WebUI。
+  // 运行中命令的输出快照只更新实时轮次里的工具卡，不进历史；WebUI 收到同一份
+  // 完整快照（替换而非追加），工具结果到达后忽略。
   const onToolOutput = (toolCallId: string, output: string) => {
     if (results.has(toolCallId)) return;
     const callRound = callRounds.get(toolCallId);
@@ -247,6 +314,13 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
         ),
       transcriptStore,
     );
+    gatewayBridgeEvents.queueEvent({
+      type: "tool_output",
+      id: toolCallId,
+      output,
+      round: callRound,
+      conversation_id: params.conversationId,
+    });
   };
   hookLifecycle.startAgent();
   const command = "composerCommand" in params ? params.composerCommand : undefined;
@@ -254,6 +328,8 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
   // 直到目标达成、暂停或用户停止。
   // 回调里写入、轮次结束后读取；经函数读取，避免控制流把它收窄成初始值。
   let latestGoalState: KBrainGoalState | undefined;
+  // The latest usage.updated report of this goal round's run.
+  let liveUsage: AssistantMessage["usage"] | undefined;
   // 目标在等用户回答时，这条普通消息就是回复，后端会把它作为目标的一轮接收。
   // 目标栏先按进行中显示；本轮的去向（达成、再次等待或续跑）以后端事件为准，
   // 结束时再读一次目标对齐。
@@ -266,12 +342,15 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
   // 本次发送是否牵涉目标（/goal 指令、续跑轮次或收到进行中的目标状态）；结束时据此对齐。
   let goalInvolved = command?.kind === "goal" || answersGoal;
   const readGoalState = () => latestGoalState;
+  const readLiveUsage = () => liveUsage;
   let attachClientRequestId: string | undefined;
+  noteKBrainSubagentTurnStarted(params.conversationId);
   try {
     const uploadsRoot = await resolveUploadStagingRoot();
     for (;;) {
       hookLifecycle.startTurn(round);
       latestGoalState = undefined;
+      liveUsage = undefined;
       const assistant = await runKBrainTurn({
         locale: params.locale,
         conversationId: params.conversationId,
@@ -307,7 +386,12 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
           gatewayBridgeEvents.queueToken(delta, { round });
         },
         onThinkingDelta: (delta) => {
-          update((target) => appendThinkingDeltaToRound(target, delta));
+          // thinkingOpen marks the segment as streaming (open, "Thinking"); the next
+          // text delta or tool call folds it through collapseThinking.
+          update((target) => ({
+            ...appendThinkingDeltaToRound(target, delta),
+            thinkingOpen: true,
+          }));
           gatewayBridgeEvents.queueEvent({
             type: "thinking",
             text: delta,
@@ -317,10 +401,31 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
         },
         onHostedSearch: (search) => {
           update((target) => upsertHostedSearchToRound(target, search));
+          gatewayBridgeEvents.queueEvent({
+            type: "hosted_search",
+            id: search.id,
+            ...(search.provider ? { provider: search.provider } : {}),
+            status: search.status,
+            queries: search.queries,
+            sources: search.sources,
+            ...(search.updatedAt === undefined ? {} : { updatedAt: search.updatedAt }),
+            round,
+            conversation_id: params.conversationId,
+          });
         },
         onToolCall,
         onToolResult,
         onToolOutput,
+        onUsage: (reported) => {
+          // The live round spans every model call of the run; the report covers the
+          // blocks it already holds, so the context ring adds only what follows.
+          liveUsage = reported;
+          update((target) => ({
+            ...target,
+            meta: { ...target.meta, usage: reported, usageBlockCount: target.blocks.length },
+          }));
+          gatewayBridgeEvents.queueToken("", { round, usage: reported, usageLive: true });
+        },
         onStatus: status,
         onQuestionRequest: async (
           request: KBrainQuestionRequest,
@@ -343,11 +448,9 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
           } finally {
             if (call) pushGatewayToolCall(call);
           }
-          return answers.map((answer) => ({
-            question_id: answer.questionId,
-            selected_label: answer.selectedLabel,
-            ...(answer.custom ? { custom: true } : {}),
-          }));
+          // Multi-select picks go as selected_labels; the client sends them as joined
+          // custom labels to backends without capability question_selected_labels.
+          return answers.map(kbrainQuestionAnswerPayload);
         },
         onPermissionRequest: async (request, signal, refusal) => {
           // Key the approval by its tool call so the Gateway preview overlays the
@@ -384,8 +487,11 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
             sessionWide: request.scope === "session",
             rememberRules,
             defaultScope: request.suggestion?.default_scope,
-            // The edit being approved, from the call's full arguments.
-            preview: call ? approvalPreviewFromToolCall(request.tool, call.arguments) : undefined,
+            // The edit being approved: K-brain's own preview of the change when it sends
+            // one, else worked out from the call's full arguments.
+            preview:
+              approvalPreviewFromKBrain(request.tool, request.preview) ??
+              (call ? approvalPreviewFromToolCall(request.tool, call.arguments) : undefined),
             notice: refusal,
             signal: signal
               ? AbortSignal.any([approvalController.signal, signal])
@@ -405,7 +511,28 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
           return scope ? { decision: "allow_always", scope } : "allow_always";
         },
         onPermissionAutoResolved,
+        onElicitationRequest: (request, answer, signal) => {
+          registerMcpElicitation({
+            conversationId: params.conversationId,
+            request,
+            answer,
+            signal: AbortSignal.any([approvalController.signal, signal]),
+          });
+          syncElicitationCall(request.toolCallId);
+          // A form closed without a resolution (run ended, stopped) must disappear too.
+          signal.addEventListener("abort", () => syncElicitationCall(request.toolCallId), {
+            once: true,
+          });
+        },
+        onElicitationResolved: (toolCallId, record) => {
+          recordMcpElicitationResolution(params.conversationId, toolCallId, record);
+          syncElicitationCall(toolCallId);
+        },
+        onSubagentEvent: (event) =>
+          ingestKBrainSubagentEvent(params.conversationId, event.conversation_id, event),
         onSubagent: (subagent) => {
+          // Backends that link a subagent to its tool call show it on that call's card.
+          if (subagent.parent_tool_call_id) return;
           const id = `kbrain-subagent:${subagent.id}`;
           const call: ToolCall = {
             type: "toolCall",
@@ -446,24 +573,33 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
           ...Array.from(calls.values()).filter((call) => !assistantCallIds.has(call.id)),
         ],
       };
-      update((target) => ({
-        ...collapseThinking(target),
-        runningToolCallIds: [],
-        meta: {
-          provider: projected.provider,
-          model: projected.model,
-          api: projected.api,
-          stopReason: projected.stopReason,
-          usage: projected.usage,
-        },
-      }));
+      // A run that ends without a final message (stopped, failed) keeps the last live
+      // report instead of an empty usage.
+      const lastReport = readLiveUsage();
+      const finalUsage =
+        projected.usage.totalTokens > 0 || !lastReport ? projected.usage : lastReport;
+      update((target) => {
+        const usageBlockCount = target.meta?.usageBlockCount;
+        return {
+          ...collapseThinking(target),
+          runningToolCallIds: [],
+          meta: {
+            provider: projected.provider,
+            model: projected.model,
+            api: projected.api,
+            stopReason: projected.stopReason,
+            usage: finalUsage,
+            ...(usageBlockCount === undefined ? {} : { usageBlockCount }),
+          },
+        };
+      });
       gatewayBridgeEvents.queueToken("", {
         round,
         provider: projected.provider,
         model: projected.model,
         api: projected.api,
         stopReason: projected.stopReason,
-        usage: projected.usage,
+        usage: finalUsage,
       });
       if (projected.errorMessage) gatewayBridgeEvents.emitError(projected.errorMessage);
       let state = appendMessagesToConversation(params.getNextConversationState(), [
@@ -489,11 +625,17 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
           ? goalState
           : undefined;
       if (nextRound?.next_client_request_id) {
-        // 把刚完成的一轮落进转录区，并先显示后端为下一轮写入的用户消息。
+        // 把刚完成的一轮落进转录区，并先显示后端为下一轮写入的用户消息。这条消息
+        // 是后端写的，按通知显示，与历史回读（origin background）一致。
         params.settleLiveTranscript(transcriptStore);
         params.applyConversationState(
           appendMessagesToConversation(state, [
-            { role: "user", content: nextRound.next_prompt ?? "", timestamp: Date.now() },
+            {
+              role: "user",
+              content: nextRound.next_prompt ?? "",
+              timestamp: Date.now(),
+              liveAgentBackgroundNotice: true,
+            } as Message,
           ]),
         );
         hookLifecycle.ensureMessageEnded();
@@ -529,7 +671,9 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
         publish: publishGoalState,
       });
     }
+    noteKBrainSubagentTurnEnded(params.conversationId);
     approvalController.abort();
+    clearMcpElicitationsForConversation(params.conversationId);
     cancellation.userStop.signal.removeEventListener("abort", cancelApprovals);
     status(null);
     hookLifecycle.ensureMessageEnded();

@@ -121,6 +121,7 @@ import type {
 } from "../gatewayDeviceDraftRecovery";
 import { isLocalDraftConversationId } from "../gatewayLocalDraft";
 import type { SendChatFn } from "../types";
+import { WebGoalBarHost } from "../WebGoalBarHost";
 import { resolveWorkbenchComposerInputDisabled } from "./composerInputState";
 
 type ChatQueueSnapshotLike = Parameters<
@@ -1148,6 +1149,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
     usePrimary && primary?.onJumpToBottom ? primary.onJumpToBottom : paneFollow.jumpToBottom;
   const transcriptTree = (
     <GatewayTranscript
+      expandProcessByDefault={context.settings.customSettings.chatTranscript.expandProcessByDefault}
       conversationId={conversationId}
       rows={transcript.rows}
       liveStartIndex={transcript.liveStartIndex}
@@ -1351,6 +1353,21 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
                 : composerScopeId
                   ? undefined
                   : backgroundCommandHost
+            }
+            goalBar={
+              <WebGoalBarHost
+                key={`goal-${conversationId}`}
+                conversationId={isDraft ? undefined : conversationId}
+                client={context.api}
+                commandHost={
+                  usePrimary && primary
+                    ? primary.commandHost
+                    : composerScopeId
+                      ? undefined
+                      : backgroundCommandHost
+                }
+                running={usePrimary ? (primary?.isSending ?? isRunning) : isRunning}
+              />
             }
             executionMode={context.settings.system.executionMode}
             hasModels={context.hasModels}

@@ -1,0 +1,13 @@
+diff --git a/internal/backend/run_options.go b/internal/backend/run_options.go
+index a3ecad5c8e520c12b7e1693d2c7dafc3743a0d83..a579234bd0cf2bead2c59d34ddeaa4ced40213fe 100644
+--- a/internal/backend/run_options.go
++++ b/internal/backend/run_options.go
+@@ -165,7 +165,7 @@ func applyRunOptionsWith(a *agent.Agent, options protocol.RunOptions, extra []to
+ 		available = append(append(a.AvailableTools(), extra...), chatTools...)
+ 	}
+ 
+-	if options.PlanModeEnabled {
++	if options.Mode != "chat" && options.PlanModeEnabled {
+ 		available = append(available, exitPlanModeTool())
+ 	}
+ 	if options.Tools != nil {

@@ -196,6 +196,7 @@ macro_rules! app_invoke_handler {
             commands::settings::settings_list_cherry_studio_providers,
             commands::settings::settings_list_cherry_studio_providers_from_path,
             commands::settings::settings_reset_ssh_known_host,
+            commands::settings::settings_kbrain_ssh_state,
             commands::settings::settings_reveal_stt_secret,
             services::stt::settings_test_stt,
             services::stt::stt_request_microphone_permission,
@@ -1274,7 +1275,14 @@ pub fn run() {
                 configure_windows_window_chrome(app)?;
                 #[cfg(target_os = "macos")]
                 install_fullscreen_exit_observer(app, hide_after_fullscreen_exit)?;
+                #[cfg(target_os = "macos")]
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                    runtime::webview_background::keep_webview_live_when_covered(&window);
+                }
                 app.manage(services::proxy::start_proxy_server()?);
+                if let Some(backend) = app.try_state::<Arc<services::kbrain_backend::KBrainBackendState>>() {
+                    services::kbrain_ssh_sync::install(Arc::clone(backend.inner()));
+                }
                 start_account_session_lifecycle(app.handle());
                 // 浏览器扩展同步到 ~/.zeroagent/extension：Chrome 加载解压
                 // 扩展记录绝对路径，必须给一个不随应用更新变化的目录。

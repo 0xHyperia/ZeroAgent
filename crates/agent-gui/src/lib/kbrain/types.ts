@@ -1,3 +1,4 @@
+import type { KBrainQuestionAnswerPayload } from "@liveagent/ui/lib/chat/askUserQuestion";
 import type { CustomProvider, ProviderModelConfig } from "../settings";
 
 export const KBRAIN_PROTOCOL_VERSION = "kbrain.agent.v1" as const;
@@ -84,22 +85,51 @@ export type KBrainMessage = {
   hosted_search?: KBrainHostedSearch[];
   stop_reason?: string;
   created_at?: string;
+  /** "background" on a user-role notice K-brain delivered on its own (a wait result, a process exit). */
+  origin?: string;
 };
 
-export type KBrainToolCall = {
-  id: string;
-  name: string;
-  arguments: unknown;
+/** 调用如何运行（仅展示用，均可缺省）：命令类工具的退出码、是否超时，工具自身耗时。 */
+export type KBrainToolRunInfo = {
+  exit_code?: number;
+  timed_out?: boolean;
+  duration_ms?: number;
 };
 
-export type KBrainToolResult = {
-  content?: KBrainContentBlock[];
-  id: string;
-  name?: string;
-  output: string;
-  failed?: boolean;
-  cancelled?: boolean;
+/**
+ * The answers recorded on a `question` / `AskUserQuestion` call (Stack-Cairn/K-brain#168),
+ * in history `tool_calls[]` and on `tool.result`; the same shape as
+ * `question.resolved.answers`. Display only; absent for timed-out or cancelled questions
+ * and on older backends.
+ */
+export type KBrainQuestionAnswers = {
+  question_answers?: KBrainQuestionAnswer[];
 };
+
+/**
+ * MCP form elicitations of a tool call (Stack-Cairn/K-brain#174): K-brain's records with
+ * sensitive values already removed. Parsed by the shared mcpElicitation module.
+ */
+export type KBrainToolElicitations = { elicitations?: unknown[] };
+
+export type KBrainToolCall = KBrainToolRunInfo &
+  KBrainQuestionAnswers &
+  KBrainToolElicitations & {
+    id: string;
+    name: string;
+    arguments: unknown;
+  };
+
+export type KBrainToolResult = KBrainToolRunInfo &
+  KBrainQuestionAnswers &
+  KBrainToolElicitations & {
+    content?: KBrainContentBlock[];
+    id: string;
+    name?: string;
+    output: string;
+    failed?: boolean;
+    cancelled?: boolean;
+  };
 
 export type KBrainQuestionOption = {
   label: string;
@@ -123,11 +153,11 @@ export type KBrainQuestionRequest = {
   questions: KBrainQuestion[];
 };
 
-export type KBrainQuestionAnswer = {
-  question_id: string;
-  selected_label: string;
-  custom?: boolean;
-};
+/**
+ * One answer to `question.requested`. `selected_labels` needs capability
+ * `question_selected_labels`; the client downgrades it for older backends.
+ */
+export type KBrainQuestionAnswer = KBrainQuestionAnswerPayload;
 
 export type KBrainHostedSearch = {
   type: "hostedSearch";
@@ -287,10 +317,30 @@ export type KBrainSubagent = {
   started_at?: string;
   updated_at?: string;
   ended_at?: string;
+  /** The parent's `subagent` tool call that started it (backends with subagent_transcripts). */
+  parent_tool_call_id?: string;
+  background?: boolean;
+  usage?: KBrainUsage;
+  tool_count?: number;
+  duration_ms?: number;
 };
 
 export type KBrainSubagentEvent = {
   subagent: KBrainSubagent;
+};
+
+/** GET /v1/sessions/{id}/subagents */
+export type KBrainSubagentList = {
+  subagents?: KBrainSubagent[];
+  last_seq?: number;
+};
+
+/** GET /v1/sessions/{id}/subagents/{task}: the transcript so far. */
+export type KBrainSubagentTranscript = {
+  subagent: KBrainSubagent;
+  messages?: KBrainMessage[];
+  last_seq?: number;
+  live?: boolean;
 };
 
 export type KBrainCreateSessionRequest = {
@@ -306,6 +356,8 @@ export type KBrainUpdateSessionRequest = {
   model?: KBrainModelRef;
   /** Moves the session to another workspace (absolute path to an existing directory). */
   cwd?: string;
+  /** Hides the session from the default list (capability `session_archive`). */
+  archived?: boolean;
 };
 
 export type KBrainRunOptions = {
@@ -324,6 +376,37 @@ export type KBrainRunOptions = {
   sandbox?: import("@liveagent/ui/lib/chat/permissionModes").KBrainRunSandbox;
   /** Desktop-executed tools offered to the model for this run (e.g. Browser). */
   client_tools?: KBrainClientToolDefinition[];
+  /**
+   * Relay MCP form elicitations to this client (`elicitation.*` events). Sent only when
+   * K-brain advertises capability mcp_elicitation: older backends reject unknown options.
+   */
+  mcp_elicitation?: boolean;
+  /**
+   * MCP servers K-brain may offer in this run. Omitted means K-brain's saved
+   * selection (or every enabled server); an empty list means the same, so "no
+   * server" is sent as an id that matches none (KBRAIN_NO_MCP_SERVERS).
+   */
+  mcp_server_ids?: string[];
+};
+
+/** `capabilities.run_sandbox` in /v1/health; every field may be absent on older backends. */
+export type KBrainRunSandboxCapability = {
+  supported?: boolean;
+  version?: string;
+  mechanism?: string;
+  platform?: string;
+  network_control?: boolean;
+  read_masking?: boolean;
+  path_protection?: boolean;
+  modes?: string[];
+  reason?: string;
+  /**
+   * Windows (capability `sandbox_setup` 1): `POST /v1/sandbox/setup` can install the
+   * sandbox accounts that let the offline sandbox cut the network.
+   */
+  setup_available?: boolean;
+  /** Short English text for the user about setup; empty once `sandbox-user` works. */
+  setup_hint?: string;
 };
 
 export type KBrainClientToolDefinition = {

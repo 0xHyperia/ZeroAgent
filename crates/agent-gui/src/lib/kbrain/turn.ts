@@ -7,22 +7,48 @@ import type {
 } from "@liveagent/app/lib/agentTypes";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import {
+  ASK_USER_QUESTION_DEADLINE_ARG,
+  ASK_USER_QUESTION_TOOL_NAME,
+  KBRAIN_QUESTION_TOOL_NAME,
+  TOOL_QUESTION_ARG,
+} from "@liveagent/ui/lib/chat/askUserQuestion";
+import {
   type HostedSearchBlock,
   normalizeHostedSearchBlock,
 } from "@liveagent/ui/lib/chat/hostedSearch";
+import {
+  MCP_ELICITATION_SYNTHETIC_ARG_PREFIX,
+  type McpElicitationAction,
+  type McpElicitationContent,
+  type McpElicitationRecord,
+  type McpElicitationRequest,
+  type McpElicitationSubmitOutcome,
+  parseMcpElicitationRecord,
+  parseMcpElicitationRequest,
+  withMcpElicitationDetails,
+} from "@liveagent/ui/lib/chat/mcpElicitation";
 import {
   encodeRunProgress,
   parseRunProgress,
   type RunProgress,
 } from "@liveagent/ui/lib/chat/runProgress";
 import { taskResultDetails } from "@liveagent/ui/lib/chat/taskProgress";
+import { withToolRunInfo } from "@liveagent/ui/lib/chat/toolRunInfo";
 import type { Locale } from "../../i18n/config";
 import type { ConversationViewState } from "../chat/conversation/conversationState";
 import { appendMessagesToConversation } from "../chat/conversation/conversationState";
 import { createKBrainClient } from "./client";
+import { hookWarningNotice, parseHookWarning } from "./hookWarning";
 import { getKBrainSessionId, setKBrainSessionId } from "./mapping";
-import { questionResultDetails } from "./questions";
+import {
+  KBRAIN_QUESTION_ORIGINAL_ARGUMENTS_ARG,
+  kbrainToolResultName,
+  normalizeKBrainQuestionToolCall,
+  originalKBrainToolCall,
+  questionResultDetails,
+} from "./questions";
 import { aiReviewTitle, localizeAIReviewReason } from "./reviewNotice";
+import { isSubagentEventType } from "./subagentEvents";
 import { displayImageResultDetails, kbrainToolImages } from "./toolImages";
 import type {
   KBrainClientToolRequest,
@@ -39,7 +65,9 @@ import type {
   KBrainSubagent,
   KBrainToolCall,
   KBrainToolResult,
+  KBrainUsage,
 } from "./types";
+import { hasKBrainUsage, kbrainUsage } from "./usage";
 
 type CanonicalInputPart = {
   type: string;
@@ -84,6 +112,20 @@ function isSyntheticSubagentId(id: string) {
   return id.startsWith("kbrain-subagent:");
 }
 
+// The live transcript shows MCP forms through synthetic arguments; they are not the
+// model's and never go back to K-brain.
+function withoutElicitationArgs(args: ToolCall["arguments"]): ToolCall["arguments"] {
+  if (
+    !args ||
+    !Object.keys(args).some((key) => key.startsWith(MCP_ELICITATION_SYNTHETIC_ARG_PREFIX))
+  ) {
+    return args;
+  }
+  return Object.fromEntries(
+    Object.entries(args).filter(([key]) => !key.startsWith(MCP_ELICITATION_SYNTHETIC_ARG_PREFIX)),
+  );
+}
+
 function canonicalMessage(message: Message): KBrainMessage | null {
   if (message.role === "user") {
     const id = (message as Message & { id?: unknown }).id;
@@ -109,7 +151,7 @@ function canonicalMessage(message: Message): KBrainMessage | null {
         .map((call) => ({
           id: call.id,
           name: call.name,
-          arguments: call.arguments,
+          arguments: withoutElicitationArgs(call.arguments),
         })),
       model: message.model,
       provider: message.provider,
@@ -132,9 +174,22 @@ export function contextToKBrainMessages(context: Context): KBrainMessage[] {
       role: "system",
       content: [{ type: "text", text: context.systemPrompt }],
     });
+  // K-brain `question` calls show as AskUserQuestion; send them back under their own name.
+  const renamed = new Set<string>();
   for (const message of context.messages) {
     const canonical = canonicalMessage(message);
-    if (canonical) messages.push(canonical);
+    if (!canonical) continue;
+    for (const call of canonical.tool_calls ?? []) {
+      const original = originalKBrainToolCall(call as Pick<ToolCall, "name" | "arguments">);
+      if (original.name === call.name) continue;
+      call.name = original.name;
+      call.arguments = original.arguments;
+      renamed.add(call.id);
+    }
+    if (canonical.role === "tool" && renamed.has(canonical.tool_call_id ?? "")) {
+      canonical.name = KBRAIN_QUESTION_TOOL_NAME;
+    }
+    messages.push(canonical);
   }
   return messages;
 }
@@ -159,6 +214,8 @@ export type KBrainPermissionRequest = {
   shell?: string;
   /** What allow_always would remember, from backends with permission_rules. */
   suggestion?: { rules: string[]; default_scope?: string };
+  /** The change a file tool will make; diff rows are "<line> <mark> <text>". */
+  preview?: { path: string; diff?: string; new_file?: boolean; truncated?: boolean };
 };
 
 /** The answer to a permission request: a bare decision, or one with the remember
@@ -177,6 +234,12 @@ export type KBrainPermissionAutoResolved = {
   scope?: string;
 };
 
+/** Posts the answer to an MCP elicitation; resolves with K-brain's verdict (400 keeps it open). */
+export type KBrainElicitationAnswer = (
+  action: McpElicitationAction,
+  content?: McpElicitationContent,
+) => Promise<McpElicitationSubmitOutcome>;
+
 export type KBrainTurnParams = {
   locale?: Locale;
   conversationId: string;
@@ -194,6 +257,13 @@ export type KBrainTurnParams = {
   /** 命令运行中的输出尾部快照（整体替换，非增量）；结果到达后不再回调。 */
   onToolOutput?: (toolCallId: string, output: string) => void;
   onSubagent?: (subagent: KBrainSubagent) => void;
+  /**
+   * `usage.updated`: the token usage of the model call that just finished. Fires once
+   * per model call during the run, before that call's tools run.
+   */
+  onUsage?: (usage: AssistantMessage["usage"]) => void;
+  /** Every `subagent.*` and `trajectory.child.*` event, from any run of the session. */
+  onSubagentEvent?: (event: KBrainEvent) => void;
   onStatus?: (status: string | null) => void;
   content?: KBrainContentBlock[];
   onQuestionRequest?: (
@@ -207,6 +277,18 @@ export type KBrainTurnParams = {
     refusal?: string,
   ) => Promise<KBrainPermissionAnswer>;
   onPermissionAutoResolved?: (resolved: KBrainPermissionAutoResolved) => void;
+  /**
+   * An MCP server asked the user to fill in a form (`elicitation.requested`). Setting this
+   * also asks K-brain to relay elicitations (option mcp_elicitation), when it can. The
+   * signal aborts when the request is resolved or the run ends.
+   */
+  onElicitationRequest?: (
+    request: McpElicitationRequest,
+    answer: KBrainElicitationAnswer,
+    signal: AbortSignal,
+  ) => void;
+  /** `elicitation.resolved`: exactly one per request; sensitive values already removed. */
+  onElicitationResolved?: (toolCallId: string, record: McpElicitationRecord) => void;
   applyConversationState?: (state: ConversationViewState) => void;
   getConversationState?: () => ConversationViewState;
   baseUrl?: string;
@@ -258,28 +340,36 @@ function waitMs(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 function usage(message?: KBrainMessage): AssistantMessage["usage"] {
-  const value = message?.usage;
-  const input = value?.input_tokens ?? 0;
-  const output = value?.output_tokens ?? 0;
-  const cacheRead = value?.cached_tokens ?? 0;
-  const cacheWrite = value?.cache_write_tokens ?? 0;
-  return {
-    input,
-    output,
-    cacheRead,
-    cacheWrite,
-    totalTokens: input + output,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
+  return kbrainUsage(message?.usage);
+}
+
+/** The call without the question a running tool asked (see {@link TOOL_QUESTION_ARG}). */
+export function withoutToolQuestion(call: ToolCall): ToolCall {
+  if (!(TOOL_QUESTION_ARG in (call.arguments ?? {}))) return call;
+  const {
+    [TOOL_QUESTION_ARG]: _question,
+    [ASK_USER_QUESTION_DEADLINE_ARG]: _deadline,
+    ...rest
+  } = call.arguments;
+  return { ...call, arguments: rest };
+}
+
+/** A question asked by a running tool other than AskUserQuestion / K-brain's question. */
+export function isToolOwnedQuestion(call: ToolCall | undefined): call is ToolCall {
+  return (
+    call !== undefined &&
+    call.name !== ASK_USER_QUESTION_TOOL_NAME &&
+    call.name !== KBRAIN_QUESTION_TOOL_NAME
+  );
 }
 
 function toolCall(call: KBrainToolCall): ToolCall {
-  return {
+  return normalizeKBrainQuestionToolCall({
     type: "toolCall",
     id: call.id,
     name: call.name,
     arguments: (call.arguments ?? {}) as Record<string, unknown>,
-  };
+  });
 }
 
 function toolResult(
@@ -293,12 +383,24 @@ function toolResult(
   return {
     role: "toolResult",
     toolCallId: result.id,
-    toolName: result.name ?? "tool",
+    toolName: kbrainToolResultName(result.name),
     content: [{ type: "text", text: result.output }, ...images.content],
-    details:
-      questionResultDetails(result.name, result.output) ??
-      taskResultDetails(result.name, call?.arguments, result, runId, revision) ??
-      displayImageResultDetails(result.name, images.images, isError),
+    details: withMcpElicitationDetails(
+      withToolRunInfo(
+        result.name,
+        questionResultDetails(
+          result.name,
+          result.output,
+          call?.arguments,
+          isError,
+          result.question_answers,
+        ) ??
+          taskResultDetails(result.name, call?.arguments, result, runId, revision) ??
+          displayImageResultDetails(result.name, images.images, isError),
+        result,
+      ),
+      result.elicitations,
+    ),
     isError,
     timestamp: Date.now(),
   };
@@ -547,6 +649,12 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       await waitMs(goalAttachPollMs, params.signal);
     }
   };
+  // Ask K-brain to relay MCP form elicitations only when this turn can show them; the client
+  // drops the option unless the backend advertises the capability (older backends reject it).
+  const runOptions: KBrainRunOptions | undefined =
+    params.onElicitationRequest && !params.attachClientRequestId
+      ? { ...params.options, mcp_elicitation: true }
+      : params.options;
   const startRun = async () => {
     if (params.attachClientRequestId) return attachRun();
     const run = {
@@ -555,7 +663,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       prompt: params.prompt,
       ...(promptContent.length ? { content: promptContent } : {}),
       model,
-      ...(params.options ? { options: params.options } : {}),
+      ...(runOptions ? { options: runOptions } : {}),
       ...(params.hook_policy ? { hook_policy: params.hook_policy } : {}),
       ...(params.hook_scope_id ? { hook_scope_id: params.hook_scope_id } : {}),
       ...(resumeMessageId ? { resume_message_id: resumeMessageId } : {}),
@@ -629,9 +737,19 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
   let permissionFailure: Error | undefined;
   const pendingPermissions = new Map<string, AbortController>();
   const pendingQuestions = new Map<string, AbortController>();
+  // question.resolved carries the exact answers (custom flags included); the later
+  // tool.result of K-brain's `question` tool is only text, so its card keeps these.
+  const resolvedQuestionResults = new Map<string, ToolResultMessage>();
   const pendingClientTools = new Map<string, AbortController>();
   // Never cleared: replayed events after a reconnect must not run the same action twice.
   const handledClientTools = new Set<string>();
+  // MCP elicitations waiting for the user, and every one seen (requested or resolved), so a
+  // replayed request never reopens a form that was already answered.
+  const pendingElicitations = new Map<
+    string,
+    { controller: AbortController; request: McpElicitationRequest }
+  >();
+  const seenElicitations = new Set<string>();
   const streamAbortController = new AbortController();
   const cancelPendingPermissions = () => {
     for (const controller of pendingPermissions.values()) controller.abort();
@@ -640,6 +758,8 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     pendingQuestions.clear();
     for (const controller of pendingClientTools.values()) controller.abort();
     pendingClientTools.clear();
+    for (const pending of pendingElicitations.values()) pending.controller.abort();
+    pendingElicitations.clear();
   };
   const abortStream = () => streamAbortController.abort();
   params.signal.addEventListener("abort", abortStream, { once: true });
@@ -654,6 +774,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         `ZeroAgent engine event sequence gap: expected ${afterSeq + 1}, got ${event.seq}`,
       );
     afterSeq = event.seq;
+    if (isSubagentEventType(event.type)) params.onSubagentEvent?.(event);
     // Session streams can include background tasks started by an earlier run.
     if (event.run_id !== accepted.run_id && !event.type.startsWith("subagent.")) return;
     if (reconnecting) {
@@ -707,18 +828,25 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       case "tool.result": {
         const payload = eventPayload<{ tool_result?: KBrainToolResult }>(event);
         if (!payload?.tool_result) break;
-        const result = toolResult(
+        const computed = toolResult(
           payload.tool_result,
           calls.get(payload.tool_result.id),
           event.run_id,
           event.seq,
         );
-        const call = calls.get(result.toolCallId) ?? {
-          type: "toolCall",
-          id: result.toolCallId,
-          name: result.toolName,
-          arguments: {},
-        };
+        const resolvedQuestion = resolvedQuestionResults.get(computed.toolCallId);
+        const result =
+          resolvedQuestion?.details && !computed.isError
+            ? { ...computed, details: resolvedQuestion.details }
+            : computed;
+        const call = withoutToolQuestion(
+          calls.get(result.toolCallId) ?? {
+            type: "toolCall",
+            id: result.toolCallId,
+            name: result.toolName,
+            arguments: {},
+          },
+        );
         settledCalls.add(result.toolCallId);
         params.onToolResult(call, result);
         break;
@@ -726,6 +854,14 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       case "assistant.message.created":
         finalMessage = eventPayload<KBrainMessage>(event);
         break;
+      case "usage.updated": {
+        // One report per model call, after its stream and before its tool calls run.
+        // Replayed events after a reconnect arrive here again in order, so the latest
+        // report always wins.
+        const reported = eventPayload<KBrainUsage>(event);
+        if (hasKBrainUsage(reported)) params.onUsage?.(kbrainUsage(reported));
+        break;
+      }
       case "goal.updated": {
         const state = eventPayload<KBrainGoalState>(event);
         if (state?.conversation_id === kbrainSessionId) params.onGoalUpdate?.(state);
@@ -771,6 +907,21 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         }
         break;
       }
+      case "hook.warning": {
+        // A failing hook does not stop the run, so without this the user never learns
+        // their hook is broken. One toast per hook and turn: a hook bound to a per-tool
+        // event updates the same toast instead of stacking one per call.
+        const warning = parseHookWarning(eventPayload<unknown>(event));
+        if (warning) {
+          const notice = hookWarningNotice(warning, params.locale);
+          toast.warning(notice.title, {
+            description: notice.description,
+            id: `hook-warning-${params.conversationId}-${accepted.run_id}-${warning.hookName}`,
+            duration: 15000,
+          });
+        }
+        break;
+      }
       case "tool.status": {
         const payload = eventPayload<{
           tool_call_id?: string | null;
@@ -805,15 +956,35 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         if (request.run_id !== accepted.run_id || !request.question_id || !request.tool_call_id)
           throw new Error("Question identity mismatch");
         if (pendingQuestions.has(request.question_id)) break;
-        const call: ToolCall = {
-          type: "toolCall",
-          id: request.tool_call_id,
-          name: "AskUserQuestion",
-          arguments: {
-            questions: request.questions,
-            __askUserQuestionDeadlineAt: request.deadline_at,
-          },
-        };
+        const previousCall = calls.get(request.tool_call_id);
+        const previous = previousCall?.arguments ?? {};
+        // A running tool asking its own question (SSHManager confirming a host key) keeps
+        // its name and arguments: the question rides along until it resolves, and the
+        // tool's real result follows.
+        const call: ToolCall = isToolOwnedQuestion(previousCall)
+          ? {
+              ...previousCall,
+              arguments: {
+                ...previous,
+                [TOOL_QUESTION_ARG]: { questions: request.questions },
+                [ASK_USER_QUESTION_DEADLINE_ARG]: request.deadline_at,
+              },
+            }
+          : {
+              type: "toolCall",
+              id: request.tool_call_id,
+              name: "AskUserQuestion",
+              arguments: {
+                questions: request.questions,
+                __askUserQuestionDeadlineAt: request.deadline_at,
+                ...(previous[KBRAIN_QUESTION_ORIGINAL_ARGUMENTS_ARG] !== undefined
+                  ? {
+                      [KBRAIN_QUESTION_ORIGINAL_ARGUMENTS_ARG]:
+                        previous[KBRAIN_QUESTION_ORIGINAL_ARGUMENTS_ARG],
+                    }
+                  : {}),
+              },
+            };
         calls.set(call.id, call);
         params.onToolCall(call);
         pendingQuestions.set(request.question_id, questionController);
@@ -849,22 +1020,71 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
           pendingQuestions.get(resolution.question_id)?.abort();
           pendingQuestions.delete(resolution.question_id);
           const call = calls.get(resolution.tool_call_id);
-          if (call)
-            params.onToolResult(
+          if (call && TOOL_QUESTION_ARG in call.arguments) {
+            // The tool goes on running; only the question card goes away.
+            const settled = withoutToolQuestion(call);
+            calls.set(settled.id, settled);
+            if (!settledCalls.has(settled.id)) params.onToolCall(settled);
+          } else if (call) {
+            const resolved = toolResult(
+              {
+                id: call.id,
+                name: "AskUserQuestion",
+                output: JSON.stringify(resolution),
+              },
               call,
-              toolResult(
-                {
-                  id: call.id,
-                  name: "AskUserQuestion",
-                  output: JSON.stringify(resolution),
-                },
-                call,
-                event.run_id,
-                event.seq,
-              ),
+              event.run_id,
+              event.seq,
             );
+            resolvedQuestionResults.set(call.id, resolved);
+            params.onToolResult(call, resolved);
+          }
         }
         reportStatus(null);
+        break;
+      }
+      case "elicitation.requested": {
+        const request = parseMcpElicitationRequest(eventPayload<unknown>(event));
+        const onElicitationRequest = params.onElicitationRequest;
+        // Without a callback the option was never sent; K-brain declines on its own.
+        if (!request || !onElicitationRequest) break;
+        if (request.runId && request.runId !== accepted.run_id) break;
+        if (!request.toolCallId || seenElicitations.has(request.elicitationId)) break;
+        seenElicitations.add(request.elicitationId);
+        const controller = new AbortController();
+        pendingElicitations.set(request.elicitationId, { controller, request });
+        reportStatus("Waiting for your answer…");
+        const answer: KBrainElicitationAnswer = (action, content) =>
+          controller.signal.aborted
+            ? Promise.resolve({ ok: false, message: "This form is no longer pending." })
+            : client.answerElicitation(
+                kbrainSessionId,
+                request.elicitationId,
+                accepted.run_id,
+                action,
+                content,
+              );
+        onElicitationRequest(request, answer, controller.signal);
+        break;
+      }
+      case "elicitation.resolved": {
+        const payload = eventPayload<Record<string, unknown>>(event);
+        const elicitationId =
+          typeof payload?.elicitation_id === "string" ? payload.elicitation_id : "";
+        const toolCallId = typeof payload?.tool_call_id === "string" ? payload.tool_call_id : "";
+        if (!payload || !elicitationId || !toolCallId) break;
+        const pending = pendingElicitations.get(elicitationId);
+        pending?.controller.abort();
+        pendingElicitations.delete(elicitationId);
+        seenElicitations.add(elicitationId);
+        // The resolved event has no fields: take them from the request, so the summary can
+        // label values (and drop any value of a sensitive field).
+        const record = parseMcpElicitationRecord({
+          ...payload,
+          fields: payload.fields ?? pending?.request.fields,
+        });
+        if (record) params.onElicitationResolved?.(toolCallId, record);
+        if (pendingElicitations.size === 0) reportStatus(null);
         break;
       }
       case "client_tool.requested": {

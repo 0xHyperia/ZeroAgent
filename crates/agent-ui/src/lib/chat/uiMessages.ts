@@ -9,6 +9,8 @@ import type {
 import {
   ASK_USER_QUESTION_DEADLINE_ARG,
   ASK_USER_QUESTION_PENDING_ARG,
+  KBRAIN_QUESTION_ORIGINAL_ARGUMENTS_ARG,
+  TOOL_QUESTION_ARG,
 } from "@liveagent/ui/lib/chat/askUserQuestion";
 import { estimateThinkingReplayTokenUnits } from "@liveagent/ui/lib/chat/contextUsage";
 import {
@@ -19,6 +21,8 @@ import {
   resolveHostedSearchTextBoundary,
   splitTextAroundHostedSearch,
 } from "@liveagent/ui/lib/chat/hostedSearch";
+import { summarizeKBrainToolArgs } from "@liveagent/ui/lib/chat/kbrainToolSummaries";
+import { MCP_ELICITATION_SYNTHETIC_ARG_KEYS } from "@liveagent/ui/lib/chat/mcpElicitation";
 import {
   EXIT_PLAN_MODE_APPROVED_ARG,
   EXIT_PLAN_MODE_PENDING_ARG,
@@ -110,6 +114,8 @@ export type UiRound = {
     outcome?: string;
     durationMs?: number;
     contextRelevant?: boolean;
+    /** Leading blocks a mid-run usage report already covers (see contextUsage). */
+    usageBlockCount?: number;
   };
 };
 
@@ -519,7 +525,7 @@ export function summarizeToolCall(
                                               ? summarizeLspToolCall(args)
                                               : name === "web_fetch" || name === "WebFetch"
                                                 ? summarizeWebFetchToolCall(args)
-                                                : [];
+                                                : (summarizeKBrainToolArgs(name, args) ?? []);
 
   const summary = parts.filter(Boolean).join(" ");
   if (!summary) return includeName ? name : "";
@@ -629,8 +635,11 @@ const DISPLAY_SYNTHETIC_ARG_KEYS = new Set([
   TOOL_APPROVAL_PREVIEW_ARG,
   ASK_USER_QUESTION_DEADLINE_ARG,
   ASK_USER_QUESTION_PENDING_ARG,
+  KBRAIN_QUESTION_ORIGINAL_ARGUMENTS_ARG,
+  TOOL_QUESTION_ARG,
   EXIT_PLAN_MODE_PENDING_ARG,
   EXIT_PLAN_MODE_APPROVED_ARG,
+  ...MCP_ELICITATION_SYNTHETIC_ARG_KEYS,
 ]);
 
 // 深度截断超大字符串:MCP 参数可能把超长内容嵌在数组/对象里(如批量写文件),

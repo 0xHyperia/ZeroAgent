@@ -1,0 +1,2313 @@
+{
+  "release": "v2.0.15",
+  "previous_upstream": "514ec76d6b1fa2e4dfa70a167c2bae9a7897a3fd",
+  "upstream_commit": "dab301d1e95f1d28858e9e2054deee35fddd9961",
+  "zeroagent_baseline": "d3bb9afaa6665cd64e950afa6d374185252d063f",
+  "text_conflicts": 44,
+  "counts": {
+    "adapt": 108,
+    "adopt": 199,
+    "defer": 7,
+    "partial": 8,
+    "reject": 2,
+    "replace": 4
+  },
+  "entries": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "ZeroAgent build, validation and dual-repository publishing workflow retained. The checksum download retry is applied in prepare-kbrain.mjs."
+    },
+    {
+      "path": ".github/workflows/desktop-release.yml",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "ZeroAgent build, validation and dual-repository publishing workflow retained. The checksum download retry is applied in prepare-kbrain.mjs."
+    },
+    {
+      "path": "crates/agent-gateway/internal/chatcmd/chatcmd.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/chatcmd/chatcmd_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/types.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/ai_approval_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/approval.go",
+      "upstream_change": "D",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/backend_queue.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/client.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/elicitation.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/elicitation_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/events.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/events_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/goal.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/goal_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/health.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_archive.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_archive_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_messages_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/interactive.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/interactive_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/mcp_settings_merge_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/memory_organizer_settings_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/question_tool.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/question_tool_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/queue.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/relay.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/run_sandbox_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings_contract_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/skills.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/skills_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/testdata/provider_type_cases.json",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/uploads.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/uploads_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway.pb.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Regenerated from the combined schema; checked against the pre-merge ZeroAgent WIRE_JSON baseline."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_local.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_relay.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/guard.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/guard_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/mcp_server_selection_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/server.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/internal/server/http.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Direct K-brain upload requires authentication and is restricted to isolated direct mode. Hosted routes still use account and device grants."
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/conversation_stream.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/manager_dispatch.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/internal/session/reliable_ingress_rejection_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway.proto",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_kbrain_attachments_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with ZeroAgent product identity, tests or host contract."
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/chat-command-pipeline.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/history-archive.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/history-chat-ui.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/kbrain-live-usage.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/tool-output-live.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/web-settings.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/assistantBubble.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/sandboxCapability.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Use ZeroAgent profile-scoped versioned configuration; carry new supported fields without upstream one-time imports or a second acknowledgment mechanism."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/ConversationStatsBarHost.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayApp.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/WebGoalBarHost.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/chatEventUtils.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewayConversationState.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/sidebar/GatewaySidebarContainer.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/webComposerCommandHost.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/workbench/GatewayConversationPaneHost.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/GatewayTranscript.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/goalState.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/mcpElicitationBridge.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/stream/chatCommandPipeline.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/stream/useConversationChat.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/transcript/rows.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/transcript/transcriptStore.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/transcript/turnReducer.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/transcript/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chatUi.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocket.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketRpc.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketShared.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketTransport.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketV2/adapters.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewayTypes.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_pb.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Regenerated from the combined schema; checked against the pre-merge ZeroAgent WIRE_JSON baseline."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/sidebar/webSidebarBackend.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/trajectory/liveTrajectory.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/assistant-bubble-utils.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/kbrain-question-preview.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/kbrain-settings-sync.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/mcp-elicitation.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/transcript-store.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gateway/web/test/web-goal-bar.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/commands.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/db.rs",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "Superseded development data is not automatically imported or removed under ADR 0079."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/ssh/patch.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/ssh/persistence.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/tests.rs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "Existing ZeroAgent implementation satisfies or takes precedence over this upstream change; see report for the relevant feature boundary."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/config/settings/types.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/fs.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/lib.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/mod.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/webview_background.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/chat.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/composer_action.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/controller.rs",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "Desktop host bridge awaits binding to the verified profile, workdir and revocation. Existing terminal and tunnel operations remain available."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Use ZeroAgent profile-scoped versioned configuration; carry new supported fields without upstream one-time imports or a second acknowledgment mechanism."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/history_sync.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_history.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_memory.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Use ZeroAgent profile-scoped versioned configuration; carry new supported fields without upstream one-time imports or a second acknowledgment mechanism."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/tests.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/host_bridge/mod.rs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "Desktop host bridge awaits binding to the verified profile, workdir and revocation. Existing terminal and tunnel operations remain available."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/host_bridge/registration.rs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "Desktop host bridge awaits binding to the verified profile, workdir and revocation. Existing terminal and tunnel operations remain available."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/host_bridge/tests.rs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "Desktop host bridge awaits binding to the verified profile, workdir and revocation. Existing terminal and tunnel operations remain available."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_ssh_sync.rs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/mod.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/install.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/library.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/manager.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/metadata.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/mod.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/pack_tests.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/packs.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/types.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/skills/validate.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/App.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/assistantBubble.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainMcpStatus.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSkills.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/sandboxCapability.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with ZeroAgent product identity, tests or host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/i18n/config.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/chat/conversation/conversationState.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/chat/conversation/run/gatewayBridgeEvents.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/chat/history/chatHistory.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/chat/messages/uiMessages.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/bootstrap.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "Existing ZeroAgent implementation satisfies or takes precedence over this upstream change; see report for the relevant feature boundary."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/checkpoints.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/client.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/history.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/hookWarning.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/mcp.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/questions.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/subagentEvents.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/toolPolicies.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/trajectory.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/turn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/usage.ts",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with ZeroAgent product identity, tests or host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/workspaceSkills.ts",
+      "upstream_change": "A",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Use ZeroAgent profile-scoped versioned configuration; carry new supported fields without upstream one-time imports or a second acknowledgment mechanism."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/textOnlyRuntime.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/mcpPolicyMigration.ts",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "Superseded development data is not automatically imported or removed under ADR 0079."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/settings/storage.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "Use ZeroAgent profile-scoped versioned configuration; carry new supported fields without upstream one-time imports or a second acknowledgment mechanism."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/sidebar/guiSidebarBackend.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/kbrainPane.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/kbrainSubagentStore.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/kbrainSubagentTranscript.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/kbrainSubagentView.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/askUserQuestionTools.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/lib/tools/mcpElicitations.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/main.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "Existing ZeroAgent implementation satisfies or takes precedence over this upstream change; see report for the relevant feature boundary."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/ChatPage.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/components/KBrainCheckpointRewindProvider.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": true,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/composer/useComposerHistoryPrompts.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/composer/useKBrainComposerSkills.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/chatRuntimeSnapshot.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayBridgeTypes.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayComposerActions.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/gatewayHistoryActions.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/useGatewayBridgeListeners.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/queue/useChatTurnQueue.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/modelSelection.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/sidebar/ChatSidebarContainer.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/subagents/KBrainSubagentPaneHost.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/surfaces/ConversationPaneHost.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/TranscriptList.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/UserMessageRow.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/rowModel.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/useViewportClientSize.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/gatewayToolPreview.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/runAgentConversationTurn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/runKBrainConversationTurn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/activity-disclosure-state.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/ask-user-question-card.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/background-notice-message.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/code-highlight-throttle.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/command-safety-mode-selector.test.mjs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "Superseded selector fixture stays removed. Sandbox, permission mode and offline setup tests cover the current component and preserve full access separately."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/concise-tool-titles.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/edit-diff-view.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-bridge-events.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-bridge-listeners.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-composer-actions.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-history-actions.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-approval-ui.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-bootstrap.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-bridge-checkpoint-share.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-bridge-live-output.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-composer-commands-backend.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-host-bridge-tool-rows.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-live-usage.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-running-tool-single-row.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-session-archive.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-ssh-manager-display.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-subagent-card.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-subagent-control.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-tool-cards.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-tool-policies.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/lazy-collapse.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/mcp-elicitation-card.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/model-selection.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/offline-sandbox-setup.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/permission-modes-backend.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/permission-modes.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Preserve distinct full access and always allow; add the gated offline sandbox setup and path-protection checks."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/process-disclosure-default.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/review-la2b-approval-card-r4.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/streaming-markdown-blocks.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/tool-approval-card.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/chat/tool-argument-display.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/i18n/shared-translations.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-hook-warning.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-mcp-elicitation.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-mcp-settings-sync.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-provider-type.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-question-answer.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-question-selected-labels-backend.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-question-tool.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-reconnect.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-subagents.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-tool-owned-question.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-workspace-resources-sync.test.mjs",
+      "upstream_change": "A",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "Use ZeroAgent profile-scoped versioned configuration; carry new supported fields without upstream one-time imports or a second acknowledgment mechanism."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/host-bridge-status.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "Desktop host bridge awaits binding to the verified profile, workdir and revocation. Existing terminal and tunnel operations remain available."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/memory-organizer-schedule.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/settings/normalization.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-gui/test/skills/skill-packs.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-gui/test/system/default-time-zone.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/Markdown.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ArchivedConversationsModal.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/AskUserQuestionCard.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/BackgroundNoticeMessage.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebar.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarRows.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarTypes.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/CommandSafetyModeSelector.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Preserve distinct full access and always allow; add the gated offline sandbox setup and path-protection checks."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerGoalBar.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/EditDiffView.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/LazyCollapse.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/McpElicitationCard.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposerModel.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposerOverlays.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/OfflineSandboxSetupDialog.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ToolApprovalBar.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/RoundContent.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/SshManagerResult.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/SubagentToolCard.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ThinkingDisclosure.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolCallItem.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolElicitations.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolResultDisplay.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/ToolTraceGroup.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/assistantBubbleUtils.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/conciseToolTarget.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/collapseBodySource.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/processDisclosure.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/components/subagents/SubagentPane.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/contracts/chatEntry.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/contracts/subagentPane.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSCommon.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNCommon.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/askUserQuestion.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/conciseText.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/contextUsage.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/diffRows.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/kbrainToolSummaries.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/mcpElicitation.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/modelConfigRejection.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/sshManagerDisplay.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/subagentControlTools.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/toolApprovalArgs.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with ZeroAgent product identity, tests or host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/toolRunInfo.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/uiMessages.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/kbrain/health.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with ZeroAgent product identity, tests or host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/kbrain/sandboxSetup.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/markdownCodeHighlight.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/providers/providerCapabilities.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with ZeroAgent product identity, tests or host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/resourceHost.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/sync.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/themeAndMemory.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/backend.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/store.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/types.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/useSidebarArchive.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/skills/index.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/skills/packs.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/streamingMarkdownBlocks.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/tools/builtinToolCatalog.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/tools/hostBridgeStatus.ts",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "Desktop host bridge awaits binding to the verified profile, workdir and revocation. Existing terminal and tunnel operations remain available."
+    },
+    {
+      "path": "crates/agent-ui/src/lib/transcript-virtual/rowEstimates.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/mcp-hub/McpHubPage.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/mcp-hub/McpServerCard.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/mcp-hub/McpServersForm.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/mcp-hub/useMcpRuntimeStatus.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SshAgentState.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SshSection.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SystemToolsSection.tsx",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "Desktop host bridge awaits binding to the verified profile, workdir and revocation. Existing terminal and tunnel operations remain available."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemoryOrganizerSchedule.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemoryPanel.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/MemorySettingsDrawer.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/memory/panelModel.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/skills-hub/InstalledSkillCard.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/skills-hub/InstalledSkillsView.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/skills-hub/SkillPackGroup.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/skills-hub/SkillsHubPage.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "crates/agent-ui/src/pages/skills-hub/skillScanSummary.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "docs/kbrain-permission-modes.md",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "scripts/release/kbrain.lock.json",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "Upstream implementation retained at this path."
+    },
+    {
+      "path": "scripts/release/prepare-kbrain.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    },
+    {
+      "path": "scripts/release/prepare-kbrain.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "Integrated with the existing ZeroAgent implementation and its host contract."
+    }
+  ]
+}

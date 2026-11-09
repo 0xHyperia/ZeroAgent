@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 
 use crate::commands::chat_history::{self};
-use crate::commands::settings::reset_runtime_ssh_known_host;
+use crate::commands::settings::reset_ssh_known_host_everywhere;
 use crate::services::gateway_bridge;
 use crate::services::workspace_watch::WatchSource;
 
@@ -36,8 +36,17 @@ impl GatewayController {
                     | proto::gateway_envelope::Payload::HistoryPin(_)
                     | proto::gateway_envelope::Payload::HistorySetCwd(_)
                     | proto::gateway_envelope::Payload::HistoryDelete(_)
+                    | proto::gateway_envelope::Payload::HistoryBranch(_)
+                    | proto::gateway_envelope::Payload::HistoryShareGet(_)
+                    | proto::gateway_envelope::Payload::HistoryShareSet(_)
+                    | proto::gateway_envelope::Payload::HistoryShareResolve(_)
+                    | proto::gateway_envelope::Payload::TrajectoryFetch(_)
+                    | proto::gateway_envelope::Payload::Checkpoint(_)
             )
         ) {
+            // Every desktop conversation is a K-brain session, and only the
+            // webview owns the local->backend id mapping, so these requests go
+            // through the frontend's K-brain history bridge, not the legacy store.
             let controller = Arc::clone(self);
             tauri::async_runtime::spawn(async move {
                 if let Some(payload) = envelope.payload {
@@ -816,9 +825,14 @@ impl GatewayController {
                             .await;
                     }
                 };
-                match reset_runtime_ssh_known_host(&host, port) {
-                    Ok(deleted) => {
-                        let deleted = u32::try_from(deleted).unwrap_or(u32::MAX);
+                let reset = tauri::async_runtime::spawn_blocking(move || {
+                    reset_ssh_known_host_everywhere(&host, port)
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("reset SSH known host join failed: {e}")));
+                match reset {
+                    Ok(response) => {
+                        let deleted = u32::try_from(response.deleted).unwrap_or(u32::MAX);
                         self.send_agent_envelope(proto::AgentEnvelope {
                             request_id,
                             timestamp: now_unix_seconds(),
@@ -1182,12 +1196,26 @@ impl GatewayController {
                 let response_sender = self.current_outbound_sender()?;
                 let controller = Arc::clone(self);
                 tauri::async_runtime::spawn(async move {
-                    let result = match gateway_bridge::handle_memory_manage(
-                        controller.app_handle.clone(),
-                        request,
-                    )
-                    .await
-                    {
+                    let outcome =
+                        match super::kbrain_history::history_archive_action(&request.command) {
+                            Some(action) => {
+                                controller
+                                    .handle_history_archive_command(
+                                        request_id.clone(),
+                                        action,
+                                        &request,
+                                    )
+                                    .await
+                            }
+                            None => {
+                                gateway_bridge::handle_memory_manage(
+                                    controller.app_handle.clone(),
+                                    request,
+                                )
+                                .await
+                            }
+                        };
+                    let result = match outcome {
                         Ok(response) => {
                             send_agent_envelope_to(
                                 response_sender.clone(),

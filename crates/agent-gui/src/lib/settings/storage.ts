@@ -8,7 +8,12 @@ import { isKBrainBackendEnabled, isKBrainBrowserHost } from "../host";
 import { createKBrainClient, type KBrainBackendConfiguration } from "../kbrain/client";
 import { KBRAIN_CONFIGURATION_PROTOCOL } from "../kbrain/configurationVersion";
 import { kBrainStorageScope } from "../kbrain/mapping";
-import { fromKBrainMcpSettings, toKBrainMcpSettings } from "../kbrain/mcp";
+import {
+  fromKBrainMcpSettings,
+  mergeKBrainMcpSettings,
+  notifyKBrainMcpSettingsSaved,
+  toKBrainMcpSettings,
+} from "../kbrain/mcp";
 import { createKBrainPromptClient, type KBrainPromptSnapshot } from "../kbrain/prompts";
 import {
   appProvidersFromKBrain,
@@ -23,9 +28,14 @@ import {
   getKBrainRuntimeConnection,
 } from "../kbrain/runtimeConnection";
 import type { KBrainSettingsDocument } from "../kbrain/types";
+import {
+  changedWorkspaceSkillsOverrides,
+  saveWorkspaceSkillsOverrides,
+} from "../kbrain/workspaceSkills";
 import { SettingsStorageError, type SettingsStorageErrorCode } from "./errors";
 import {
   type AppSettings,
+  type McpSettings,
   type ChatRuntimeControls,
   type CustomProvider,
   getDefaultSettings,
@@ -706,6 +716,15 @@ async function loadKBrainMcpSettings(settings: AppSettings): Promise<AppSettings
   }
 }
 
+// PUT /v1/mcp replaces the whole document; merging onto K-brain's current copy keeps the
+// per-server policy, workspaceRoots and any field this build does not know about.
+async function saveKBrainMcpSettings(previous: McpSettings, next: McpSettings): Promise<void> {
+  const client = createKBrainClient();
+  const current = await client.getMcpSettings();
+  await client.updateMcpSettings(mergeKBrainMcpSettings(current, next, previous));
+  notifyKBrainMcpSettingsSaved();
+}
+
 async function persistKBrainPrompts(prev: AppSettings, next: AppSettings): Promise<void> {
   const client = createKBrainPromptClient();
   if (hasChanged(prev.agents, next.agents)) {
@@ -1047,13 +1066,22 @@ export async function persistSettings(
     );
   }
 
+  const workspaceSkills = isKBrainBackendEnabled()
+    ? changedWorkspaceSkillsOverrides(prev, next)
+    : [];
+  if (workspaceSkills.length > 0) {
+    tasks.push(
+      saveWorkspaceSkillsOverrides(workspaceSkills, next.skills).catch((error) => {
+        throw new SettingsStorageError("save_failed", error);
+      }),
+    );
+  }
+
   if (isKBrainBackendEnabled() && hasChanged(prev.mcp, next.mcp)) {
     tasks.push(
-      createKBrainClient()
-        .updateMcpSettings(toKBrainMcpSettings(next.mcp))
-        .catch((error) => {
-          throw new SettingsStorageError("save_failed", error);
-        }),
+      saveKBrainMcpSettings(prev.mcp, next.mcp).catch((error) => {
+        throw new SettingsStorageError("save_failed", error);
+      }),
     );
   }
 

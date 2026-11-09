@@ -1,6 +1,18 @@
+import type { SubagentCardBinding } from "@liveagent/ui/contracts/subagentPane";
 import type { AskUserQuestionAnswer } from "@liveagent/ui/lib/chat/askUserQuestion";
+import type {
+  McpElicitationAction,
+  McpElicitationContent,
+  McpElicitationSubmitOutcome,
+} from "@liveagent/ui/lib/chat/mcpElicitation";
 import type { PlanDecisionAnswer } from "@liveagent/ui/lib/chat/planMode";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
+import {
+  getKBrainSubagentForToolCall,
+  openKBrainSubagent,
+  subscribeKBrainSubagents,
+} from "../lib/subagents/kbrainSubagentStore";
+import { kbrainSubagentView } from "../lib/subagents/kbrainSubagentView";
 import {
   answerAskUserQuestion,
   getAskUserQuestionDeadlineAt,
@@ -8,6 +20,12 @@ import {
   hasPendingAskUserQuestion,
   subscribeAskUserQuestions,
 } from "../lib/tools/askUserQuestionTools";
+import {
+  answerMcpElicitation,
+  getMcpElicitationVersion,
+  hasPendingMcpElicitationRequest,
+  subscribeMcpElicitations,
+} from "../lib/tools/mcpElicitations";
 import {
   getPermissionAutoResolved,
   getPermissionAutoResolvedVersion,
@@ -74,6 +92,29 @@ export function submitAskUserQuestionAnswers(toolCallId: string, answers: AskUse
   return Promise.resolve(answerAskUserQuestion(toolCallId, answers));
 }
 
+// An MCP elicitation form is answerable while the turn runner holds it in the pending store.
+export function useMcpElicitationAnswerable(
+  toolCallId: string,
+  elicitationId: string,
+  _toolArguments: Record<string, unknown> | undefined,
+) {
+  useSyncExternalStore(
+    subscribeMcpElicitations,
+    getMcpElicitationVersion,
+    getMcpElicitationVersion,
+  );
+  return hasPendingMcpElicitationRequest(toolCallId, elicitationId);
+}
+
+export function submitMcpElicitation(
+  toolCallId: string,
+  elicitationId: string,
+  action: McpElicitationAction,
+  content?: McpElicitationContent,
+): Promise<McpElicitationSubmitOutcome> {
+  return answerMcpElicitation(toolCallId, elicitationId, action, content);
+}
+
 export function usePlanDecisionState(toolCallId: string, _toolArguments: Record<string, unknown>) {
   useSyncExternalStore(subscribePlanDecisions, getPlanDecisionVersion, getPlanDecisionVersion);
   return {
@@ -84,4 +125,27 @@ export function usePlanDecisionState(toolCallId: string, _toolArguments: Record<
 
 export function submitPlanDecision(toolCallId: string, answer: PlanDecisionAnswer) {
   return Promise.resolve(answerPlanDecision(toolCallId, answer));
+}
+
+// The K-brain subagent the parent's `subagent` call started, or the one a follow-up /
+// status / steer / cancel call names. Null until the store knows it (older K-brain
+// never does), and the plain tool row renders instead.
+export function useSubagentCard(toolCallId: string): SubagentCardBinding | null {
+  // Each snapshot must be stable between store changes, so read the entry and its
+  // conversation separately rather than as a fresh pair.
+  const entry = useSyncExternalStore(
+    subscribeKBrainSubagents,
+    () => getKBrainSubagentForToolCall(toolCallId)?.entry,
+  );
+  const conversationId = useSyncExternalStore(
+    subscribeKBrainSubagents,
+    () => getKBrainSubagentForToolCall(toolCallId)?.conversationId,
+  );
+  return useMemo(() => {
+    if (!entry || !conversationId) return null;
+    return {
+      view: kbrainSubagentView(entry),
+      open: () => openKBrainSubagent(conversationId, entry.subagent.id),
+    };
+  }, [conversationId, entry]);
 }

@@ -383,7 +383,7 @@ index 0000000000000000000000000000000000000000..d3bd54d247891911c4822aa59aca5d49
 +	}
 +}
 diff --git a/internal/backend/health.go b/internal/backend/health.go
-index ac06b8b147fed6331e1611708b51cb8fddfebf03..07ad34dc84290e491e4c4a2086079cf84231c2db 100644
+index ffab9597623cb409495f5f5488b00e13bd418095..2d8d2f0d362420731c71e54bb035ca89fb20c190 100644
 --- a/internal/backend/health.go
 +++ b/internal/backend/health.go
 @@ -17,6 +17,7 @@ type healthCapabilities struct {
@@ -394,7 +394,7 @@ index ac06b8b147fed6331e1611708b51cb8fddfebf03..07ad34dc84290e491e4c4a2086079cf8
  	SessionExists           int                `json:"session_exists"`
  	AIReviewPerRun          int                `json:"ai_review_per_run"`
  	PermissionRules         int                `json:"permission_rules"`
-@@ -107,6 +108,7 @@ func (s *Server) health() healthResponse {
+@@ -146,6 +147,7 @@ func (s *Server) health() healthResponse {
  			ComputerSessionApproval: 1,
  			MemorySwitch:            1,
  			ImageModelToggle:        1,
@@ -403,7 +403,7 @@ index ac06b8b147fed6331e1611708b51cb8fddfebf03..07ad34dc84290e491e4c4a2086079cf8
  			AIReviewPerRun:          1,
  			PermissionRules:         1,
 diff --git a/internal/backend/run_options.go b/internal/backend/run_options.go
-index 85b69256a953dd7dc247768b6d10074b85e633b5..cc316b9b9b2576e2073ecd8f644e6a25400b10aa 100644
+index 07f33e9dcc15fb178c8df938d64bf77397e1903c..a3ecad5c8e520c12b7e1693d2c7dafc3743a0d83 100644
 --- a/internal/backend/run_options.go
 +++ b/internal/backend/run_options.go
 @@ -156,11 +156,14 @@ func applyRunOptions(a *agent.Agent, options protocol.RunOptions) func() {
@@ -434,10 +434,10 @@ index 85b69256a953dd7dc247768b6d10074b85e633b5..cc316b9b9b2576e2073ecd8f644e6a25
  	a.RunToolsSet = true
  	a.NativeWebSearch = options.Search == "enabled"
 diff --git a/internal/backend/server.go b/internal/backend/server.go
-index 2853ccd3ae960931167fd610f87899d45fac23e8..e1942d32190d4c340854ebe486311503146b1d34 100644
+index c65e0c72e4b02643190239c825f846a7cb7b8886..ac354559a1263b4a7ecec31ae1deeedd4560c593 100644
 --- a/internal/backend/server.go
 +++ b/internal/backend/server.go
-@@ -1266,7 +1266,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, id string) {
+@@ -1445,7 +1445,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, id string) {
  		return
  	}
  	// A user run may answer a goal waiting for input or get a paused-goal notice; cron runs never do.
@@ -452,16 +452,17 @@ index 2853ccd3ae960931167fd610f87899d45fac23e8..e1942d32190d4c340854ebe486311503
  	if err != nil {
  		writeJSONError(w, status, err.Error())
  		return
-@@ -1278,7 +1284,11 @@ func (s *Server) executeRun(rt *runtimeSession, ctx context.Context, runID strin
+@@ -1458,7 +1464,12 @@ func (s *Server) executeRun(rt *runtimeSession, ctx context.Context, end func(),
  	progress := &runProgress{started: time.Now(), publish: rt.publish}
  	progress.phase("preparing")
  	rt.mu.Lock()
--	restoreRunOptions := applyRunOptionsWith(rt.agent, options, s.clientTools(rt, options.ClientTools))
+-	restoreRunOptions := applyRunOptionsWith(rt.agent, options, s.withSSHManagerTool(s.clientTools(rt, options.ClientTools), rt.agent.WorkingDir, options))
 +	var imageTools []tools.Tool
 +	if options.ImageCreation != nil {
 +		imageTools = s.conversationImageTools(ctx, rt.id, runID, options, rt.agent.MessagesSnapshot())
 +	}
-+	restoreRunOptions := applyRunOptionsWith(rt.agent, options, s.clientTools(rt, options.ClientTools), imageTools...)
++	hostTools := s.withSSHManagerTool(s.clientTools(rt, options.ClientTools), rt.agent.WorkingDir, options)
++	restoreRunOptions := applyRunOptionsWith(rt.agent, options, hostTools, imageTools...)
  	rt.mu.Unlock()
  	defer func() {
  		rt.mu.Lock()
@@ -497,7 +498,7 @@ index 9b2416aa528da155c5691b2f03b0c2cc89e222af..f760deb30b5aa15485cd7a75bdadfc0d
  	if strings.TrimSpace(title) == "" {
  		return ImageProject{}, invalid("project title required")
 diff --git a/internal/protocol/capabilities.json b/internal/protocol/capabilities.json
-index 8f10b5bef3bcb2f2e7a3124397a6be6bfb5df201..6814757309772361d890b7208f81bf9b3ddcbc2d 100644
+index e0588f3679418711bad5032aa19b2d5f5ead5cd2..bb83a35a904306e11d800f186712b8a749fa9796 100644
 --- a/internal/protocol/capabilities.json
 +++ b/internal/protocol/capabilities.json
 @@ -41,6 +41,14 @@
@@ -516,10 +517,10 @@ index 8f10b5bef3bcb2f2e7a3124397a6be6bfb5df201..6814757309772361d890b7208f81bf9b
        "name": "session_exists",
        "type": "integer",
 diff --git a/internal/protocol/protocol.go b/internal/protocol/protocol.go
-index 95f6b523d9fb36951552aa0c1fb4d465a086c296..b7beb799007bc46233cadfb79df2085bb8509813 100644
+index 4441cfed360fa3c3aefa9b7a9b9ff4b384510165..a37bb25bf05227faa2bc3fd3b77a30b29289b342 100644
 --- a/internal/protocol/protocol.go
 +++ b/internal/protocol/protocol.go
-@@ -429,11 +429,12 @@ type CreateSessionRequest struct {
+@@ -615,11 +615,12 @@ type CreateSessionRequest struct {
  }
  
  type RunOptions struct {
@@ -537,8 +538,8 @@ index 95f6b523d9fb36951552aa0c1fb4d465a086c296..b7beb799007bc46233cadfb79df2085b
  	// ReviewScope "per_run" (capability ai_review_per_run) lets the permission mode alone decide
  	// AI review: only auto_review reviews, with the session's model when no reviewer is set.
  	// Without it the global aiApproval mode keeps applying as before.
-@@ -453,6 +454,11 @@ type RunOptions struct {
- 	Sandbox *RunSandbox `json:"sandbox,omitempty"`
+@@ -643,6 +644,11 @@ type RunOptions struct {
+ 	MCPElicitation bool `json:"mcp_elicitation,omitempty"`
  }
  
 +type RunImageCreation struct {

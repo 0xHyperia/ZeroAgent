@@ -149,6 +149,7 @@ type HistoryRowProps = {
   onCommitRename: () => void;
   onCancelRename: () => void;
   onSetPinned: (id: string, isPinned: boolean) => void;
+  /** Present when the backend can archive conversations. */
   onSetArchived?: (id: string, archived: boolean) => void;
   onMoveToWorkspace: (id: string, cwd: string) => void;
   moveWorkspaces: readonly WorkspaceProject[];
@@ -729,7 +730,7 @@ export const HistoryRow = memo(function HistoryRow(props: HistoryRowProps) {
       ) : null}
       {onSetArchived && !item.isPending ? (
         <DropdownMenuItem
-          disabled={isInteractionDisabled || isBusy}
+          disabled={isInteractionDisabled || isRunning || isBusy}
           onSelect={() => onSetArchived(item.id, !item.isArchived)}
           className={CONVERSATION_MENU_ITEM_CLASS}
         >

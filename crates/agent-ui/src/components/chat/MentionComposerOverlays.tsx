@@ -333,6 +333,9 @@ export function Popup({
                         </span>
                       ) : null}
                     </span>
+                    {command.kind === "skill" && command.skill.pack ? (
+                      <SkillPackBadge pack={command.skill.pack} />
+                    ) : null}
                   </button>
                 </Fragment>
               );
@@ -469,9 +472,12 @@ export function Popup({
                 {isCategory ? (
                   <ChevronRight className="size-3 shrink-0 text-muted-foreground/65" />
                 ) : isSkill ? (
-                  <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-tiny uppercase tracking-wide text-muted-foreground">
-                    skill
-                  </span>
+                  <>
+                    {skill?.pack ? <SkillPackBadge pack={skill.pack} /> : null}
+                    <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-tiny uppercase tracking-wide text-muted-foreground">
+                      skill
+                    </span>
+                  </>
                 ) : (
                   isDir && (
                     <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-tiny uppercase tracking-wide text-muted-foreground">
@@ -485,6 +491,20 @@ export function Popup({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Names the skill pack a picker skill comes from. */
+function SkillPackBadge({ pack }: { pack: string }) {
+  const { t } = useLocale();
+  return (
+    <span
+      data-skill-pack={pack}
+      title={t("chat.composer.skillPackTitle").replace("{pack}", pack)}
+      className="max-w-32 shrink-0 truncate rounded bg-muted/60 px-1 py-px text-tiny text-muted-foreground"
+    >
+      {pack}
+    </span>
   );
 }
 

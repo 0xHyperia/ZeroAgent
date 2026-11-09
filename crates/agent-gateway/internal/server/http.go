@@ -85,7 +85,22 @@ func NewHTTPServerWithReadiness(
 		rootMux.Handle("GET /api/files/confirmed-handoff", protectedAPIHandler(cfg, sm, accounts))
 	} else {
 		rootMux.HandleFunc("GET /api/status", handler.Status(sm))
-		rootMux.HandleFunc("POST /api/files/import", handler.ImportReadableFiles(sm, cfg.RequestTimeout, nil))
+		importFiles := handler.ImportReadableFiles(sm, cfg.RequestTimeout, nil)
+		directUpload := auth.HTTPMiddleware(cfg.Token, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uploads := v2.KBrainUploads(strings.TrimSpace(r.URL.Query().Get("agent_id")))
+			if uploads == nil {
+				http.NotFound(w, r)
+				return
+			}
+			uploads.ImportHandler(w, r)
+		}))
+		rootMux.HandleFunc("POST /api/files/import", func(w http.ResponseWriter, r *http.Request) {
+			if v2.KBrainUploads(strings.TrimSpace(r.URL.Query().Get("agent_id"))) != nil {
+				directUpload.ServeHTTP(w, r)
+				return
+			}
+			importFiles(w, r)
+		})
 		rootMux.HandleFunc("POST /api/files/import-directory", handler.ImportDirectory(sm, cfg.RequestTimeout))
 	}
 	// Agent 目录与凭证管理，仅管理 token 可访问。

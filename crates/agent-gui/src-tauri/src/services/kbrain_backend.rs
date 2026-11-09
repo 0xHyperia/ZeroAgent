@@ -555,6 +555,25 @@ impl KBrainBackendState {
         crate::services::mcp_oauth::store::TokenStore::capture(server_id)
     }
 
+    pub(crate) fn with_current_ssh_profile<T>(
+        &self,
+        expected: &KBrainBackendConnection,
+        action: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let profile = self.profile.lock().map_err(|_| "Backend profile lock failed")?;
+        if !self.allows_profile_commands()
+            || !self.running_connection().is_some_and(|current| {
+                current.storage_id == expected.storage_id
+                    && current.base_url == expected.base_url
+                    && current.token == expected.token
+            })
+        {
+            return Err("SSH configuration no longer belongs to the active profile".into());
+        }
+        self.profile_start_epoch(&profile, None)?;
+        action()
+    }
+
     pub(crate) fn configuration_root(&self) -> Result<PathBuf, String> {
         self.manager
             .lock()

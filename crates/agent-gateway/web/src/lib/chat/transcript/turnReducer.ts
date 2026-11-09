@@ -359,12 +359,16 @@ function applyTokenEvent(turn: Turn, event: Extract<ChatEvent, { type: "token" }
 
   const entries = turn.entries;
   const tail = entries.at(-1);
-  const assistantIndex =
-    tail?.kind === "assistant" && (round === undefined || tail.round === round)
-      ? entries.length - 1
-      : text === ""
-        ? findLastSegmentAssistantIndex(entries, round)
-        : -1;
+  // A mid-run usage report marks its position: it covers what the round holds so far,
+  // so it lands on the tail and never on an earlier assistant entry.
+  const usageMark = event.usageLive === true && meta?.usage !== undefined;
+  const tailIsRoundAssistant =
+    tail?.kind === "assistant" && (round === undefined || tail.round === round);
+  const assistantIndex = tailIsRoundAssistant
+    ? entries.length - 1
+    : text === "" && !usageMark
+      ? findLastSegmentAssistantIndex(entries, round)
+      : -1;
   if (assistantIndex >= 0) {
     const target = entries[assistantIndex];
     if (target?.kind !== "assistant") return turn;
@@ -374,6 +378,7 @@ function applyTokenEvent(turn: Turn, event: Extract<ChatEvent, { type: "token" }
       text: target.text + text,
       round: round ?? target.round,
       meta: meta ? mergeAssistantMeta(target.meta, meta) : target.meta,
+      ...(usageMark ? { usageMark: true } : {}),
     };
     return withEntries(turn, enrichSegmentHostedSearches(next));
   }
@@ -390,6 +395,7 @@ function applyTokenEvent(turn: Turn, event: Extract<ChatEvent, { type: "token" }
       text,
       round,
       meta,
+      ...(usageMark ? { usageMark: true } : {}),
     },
   ];
   return withEntries(turn, enrichSegmentHostedSearches(next));
@@ -624,6 +630,36 @@ function applyErrorEvent(turn: Turn, event: Extract<ChatEvent, { type: "error" }
   ]);
 }
 
+// Running-output snapshot for a live tool call. It only decorates an already
+// known call that has no result yet: unknown ids and settled calls are ignored,
+// and each snapshot replaces the previous one.
+function applyToolOutputEvent(
+  turn: Turn,
+  event: Extract<ChatEvent, { type: "tool_output" }>,
+): Turn {
+  const id = readString(event.id).trim();
+  if (!id || typeof event.output !== "string") {
+    return turn;
+  }
+  const entries = turn.entries;
+  if (entries.some((entry) => entry.kind === "tool_result" && entry.toolResult.toolCallId === id)) {
+    return turn;
+  }
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.kind !== "tool_call" || entry.toolCall.id !== id) {
+      continue;
+    }
+    if (entry.liveOutput === event.output) {
+      return turn;
+    }
+    const next = entries.slice();
+    next[index] = { ...entry, liveOutput: event.output };
+    return withEntries(turn, next);
+  }
+  return turn;
+}
+
 // Assistant-side stream events; user_message routing lives in the store (it
 // picks the turn by client_request_id / run_id before any reducer runs).
 export function applyEventToTurn(turn: Turn, event: ChatEvent): Turn {
@@ -639,6 +675,8 @@ export function applyEventToTurn(turn: Turn, event: ChatEvent): Turn {
       return applyToolResultEvent(turn, event);
     case "hosted_search":
       return applyHostedSearchEvent(turn, event);
+    case "tool_output":
+      return applyToolOutputEvent(turn, event);
     case "error":
       return applyErrorEvent(turn, event);
     default:

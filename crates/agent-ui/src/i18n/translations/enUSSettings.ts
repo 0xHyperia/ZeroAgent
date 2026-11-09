@@ -198,7 +198,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.memoryModelEmpty": "No models are configured for the current provider.",
   "settings.memoryBackendOwned": "Memory execution is owned by ZeroAgent engine.",
   "settings.memoryOrganizerBackendDescription":
-    "ZeroAgent engine scans memories and proposes changes. Review the operations below before applying the whole proposal. This UI runs no model or background organizer.",
+    "Organize now asks the ZeroAgent engine to scan memories and propose changes. Review the operations below before applying the whole proposal.",
   "settings.memoryOrganizerApplyProposal": "Apply this proposal",
   "settings.memoryBackendManaged":
     "Memory is managed by the ZeroAgent engine; local memory actions are unavailable.",
@@ -207,33 +207,22 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.memoryOrganizerUnsupported":
     "This UI does not support ZeroAgent engine memory organization or extraction settings. Configure memory in ZeroAgent engine; no local model or background organizer runs here.",
   "settings.memoryOrganizerTitle": "Memory organization",
-  "settings.memoryOrganizerToggle": "Enable memory organization",
-  "settings.memoryOrganizerSchedule": "Schedule",
-  "settings.memoryOrganizerNoSchedule": "Do not run",
+  "settings.memoryOrganizerToggle": "Organize memories automatically",
+  "settings.memoryOrganizerSchedule": "Frequency",
   "settings.memoryOrganizerEveryHour": "Every hour",
   "settings.memoryOrganizerEverySixHours": "Every 6 hours",
   "settings.memoryOrganizerEveryTwelveHours": "Every 12 hours",
   "settings.memoryOrganizerEveryDay": "Daily",
   "settings.memoryOrganizerEveryWeek": "Weekly",
-  "settings.memoryOrganizerTime": "Local time",
-  "settings.memoryOrganizerWeekday": "Weekday",
-  "settings.memoryOrganizerWeekdaySunday": "Sunday",
-  "settings.memoryOrganizerWeekdayMonday": "Monday",
-  "settings.memoryOrganizerWeekdayTuesday": "Tuesday",
-  "settings.memoryOrganizerWeekdayWednesday": "Wednesday",
-  "settings.memoryOrganizerWeekdayThursday": "Thursday",
-  "settings.memoryOrganizerWeekdayFriday": "Friday",
-  "settings.memoryOrganizerWeekdaySaturday": "Saturday",
-  "settings.memoryOrganizerScope": "Scope",
-  "settings.memoryOrganizerScopeAll": "All (global + all projects)",
-  "settings.memoryOrganizerScopeGlobal": "Global only",
-  "settings.memoryOrganizerScopeCurrentProject": "Current project only",
-  "settings.memoryOrganizerScopeAllProjects": "All projects",
-  "settings.memoryOrganizerMode": "Mode",
-  "settings.memoryOrganizerModeConservative": "Conservative",
-  "settings.memoryOrganizerModeStandard": "Standard",
-  "settings.memoryOrganizerModeAggressive": "Aggressive",
-  "settings.memoryOrganizerNextRun": "Next automatic run:",
+  "settings.memoryOrganizerEveryTwoDays": "Every 2 days",
+  "settings.memoryOrganizerEveryThreeDays": "Every 3 days",
+  "settings.memoryOrganizerEveryHours": "Every {count} hours",
+  "settings.memoryOrganizerScheduleOnDescription":
+    "K-brain organizes saved memories in the background on this schedule.",
+  "settings.memoryOrganizerScheduleOffDescription":
+    "Off: memories are organized only when you run it below.",
+  "settings.memoryOrganizerScheduleSaveFailed":
+    "Could not save the memory organization schedule; restored the backend's current setting.",
   "settings.memoryOrganizerRunNow": "Organize now",
   "settings.memoryOrganizerNoModel": "Choose a memory organization model first.",
   "settings.memoryOrganizerAlreadyRunning":
@@ -552,6 +541,26 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.builtinTool.process_stop.desc": "Stop a running Bash session",
   "settings.builtinTool.process_stop.detail":
     "Terminates the Bash session's complete process tree and returns its final buffered output.",
+  "settings.builtinTool.terminal_session.name": "Terminal Session",
+  "settings.builtinTool.terminal_session.desc": "Start an interactive terminal session",
+  "settings.builtinTool.terminal_session.detail":
+    "Starts a backend-owned interactive terminal running the given command; the model follows its output with Read Terminal. Commands obey the permission and sandbox policy.",
+  "settings.builtinTool.wait.name": "Wait for Condition",
+  "settings.builtinTool.wait.desc": "Re-run a command in the background until a condition is met",
+  "settings.builtinTool.wait.detail":
+    "Polls a shell command on an interval without spending model turns and notifies the model once it exits 0 (and matches the optional pattern), times out or keeps failing. Useful for CI runs, deploys or servers coming up. The command runs on this machine.",
+  "settings.builtinTool.remember.name": "Remember",
+  "settings.builtinTool.remember.desc": "Save a short fact to the memory notes",
+  "settings.builtinTool.remember.detail":
+    "Adds one bullet to the markdown memory notes that are injected back into every turn: installation scope for lasting facts about you, session scope for notes about this conversation. Registered while memory is enabled.",
+  "settings.builtinTool.forget.name": "Forget",
+  "settings.builtinTool.forget.desc": "Remove an entry from the memory notes",
+  "settings.builtinTool.forget.detail":
+    "Deletes one numbered bullet from the installation or session memory notes. Registered while memory is enabled.",
+  "settings.builtinTool.new_context.name": "New Context",
+  "settings.builtinTool.new_context.desc": "Continue in a fresh context window",
+  "settings.builtinTool.new_context.detail":
+    "Starts a fresh context window without summarizing earlier history, so a long task can continue from the workspace state when the context is nearly full.",
   "settings.builtinTool.read_terminal.name": "Read Terminal",
   "settings.builtinTool.read_terminal.desc": "Read the on-screen content of the terminal panel",
   "settings.builtinTool.read_terminal.detail":
@@ -1098,6 +1107,15 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
     "Trust record cleared. The next connection will confirm the host key again.",
   "settings.sshKnownHostResetEmpty": "No trust record was found for this host.",
   "settings.sshKnownHostResetFailed": "Failed to reset trust record: {error}",
+  "settings.sshAgentLabel": "SSHManager",
+  "settings.sshAgentCredentialSaved": "Credential saved",
+  "settings.sshAgentCredentialMissing": "No saved credential",
+  "settings.sshAgentCredentialInteractive": "Prompts at login",
+  "settings.sshAgentHostKeys": "Trusted host keys",
+  "settings.sshAgentNoHostKeys": "No trusted host key yet",
+  "settings.sshAgentSkipped":
+    "Not available to SSHManager: K-brain does not accept this host's settings.",
+  "settings.sshAgentSyncFailed": "Could not sync SSH hosts to K-brain: {error}",
   "settings.sshReconnectPromptTitle": "Apply the updated SSH settings?",
   "settings.sshReconnectPromptDesc":
     "{count} active connection(s) to this host still use the previous settings. Reconnecting now interrupts running remote programs.",
@@ -1346,6 +1364,21 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.skillsHubPreparingDesc":
     "Preparing a large set of Skills in the background; it will appear when ready",
   "settings.skillsHubDeleteSkill": "Delete Skill",
+  "settings.skillPackLabel": "Skill pack",
+  "settings.skillPackCount": "{count} skills",
+  "settings.skillPackEnabledCount": "{enabled}/{count} on",
+  "settings.skillPackExpand": "Show skills in {pack}",
+  "settings.skillPackCollapse": "Hide skills in {pack}",
+  "settings.skillPackToggle": "Turn skill pack on or off",
+  "settings.skillPackMixed": "Some skills on",
+  "settings.skillPackDelete": "Delete skill pack",
+  "settings.skillPackDeleteConfirm":
+    "Delete skill pack {pack} and all {count} of its skills? This cannot be undone.",
+  "settings.skillPackChildDeleteTitle": "{name} is part of skill pack {pack}",
+  "settings.skillPackChildDeleteHint":
+    "A pack is installed as one directory, so its skills cannot be deleted one by one. Turn this skill off, or delete the whole pack from its header.",
+  "settings.skillPackShadowed": "Shadowed",
+  "settings.skillPackShadowedBy": "Not used: {by} has the same name",
   "settings.skillsHubBulkSelect": "Bulk Select",
   "settings.skillsHubBulkDelete": "Delete Selected",
   "settings.skillsHubBulkDeleteConfirm": "Delete {count} skills? This cannot be undone.",

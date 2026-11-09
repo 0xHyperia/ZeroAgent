@@ -525,3 +525,114 @@ test("legacy timeout answers remain selected", () => {
   assert.match(treeText(tree), /chat.askUser.timedOut/);
   assert.equal(treeText(tree).includes("chat.askUser.timedOutNoSelection"), false);
 });
+
+const headedQuestions = [
+  { id: "q1", header: "Stack", prompt: "Which stack?", options: [{ label: "Go" }, { label: "Rust" }] },
+  { id: "q2", prompt: "Untitled question", options: [{ label: "Yes" }, { label: "No" }] },
+  {
+    id: "q3",
+    header: "Extras",
+    prompt: "Add what?",
+    multiple: true,
+    options: [{ label: "Docs" }, { label: "Tests" }, { label: "CI" }],
+  },
+];
+
+test("each question's header labels its tab, falling back to Q1…", () => {
+  const card = createCardHarness();
+  const props = { questions: headedQuestions, deadlineAt: Date.now() + 60_000 };
+  let tree = card.render(props);
+  const tabs = findAll(tree, (node) => node.type === "button" && node.props?.role === "tab");
+  assert.deepEqual(
+    tabs.map((tab) => [tab.props["data-ask-question-tab"], treeText(tab), tab.props["aria-selected"]]),
+    [
+      ["q1", "Stack", true],
+      ["q2", "chat.askUser.tabFallback2", false],
+      ["q3", "Extras", false],
+    ],
+  );
+  tabs[2].props.onClick();
+  tree = card.render(props);
+  assert.match(treeText(tree), /Add what\?/);
+  assert.match(treeText(tree), /chat\.askUser\.multipleHint/);
+});
+
+test("a multiple question toggles several options and submits all of them", async () => {
+  const submitted = [];
+  const card = createCardHarness();
+  const props = {
+    questions: [headedQuestions[2]],
+    deadlineAt: Date.now() + 60_000,
+    onSubmit: async (answers) => {
+      submitted.push(answers);
+      return { ok: true };
+    },
+  };
+  const checkboxes = (tree) =>
+    findAll(tree, (node) => node.type === "button" && node.props?.role === "checkbox" && !node.props["aria-label"]);
+  let tree = card.render(props);
+  assert.match(treeText(tree), /Extras/, "a single question still shows its header");
+  assert.equal(checkboxes(tree).length, 3);
+  checkboxes(tree)[2].props.onClick();
+  tree = card.render(props);
+  checkboxes(tree)[0].props.onClick();
+  tree = card.render(props);
+  checkboxes(tree)[1].props.onClick();
+  tree = card.render(props);
+  checkboxes(tree)[1].props.onClick();
+  tree = card.render(props);
+  assert.deepEqual(checkboxes(tree).map((box) => box.props["aria-checked"]), [true, false, true]);
+
+  findSubmitButton(tree).props.onClick();
+  await flushPromises();
+  assert.equal(submitted.length, 1);
+  const [answer] = submitted[0];
+  assert.equal(answer.questionId, "q3");
+  assert.deepEqual(answer.selectedLabels, ["Docs", "CI"]);
+  assert.equal(answer.selectedLabel, "Docs, CI");
+  assert.equal(answer.custom, undefined);
+});
+
+test("a settled multiple answer shows every chosen option checked", () => {
+  const card = createCardHarness();
+  const tree = card.render({
+    questions: [headedQuestions[2]],
+    interactive: false,
+    answers: [{ questionId: "q3", prompt: "Add what?", selectedLabel: "Docs, CI" }],
+  });
+  const boxes = findAll(tree, (node) => node.type === "button" && node.props?.role === "checkbox" && !node.props["aria-label"]);
+  assert.deepEqual(boxes.map((box) => box.props["aria-checked"]), [true, false, true]);
+});
+
+test("a settled answer with structured labels checks exactly those options, even with ', ' in a label", () => {
+  // "Search" + "filter" joined reads the same as the option "Search, filter";
+  // K-brain's selected_labels (Stack-Cairn/K-brain#168) say which was picked.
+  const question = {
+    id: "q1",
+    header: "Extras",
+    prompt: "Add what?",
+    multiple: true,
+    options: [{ label: "Search" }, { label: "filter" }, { label: "Search, filter" }, { label: "CI" }],
+  };
+  const boxes = (tree) =>
+    findAll(tree, (node) => node.type === "button" && node.props?.role === "checkbox" && !node.props["aria-label"]);
+  const render = (answer) =>
+    createCardHarness().render({ questions: [question], interactive: false, answers: [answer] });
+  const picked = render({
+    questionId: "q1",
+    prompt: "Add what?",
+    selectedLabel: "Search, filter",
+    selectedLabels: ["Search", "filter"],
+  });
+  assert.deepEqual(boxes(picked).map((box) => box.props["aria-checked"]), [true, true, false, false]);
+  const one = render({
+    questionId: "q1",
+    prompt: "Add what?",
+    selectedLabel: "Search, filter, a badge",
+    selectedLabels: ["Search, filter"],
+    custom: true,
+    customText: "a badge",
+  });
+  assert.deepEqual(boxes(one).map((box) => box.props["aria-checked"]), [false, false, true, false]);
+  assert.match(treeText(one), /a badge/);
+});

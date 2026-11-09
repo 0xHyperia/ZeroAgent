@@ -1,9 +1,11 @@
+import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import {
   AssistantBubble,
   LiveAssistantStatus,
 } from "@liveagent/ui/components/chat/AssistantBubble";
 import { AssistantDeliverables } from "@liveagent/ui/components/chat/AssistantDeliverables";
 import { AssistantVisualActivity } from "@liveagent/ui/components/chat/AssistantVisuals";
+import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/BackgroundNoticeMessage";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
@@ -87,6 +89,7 @@ type GatewayScheduledTurn = {
 };
 
 type GatewayTranscriptProps = {
+  expandProcessByDefault?: boolean;
   editRequest?: { token: string; messageId: string } | null;
   onEditRequestHandled?: (token: string) => void;
   emptyState?: ReactNode;
@@ -375,6 +378,10 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
             ? "This older message cannot be edited because it has no stable message identifier."
             : "旧历史缺少稳定消息标识，无法编辑重发"
           : t("chat.edit");
+
+  if (row.backgroundNotice) {
+    return <BackgroundNoticeMessage text={row.text} />;
+  }
 
   if (isEditing && effectiveMessageRef && !editDisabled) {
     return (
@@ -1359,6 +1366,7 @@ export function GatewayTranscript({
   contentWidth = DEFAULT_CHAT_TRANSCRIPT_WIDTH,
   isViewportFollowing,
   viewportFollowing = false,
+  expandProcessByDefault = false,
   navRef,
   onAnchorUserRowChange,
   error,
@@ -1449,43 +1457,48 @@ export function GatewayTranscript({
         {/* Keyed remount per conversation: per-conversation state (measured
             heights, scroll-to-end latch) initializes fresh, and row keys can
             never collide across conversations in the itemSizeCache. */}
-        <GatewayTranscriptListRegion
-          key={conversationId ?? "shared"}
-          conversationId={conversationId}
-          editRequest={editRequest}
-          onEditRequestHandled={onEditRequestHandled}
-          rows={rows}
-          scheduledTurn={scheduledTurn}
-          liveStartIndex={liveStartIndex}
-          activeTurnKey={activeTurnKey}
-          contentWidth={contentWidth}
-          scrollViewport={transcriptScrollViewport}
+        <ProcessDisclosureProvider
+          expandByDefault={expandProcessByDefault}
           isViewportFollowing={isViewportFollowing}
-          viewportFollowing={viewportFollowing}
-          navRef={navRef}
-          onAnchorUserRowChange={onAnchorUserRowChange}
-          hasMoreHistory={hasMoreHistory}
-          isLoadingMoreHistory={isLoadingMoreHistory}
-          onLoadEarlierHistory={onLoadEarlierHistory}
-          isStreaming={isStreaming}
-          assistantLiveMode={assistantLiveMode}
-          showUsage={showUsage}
-          usageContextWindow={usageContextWindow}
-          workspaceRoot={workspaceRoot}
-          imagePreviewScope={imagePreviewScope}
-          gitClient={gitClient}
-          onOpenFileLink={onOpenFileLink}
-          onLoadUploadedImagePreview={onLoadUploadedImagePreview}
-          onResendFromEdit={onResendFromEdit}
-          onBranchConversation={onBranchConversation}
-          branchPendingMessageId={branchPendingMessageId}
-          resendCreatesBranch={resendCreatesBranch}
-          toolStatus={toolStatus}
-          toolStatusIsCompaction={toolStatusIsCompaction}
-          retryAttempts={retryAttempts}
-          readOnly={readOnly}
-          redactToolContent={redactToolContent}
-        />
+        >
+          <GatewayTranscriptListRegion
+            key={conversationId ?? "shared"}
+            conversationId={conversationId}
+            editRequest={editRequest}
+            onEditRequestHandled={onEditRequestHandled}
+            rows={rows}
+            scheduledTurn={scheduledTurn}
+            liveStartIndex={liveStartIndex}
+            activeTurnKey={activeTurnKey}
+            contentWidth={contentWidth}
+            scrollViewport={transcriptScrollViewport}
+            isViewportFollowing={isViewportFollowing}
+            viewportFollowing={viewportFollowing}
+            navRef={navRef}
+            onAnchorUserRowChange={onAnchorUserRowChange}
+            hasMoreHistory={hasMoreHistory}
+            isLoadingMoreHistory={isLoadingMoreHistory}
+            onLoadEarlierHistory={onLoadEarlierHistory}
+            isStreaming={isStreaming}
+            assistantLiveMode={assistantLiveMode}
+            showUsage={showUsage}
+            usageContextWindow={usageContextWindow}
+            workspaceRoot={workspaceRoot}
+            imagePreviewScope={imagePreviewScope}
+            gitClient={gitClient}
+            onOpenFileLink={onOpenFileLink}
+            onLoadUploadedImagePreview={onLoadUploadedImagePreview}
+            onResendFromEdit={onResendFromEdit}
+            onBranchConversation={onBranchConversation}
+            branchPendingMessageId={branchPendingMessageId}
+            resendCreatesBranch={resendCreatesBranch}
+            toolStatus={toolStatus}
+            toolStatusIsCompaction={toolStatusIsCompaction}
+            retryAttempts={retryAttempts}
+            readOnly={readOnly}
+            redactToolContent={redactToolContent}
+          />
+        </ProcessDisclosureProvider>
         {shouldShowInlineError ? (
           <div
             className={cn(

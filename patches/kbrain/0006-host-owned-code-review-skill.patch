@@ -1,8 +1,8 @@
 diff --git a/internal/skills/managed.go b/internal/skills/managed.go
-index 752bbf33141119f188e0ed1ec3563500faa66bd5..228a6c01ae3b97f3d1c56795ed900b78f12f7140 100644
+index 83f98362a94c2310bbf05644ea8b05f51da8b08c..ba06900415296c0f8645c8cfd2f70448a4ddf3d5 100644
 --- a/internal/skills/managed.go
 +++ b/internal/skills/managed.go
-@@ -250,7 +250,28 @@ func (m *Manager) ensureBuiltins() error {
+@@ -276,7 +276,28 @@ func (m *Manager) ensureBuiltins() error {
  	}
  	return nil
  }
@@ -30,18 +30,18 @@ index 752bbf33141119f188e0ed1ec3563500faa66bd5..228a6c01ae3b97f3d1c56795ed900b78
 +	return err == nil && string(body) == "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"zeroagent-code-review\"}\n"
 +}
  
- func (m *Manager) List() ([]SkillSummary, []InvalidSkill, error) {
- 	if err := m.ensureBuiltins(); err != nil {
-@@ -285,7 +306,7 @@ func (m *Manager) List() ([]SkillSummary, []InvalidSkill, error) {
- 			bad = append(bad, InvalidSkill{Path: p, Error: w})
- 			continue
- 		}
--		sum := SkillSummary{Name: s.Name, Description: s.Description, Target: filepath.Dir(p), SkillFile: e.Name() + "/SKILL.md", BaseDir: e.Name(), BuiltIn: isBuiltin(e.Name())}
-+		sum := SkillSummary{Name: s.Name, Description: s.Description, Target: filepath.Dir(p), SkillFile: e.Name() + "/SKILL.md", BaseDir: e.Name(), BuiltIn: m.isBuiltin(e.Name())}
- 		if st, e2 := os.Stat(p); e2 == nil {
- 			sum.InstalledAt = st.ModTime().UnixMilli()
- 		}
-@@ -480,7 +501,7 @@ func (m *Manager) installDir(ctx context.Context, src, name string, meta *Source
+ // List returns the usable skills of the managed root (top-level skills and
+ // the pack skills that kept their names) and the SKILL.md files it could not
+@@ -336,7 +357,7 @@ func (m *Manager) ListAll() (skills, shadowed []SkillSummary, invalid []InvalidS
+ }
+ 
+ func (m *Manager) summary(s Skill) SkillSummary {
+-	sum := SkillSummary{Name: s.Name, Description: s.Description, Target: filepath.Dir(s.Path), SkillFile: s.BaseDir + "/SKILL.md", BaseDir: s.BaseDir, BuiltIn: s.Pack == "" && isBuiltin(s.BaseDir), Pack: s.Pack, Shadowed: s.ShadowedBy != "", ShadowedBy: s.ShadowedBy}
++	sum := SkillSummary{Name: s.Name, Description: s.Description, Target: filepath.Dir(s.Path), SkillFile: s.BaseDir + "/SKILL.md", BaseDir: s.BaseDir, BuiltIn: s.Pack == "" && m.isBuiltin(s.BaseDir), Pack: s.Pack, Shadowed: s.ShadowedBy != "", ShadowedBy: s.ShadowedBy}
+ 	if st, err := os.Stat(s.Path); err == nil {
+ 		sum.InstalledAt = st.ModTime().UnixMilli()
+ 	}
+@@ -609,7 +630,7 @@ func (m *Manager) installDir(ctx context.Context, src, name, packName string, me
  	if err = cleanName(name); err != nil {
  		return InstallResult{}, err
  	}
@@ -50,17 +50,26 @@ index 752bbf33141119f188e0ed1ec3563500faa66bd5..228a6c01ae3b97f3d1c56795ed900b78
  		return InstallResult{}, errors.New("built-in skills cannot be overwritten")
  	}
  	if name != original {
-@@ -513,6 +534,9 @@ func (m *Manager) installDir(ctx context.Context, src, name string, meta *Source
- 	if err = ctx.Err(); err != nil {
- 		return InstallResult{}, err
+@@ -652,7 +673,7 @@ func (m *Manager) installPack(ctx context.Context, stage, dest, name, packName s
+ 	if err := cleanName(name); err != nil {
+ 		return InstallResult{}, fmt.Errorf("skill pack name: %w; pass name", err)
+ 	}
+-	if isBuiltin(name) {
++	if m.isBuiltin(name) {
+ 		return InstallResult{}, errors.New("built-in skills cannot be overwritten")
+ 	}
+ 	found, _ := walkPack(stage, stage, filepath.Base(dest))
+@@ -687,6 +708,9 @@ func (m *Manager) commitInstall(ctx context.Context, stage, dest, name, conflict
+ 	if err := ctx.Err(); err != nil {
+ 		return "", "", err
  	}
 +	if m.isBuiltin(name) {
-+		return InstallResult{}, errors.New("built-in skills cannot be overwritten")
++		return "", "", errors.New("built-in skills cannot be overwritten")
 +	}
  	target := filepath.Join(m.root, name)
  	backup := ""
  	rollback := ""
-@@ -701,7 +725,7 @@ func (m *Manager) Create(name, description, body, conflict string, files []map[s
+@@ -919,7 +943,7 @@ func (m *Manager) Create(name, description, body, conflict string, files []map[s
  	if err := cleanName(name); err != nil {
  		return InstallResult{}, err
  	}
@@ -69,7 +78,7 @@ index 752bbf33141119f188e0ed1ec3563500faa66bd5..228a6c01ae3b97f3d1c56795ed900b78
  		return InstallResult{}, errors.New("built-in skills cannot be created")
  	}
  	tmp, err := os.MkdirTemp(m.root, ".staging-create-")
-@@ -742,12 +766,12 @@ func (m *Manager) Delete(name string) (DeleteResult, error) {
+@@ -975,12 +999,12 @@ func (m *Manager) Delete(name string) (DeleteResult, error) {
  	if err := cleanName(name); err != nil {
  		return DeleteResult{}, err
  	}

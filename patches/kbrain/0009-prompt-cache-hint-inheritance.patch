@@ -25,10 +25,10 @@ index 3e955c33917941ab7d70ecac44a96955b84e2a57..e1fafc789b7d0eb4eb6542597e56e144
  
  func cacheControl(retention string) map[string]any {
 diff --git a/internal/ai/openai.go b/internal/ai/openai.go
-index 78b5f6c746fc0ac0b55e936545b0dfd3ada218c1..95454062a35a6d441df2adefb4e4b2323d6b40ee 100644
+index ef4550db20eb37a368502281971c90a015d05c83..6122cf33bd1c958240da46b7bc0566b6982cbe8b 100644
 --- a/internal/ai/openai.go
 +++ b/internal/ai/openai.go
-@@ -586,7 +586,7 @@ func (c *OpenAI) applyCache(req *Request) {
+@@ -604,7 +604,7 @@ func (c *OpenAI) applyCache(req *Request) {
  		req.PromptCacheKey = ""
  	}
  	req.PromptCacheRetention = ""
@@ -37,7 +37,7 @@ index 78b5f6c746fc0ac0b55e936545b0dfd3ada218c1..95454062a35a6d441df2adefb4e4b232
  		req.PromptCacheRetention = "24h"
  	}
  }
-@@ -597,7 +597,7 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
+@@ -615,7 +615,7 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
  	}
  	key, ok := req.Context().Value(cacheRequestKey{}).(string)
  	if !ok {
@@ -46,7 +46,7 @@ index 78b5f6c746fc0ac0b55e936545b0dfd3ada218c1..95454062a35a6d441df2adefb4e4b232
  	}
  	if key == "" {
  		return
-@@ -611,6 +611,13 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
+@@ -629,6 +629,13 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
  			format = "openrouter"
  		}
  	}
@@ -154,10 +154,10 @@ index 0000000000000000000000000000000000000000..1689b09db525078879e0b7ea370a883b
 +	}
 +}
 diff --git a/internal/backend/settings.go b/internal/backend/settings.go
-index 666d4c28dc1c8f3603e798e36f10473b1180afe2..b487e5bda8ba76e92c10150f8931ae70e2d20a60 100644
+index a743b3d4a2b459ba07963bf4914647942e46c60b..20b0e25ba4b14e8107660808d52c4d1d1c2bf2a7 100644
 --- a/internal/backend/settings.go
 +++ b/internal/backend/settings.go
-@@ -71,17 +71,18 @@ type settingsProvider struct {
+@@ -77,17 +77,18 @@ type settingsProvider struct {
  	Models                 []settingsModel       `json:"models"`
  }
  type settingsModel struct {
@@ -187,7 +187,7 @@ index 666d4c28dc1c8f3603e798e36f10473b1180afe2..b487e5bda8ba76e92c10150f8931ae70
  	// ImageModel is the effective, read-only image toggle (explicit choice or default guess).
  	ImageModel      bool     `json:"imageModel"`
  	InputModalities []string `json:"inputModalities,omitempty"`
-@@ -115,17 +116,18 @@ type settingsMemoryUpdate struct {
+@@ -123,17 +124,18 @@ type settingsMemoryUpdate struct {
  	Enabled *bool `json:"enabled"`
  }
  type settingsModelUpdate struct {
@@ -217,7 +217,7 @@ index 666d4c28dc1c8f3603e798e36f10473b1180afe2..b487e5bda8ba76e92c10150f8931ae70
  	// ImageModel is read-only; accepted so a GET payload can be PUT back unchanged.
  	ImageModel      *bool     `json:"imageModel,omitempty"`
  	InputModalities *[]string `json:"inputModalities,omitempty"`
-@@ -201,6 +203,7 @@ func projectSettings(cfg *config.Config) settingsProjection {
+@@ -212,6 +214,7 @@ func projectSettings(cfg *config.Config) settingsProjection {
  			}
  			m := shared.ForProvider(id)
  			mv := settingsModel{Provider: id, ID: modelID, Name: m.Name, DisplayName: m.DisplayName, OwnedBy: m.OwnedBy, LimitsSource: m.LimitsSource, ContextWindow: m.Context, MaxOutputTokens: m.MaxOut, MaxOutputToken: m.MaxOut, InputModalities: slices.Clone(m.InputModalities), OutputModalities: slices.Clone(m.OutputModalities), ImageAdapter: m.ImageAdapter, Vision: m.Vision}
@@ -225,7 +225,7 @@ index 666d4c28dc1c8f3603e798e36f10473b1180afe2..b487e5bda8ba76e92c10150f8931ae70
  			_, mv.ImageModel = imageModelAdapter(p, modelID, m)
  			// Provider settings must expose disabled models so editing and saving a
  			// provider cannot delete them. The top-level catalog remains active-only.
-@@ -209,12 +212,12 @@ func projectSettings(cfg *config.Config) settingsProjection {
+@@ -220,12 +223,12 @@ func projectSettings(cfg *config.Config) settingsProjection {
  				out.Models = append(out.Models, mv)
  			}
  		}
@@ -239,7 +239,7 @@ index 666d4c28dc1c8f3603e798e36f10473b1180afe2..b487e5bda8ba76e92c10150f8931ae70
  		out.Providers = append(out.Providers, pv)
  	}
  	sort.Slice(out.Models, func(i, j int) bool {
-@@ -356,6 +359,16 @@ func applySettings(cfg *config.Config, update settingsUpdate) error {
+@@ -409,6 +412,16 @@ func applySettings(cfg *config.Config, update settingsUpdate) error {
  				// Start from this provider's current view of the model (or the shared
  				// metadata when the provider is new to it) and overlay the update.
  				m := old[mid].ForProvider(id)
@@ -274,7 +274,7 @@ index 1faedfd695ef5910501ec0ac2e528b46ac54c8b1..efcf948b3b9291a6ddf57d25512c82a1
  	if in.PromptCacheRetention != "" {
  		p.PromptCacheRetention = in.PromptCacheRetention
 diff --git a/internal/config/config.go b/internal/config/config.go
-index 54e13d61ce28ef46cdb2cecd91388b0979a9d33a..62ac4dfb4f743ab17ec685ba5bbe355b51225016 100644
+index ada0c741a7319e3c5d21d68150c3aaa20f2fa9d0..179f370b51d4afed79b8e3bdc583644f5f4b47dc 100644
 --- a/internal/config/config.go
 +++ b/internal/config/config.go
 @@ -51,12 +51,13 @@ type CustomHeader struct {
@@ -315,7 +315,7 @@ index 54e13d61ce28ef46cdb2cecd91388b0979a9d33a..62ac4dfb4f743ab17ec685ba5bbe355b
  	// ImageAdapter explicitly selects an image protocol; "disabled" opts out of discovery.
  	ImageAdapter    string   `json:"imageAdapter,omitempty"`
  	InputModalities []string `json:"inputModalities,omitempty"`
-@@ -411,6 +413,9 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
+@@ -444,6 +446,9 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
  	cfg.ProviderOrder = nil
  	for _, name := range slices.Sorted(maps.Keys(cfg.Providers)) {
  		provider := cfg.Providers[name]
@@ -325,7 +325,7 @@ index 54e13d61ce28ef46cdb2cecd91388b0979a9d33a..62ac4dfb4f743ab17ec685ba5bbe355b
  		if err := provider.CacheCapabilities.Validate(); err != nil {
  			return fmt.Errorf("provider %q: %w", name, err)
  		}
-@@ -457,12 +462,18 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
+@@ -490,12 +495,18 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
  			}
  
  			shared := metadataFromPiModel(pm)

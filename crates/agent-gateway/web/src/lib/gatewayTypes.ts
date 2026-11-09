@@ -103,6 +103,8 @@ export type ChatEvent = (
       api?: string;
       stopReason?: string;
       usage?: unknown;
+      /** `usage` is a mid-run report of the model call that just finished. */
+      usageLive?: boolean;
       contextRelevant?: boolean;
       checkpoint?: ChatCheckpointPayload;
       conversation_id?: string;
@@ -130,6 +132,14 @@ export type ChatEvent = (
       content?: unknown;
       details?: unknown;
       isError?: boolean;
+      round?: number;
+      conversation_id?: string;
+    }
+  | {
+      // Full latest output snapshot of a running tool call (replaces, never appends).
+      type: "tool_output";
+      id?: string;
+      output?: string;
       round?: number;
       conversation_id?: string;
     }
@@ -219,6 +229,8 @@ export type ConversationSummary = {
   is_pinned?: boolean;
   pinned_at?: number;
   is_shared?: boolean;
+  /** Set on rows of the archived list (K-brain `session_archive`). */
+  is_archived?: boolean;
 };
 
 export type HistoryList = {

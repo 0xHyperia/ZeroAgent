@@ -286,6 +286,28 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     );
   }
 
+  /**
+   * Answers an MCP elicitation form: item_id is the toolCallId, request_json is
+   * {elicitationId, action, content?}. A refused answer carries field_errors in item_json.
+   */
+  async chatQueueMcpElicitation(
+    conversationId: string,
+    toolCallId: string,
+    requestJson: string,
+  ): Promise<{ accepted: boolean; message?: string; errorCode?: string; itemJson?: string }> {
+    const raw = await this.requestWithRecovery<RawChatQueueResponse>("chat_queue.mcp_elicitation", {
+      conversation_id: conversationId,
+      item_id: toolCallId,
+      request_json: requestJson,
+    });
+    return {
+      accepted: raw.accepted === true,
+      message: raw.message,
+      errorCode: raw.error_code,
+      itemJson: raw.item_json,
+    };
+  }
+
   /** 提交对桌面端挂起工具审批的决定：item_id 为 toolCallId，request_json 为 {"decision":...}。 */
   async chatQueueToolApproval(
     conversationId: string,
@@ -1066,6 +1088,26 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     });
   }
 
+  async historyArchiveSupported(): Promise<boolean> {
+    const response = await this.request<{ supported?: boolean }>("history.archive_supported", {});
+    return response?.supported === true;
+  }
+
+  async listArchivedHistory(page: number, pageSize: number): Promise<HistoryList> {
+    const response = await this.request<Partial<HistoryList>>("history.archived_list", {
+      page: normalizeHistoryListPage(page),
+      page_size: normalizeHistoryListPageSize(pageSize),
+    });
+    return {
+      conversations: Array.isArray(response?.conversations) ? response.conversations : [],
+      total_count: typeof response?.total_count === "number" ? response.total_count : 0,
+    };
+  }
+
+  async setHistoryArchived(conversationId: string, archived: boolean): Promise<void> {
+    await this.request("history.archive_set", { conversation_id: conversationId, archived });
+  }
+
   async getHistory(conversationId: string, options?: HistoryGetOptions): Promise<HistoryDetail> {
     return this.requestWithRecovery<HistoryDetail>("history.get", {
       conversation_id: conversationId,
@@ -1209,12 +1251,37 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     });
   }
 
-  /** /goal clear：清除会话目标（set/resume 会开始一轮运行，走聊天请求）。改状态的请求不自动重发。 */
-  async clearGoal(conversationId: string): Promise<GoalManageResponse> {
+  /** 读取会话目标（目标栏）。只读，可安全重试。 */
+  async getGoal(conversationId: string): Promise<GoalManageResponse> {
+    return this.requestWithRecovery<GoalManageResponse>("goal.manage", {
+      conversationId,
+      action: "get",
+    });
+  }
+
+  /**
+   * 目标的非运行动作：暂停、修改正文与清除（set/resume 会开始一轮运行，走聊天请求）。
+   * 改状态的请求不自动重发。
+   */
+  async manageGoal(
+    conversationId: string,
+    input: { action: "pause" | "clear" } | { action: "update"; goal: string },
+  ): Promise<GoalManageResponse> {
     return this.request<GoalManageResponse>("goal.manage", {
       conversationId,
-      action: "clear",
+      action: input.action,
+      goal: input.action === "update" ? input.goal : "",
     });
+  }
+
+  /** /goal clear：清除会话目标。 */
+  async clearGoal(conversationId: string): Promise<GoalManageResponse> {
+    return this.manageGoal(conversationId, { action: "clear" });
+  }
+
+  /** /goal pause：暂停会话目标。 */
+  async pauseGoal(conversationId: string): Promise<GoalManageResponse> {
+    return this.manageGoal(conversationId, { action: "pause" });
   }
 
   async listLoops(conversationId: string): Promise<LoopManageResponse> {

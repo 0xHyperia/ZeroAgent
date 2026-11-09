@@ -1,8 +1,8 @@
 diff --git a/cmd/kn/backend.go b/cmd/kn/backend.go
-index b13638c..8d26b75 100644
+index 408578504a12bd36393dff6c772dc01fccb1e80c..3a4d31c89b24b0d605e20aefc3bd96c4573d5c8b 100644
 --- a/cmd/kn/backend.go
 +++ b/cmd/kn/backend.go
-@@ -65,6 +65,10 @@ func backendCLI(args []string) error {
+@@ -66,6 +66,10 @@ func backendCLI(args []string) error {
  	// secrets) from the environment so agent shells, MCP servers and hooks never
  	// inherit it.
  	bashrun.UnsetSecretEnv()
@@ -13,7 +13,7 @@ index b13638c..8d26b75 100644
  	if *dataDir != "" {
  		root, err := filepath.Abs(*dataDir)
  		if err != nil {
-@@ -209,6 +213,7 @@ func backendCLI(args []string) error {
+@@ -224,6 +228,7 @@ func backendCLI(args []string) error {
  		Models:                  modelRefs,
  		Settings:                settings,
  		MCP:                     liveMCP,
@@ -23,7 +23,7 @@ index b13638c..8d26b75 100644
  		FilesystemRoots:         filesystemRoots,
 diff --git a/internal/backend/device_skills.go b/internal/backend/device_skills.go
 new file mode 100644
-index 0000000..7b8e4ca
+index 0000000000000000000000000000000000000000..7b8e4ca06e27b0ee85445ea587d818e7788d1f39
 --- /dev/null
 +++ b/internal/backend/device_skills.go
 @@ -0,0 +1,188 @@
@@ -217,7 +217,7 @@ index 0000000..7b8e4ca
 +}
 diff --git a/internal/backend/device_skills_test.go b/internal/backend/device_skills_test.go
 new file mode 100644
-index 0000000..bb9c9c8
+index 0000000000000000000000000000000000000000..bb9c9c8d071925cf96966d5e8e38bb6dfdb3c211
 --- /dev/null
 +++ b/internal/backend/device_skills_test.go
 @@ -0,0 +1,117 @@
@@ -339,10 +339,10 @@ index 0000000..bb9c9c8
 +	}
 +}
 diff --git a/internal/backend/run_start.go b/internal/backend/run_start.go
-index a2130dd..6942149 100644
+index 12856bb50c86fa90c7dfcbc88cd488767626077b..b58cb0394fa3a25bf585b06650f04797e875ca26 100644
 --- a/internal/backend/run_start.go
 +++ b/internal/backend/run_start.go
-@@ -85,35 +85,60 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+@@ -87,35 +87,60 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
  			return fail(400, "user content must be text or image")
  		}
  	}
@@ -426,7 +426,7 @@ index a2130dd..6942149 100644
  	// Expand after the idempotency check so a retried request replays even if its
  	// template changed or disappeared in between.
  	if in.PromptCommand {
-@@ -123,6 +148,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+@@ -125,6 +150,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
  		}
  		in.Snapshot = expanded
  	}
@@ -435,28 +435,28 @@ index a2130dd..6942149 100644
 +	}
  	if in.Model != nil && (in.Model.Model != "" || in.Model.Provider != "") {
  		if err := s.switchModelLocked(rt, *in.Model); err != nil {
- 			return fail(400, "model switch failed: "+err.Error())
+ 			return fail(rebuildErrorStatus(err), "model switch failed: "+err.Error())
 diff --git a/internal/backend/server.go b/internal/backend/server.go
-index d2cf5eb..2853ccd 100644
+index 7691933dc2145c59f251f9916eb3fda27d83e6e1..c65e0c72e4b02643190239c825f846a7cb7b8886 100644
 --- a/internal/backend/server.go
 +++ b/internal/backend/server.go
-@@ -58,6 +58,7 @@ type Options struct {
- 	QuestionTimeout         time.Duration
- 	MCP                     *mcp.LiveManager
- 	MCPCredentialBridge     mcp.CredentialBridge
-+	DeviceSkillResolver     DeviceSkillResolver
- 	// Build identifies this binary in /v1/health; zero value reports a dev build.
- 	Build protocol.Build
- 	// PermissionRulesDir is the data directory holding user and project permission
-@@ -95,6 +96,7 @@ type Server struct {
- 	hookStore            *HookStore
- 	hookRunner           *BackendHookRunner
- 	mcp                  *mcp.LiveManager
-+	deviceSkillResolver  DeviceSkillResolver
- 	build                protocol.Build
- 	instance             instanceIdentity
+@@ -46,6 +46,7 @@ type Factory func(context.Context, string, protocol.ModelRef) (*agent.Agent, err
+ type MemoryRuntimeFactory func(context.Context, string, protocol.ModelRef) (*memoryruntime.Runtime, error)
  
-@@ -207,9 +209,10 @@ func New(opts Options) (*Server, error) {
+ type Options struct {
++	DeviceSkillResolver  DeviceSkillResolver
+ 	Image                *ImageModule
+ 	Store                *session.Store
+ 	Factory              Factory
+@@ -84,6 +85,7 @@ type Options struct {
+ }
+ 
+ type Server struct {
++	deviceSkillResolver  DeviceSkillResolver
+ 	image                *ImageModule
+ 	store                *session.Store
+ 	factory              Factory
+@@ -293,9 +295,10 @@ func New(opts Options) (*Server, error) {
  		return nil, err
  	}
  	server := &Server{
@@ -468,5 +468,5 @@ index d2cf5eb..2853ccd 100644
 +		filesystemRoots:     append([]string(nil), opts.FilesystemRoots...),
 +		store:               opts.Store, factory: opts.Factory, token: opts.Token, models: append([]protocol.ModelRef(nil), opts.Models...),
  		settings: opts.Settings, usage: NewProviderUsageService(opts.Settings), prompts: opts.Prompts,
- 		eventDir: opts.EventDir, permissionDir: opts.PermissionRulesDir, sandboxMasked: append([]string(nil), opts.SandboxMasked...), defaultCWD: opts.DefaultCWD, memoryStore: memoryStore, questionWait: opts.QuestionTimeout, memoryRuntimeFactory: opts.MemoryRuntimeFactory, cron: cron, hookStore: hookStore, hookRunner: NewBackendHookRunner(hookStore), mcp: opts.MCP, sessions: make(map[string]*runtimeSession), snapshots: make(map[string]sessionHTTPSnapshot),
- 		build: opts.Build,
+ 		eventDir: opts.EventDir, permissionDir: opts.PermissionRulesDir, sandboxMasked: append([]string(nil), opts.SandboxMasked...), sandboxEnvKeep: append([]string(nil), opts.SandboxEnvKeep...), defaultCWD: opts.DefaultCWD, memoryStore: memoryStore, questionWait: opts.QuestionTimeout, memoryRuntimeFactory: opts.MemoryRuntimeFactory, cron: cron, hookStore: hookStore, hookRunner: NewBackendHookRunner(hookStore), mcp: opts.MCP, sessions: make(map[string]*runtimeSession), snapshots: make(map[string]sessionHTTPSnapshot),
+ 		build: opts.Build, ssh: sshmgr.New(sshHosts, sshmgr.Options{}),

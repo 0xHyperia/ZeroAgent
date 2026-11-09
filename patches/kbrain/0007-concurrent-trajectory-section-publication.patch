@@ -1,8 +1,8 @@
 diff --git a/internal/backend/server.go b/internal/backend/server.go
-index aeb968e5e1cf95e92a2732a83e92a0e011b27105..2a6291a782f69bcfe18b190a97712f8f1dcc994a 100644
+index b6c97efd717b62ed77bb482ec7502a9e54f7e7d1..6f1b75a93eb2cc28d6ec195edf8ff54a9952994e 100644
 --- a/internal/backend/server.go
 +++ b/internal/backend/server.go
-@@ -133,30 +133,31 @@ type permissionWaiter struct {
+@@ -202,30 +202,31 @@ type permissionWaiter struct {
  }
  
  type runtimeSession struct {
@@ -123,10 +123,10 @@ index 0000000000000000000000000000000000000000..620daceb79116db3c1c8fbbfa31aa1f4
 +	}
 +}
 diff --git a/internal/backend/trajectory_recording.go b/internal/backend/trajectory_recording.go
-index d257856decb2170cc3a6091207e3a1a6f17a79ba..1365edb73e7bd98455d97760f2bf65c2c7785106 100644
+index eb57a502e08844a488f548223cc64e8709c7d7ab..5630cc62ca11793ece7a1799c25c7cf5f522cee8 100644
 --- a/internal/backend/trajectory_recording.go
 +++ b/internal/backend/trajectory_recording.go
-@@ -44,6 +44,11 @@ func sectionDigest(content string) string {
+@@ -43,6 +43,11 @@ func sectionDigest(content string) string {
  	return "s_" + hex.EncodeToString(sum[:8])
  }
  func (rt *runtimeSession) storeTrajectorySection(slot, content string) (string, error) {

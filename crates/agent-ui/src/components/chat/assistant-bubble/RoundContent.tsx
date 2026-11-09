@@ -51,6 +51,8 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
   /** Transcript-stable entry key; block ids alone repeat across rounds. */
   traceKey?: string;
   showTurnStatus?: boolean;
+  /** The block is the last activity of the running work trace (see ToolTraceGroup `live`). */
+  isTrailingWork?: boolean;
   /** The turn is still streaming: type newly arrived reply text out character by character. */
   revealText?: boolean;
   readOnly?: boolean;
@@ -68,6 +70,7 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
     isLatestThinking,
     traceKey,
     showTurnStatus = false,
+    isTrailingWork = false,
     readOnly = false,
     redactToolContent = false,
     workdir,
@@ -128,6 +131,7 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
       <ToolTraceGroup
         items={block.items}
         runningToolCallIds={isLive ? runningToolCallIds : []}
+        live={isLive && isTrailingWork}
         readOnly={readOnly}
         redactToolContent={redactToolContent}
         onOpenFileLink={onOpenFileLink}
@@ -269,6 +273,7 @@ export const AssistantTurnContent = memo(function AssistantTurnContent(props: {
     return null;
   }, [layout.work]);
   const activeThinkingKey = running ? resolveActiveThinkingEntryKey(layout.work) : null;
+  const trailingWorkKey = running ? (layout.work.at(-1)?.key ?? null) : null;
   const collapsedTailEntry = running ? resolveActiveWorkEntry(layout.work) : null;
   const showWorkTrace = running || layout.work.length > 0;
   const stopped = !running && isStoppedReply(rounds);
@@ -291,6 +296,7 @@ export const AssistantTurnContent = memo(function AssistantTurnContent(props: {
       isLatestThinking={entry.key === activeThinkingKey}
       traceKey={entry.key}
       showTurnStatus={insideWorkTrace && running && entry.key === latestToolGroupKey}
+      isTrailingWork={insideWorkTrace && entry.key === trailingWorkKey}
       revealText={running}
       readOnly={readOnly}
       redactToolContent={redactToolContent}

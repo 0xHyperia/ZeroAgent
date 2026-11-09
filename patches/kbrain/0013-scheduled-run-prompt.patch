@@ -1,5 +1,5 @@
 diff --git a/internal/backend/cron_canonical.go b/internal/backend/cron_canonical.go
-index 8ad403c..98a1283 100644
+index 8ad403cfe8bd8af1fa40c84f8d3994f47e5b3e32..98a12838969d03d62cfcd6252e003ebecafa24cb 100644
 --- a/internal/backend/cron_canonical.go
 +++ b/internal/backend/cron_canonical.go
 @@ -59,6 +59,7 @@ func (s *Server) executeCronPromptCanonical(ctx context.Context, task *CronTask,
@@ -11,7 +11,7 @@ index 8ad403c..98a1283 100644
  		Model:           &selected,
  		Options: &protocol.RunOptions{
 diff --git a/internal/backend/cron_canonical_test.go b/internal/backend/cron_canonical_test.go
-index aacb8c8..b69d12f 100644
+index aacb8c8401aebd3cd5a5c72cf16c364fb3062f2f..b69d12f221c1f253e22a081b0383f4fe3a20d2a6 100644
 --- a/internal/backend/cron_canonical_test.go
 +++ b/internal/backend/cron_canonical_test.go
 @@ -300,11 +300,18 @@ func TestCronRunProgressReadsVisibleTextBeforeCancellation(t *testing.T) {
@@ -48,7 +48,7 @@ index aacb8c8..b69d12f 100644
  
  func (c *cronPersistenceBlockingClient) waitUntilEntered(t *testing.T) {
 diff --git a/internal/backend/cron_progress.go b/internal/backend/cron_progress.go
-index 627eed3..69f98fb 100644
+index 627eed38e62134ab544e3f9156d428750026277a..69f98fb4b48f906be272df56299f446a93e8b400 100644
 --- a/internal/backend/cron_progress.go
 +++ b/internal/backend/cron_progress.go
 @@ -13,15 +13,33 @@ import (
