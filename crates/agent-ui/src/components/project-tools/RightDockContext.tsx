@@ -12,8 +12,8 @@ import type {
   GitCommitContextPayload,
   GitFileContextPayload,
 } from "@liveagent/ui/components/project-tools/git-review/index";
-import type { GitClient } from "@liveagent/ui/lib/git/types";
-import { createContext, useContext } from "react";
+import type { GitClient, GitDiffResponse, GitRepositoryState } from "@liveagent/ui/lib/git/types";
+import { createContext, type RefObject, useContext } from "react";
 import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTextGeneration";
 import type { TerminalClient, TerminalSession, TerminalSnapshot } from "../../lib/terminal/types";
 import type { WorkspaceActivityClient } from "../../lib/workspace-activity/types";
@@ -63,12 +63,25 @@ export type GitReviewFocusRequest = {
   nonce: number;
 };
 
+export type WorkspaceReviewState = {
+  repository: GitRepositoryState | null;
+  diff?: GitDiffResponse;
+  loading: boolean;
+  error?: string;
+  activePath?: string;
+  retry: () => void;
+};
+
 export type RightDockGitContext = {
   workspaceReview?: {
     comparison: WorkspaceGitComparison;
     conversationId?: string;
     onComparisonChange: (comparison: WorkspaceGitComparison) => void;
     onOpenFile?: (path: string) => void;
+    tree?: { open: boolean; toggle: () => void };
+    fileJumpRef?: RefObject<((path: string) => void) | null>;
+    headerTarget?: HTMLElement | null;
+    onStateChange?: (state: WorkspaceReviewState) => void;
   };
   getSelectedChangesPath?: (repo: string) => string;
   onSelectChangesPath?: (repo: string, path: string) => void;

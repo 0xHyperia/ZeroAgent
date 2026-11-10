@@ -52,6 +52,10 @@ function WorkspaceReviewPanel({ active = true }: GitReviewPanelProps) {
           conversationId={review.conversationId}
           onComparisonChange={review.onComparisonChange}
           onOpenFile={review.onOpenFile}
+          tree={review.tree}
+          fileJumpRef={review.fileJumpRef}
+          headerTarget={review.headerTarget}
+          onReviewStateChange={review.onStateChange}
           workspaceActivityClient={clients.workspaceActivity ?? undefined}
           onInsertComposerSegments={git.onInsertComposerSegments}
           onOpenGitActions={() => setOperations(true)}

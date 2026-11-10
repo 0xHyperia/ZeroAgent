@@ -1,10 +1,10 @@
 //! Account-scoped, read-only review capture. The temporary repository can read
 //! existing Git objects but owns every index and object it writes.
 use super::{
-    discover_repo, git_output_configured, git_success, parse_status_porcelain_v2, ref_exists,
-    repo_path_matches_filter, review_numstat_paths,
-    revision_preview::{raw_changes, RawChange, RevisionPreview},
-    trim_output, validate_repo_relative_path, GitDiffResponse, GitReviewDiffOptions,
+    attach_review_stats, discover_repo, git_output_configured, git_success, parse_review_numstat,
+    parse_status_porcelain_v2, ref_exists, repo_path_matches_filter, review_totals,
+    revision_preview::{take_raw_changes, RawChange, RevisionPreview},
+    trim_output, validate_repo_relative_path, GitDiffResponse, GitDiffTotals, GitReviewDiffOptions,
     GIT_DIFF_MAX_BYTES,
 };
 use crate::services::kbrain_backend::KBrainBackendState;
@@ -60,6 +60,8 @@ struct ReviewPreviews {
 struct WhitespaceReview {
     patch: String,
     visible_indices: BTreeSet<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    counts_by_index: Option<HashMap<usize, GitDiffTotals>>,
 }
 
 fn isolated(command: &mut Command) {
@@ -296,9 +298,18 @@ impl Snapshot {
             args.extend(self.scope.as_deref());
             self.git(&args, None)
         };
-        let raw = compare(&["--raw", "--no-abbrev", "-z"])?;
-        let raw = raw_changes(&raw);
-        let changes: Vec<_> = raw.iter().map(RawChange::change).collect();
+        let metadata = compare(&["--raw", "--no-abbrev", "--numstat", "-z"])?;
+        let mut records = metadata.split_terminator('\0').peekable();
+        let raw = take_raw_changes(&mut records);
+        let stats = parse_review_numstat(records).ok_or(UNAVAILABLE)?;
+        let changes: Vec<_> = raw
+            .iter()
+            .map(|raw| {
+                let mut change = raw.change();
+                attach_review_stats(&mut change, &stats);
+                change
+            })
+            .collect();
         if changes.len() > MAX_DIRTY_PATHS {
             return Err(UNAVAILABLE.into());
         }
@@ -331,17 +342,22 @@ impl Snapshot {
                     return None;
                 }
                 let numstat = compare(&["--ignore-all-space", "--numstat", "-z"]).ok()?;
-                let paths = review_numstat_paths(&numstat)?;
-                let visible_indices = changes
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, change)| {
-                        paths.contains(change.path.as_str()).then_some(index)
-                    })
-                    .collect();
+                let stats = parse_review_numstat(numstat.split_terminator('\0'))?;
+                let mut visible_indices = BTreeSet::new();
+                let mut counts_by_index = HashMap::new();
+                for (index, change) in changes.iter().enumerate() {
+                    let key = (change.path.as_str(), change.old_path.as_deref());
+                    if let Some(counts) = stats.get(&key) {
+                        visible_indices.insert(index);
+                        if let Some(counts) = counts {
+                            counts_by_index.insert(index, *counts);
+                        }
+                    }
+                }
                 Some(WhitespaceReview {
                     patch,
                     visible_indices,
+                    counts_by_index: Some(counts_by_index),
                 })
             })
             .flatten();
@@ -380,8 +396,10 @@ impl Snapshot {
                 head_ref: "TURN_END".into(),
                 mode: "last-turn".into(),
                 files: changes.iter().map(|change| change.path.clone()).collect(),
+                totals: Some(review_totals(&changes)),
                 changes,
                 patch,
+                patch_omitted: false,
                 stat: String::new(),
                 truncated: false,
                 binary_files: Vec::new(),
@@ -619,10 +637,22 @@ fn read(
             .changes
             .into_iter()
             .enumerate()
-            .filter_map(|(index, change)| {
-                filtered.visible_indices.contains(&index).then_some(change)
+            .filter_map(|(index, mut change)| {
+                if !filtered.visible_indices.contains(&index) {
+                    return None;
+                }
+                let counts = filtered
+                    .counts_by_index
+                    .as_ref()
+                    .and_then(|stats| stats.get(&index));
+                change.additions = counts.map(|counts| counts.additions);
+                change.deletions = counts.map(|counts| counts.deletions);
+                Some(change)
             })
             .collect();
+        response.totals = filtered
+            .counts_by_index
+            .map(|_| review_totals(&response.changes));
         response.files = response
             .changes
             .iter()
@@ -663,6 +693,7 @@ fn read(
         .iter()
         .map(|change| change.path.clone())
         .collect();
+    response.totals = response.totals.map(|_| review_totals(&response.changes));
     Ok(response)
 }
 
@@ -732,6 +763,7 @@ pub async fn git_workspace_turn_review(
                 GitReviewDiffOptions {
                     full_context: full_context.unwrap_or_default(),
                     hide_whitespace: hide_whitespace.unwrap_or_default(),
+                    ..Default::default()
                 },
             )?),
         };
@@ -931,6 +963,7 @@ mod tests {
             GitReviewDiffOptions {
                 full_context: true,
                 hide_whitespace: false,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -944,6 +977,7 @@ mod tests {
             GitReviewDiffOptions {
                 full_context: false,
                 hide_whitespace: true,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -959,6 +993,7 @@ mod tests {
             GitReviewDiffOptions {
                 full_context: false,
                 hide_whitespace: true,
+                ..Default::default()
             },
         )
         .unwrap();

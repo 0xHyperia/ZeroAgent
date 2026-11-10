@@ -57,12 +57,15 @@ fn is_null_oid(value: &str) -> bool {
 }
 
 pub(super) fn raw_changes(raw: &str) -> Vec<RawChange<'_>> {
+    take_raw_changes(&mut raw.split_terminator('\0').peekable())
+}
+
+pub(super) fn take_raw_changes<'a>(
+    records: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Vec<RawChange<'a>> {
     let mut changes = Vec::new();
-    let mut records = raw.split_terminator('\0');
-    while let Some(header) = records.next() {
-        let Some(header) = header.strip_prefix(':') else {
-            break;
-        };
+    while let Some(header) = records.peek().and_then(|header| header.strip_prefix(':')) {
+        records.next();
         let fields: Vec<_> = header.split_ascii_whitespace().collect();
         let [before_mode, after_mode, before_oid, after_oid, status] = fields.as_slice() else {
             break;
@@ -94,6 +97,10 @@ pub(super) fn raw_changes(raw: &str) -> Vec<RawChange<'_>> {
 }
 
 impl RawChange<'_> {
+    pub(super) fn is_unmerged(&self) -> bool {
+        self.status == "U"
+    }
+
     pub(super) fn is_previewable(&self) -> bool {
         preview_mime(self.path).is_some() || preview_mime(self.old_path).is_some()
     }
@@ -112,6 +119,8 @@ impl RawChange<'_> {
                 && !is_null_oid(self.after_oid)
                 && self.is_previewable())
             .then(|| format!("index {}..{}", self.before_oid, self.after_oid)),
+            additions: None,
+            deletions: None,
         }
     }
 
@@ -311,6 +320,17 @@ pub(super) fn review_branch(
     Ok(reference)
 }
 
+pub(super) fn review_merge_base(
+    state: &GitRepositoryState,
+    branch: &str,
+) -> Result<String, String> {
+    let base = git_success(&state.repo_root, &["merge-base", "HEAD", branch])?.stdout;
+    if !is_oid(&base) {
+        return Err("找不到可用于审查的分支共同祖先。".into());
+    }
+    Ok(base)
+}
+
 pub(super) fn first_parent(repo: &str, commit: &str) -> Result<String, String> {
     Ok(git_success(repo, &["show", "-s", "--format=%P", commit])?
         .stdout
@@ -352,14 +372,17 @@ fn read(
         "--find-renames".to_owned(),
         "-z".to_owned(),
     ];
-    let working = matches!(comparison, "working_tree" | "unstaged");
+    let branch = comparison == "branch" || comparison.starts_with("branch:");
+    let working = branch || matches!(comparison, "working_tree" | "unstaged");
     match comparison {
         "working_tree" => args.push("HEAD".to_owned()),
         "staged" => args.push("--cached".to_owned()),
         "unstaged" => (),
-        "branch" => args.push(format!("{}...HEAD", review_branch(&state, comparison)?)),
-        _ if comparison.starts_with("branch:") => {
-            args.push(format!("{}...HEAD", review_branch(&state, comparison)?))
+        _ if branch => {
+            args.push(review_merge_base(
+                &state,
+                &review_branch(&state, comparison)?,
+            )?);
         }
         _ if comparison.starts_with("commit:") => {
             let commit = validate_commit_sha(repo, &comparison["commit:".len()..])?;
@@ -534,11 +557,20 @@ mod tests {
         let rename = read(workdir, &commit, "sub/renamed.png", &rename_index).unwrap();
         assert_eq!(bytes(rename.before), Some(png(2)));
         assert_eq!(bytes(rename.after), Some(png(2)));
-        for comparison in [&commit, "branch:refs/heads/comparison"] {
-            let preview = read(workdir, comparison, "sub/picture.png", &image_index).unwrap();
-            assert_eq!(bytes(preview.before), Some(png(1)));
-            assert_eq!(bytes(preview.after), Some(png(5)));
-        }
+        let preview = read(workdir, &commit, "sub/picture.png", &image_index).unwrap();
+        assert_eq!(bytes(preview.before), Some(png(1)));
+        assert_eq!(bytes(preview.after), Some(png(5)));
+        let branch = "branch:refs/heads/comparison";
+        assert!(read(workdir, branch, "sub/picture.png", &image_index).is_err());
+        let preview = read(
+            workdir,
+            branch,
+            "sub/picture.png",
+            &index(Some(&png(1)), Some(&png(7))),
+        )
+        .unwrap();
+        assert_eq!(bytes(preview.before), Some(png(1)));
+        assert_eq!(bytes(preview.after), Some(png(7)));
         let added = read(
             workdir,
             &commit,

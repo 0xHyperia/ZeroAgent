@@ -1,23 +1,8 @@
 import { useRef, useState } from "react";
-import WrapText from "~icons/lucide/wrap-text";
 import { useLocale } from "../../../i18n";
 import { copyTextToClipboard } from "../../../lib/shared/clipboard";
 import { getFileTypeIcon } from "../../chat/fileTypeIcons";
-import {
-  Columns2,
-  Copy,
-  DiffSquare,
-  Eye,
-  File,
-  FoldVertical,
-  GitBranch,
-  ImageIcon,
-  List,
-  MoreHorizontal,
-  Package,
-  RefreshCw,
-  Search,
-} from "../../IconSet";
+import { Copy, DiffSquare, Eye, File, GitBranch, ImageIcon, Package } from "../../IconSet";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -38,7 +23,15 @@ const nextLayout = { unified: "split", split: "auto", auto: "unified" } as const
 function ReviewLayoutIcon({ layout }: { layout: WorkspaceGitPresentation["layout"] }) {
   return (
     <svg aria-hidden="true" className="size-4" viewBox="0 0 16 16" fill="none">
-      <rect x="2" y="2.65" width="12" height="10.7" rx="1.85" stroke="currentColor" />
+      <rect
+        x="2"
+        y="2.67"
+        width="12"
+        height="10.66"
+        rx="1.87"
+        stroke="currentColor"
+        strokeWidth="1.05"
+      />
       <g opacity=".5">
         {layout === "auto" ? (
           <>
@@ -57,6 +50,48 @@ function ReviewLayoutIcon({ layout }: { layout: WorkspaceGitPresentation["layout
           </>
         )}
       </g>
+    </svg>
+  );
+}
+
+const reviewGlyphs = {
+  files:
+    "M4.1 4V3.4A1.4 1.4 0 0 1 5.5 2h3l1.25 1.35h3.55a1.45 1.45 0 0 1 1.45 1.45v5.05a1.4 1.4 0 0 1-1.4 1.4h-.8M2.8 4.75h3.1l1.2 1.25h3.5A1.4 1.4 0 0 1 12 7.4v4.9a1.45 1.45 0 0 1-1.45 1.45H2.8a1.45 1.45 0 0 1-1.45-1.45V6.2A1.45 1.45 0 0 1 2.8 4.75Z",
+  jump: "M6.55 13.45H4.05a1.3 1.3 0 0 1-1.3-1.3V3.15a1.3 1.3 0 0 1 1.3-1.3H9.1l3.3 3.25v2.45M8.7 2.2v2.4a.9.9 0 0 0 .9.9H12M12.45 12.55l1.7 1.7",
+  refresh:
+    "M13.55 2.3v3.65H9.9m3.55-.3A5.85 5.85 0 0 0 2.4 5M2.45 13.7v-3.65H6.1m-3.55.3A5.85 5.85 0 0 0 13.6 11",
+  wrap: "M13 2.6v10.8m-3.5-7.7H5.15a2 2 0 0 0 0 4h4.3M5.5 7.6 3.35 9.7l2.15 2.15",
+  collapse:
+    "M8.8 6.3h4.5M8.8 9.7h2.8M4.25 2.7v3.7m-1.6-1.5 1.6 1.6 1.6-1.6m-1.6 8.4V9.6m-1.6 1.5 1.6-1.6 1.6 1.6",
+  expand:
+    "M8.8 5.3h4.5m-4.5 2.7h4.5m-4.5 2.7h2.8M4.25 3.4v9.2m-1.6-7.5 1.6-1.6 1.6 1.6m-3.2 5.8 1.6 1.6 1.6-1.6",
+} as const;
+
+function ReviewGlyph({
+  name,
+  spinning = false,
+}: {
+  name: keyof typeof reviewGlyphs | "more";
+  spinning?: boolean;
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      data-review-glyph={name}
+      className={spinning ? "size-4 animate-spin" : "size-4"}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {name === "more" ? (
+        <path d="M3.3 8h.01M8 8h.01m4.69 0h.01" strokeWidth="2.15" />
+      ) : (
+        <path d={reviewGlyphs[name]} />
+      )}
+      {name === "jump" && <circle cx="10.65" cy="10.7" r="2.65" />}
     </svg>
   );
 }
@@ -89,14 +124,14 @@ function ReviewFileJump({ rows, onJump }: { rows: PatchChunk[]; onJump: (key: st
         disabled={open || !rows.length}
         render={
           <PopoverTrigger className={toolbarIcon} aria-label={title} disabled={!rows.length}>
-            <Search className="size-4" />
+            <ReviewGlyph name="jump" />
           </PopoverTrigger>
         }
       />
       <PopoverContent
         align="end"
         initialFocus={inputRef}
-        className="max-w-[calc(100vw-1rem)] p-1.5"
+        className="w-[360px] max-w-[calc(100vw-1rem)] p-1.5"
         aria-label={title}
       >
         <input
@@ -151,9 +186,11 @@ export function WorkspaceReviewToolbar({
   refreshing,
   onRefresh,
   applyCommand,
+  loadApplyCommand,
   onOpenGitActions,
   wide,
   singleFile,
+  tree,
 }: {
   presentation: WorkspaceGitPresentation;
   onPresentationChange: (patch: Partial<WorkspaceGitPresentation>) => void;
@@ -166,9 +203,11 @@ export function WorkspaceReviewToolbar({
   refreshing: boolean;
   onRefresh: () => void;
   applyCommand: string | null;
+  loadApplyCommand?: () => Promise<string | null>;
   onOpenGitActions?: () => void;
   wide: boolean;
   singleFile?: boolean;
+  tree?: { open: boolean; toggle: () => void };
 }) {
   const { locale, t } = useLocale();
   const zh = locale === "zh-CN";
@@ -182,16 +221,14 @@ export function WorkspaceReviewToolbar({
     : zh
       ? "展开所有差异"
       : "Expand all diffs";
-  const layout =
-    singleFile && presentation.layout === "split" ? "unified" : nextLayout[presentation.layout];
+  const currentLayout =
+    singleFile && presentation.layout === "auto" ? "unified" : presentation.layout;
+  const layout = singleFile && currentLayout === "split" ? "unified" : nextLayout[currentLayout];
   const layoutLabel = {
     auto: zh ? "切换为自动布局" : "Switch to Auto diff",
     split: zh ? "切换为并排视图" : "Switch to split diff",
     unified: zh ? "切换为统一视图" : "Switch to unified diff",
   }[layout];
-  const LayoutIcon =
-    presentation.layout === "auto" ? DiffSquare : presentation.layout === "split" ? Columns2 : List;
-  const ExpandIcon = expanded ? FoldVertical : List;
   const preferences = [
     ["fullContext", File, zh ? "加载完整文件" : "Load full files"],
     ["richPreview", ImageIcon, zh ? "渲染预览" : "Rich preview"],
@@ -200,8 +237,22 @@ export function WorkspaceReviewToolbar({
     ["hideImports", Package, zh ? "隐藏导入内容" : "Hide imports"],
   ] as const;
   const options = zh ? "变更选项" : "Changes options";
+  const treeLabel = tree?.open
+    ? zh
+      ? "隐藏文件树"
+      : "Hide file tree"
+    : zh
+      ? "显示文件树"
+      : "Show file tree";
   return (
-    <div className="za-review-controls" data-single-file-toolbar={singleFile || undefined}>
+    // biome-ignore lint/a11y/useSemanticElements: Floating actions use a named accessibility group.
+    <div
+      className="za-review-controls"
+      role="group"
+      aria-label={zh ? "变更工具" : "Changes controls"}
+      data-wide={wide || undefined}
+      data-single-file-toolbar={singleFile || undefined}
+    >
       {singleFile && (
         <TooltipButton
           type="button"
@@ -213,7 +264,7 @@ export function WorkspaceReviewToolbar({
           tooltipSide="bottom"
           onClick={() => onPresentationChange({ layout })}
         >
-          <ReviewLayoutIcon layout={presentation.layout} />
+          <ReviewLayoutIcon layout={currentLayout} />
         </TooltipButton>
       )}
       <DropdownMenu>
@@ -221,8 +272,17 @@ export function WorkspaceReviewToolbar({
           label={options}
           side="bottom"
           render={
-            <DropdownMenuTrigger type="button" className={toolbarIcon} aria-label={options}>
-              <MoreHorizontal className="size-4" />
+            <DropdownMenuTrigger
+              type="button"
+              className={toolbarIcon}
+              aria-label={options}
+              aria-busy={refreshing && !wide}
+            >
+              {refreshing && !wide ? (
+                <ReviewGlyph name="refresh" spinning />
+              ) : (
+                <ReviewGlyph name="more" />
+              )}
             </DropdownMenuTrigger>
           }
         />
@@ -230,7 +290,7 @@ export function WorkspaceReviewToolbar({
           {(!wide || singleFile) && (
             <>
               <DropdownMenuItem onSelect={onRefresh} disabled={refreshing}>
-                <RefreshCw className="size-4" />
+                <ReviewGlyph name="refresh" />
                 {refresh}
               </DropdownMenuItem>
               <DropdownMenuCheckboxItem
@@ -238,19 +298,19 @@ export function WorkspaceReviewToolbar({
                 closeOnClick
                 onCheckedChange={(wrapLines) => onPresentationChange({ wrapLines })}
               >
-                <WrapText className="size-4" />
+                <ReviewGlyph name="wrap" />
                 {wrap}
               </DropdownMenuCheckboxItem>
-              <DropdownMenuItem onSelect={onToggleExpanded}>
-                <ExpandIcon className="size-4" />
-                {expand}
-              </DropdownMenuItem>
               {!singleFile && (
                 <DropdownMenuItem onSelect={() => onPresentationChange({ layout })}>
-                  <LayoutIcon className="size-4" />
+                  <ReviewLayoutIcon layout={currentLayout} />
                   {layoutLabel}
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onSelect={onToggleExpanded}>
+                <ReviewGlyph name={expanded ? "collapse" : "expand"} />
+                {expand}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
             </>
           )}
@@ -270,13 +330,13 @@ export function WorkspaceReviewToolbar({
             </DropdownMenuCheckboxItem>
           ))}
           <DropdownMenuItem
-            disabled={!applyCommand}
+            disabled={!applyCommand && !loadApplyCommand}
             title={zh ? "在 Git Bash 或兼容 shell 中使用" : "Use in Git Bash or a compatible shell"}
             onSelect={() => {
-              if (!applyCommand) return;
-              void copyTextToClipboard(applyCommand).then((ok) =>
-                setCopyState(ok ? "ok" : "error"),
-              );
+              void (async () => {
+                const command = applyCommand ?? (await loadApplyCommand?.());
+                setCopyState(command && (await copyTextToClipboard(command)) ? "ok" : "error");
+              })().catch(() => setCopyState("error"));
             }}
           >
             <Copy className="size-4" />
@@ -307,7 +367,7 @@ export function WorkspaceReviewToolbar({
             disabled={refreshing}
             onClick={onRefresh}
           >
-            <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
+            <ReviewGlyph name="refresh" spinning={refreshing} />
           </TooltipButton>
           <TooltipButton
             type="button"
@@ -320,7 +380,7 @@ export function WorkspaceReviewToolbar({
             aria-pressed={presentation.wrapLines}
             onClick={() => onPresentationChange({ wrapLines: !presentation.wrapLines })}
           >
-            <WrapText className="size-4" />
+            <ReviewGlyph name="wrap" />
           </TooltipButton>
           <TooltipButton
             type="button"
@@ -332,7 +392,7 @@ export function WorkspaceReviewToolbar({
             tooltipSide="bottom"
             onClick={onToggleExpanded}
           >
-            <ExpandIcon className="size-4" />
+            <ReviewGlyph name={expanded ? "collapse" : "expand"} />
           </TooltipButton>
           <TooltipButton
             type="button"
@@ -344,9 +404,25 @@ export function WorkspaceReviewToolbar({
             tooltipSide="bottom"
             onClick={() => onPresentationChange({ layout })}
           >
-            <LayoutIcon className="size-4" />
+            <ReviewLayoutIcon layout={currentLayout} />
           </TooltipButton>
         </div>
+      )}
+      {!singleFile && tree && (
+        <TooltipButton
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className={toolbarIcon}
+          aria-pressed={tree.open}
+          data-review-action="files"
+          aria-label={treeLabel}
+          title={treeLabel}
+          tooltipSide="bottom"
+          onClick={tree.toggle}
+        >
+          <ReviewGlyph name="files" />
+        </TooltipButton>
       )}
       <span className="sr-only" role="status">
         {copyState === "ok"

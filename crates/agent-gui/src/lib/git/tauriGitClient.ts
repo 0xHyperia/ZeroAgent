@@ -68,6 +68,8 @@ export const tauriGitClient: GitClient = {
         path,
         full_context: options?.fullContext,
         hide_whitespace: options?.hideWhitespace,
+        paginate_large: options?.paginateLarge,
+        previous_path: options?.previousPath,
       }),
     );
   },
@@ -110,6 +112,8 @@ export const tauriGitClient: GitClient = {
         path,
         full_context: options?.fullContext,
         hide_whitespace: options?.hideWhitespace,
+        paginate_large: options?.paginateLarge,
+        previous_path: options?.previousPath,
       }),
     );
   },

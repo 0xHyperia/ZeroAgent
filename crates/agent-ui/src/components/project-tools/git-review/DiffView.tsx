@@ -34,7 +34,7 @@ import {
   sortDiffLineComments,
   upsertDiffLineComment,
 } from "@liveagent/ui/lib/chat/diffLineComments";
-import type { GitDiffPreview, GitDiffResponse } from "@liveagent/ui/lib/git/types";
+import type { GitCommitFile, GitDiffPreview, GitDiffResponse } from "@liveagent/ui/lib/git/types";
 import {
   memo,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -67,6 +67,7 @@ import { GitBinaryReviewPreview, gitReviewPreviewKind } from "./GitBinaryReviewP
 import {
   basename,
   buildPatchChunks,
+  countLines,
   type DiffViewKind,
   getPatchFileNames,
   type PatchChunk,
@@ -83,6 +84,8 @@ import {
 } from "./workspaceReviewDiff";
 
 const RAW_DIFF_PREVIEW_CHAR_LIMIT = 60 * 1024;
+const AUTO_FILE_CONTEXT_CHAR_LIMIT = 240 * 1024;
+const AUTO_FILE_CONTEXT_LINE_LIMIT = 5_000;
 
 const DIFF_SELECTION_AUTOSCROLL_EDGE_PX = 40;
 const DIFF_SELECTION_AUTOSCROLL_MAX_STEP_PX = 22;
@@ -442,6 +445,7 @@ function resolveDiffLineCommentLine(
 type WorkspaceReview = {
   presentation: WorkspaceGitPresentation;
   rows: PatchChunk[];
+  allFiles?: readonly GitCommitFile[];
   fileNavigation?: boolean;
   allowAutoSplit: boolean;
   isExpanded: (key: string) => boolean;
@@ -469,7 +473,10 @@ const DiffChunkView = memo(function DiffChunkView(props: {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const bodyId = useId();
   const expanded = workspaceReview?.isExpanded(item.key) ?? true;
-  const { additions, deletions } = useMemo(() => countReviewChanges(item.chunk), [item.chunk]);
+  const { additions, deletions } = useMemo(
+    () => item.lineStats ?? countReviewChanges(item.chunk),
+    [item.chunk, item.lineStats],
+  );
   const viewLayout =
     workspaceReview?.presentation.layout === "auto"
       ? workspaceReview.allowAutoSplit && additions > 0 && deletions > 0
@@ -525,6 +532,15 @@ const DiffChunkView = memo(function DiffChunkView(props: {
     contentResult?.item === item && contentResult.load === loadFileContents
       ? contentResult.contents
       : null;
+  const [requestedContextFor, setRequestedContextFor] = useState<PatchChunk | null>(null);
+  const largeContext = useMemo(
+    () =>
+      fileContents !== null &&
+      (fileContents.before.length + fileContents.after.length > AUTO_FILE_CONTEXT_CHAR_LIMIT ||
+        countLines(fileContents.before) + countLines(fileContents.after) >
+          AUTO_FILE_CONTEXT_LINE_LIMIT),
+    [fileContents],
+  );
   useEffect(() => {
     if (
       !visible ||
@@ -576,25 +592,34 @@ const DiffChunkView = memo(function DiffChunkView(props: {
   const comments = commenting?.comments ?? NO_LINE_COMMENTS;
   const visiblePatch = useMemo(
     () =>
-      filterReviewHunks(item.chunk, item.label, {
-        hideImports,
-        contents: fileContents,
-        importParser: importParser?.path === item.label ? importParser.parser : undefined,
-        annotatedLines: comments,
-      }),
-    [comments, fileContents, hideImports, importParser, item.chunk, item.label],
+      visible
+        ? filterReviewHunks(item.chunk, item.label, {
+            hideImports,
+            contents: fileContents,
+            importParser: importParser?.path === item.label ? importParser.parser : undefined,
+            annotatedLines: comments,
+          })
+        : item.chunk,
+    [comments, fileContents, hideImports, importParser, item.chunk, item.label, visible],
   );
+  const originalContents = visiblePatch === item.chunk ? fileContents : null;
+  const contextDeferred =
+    originalContents &&
+    largeContext &&
+    requestedContextFor !== item &&
+    (loadFullContext || markdownPreview);
+  const renderMarkdown = markdownPreview && !contextDeferred && originalContents;
+  const diffContext = loadFullContext && !contextDeferred ? originalContents : null;
 
   const diffFile = useMemo(() => {
-    if (!visible || item.large || !visiblePatch || summary) return null;
+    if (!visible || item.large || !visiblePatch || summary || renderMarkdown) return null;
     try {
       const names = getPatchFileNames(item.chunk, item.label);
-      const context = loadFullContext && visiblePatch === item.chunk ? fileContents : null;
       const instance = new DiffFile(
         names.oldFileName,
-        context?.before ?? "",
+        diffContext?.before ?? "",
         names.newFileName,
-        context?.after ?? "",
+        diffContext?.after ?? "",
         [visiblePatch],
         isWorkspaceReview ? (sourceLanguageForName(names.oldFileName) ?? "plaintext") : "diff",
         isWorkspaceReview ? (sourceLanguageForName(names.newFileName) ?? "plaintext") : "diff",
@@ -608,11 +633,11 @@ const DiffChunkView = memo(function DiffChunkView(props: {
       return null;
     }
   }, [
-    fileContents,
+    diffContext,
     isDark,
     isWorkspaceReview,
     item,
-    loadFullContext,
+    renderMarkdown,
     viewLayout,
     visible,
     visiblePatch,
@@ -620,11 +645,11 @@ const DiffChunkView = memo(function DiffChunkView(props: {
   ]);
 
   const rawPreview = useMemo(() => {
-    if (!visiblePatch) return "";
+    if (!visible || !visiblePatch || diffFile || renderMarkdown) return "";
     return item.large && visiblePatch.length > RAW_DIFF_PREVIEW_CHAR_LIMIT
       ? `${visiblePatch.slice(0, RAW_DIFF_PREVIEW_CHAR_LIMIT)}\n\n${t("projectTools.gitReview.diffPreviewTruncated")}`
       : visiblePatch;
-  }, [item.large, t, visiblePatch]);
+  }, [diffFile, item.large, renderMarkdown, t, visible, visiblePatch]);
 
   const onSaveComment = commenting?.onSave;
   const onDeleteComment = commenting?.onDelete;
@@ -726,10 +751,10 @@ const DiffChunkView = memo(function DiffChunkView(props: {
     <p className="za-review-file-status">
       {zh ? "此文件的差异已按选项隐藏" : "Changes hidden by the current options"}
     </p>
-  ) : markdownPreview && fileContents && visiblePatch === item.chunk ? (
+  ) : renderMarkdown ? (
     <div className="za-review-rendered-markdown">
       <Markdown
-        content={fileContents.after}
+        content={renderMarkdown.after}
         className="document-markdown"
         readOnly
         componentOverrides={reviewMarkdownComponents}
@@ -857,6 +882,8 @@ const DiffChunkView = memo(function DiffChunkView(props: {
       <div
         id={bodyId}
         hidden={!expanded}
+        className={workspaceReview ? "za-review-file-body" : undefined}
+        tabIndex={largeContext ? -1 : undefined}
         data-review-word-diffs={workspaceReview?.presentation.wordDiffs}
         data-review-hunk-anchors={
           workspaceReview?.fileNavigation && expanded && diffFile && visiblePatch
@@ -864,6 +891,25 @@ const DiffChunkView = memo(function DiffChunkView(props: {
             : undefined
         }
       >
+        {expanded && contextDeferred && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 text-xs text-muted-foreground">
+            <span>{t("projectTools.gitReview.largeContextDeferred")}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={(event) => {
+                event.currentTarget
+                  .closest<HTMLElement>("[tabindex='-1']")
+                  ?.focus({ preventScroll: true });
+                setRequestedContextFor(item);
+              }}
+            >
+              {t("projectTools.gitReview.loadLargeContext")}
+            </Button>
+          </div>
+        )}
         {binaryKind && loadBinaryPreview
           ? expanded && (
               <GitBinaryReviewPreview
@@ -1050,11 +1096,23 @@ export function DiffContent(props: {
       }),
     [patchChunks],
   );
+  const allFiles = workspaceReview?.allFiles;
+  const availableFileKeys = useMemo(() => {
+    if (!allFiles) return chunkFileKeys;
+    return allFiles.map(({ path, oldPath, status, kind }) =>
+      diffLineCommentFileKey(
+        status === "A" || kind === "added" || kind === "untracked"
+          ? "/dev/null"
+          : (oldPath ?? path),
+        status === "D" || kind === "deleted" ? "/dev/null" : path,
+      ),
+    );
+  }, [allFiles, chunkFileKeys]);
 
   useEffect(() => {
     if (loading) return;
-    setLineComments((current) => pruneDiffLineComments(current, chunkFileKeys));
-  }, [chunkFileKeys, loading]);
+    setLineComments((current) => pruneDiffLineComments(current, availableFileKeys));
+  }, [availableFileKeys, loading]);
 
   const handleSaveLineComment = useCallback((input: DiffLineCommentInput) => {
     setLineComments((current) => upsertDiffLineComment(current, input));
@@ -1065,12 +1123,12 @@ export function DiffContent(props: {
   const handleClearLineComments = useCallback(() => setLineComments([]), []);
   const handleSendLineComments = useCallback(() => {
     if (!onInsertComposerSegments || lineComments.length === 0) return;
-    const ordered = sortDiffLineComments(lineComments, chunkFileKeys);
+    const ordered = sortDiffLineComments(lineComments, availableFileKeys);
     const segments = buildDiffLineCommentSegments(ordered, {
       heading: t("projectTools.gitReview.lineComments.composerHeading"),
     });
     if (onInsertComposerSegments(segments)) setLineComments([]);
-  }, [chunkFileKeys, lineComments, onInsertComposerSegments, t]);
+  }, [availableFileKeys, lineComments, onInsertComposerSegments, t]);
 
   const chunkCommenting = useMemo(() => {
     const byChunk = new Map<string, DiffChunkCommenting>();

@@ -62,7 +62,9 @@ export type GitDiffResponse = {
   mode: string;
   files: string[];
   changes?: GitCommitFile[];
+  totals?: { additions: number; deletions: number };
   patch: string;
+  patchOmitted?: boolean;
   stat: string;
   truncated: boolean;
   binaryFiles: string[];
@@ -79,6 +81,8 @@ export type GitDiffPreview = {
 export type GitDiffOptions = {
   fullContext?: boolean;
   hideWhitespace?: boolean;
+  paginateLarge?: boolean;
+  previousPath?: string;
 };
 
 export type GitCommitFile = {
@@ -87,6 +91,8 @@ export type GitCommitFile = {
   status: string;
   kind: string;
   previewIndex?: string;
+  additions?: number;
+  deletions?: number;
 };
 
 export type GitCommitSummary = {
@@ -415,6 +421,8 @@ export function normalizeGitWorktreeInfo(input: unknown): GitWorktreeInfo {
 export function normalizeGitDiffResponse(input: unknown): GitDiffResponse {
   const source = asObject(input);
   const snapshotId = asString(source.snapshotId ?? source.snapshot_id);
+  const totals = asObject(source.totals);
+  const { additions, deletions } = normalizeGitLineCounts(totals);
   return {
     baseRef: asString(source.baseRef ?? source.base_ref),
     headRef: asString(source.headRef ?? source.head_ref),
@@ -423,11 +431,27 @@ export function normalizeGitDiffResponse(input: unknown): GitDiffResponse {
     ...(Array.isArray(source.changes)
       ? { changes: source.changes.map(normalizeGitCommitFile) }
       : {}),
+    ...(additions !== undefined && deletions !== undefined
+      ? { totals: { additions, deletions } }
+      : {}),
     patch: asString(source.patch),
+    ...(asBoolean(source.patchOmitted ?? source.patch_omitted) ? { patchOmitted: true } : {}),
     stat: asString(source.stat),
     truncated: asBoolean(source.truncated),
     binaryFiles: stringArray(source.binaryFiles ?? source.binary_files),
     ...(snapshotId ? { snapshotId } : {}),
+  };
+}
+
+function normalizeGitLineCounts(source: Record<string, unknown>) {
+  const { additions, deletions } = source;
+  return {
+    ...(typeof additions === "number" && Number.isSafeInteger(additions) && additions >= 0
+      ? { additions }
+      : {}),
+    ...(typeof deletions === "number" && Number.isSafeInteger(deletions) && deletions >= 0
+      ? { deletions }
+      : {}),
   };
 }
 
@@ -440,6 +464,7 @@ export function normalizeGitCommitFile(input: unknown): GitCommitFile {
     status: asString(source.status),
     kind: asString(source.kind),
     ...(previewIndex ? { previewIndex } : {}),
+    ...normalizeGitLineCounts(source),
   };
 }
 

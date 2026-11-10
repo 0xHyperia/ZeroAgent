@@ -1,6 +1,6 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
-import { DiffSquare, Eye, Globe, Loader2, X } from "@liveagent/ui/components/IconSet";
+import { DiffSquare, Globe, Loader2, X } from "@liveagent/ui/components/IconSet";
 import type {
   WorkspaceBrowserTools,
   WorkspaceFileChrome,
@@ -46,7 +46,6 @@ import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import type { WorkspaceActivityClient } from "@liveagent/ui/lib/workspace-activity/types";
 import { type ComponentType, Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import CodeIcon from "~icons/lucide/code-xml";
 import type { DesktopWorkspaceTab, useWorkspaceTabs, WorkspaceFileMode } from "./useWorkspaceTabs";
 import { WorkspaceFileHeader, workspaceFileName } from "./WorkspaceFileHeader";
 import type { BrowserHistorySnapshot } from "./workspaceBrowserHistory";
@@ -488,7 +487,6 @@ function WorkspaceFileTabPane({
           comparison={comparison}
           conversationId={comparisonConversationId}
           onComparisonChange={resources.setComparison}
-          capsule
         />
       )}
       {(canDiff || mode === "diff") && (
@@ -528,16 +526,8 @@ function WorkspaceFileTabPane({
         disabled={switching}
         onClick={() => void openMode(mode === "source" ? "preview" : "source")}
       >
-        {switching ? (
-          <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
-        ) : mode !== "source" ? (
-          <CodeIcon aria-hidden="true" className="size-3.5" />
-        ) : (
-          <Eye aria-hidden="true" className="size-3.5" />
-        )}
-        <span className="za-workspace-file-action-label">
-          {mode === "source" ? viewPreview : viewSource}
-        </span>
+        {switching && <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />}
+        {mode === "source" ? viewPreview : viewSource}
       </TooltipButton>
     ) : null;
 
@@ -551,7 +541,6 @@ function WorkspaceFileTabPane({
       viewAction={viewAction}
       comparisonActions={mode === "diff" && <div ref={setDiffActions} className="empty:hidden" />}
       fileTree={chrome.tree}
-      editorTools={showEditor}
       setFormatTools={setFormatTools}
       onOpenFile={openRelatedFile}
       onError={options.onError}

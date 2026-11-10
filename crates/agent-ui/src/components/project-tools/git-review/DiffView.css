@@ -11,22 +11,82 @@
   color: revert-layer;
 }
 
-.za-workspace-review {
-  container: za-workspace-review / inline-size;
+.za-review-header-region {
+  container: za-review-header / inline-size;
+  flex: none;
 }
 
 .za-review-header {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
-  min-height: 48px;
-  padding: 6px 8px;
+  min-height: 46px;
+  padding: 5px 8px;
   border-bottom: 1px solid hsl(var(--border));
 }
 
-.za-review-comparison,
+.za-review-header-region:has(.za-review-page-region) .za-review-header {
+  border-bottom: 0;
+}
+
+.za-review-page-region {
+  padding: 2px 8px 8px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.za-review-page-banner {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 12px 20px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 24px;
+  font-size: 13px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+
+.za-review-page-copy,
+.za-review-page-actions,
+.za-review-page-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.za-review-page-actions {
+  flex: none;
+}
+
+.za-review-page-copy > svg {
+  color: #0169cc;
+}
+
+.dark .za-review-page-copy > svg {
+  color: #66b5ff;
+}
+
+.za-review-page-error {
+  justify-content: space-between;
+  margin: 8px;
+  padding: 6px 10px;
+  color: hsl(var(--destructive));
+  font-size: 12px;
+}
+
+@media (pointer: coarse) {
+  .za-review-page-actions button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.za-review-source-capsule,
+.za-review-base,
 .za-review-change-navigation,
 .za-review-controls {
   display: inline-flex;
@@ -34,31 +94,156 @@
   align-items: center;
   gap: 4px;
   min-width: 0;
-  min-height: 34px;
-  border: 1px solid hsl(var(--border));
+  min-height: 32px;
+  border: 1px solid color-mix(in srgb, hsl(var(--foreground)) 8%, transparent);
   border-radius: 999px;
   background: hsl(var(--background));
-  box-shadow: 0 1px 2px color-mix(in srgb, hsl(var(--foreground)) 6%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, hsl(var(--foreground)) 7%, transparent);
 }
 
 .za-review-comparison {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
   gap: 6px;
-  padding-inline: 10px;
+  height: 28px;
+  padding-inline: 9px 6px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.za-review-source-capsule {
+  flex: 0 1 auto;
+  gap: 2px;
+  padding: 1px 2px;
+}
+
+.za-review-source-capsule:has(.za-review-counts) {
+  padding-inline-end: 6px;
+}
+
+.za-review-comparison-detail {
+  min-width: 0;
+  max-width: 20rem;
+  overflow: hidden;
+  color: color-mix(in srgb, hsl(var(--foreground)) 50%, hsl(var(--background)));
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.za-review-scope-menu {
+  width: min(200px, var(--available-width, 100vw));
+  min-width: 0;
+  border-radius: 16px;
+  border-color: color-mix(in srgb, hsl(var(--foreground)) 9%, transparent);
+  padding: 3px;
+  box-shadow: 0 7px 24px color-mix(in srgb, #000 12%, transparent);
+}
+
+.za-review-scope-menu.za-review-commit-menu {
+  width: max-content;
+  min-width: min(240px, var(--available-width, 100vw));
+  max-width: min(640px, var(--available-width, 100vw));
+  max-height: min(328px, var(--available-height, 100dvh));
+  overscroll-behavior: contain;
+}
+
+.za-review-commit-row {
+  gap: 12px;
+}
+
+.za-review-commit-time {
+  flex: none;
+  color: color-mix(in srgb, hsl(var(--foreground)) 49%, hsl(var(--background)));
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.za-review-scope-menu .za-menu-item {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.za-review-scope-menu [role="separator"] {
+  margin: 4px 8px;
+  background: color-mix(in srgb, hsl(var(--foreground)) 10%, transparent);
+}
+
+.za-review-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.za-review-base {
+  flex: 0 1 auto;
+  gap: 2px;
+  padding: 2px;
+  color: hsl(var(--muted-foreground));
   font-size: 0.8125rem;
 }
 
-.za-review-comparison:hover {
-  background: hsl(var(--muted));
+.za-review-base-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 9ch;
+  padding-inline-start: 6px;
+}
+
+.za-review-base-trigger {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 24px;
+  height: 28px;
+  padding-inline: 6px;
+  border-radius: 999px;
+  color: hsl(var(--foreground));
+}
+
+.za-review-comparison:is(:hover, [aria-expanded="true"]),
+.za-review-base-trigger:is(:hover, [aria-expanded="true"]) {
+  background: color-mix(in srgb, hsl(var(--foreground)) 6%, hsl(var(--background)));
+}
+
+@container za-review-header (max-width: 450px) {
+  .za-review-base-head {
+    display: none;
+  }
+
+  .za-review-comparison-detail {
+    display: none;
+  }
+}
+
+@container za-review-header (max-width: 260px) {
+  .za-review-header {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .za-review-source {
+    margin-inline-end: auto;
+  }
 }
 
 .za-review-controls {
   padding: 2px;
+  gap: 2px;
 }
 
 .za-review-change-navigation {
   gap: 0;
   padding: 2px;
-  color: hsl(var(--muted-foreground));
+  color: color-mix(in srgb, hsl(var(--foreground)) 54%, hsl(var(--background)));
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
@@ -100,6 +285,11 @@
   color: hsl(var(--primary));
 }
 
+.za-review-icon[data-review-action="files"][aria-pressed="true"] {
+  color: light-dark(#2563c9, #86b6ff);
+  background: light-dark(#eaf2fc, #1d3454);
+}
+
 .za-review-icon:disabled {
   opacity: 0.45;
 }
@@ -107,13 +297,11 @@
 .za-review-wide-actions {
   display: none;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
-@container za-workspace-review (min-width: 625px) {
-  .za-review-wide-actions {
-    display: flex;
-  }
+.za-review-controls[data-wide] .za-review-wide-actions {
+  display: flex;
 }
 
 .za-review-counts {
@@ -122,6 +310,10 @@
   gap: 4px;
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
+}
+
+[data-workspace-review-tree] > div:first-child {
+  margin: 8px 8px 2px;
 }
 
 .za-review-file-row {
@@ -139,6 +331,11 @@
 
 .za-review-file-row:has(+ div) {
   border-bottom: 1px solid hsl(var(--border));
+}
+
+/* Keep sticky line numbers and other diff controls below the sticky file title. */
+.za-review-file-body {
+  isolation: isolate;
 }
 
 .za-review-file-toggle {

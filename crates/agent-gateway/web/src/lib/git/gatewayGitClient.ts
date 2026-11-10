@@ -14,6 +14,8 @@ import type { GatewayWebSocketClientLike } from "@/lib/gatewaySocket";
 
 export function createGatewayGitClient(api: GatewayWebSocketClientLike): GitClient {
   return {
+    supportsFullDiffContext: true,
+    supportsWhitespaceDiff: true,
     async status(workdir) {
       return normalizeGitRepositoryState(await api.gitRequest("status", workdir), workdir);
     },
@@ -59,8 +61,10 @@ export function createGatewayGitClient(api: GatewayWebSocketClientLike): GitClie
         workdir,
       );
     },
-    async diff(workdir, mode, path) {
-      return normalizeGitDiffResponse(await api.gitRequest("diff", workdir, { mode, path }));
+    async diff(workdir, mode, path, options) {
+      return normalizeGitDiffResponse(
+        await api.gitRequest("diff", workdir, { mode, path, ...options }),
+      );
     },
     async log(workdir, options = {}) {
       return normalizeGitLogResponse(
@@ -79,9 +83,9 @@ export function createGatewayGitClient(api: GatewayWebSocketClientLike): GitClie
         await api.gitRequest("compare_commit_with_remote", workdir, { commit }),
       );
     },
-    async commitDiff(workdir, commit, path) {
+    async commitDiff(workdir, commit, path, options) {
       return normalizeGitDiffResponse(
-        await api.gitRequest("commit_diff", workdir, { commit, path }),
+        await api.gitRequest("commit_diff", workdir, { commit, path, ...options }),
       );
     },
     async stage(workdir, path) {

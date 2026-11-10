@@ -33,7 +33,6 @@ import {
   useRef,
   useState,
 } from "react";
-import FoldersIcon from "~icons/lucide/folders";
 import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTextGeneration";
 import { ensureManagedProcessInit, useManagedProcesses } from "../../lib/managed-process/store";
 import { cn } from "../../lib/shared/utils";
@@ -49,6 +48,7 @@ import {
   type GitReviewFocusRequest,
   RightDockToolContext,
   type RightDockToolContextValue,
+  type WorkspaceReviewState,
 } from "./RightDockContext";
 import { RightDockChooser, RightDockCreateMenu } from "./RightDockLauncher";
 import { RightDockTabStrip, type RightDockWorkspaceTab } from "./RightDockTabStrip";
@@ -65,8 +65,10 @@ import {
 import { useRightDockProjectTabs } from "./useRightDockProjectTabs";
 import { useRightDockSessions } from "./useRightDockSessions";
 import { useRightDockTabReorder } from "./useRightDockTabReorder";
+import { WorkspaceFileTreeIcon } from "./WorkspaceFileTreeIcon";
 import { WorkspaceNavigationSplit } from "./WorkspaceNavigationSplit";
 import type { WorkspaceGitComparison } from "./workspaceGitPaths";
+import "./workspace-file-header.css";
 import "./workspace-panels.css";
 
 export type WorkspaceBrowserTools = {
@@ -511,6 +513,9 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   const tabbed = Boolean(workspace);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [fileHeaderTarget, setFileHeaderTarget] = useState<HTMLDivElement | null>(null);
+  const [fileFilterFocusScope, setFileFilterFocusScope] = useState<string | null>(null);
+  const fileFilterRef = useRef<HTMLInputElement>(null);
+  const currentViewScope = workspaceViewScope ?? projectPathKey;
   const previousViewScopeRef = useRef(workspaceViewScope);
   useLayoutEffect(() => {
     if (previousViewScopeRef.current === workspaceViewScope) return;
@@ -536,6 +541,18 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       workspaceRootRevision,
     });
   const projectReady = projectPathKey.trim() !== "" && cwd.trim() !== "" && !disabledMessage;
+  const workspaceTreeOpen = workspace?.treeOpen;
+  const toggleWorkspaceTree = workspace?.onToggleTree;
+  const fileTreeToggle = useMemo(
+    () =>
+      projectReady &&
+      !leasedTools.has("fileTree") &&
+      workspaceTreeOpen !== undefined &&
+      toggleWorkspaceTree
+        ? { open: workspaceTreeOpen, toggle: toggleWorkspaceTree }
+        : undefined,
+    [leasedTools, projectReady, toggleWorkspaceTree, workspaceTreeOpen],
+  );
   const terminalReady = projectReady && !terminalDisabledMessage;
   const {
     activateTerminalSession,
@@ -795,6 +812,13 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     ],
   );
 
+  const startToolFromLauncher = (kind: RightDockSingletonTabKind) => {
+    if (kind === "fileTree" && onOpenWorkspaceTree && projectReady && !leasedTools.has(kind)) {
+      setFileFilterFocusScope(currentViewScope);
+    }
+    startToolTab(kind);
+  };
+
   const setFileTreeInitialized = useCallback(
     (initialized: boolean) => {
       if (!projectPathKey) return;
@@ -834,6 +858,27 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   }, []);
 
   const openWorkspaceDiff = workspace?.onOpenDiff;
+  const reviewFileJumpRef = useRef<((path: string) => void) | null>(null);
+  const [reviewState, setReviewState] = useState<{
+    view: string;
+    cwd: string;
+    client: typeof gitClient;
+    comparison: typeof comparison;
+    state: WorkspaceReviewState;
+  }>();
+  const publishReviewState = useCallback(
+    (state: WorkspaceReviewState) => {
+      setReviewState({ view: currentViewScope, cwd, client: gitClient, comparison, state });
+    },
+    [comparison, currentViewScope, cwd, gitClient],
+  );
+  const currentReview =
+    reviewState?.view === currentViewScope &&
+    reviewState.cwd === cwd &&
+    reviewState.client === gitClient &&
+    reviewState.comparison === comparison
+      ? reviewState.state
+      : undefined;
   const openWorkspaceReviewFile = useCallback(
     (path: string) => openWorkspaceDiff?.(path, true),
     [openWorkspaceDiff],
@@ -881,6 +926,10 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                 conversationId: comparisonConversationId,
                 onComparisonChange,
                 onOpenFile: openWorkspaceReviewFile,
+                tree: fileTreeToggle,
+                fileJumpRef: reviewFileJumpRef,
+                headerTarget: fileHeaderTarget,
+                onStateChange: publishReviewState,
               }
             : undefined,
         getSelectedChangesPath,
@@ -910,8 +959,10 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       cwd,
       disabledMessage,
       visibleExternalFileTreeRoots,
+      fileHeaderTarget,
       fileTreeInitialized,
       fileTreeState,
+      fileTreeToggle,
       forgetTerminalSession,
       gitClient,
       gitDisabledMessage,
@@ -937,6 +988,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       openExternal,
       projectPathKey,
       projectReady,
+      publishReviewState,
       reconcileSshSessions,
       rememberTerminalSnapshot,
       refreshExternalRoots,
@@ -969,11 +1021,18 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   const filePicker = Boolean(
     workspace && !workspace.activeTabId && currentActiveTab === "fileTree",
   );
+  const reviewTree = Boolean(
+    workspace && !workspace.activeTabId && currentActiveTab === "gitReview" && gitClient,
+  );
+  const canFocusEmptyFileFilter =
+    fileFilterFocusScope === currentViewScope && filePicker && isOpen && fileTreeToggle?.open;
+  useLayoutEffect(() => {
+    if (fileFilterFocusScope === null) return;
+    setFileFilterFocusScope(null);
+    if (canFocusEmptyFileFilter) fileFilterRef.current?.focus({ preventScroll: true });
+  }, [canFocusEmptyFileFilter, fileFilterFocusScope]);
   const treeToggleLabel = locale === "zh-CN" ? "切换文件树" : "Toggle file tree";
-  const fileTreeToggle =
-    workspace && projectReady && !leasedTools.has("fileTree")
-      ? { open: workspace.treeOpen, toggle: workspace.onToggleTree }
-      : undefined;
+  const rootLabel = cwd.replace(/\\/g, "/").match(/^\/?([a-z]:)(?:\/|$)/i)?.[1] ?? "/";
   const closeDock = (event: ReactMouseEvent<HTMLButtonElement>) => {
     const group = event.currentTarget.closest('[data-slot="resizable-panel-group"]');
     onClose?.();
@@ -1114,7 +1173,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
               creating={creating}
               onCreateTerminal={handleCreate}
               onOpenNewTerminalInWorkbench={onOpenNewTerminalInWorkbench}
-              onStartTool={startToolTab}
+              onStartTool={startToolFromLauncher}
               onOpenBackgroundTasks={openBackgroundTasks}
             />
             {workspace && (
@@ -1203,33 +1262,38 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
 
           {workspace && <div ref={setFileHeaderTarget} className="z-10 shrink-0 empty:hidden" />}
           {filePicker && (
-            <div className="flex h-10 shrink-0 items-center justify-between px-2">
+            <header className="za-workspace-file-header" data-workspace-file-picker-header="">
               <LabelTooltip
                 label={cwd}
                 side="bottom"
                 render={
-                  <span className="truncate rounded-full border border-border/60 px-2 py-1 text-xs">
-                    {cwd
-                      .replace(/[\\/]+$/, "")
-                      .split(/[\\/]/)
-                      .at(-1) || cwd}
+                  <span className="za-workspace-file-tool-group za-workspace-file-empty-root text-[13px] font-medium">
+                    {rootLabel}
                   </span>
                 }
               />
               {fileTreeToggle && (
-                <TooltipButton
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-pressed={fileTreeToggle.open}
-                  aria-label={treeToggleLabel}
-                  title={treeToggleLabel}
-                  tooltipSide="bottom"
-                  onClick={fileTreeToggle.toggle}
-                >
-                  <FoldersIcon className="size-4" />
-                </TooltipButton>
+                <div className="za-workspace-file-actions">
+                  <div className="za-workspace-file-tool-group">
+                    <TooltipButton
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-pressed={fileTreeToggle.open}
+                      data-workspace-file-tree-toggle=""
+                      aria-label={treeToggleLabel}
+                      tooltip={treeToggleLabel}
+                      tooltipSide="bottom"
+                      onClick={() => {
+                        if (!fileTreeToggle.open) setFileFilterFocusScope(currentViewScope);
+                        fileTreeToggle.toggle();
+                      }}
+                    >
+                      <WorkspaceFileTreeIcon className="size-4" />
+                    </TooltipButton>
+                  </div>
+                </div>
               )}
-            </div>
+            </header>
           )}
           <div className="relative flex min-h-0 flex-1 overflow-hidden @container">
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1242,7 +1306,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   terminal: terminalReady ? () => handleCreate() : undefined,
                   files:
                     projectReady && !leasedTools.has("fileTree")
-                      ? () => startToolTab("fileTree")
+                      ? () => startToolFromLauncher("fileTree")
                       : undefined,
                   more: [
                     { label: t("projectTools.backgroundTasksTitle"), run: openBackgroundTasks },
@@ -1262,16 +1326,18 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                     {disabledMessage}
                   </div>
                 ) : filePicker ? (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-                    <FoldersIcon className="size-7 text-muted-foreground" />
-                    <strong className="text-sm font-medium">
-                      {locale === "zh-CN" ? "打开文件" : "Open file"}
-                    </strong>
-                    <p className="text-xs text-muted-foreground">
-                      {locale === "zh-CN"
-                        ? "从工作区目录树中选择文件"
-                        : "Choose a file from the workspace tree"}
-                    </p>
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+                    <WorkspaceFileTreeIcon className="size-8 shrink-0 text-muted-foreground" />
+                    <div className="flex w-full max-w-72 flex-col items-center gap-2">
+                      <h2 className="text-lg font-medium leading-6">
+                        {locale === "zh-CN" ? "打开文件" : "Open file"}
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        {locale === "zh-CN"
+                          ? "从工作区目录树中选择文件"
+                          : "Select a file from the workspace tree"}
+                      </p>
+                    </div>
                   </div>
                 ) : showRightDockChooser ? (
                   <RightDockChooser
@@ -1286,7 +1352,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                     loading={loading}
                     error={error}
                     onCreateTerminal={handleCreate}
-                    onStartTool={startToolTab}
+                    onStartTool={startToolFromLauncher}
                     onOpenBackgroundTasks={openBackgroundTasks}
                     onNewTerminalDragStart={onNewTerminalDragStart}
                     onToolDragStart={onToolDragStart}
@@ -1322,12 +1388,26 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   <RightWorkspaceFileTree
                     key={workspaceViewScope}
                     active={isOpen}
+                    reviewOnly={reviewTree}
+                    reviewRepository={
+                      reviewTree && comparison ? (currentReview?.repository ?? null) : undefined
+                    }
+                    reviewDiff={currentReview?.diff}
+                    reviewLoading={currentReview?.loading ?? true}
+                    reviewError={currentReview?.error}
+                    activeReviewPath={currentReview?.activePath}
+                    onRetryReview={currentReview?.retry}
+                    filterInputRef={filePicker ? fileFilterRef : undefined}
                     groups={workspace.treeGroups}
                     onToggleGroup={workspace.onToggleTreeGroup}
                     comparison={workspace.comparison}
                     conversationId={comparisonConversationId}
                     onOpenReview={() => startToolTab("gitReview")}
-                    onOpenDiff={workspace.onOpenDiff}
+                    onOpenDiff={
+                      reviewTree
+                        ? (path) => reviewFileJumpRef.current?.(path)
+                        : workspace.onOpenDiff
+                    }
                   />
                 </WorkspaceNavigationSplit>
               )}

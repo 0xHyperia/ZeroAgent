@@ -6,6 +6,7 @@ import {
   Copy,
   FolderOpen,
   Github,
+  MoreHorizontal,
 } from "@liveagent/ui/components/IconSet";
 import type { FileTreeEntry } from "@liveagent/ui/components/project-tools/file-tree/model";
 import {
@@ -40,15 +41,7 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import type { GitClient, GitRepositoryState } from "@liveagent/ui/lib/git/types";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import AndroidIcon from "~icons/logos/android-icon";
 import GitIcon from "~icons/logos/git-icon";
 import WslIcon from "~icons/logos/linux-tux";
@@ -56,10 +49,9 @@ import PyCharmIcon from "~icons/logos/pycharm";
 import TerminalIcon from "~icons/logos/terminal";
 import VisualStudioIcon from "~icons/logos/visual-studio";
 import VSCodeIcon from "~icons/logos/visual-studio-code";
-import FileSearchIcon from "~icons/lucide/file-search-2";
-import FoldersIcon from "~icons/lucide/folders";
 import CursorIcon from "~icons/material-icon-theme/cursor";
 import type { WorkspaceFileRequest } from "./useWorkspaceTabs";
+import { WorkspaceFileTreeIcon } from "./WorkspaceFileTreeIcon";
 import "./workspace-file-header.css";
 
 export function workspaceFileName(path: string) {
@@ -449,7 +441,6 @@ export function WorkspaceFileHeader({
   viewAction,
   comparisonActions,
   fileTree,
-  editorTools,
   setFormatTools,
   onOpenFile,
   onError,
@@ -464,7 +455,6 @@ export function WorkspaceFileHeader({
   viewAction?: ReactNode;
   comparisonActions?: ReactNode;
   fileTree?: { open: boolean; toggle: () => void };
-  editorTools?: boolean;
   setFormatTools: (element: HTMLDivElement | null) => void;
   onOpenFile: (path: string) => void;
   onError: (message: string) => void;
@@ -477,11 +467,14 @@ export function WorkspaceFileHeader({
   const absolutePath = workspaceImageAbsolutePathForCopy(request.workdir, request.path);
   const relativePath = workspaceImageRelativePathForCopy(request.workdir, request.path);
   const header = useRef<HTMLElement | null>(null);
+  const actionGroupRef = useRef<HTMLFieldSetElement>(null);
+  const overflowTriggerRef = useRef<HTMLButtonElement>(null);
+  const compactRef = useRef(false);
+  const restoreToolFocus = useRef(false);
   const activeRequest = useRef<WorkspaceFileRequest | null>(null);
   const [compact, setCompact] = useState(false);
-  const [formatTools, setFormatToolsNode] = useState<HTMLDivElement | null>(null);
-  const [hasFormatTools, setHasFormatTools] = useState(false);
-  const [formatOpen, setFormatOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [openWith, setOpenWith] = useState(false);
   const [editorTargets, setEditorTargets] = useState<string[]>([]);
   const [preferredTarget, setPreferredTarget] = useState(preferredOpenTarget);
@@ -501,13 +494,6 @@ export function WorkspaceFileHeader({
   const comparing = Boolean(comparisonActions);
   const relative = details?.relative ?? relativePath;
   const canCopyRelative = Boolean(relative && !/^(?:[/\\]|[a-z]:)/i.test(relative));
-  const formatToolsRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      setFormatToolsNode(element);
-      setFormatTools(element);
-    },
-    [setFormatTools],
-  );
   useLayoutEffect(() => {
     activeRequest.current = active ? request : null;
     return () => {
@@ -517,26 +503,35 @@ export function WorkspaceFileHeader({
   useLayoutEffect(() => {
     const node = header.current;
     if (!active || !node) return;
-    const apply = (width: number) => setCompact(width > 0 && width < FILE_TOOLBAR_COMPACT_WIDTH);
+    const apply = (width: number) => {
+      if (!width) return;
+      const next = width < FILE_TOOLBAR_COMPACT_WIDTH;
+      if (next === compactRef.current) return;
+      const focused = node.ownerDocument.activeElement;
+      restoreToolFocus.current =
+        focused === overflowTriggerRef.current ||
+        Boolean(actionGroupRef.current?.contains(focused));
+      compactRef.current = next;
+      setControlsOpen(false);
+      setOptionsOpen(false);
+      setOpenWith(false);
+      setCompact(next);
+    };
     apply(node.clientWidth);
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) apply(entry.contentRect.width);
+      if (entry) apply(entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width);
     });
     observer.observe(node);
     return () => observer.disconnect();
   }, [active]);
   useLayoutEffect(() => {
-    if (!formatTools) return;
-    const update = () => {
-      const present = formatTools.childElementCount > 0;
-      setHasFormatTools(present);
-      if (!present) setFormatOpen(false);
-    };
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(formatTools, { childList: true });
-    return () => observer.disconnect();
-  }, [formatTools]);
+    if (!restoreToolFocus.current) return;
+    restoreToolFocus.current = false;
+    const target = compact
+      ? overflowTriggerRef.current
+      : actionGroupRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+    target?.focus({ preventScroll: true });
+  }, [compact]);
   useEffect(() => {
     if (!active || !openWith || !gitClient || request.remote) return;
     let listening = true;
@@ -570,16 +565,13 @@ export function WorkspaceFileHeader({
   }, [active, nativeFileActions, request.remote]);
   useEffect(() => {
     if (!active) {
-      setFormatOpen(false);
+      setControlsOpen(false);
+      setOptionsOpen(false);
       setOpenWith(false);
       setRepository(null);
       setEditorTargets([]);
     }
   }, [active]);
-  useEffect(() => {
-    if (!compact) setFormatOpen(false);
-  }, [compact]);
-  useEffect(() => setFormatOpen(false), [comparing]);
   const openFileLabel = copy("在默认应用中打开", "Open in default application");
   const openPrimaryLabel =
     primaryTarget.id === "default"
@@ -652,15 +644,142 @@ export function WorkspaceFileHeader({
   const formatLabel = copy("文件控件", "File controls");
   const fileOptionsLabel = copy("文件选项", "File options");
   const treeLabel = copy("切换文件树", "Toggle file tree");
-  const overflowTools = compact || editorTools;
-  const fileControlLabel = overflowTools && hasFormatTools ? formatLabel : fileOptionsLabel;
   const openWithLabel = copy("打开方式", "Open with");
-  const runFileOption = (action: () => void | Promise<void>) => {
-    setFormatOpen(false);
-    void action();
-  };
-  const fileOptionClass =
-    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted focus-visible:bg-muted";
+  const fileActions = (
+    <fieldset
+      ref={actionGroupRef}
+      className="za-workspace-file-tool-group"
+      aria-label={formatLabel}
+    >
+      {viewAction}
+      {comparisonActions}
+      {!request.remote && (
+        <DropdownMenu open={active && optionsOpen} onOpenChange={setOptionsOpen}>
+          <LabelTooltip
+            label={fileOptionsLabel}
+            side="bottom"
+            disabled={optionsOpen}
+            render={
+              <DropdownMenuTrigger
+                aria-label={fileOptionsLabel}
+                render={<Button type="button" size="icon-xs" variant="ghost" />}
+              >
+                <MoreHorizontal aria-hidden="true" className="size-4" />
+              </DropdownMenuTrigger>
+            }
+          />
+          <DropdownMenuContent
+            align="end"
+            className="za-workspace-compact-menu za-workspace-file-options-menu"
+          >
+            <DropdownMenuItem onSelect={() => copyPath(absolutePath)}>
+              <Copy className="size-4" /> {copy("复制路径", "Copy path")}
+            </DropdownMenuItem>
+            {canCopyRelative && (
+              <DropdownMenuItem onSelect={() => void copyRelativePath()}>
+                <Copy className="size-4" /> {copy("复制相对路径", "Copy relative path")}
+              </DropdownMenuItem>
+            )}
+            {editable && (
+              <DropdownMenuItem onSelect={() => void copyContents()}>
+                <Copy className="size-4" /> {copy("复制文件内容", "Copy file contents")}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      <div ref={setFormatTools} className="za-workspace-file-format-tools" />
+      {fileTree && (
+        <TooltipButton
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={treeLabel}
+          tooltip={treeLabel}
+          tooltipSide="bottom"
+          aria-pressed={fileTree.open}
+          data-workspace-file-tree-toggle=""
+          onClick={() => {
+            setControlsOpen(false);
+            fileTree.toggle();
+          }}
+        >
+          <WorkspaceFileTreeIcon className="size-4" />
+        </TooltipButton>
+      )}
+      {nativeFileActions && !request.remote && (
+        <div className="za-workspace-file-open">
+          <TooltipButton
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2"
+            aria-label={openPrimaryLabel}
+            tooltip={openPrimaryLabel}
+            tooltipSide="bottom"
+            onClick={() =>
+              void (primaryTarget.id === "default" ? open("open") : openEditor(primaryTarget.id))
+            }
+          >
+            <primaryTarget.Icon aria-hidden="true" className="size-4" />
+            <span>{copy("打开", "Open")}</span>
+          </TooltipButton>
+          <DropdownMenu open={active && openWith} onOpenChange={setOpenWith}>
+            <LabelTooltip
+              label={openWithLabel}
+              side="bottom"
+              disabled={openWith}
+              render={
+                <DropdownMenuTrigger
+                  render={
+                    <Button type="button" size="icon-sm" variant="ghost" className="h-7 w-6" />
+                  }
+                  aria-label={openWithLabel}
+                >
+                  <ChevronDown className="size-3" />
+                </DropdownMenuTrigger>
+              }
+            />
+            <DropdownMenuContent align="end" className="za-workspace-compact-menu">
+              {openTargets.map(({ id, label, Icon }) => (
+                <DropdownMenuItem
+                  key={id}
+                  data-preferred={id === primaryTarget.id || undefined}
+                  onClick={() =>
+                    void (id === "default" ? open("open", true) : openEditor(id, true))
+                  }
+                >
+                  <Icon aria-hidden="true" className="size-4" />
+                  {id === "default" ? copy("默认应用", label) : label}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void open("reveal")}>
+                {copy("打开所在文件夹", "Open containing folder")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void saveCopy()}>
+                {copy("另存为…", "Save as…")}
+              </DropdownMenuItem>
+              {details?.github && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    void openUrl(details.github).catch(() =>
+                      onError(
+                        copy("无法在 GitHub 打开此文件", "Could not open this file on GitHub"),
+                      ),
+                    );
+                  }}
+                >
+                  <Github className="size-4" />
+                  {copy("在 GitHub 上打开", "Open in GitHub")}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+    </fieldset>
+  );
   return (
     <header
       ref={header}
@@ -671,164 +790,34 @@ export function WorkspaceFileHeader({
       <WorkspaceBreadcrumbs request={request} active={active} onOpenFile={onOpenFile} />
       <div className="za-workspace-file-actions">
         {modeActions && <div className="za-workspace-file-mode-actions">{modeActions}</div>}
-        <div className="za-workspace-file-tool-group" role="group" aria-label={formatLabel}>
-          <Popover open={active && formatOpen} onOpenChange={setFormatOpen}>
+        {compact ? (
+          <Popover open={active && controlsOpen} onOpenChange={setControlsOpen}>
             <LabelTooltip
-              label={fileControlLabel}
+              label={formatLabel}
               side="bottom"
-              disabled={formatOpen}
+              disabled={controlsOpen}
               render={
                 <PopoverTrigger
-                  hidden={Boolean(
-                    request.remote &&
-                      (!overflowTools || !hasFormatTools) &&
-                      !(comparing && viewAction),
-                  )}
-                  aria-label={fileControlLabel}
-                  render={<Button type="button" size="icon-xs" variant="ghost" />}
+                  render={<button ref={overflowTriggerRef} type="button" />}
+                  aria-label={formatLabel}
+                  className="za-workspace-file-overflow-trigger"
                 >
-                  <FileSearchIcon aria-hidden="true" className="size-4" />
+                  <MoreHorizontal aria-hidden="true" className="size-4" />
                 </PopoverTrigger>
               }
             />
             <PopoverContent
               keepMounted
               align="end"
-              className="w-fit min-w-44 max-w-[calc(100vw-16px)] p-1.5"
               aria-label={formatLabel}
+              className="za-workspace-compact-menu za-workspace-file-overflow"
             >
-              {!request.remote && (
-                <div>
-                  <button
-                    type="button"
-                    className={fileOptionClass}
-                    onClick={() => runFileOption(() => copyPath(absolutePath))}
-                  >
-                    <Copy className="size-4" /> {copy("复制路径", "Copy path")}
-                  </button>
-                  {canCopyRelative && (
-                    <button
-                      type="button"
-                      className={fileOptionClass}
-                      onClick={() => runFileOption(copyRelativePath)}
-                    >
-                      <Copy className="size-4" /> {copy("复制相对路径", "Copy relative path")}
-                    </button>
-                  )}
-                  {editable && (
-                    <button
-                      type="button"
-                      className={fileOptionClass}
-                      onClick={() => runFileOption(copyContents)}
-                    >
-                      <Copy className="size-4" /> {copy("复制文件内容", "Copy file contents")}
-                    </button>
-                  )}
-                </div>
-              )}
-              {comparing && viewAction && (
-                <div className="za-workspace-file-diff-view-action">{viewAction}</div>
-              )}
-              {overflowTools && (
-                <div
-                  ref={formatToolsRef}
-                  className="za-workspace-file-format-tools za-workspace-file-format-popover"
-                />
-              )}
+              {fileActions}
             </PopoverContent>
           </Popover>
-          {!comparing && viewAction}
-          {comparisonActions}
-          {!overflowTools && (
-            <div ref={formatToolsRef} className="za-workspace-file-format-tools" />
-          )}
-          {fileTree && (
-            <TooltipButton
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={treeLabel}
-              tooltip={treeLabel}
-              tooltipSide="bottom"
-              aria-pressed={fileTree.open}
-              onClick={fileTree.toggle}
-            >
-              <FoldersIcon aria-hidden="true" className="size-4" />
-            </TooltipButton>
-          )}
-          {nativeFileActions && !request.remote && (
-            <div className="za-workspace-file-open">
-              <TooltipButton
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2"
-                aria-label={openPrimaryLabel}
-                tooltip={openPrimaryLabel}
-                tooltipSide="bottom"
-                onClick={() =>
-                  void (primaryTarget.id === "default"
-                    ? open("open")
-                    : openEditor(primaryTarget.id))
-                }
-              >
-                <primaryTarget.Icon aria-hidden="true" className="size-3.5" />
-                <span className="za-workspace-file-action-label">{copy("打开", "Open")}</span>
-              </TooltipButton>
-              <DropdownMenu open={active && openWith} onOpenChange={setOpenWith}>
-                <LabelTooltip
-                  label={openWithLabel}
-                  side="bottom"
-                  disabled={openWith}
-                  render={
-                    <DropdownMenuTrigger
-                      render={
-                        <Button type="button" size="icon-sm" variant="ghost" className="h-7 w-6" />
-                      }
-                      aria-label={openWithLabel}
-                    >
-                      <ChevronDown className="size-3" />
-                    </DropdownMenuTrigger>
-                  }
-                />
-                <DropdownMenuContent align="end" className="min-w-44">
-                  {openTargets.map(({ id, label, Icon }) => (
-                    <DropdownMenuItem
-                      key={id}
-                      onClick={() =>
-                        void (id === "default" ? open("open", true) : openEditor(id, true))
-                      }
-                    >
-                      <Icon aria-hidden="true" className="size-4" />
-                      {id === "default" ? copy("默认应用", label) : label}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void open("reveal")}>
-                    {copy("打开所在文件夹", "Open containing folder")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void saveCopy()}>
-                    {copy("另存为…", "Save as…")}
-                  </DropdownMenuItem>
-                  {details?.github && (
-                    <DropdownMenuItem
-                      onClick={() => {
-                        void openUrl(details.github).catch(() =>
-                          onError(
-                            copy("无法在 GitHub 打开此文件", "Could not open this file on GitHub"),
-                          ),
-                        );
-                      }}
-                    >
-                      <Github className="size-4" />
-                      {copy("在 GitHub 上打开", "Open in GitHub")}
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
-        </div>
+        ) : (
+          fileActions
+        )}
       </div>
     </header>
   );

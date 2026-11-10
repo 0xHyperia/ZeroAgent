@@ -102,6 +102,7 @@ const lib = env.loadModule("@liveagent/ui/lib/chat/diffLineComments.ts");
 const { DiffContent } = env.loadModule(
   "@liveagent/ui/components/project-tools/git-review/DiffView.tsx",
 );
+const { buildPatchChunks } = env.loadModule("@liveagent/ui/components/project-tools/git-review/model.ts");
 const { MentionComposer } = env.loadModule("@liveagent/ui/components/chat/MentionComposer.tsx");
 const { formatCodeMentionToken } = env.loadModule("@liveagent/ui/lib/chat/mentionReferences.ts");
 
@@ -292,6 +293,33 @@ function renderDiffContent(initialProps) {
   };
 }
 
+test("large unchanged context stays out of the renderer until explicitly loaded", async (t) => {
+  const rest = "// unchanged\n".repeat(2600);
+  const contents = {
+    before: `const a = 1;\nconst b = 2;\nconst c = 4;\n${rest}`,
+    after: `const a = 1;\nconst b = 3;\nconst c = 4;\n${rest}`,
+  };
+  const workspaceReview = {
+    presentation: { layout: "unified", fullContext: true },
+    rows: buildPatchChunks(PATCH_A, "Changes"),
+    isExpanded: () => true,
+    onToggleFile: () => {},
+    loadFileContents: async () => contents,
+  };
+  const view = renderDiffContent({ title: "Changes", workspaceReview });
+  t.after(view.cleanup);
+  await view.render();
+  assert.ok(view.chunk("src/a.ts"));
+  assert.doesNotMatch(diffViewRenders.at(-1).diffFile.getNewFileContent(), /unchanged/);
+  const load = buttonByText(view.host, "projectTools.gitReview.loadLargeContext");
+  await view.click(load);
+  assert.equal(diffViewRenders.at(-1).diffFile.getNewFileContent(), contents.after);
+  assert.equal(buttonByText(view.host, "projectTools.gitReview.loadLargeContext"), undefined);
+  await view.render({ workspaceReview: { ...workspaceReview, rows: buildPatchChunks(PATCH_A, "Changes") } });
+  assert.ok(buttonByText(view.host, "projectTools.gitReview.loadLargeContext"));
+  assert.doesNotMatch(diffViewRenders.at(-1).diffFile.getNewFileContent(), /unchanged/);
+});
+
 test("diff lines can be commented, edited, deleted and sent to the composer", async () => {
   const sent = [];
   const view = renderDiffContent({
@@ -416,6 +444,23 @@ test("comments stay pending when the composer rejects them, and are pruned with 
     assert.match(view.pending().textContent, /2 pending comments/);
     await view.render({
       loading: false,
+      workspaceReview: {
+        presentation: { layout: "unified" },
+        rows: buildPatchChunks(PATCH_B, "Changes"),
+        allFiles: [
+          { path: "src/a.ts", kind: "modified", status: "M" },
+          { path: "src/b.ts", kind: "modified", status: "M" },
+        ],
+        isExpanded: () => true,
+        onToggleFile() {},
+        loadFileContents: async () => null,
+      },
+    });
+    assert.equal(view.chunk("src/a.ts"), null);
+    assert.match(view.pending().textContent, /2 pending comments/);
+    await view.render({
+      loading: false,
+      workspaceReview: undefined,
       diff: { patch: PATCH_B, stat: "", baseRef: "HEAD", headRef: "WORKTREE" },
     });
     assert.match(view.pending().textContent, /1 pending comment/);

@@ -4,7 +4,7 @@ import {
   Columns2,
   Cpu,
   DiffSquare,
-  FileText,
+  File,
   GripVertical,
   Terminal,
   X,
@@ -669,7 +669,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             icon: changesTab ? (
               <DiffSquare className="size-4 shrink-0" />
             ) : filesTab ? (
-              <FileText className="size-3.5 shrink-0" />
+              <File aria-hidden="true" className="size-3.5 shrink-0" />
             ) : (
               definition.icon("size-3.5 shrink-0")
             ),

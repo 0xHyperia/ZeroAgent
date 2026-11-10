@@ -196,6 +196,14 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
         assert.match(dock, /headerTarget: fileHeaderTarget/);
         continue;
       }
+      if (targetSource === "headerTarget" && content?.name === "header" && source.includes('className="za-review-header-region"')) {
+        const dock = readShared("components/project-tools/RightDockPanel.tsx");
+        assert.match(dock, /ref=\{setFileHeaderTarget\} className="z-10 shrink-0 empty:hidden"/);
+        assert.match(dock, /headerTarget: fileHeaderTarget/);
+        assert.match(source, /headerTarget \? \(\s*active && createPortal\(header, headerTarget\)/);
+        assert.doesNotMatch(source.slice(source.indexOf("const header = ("), call.start), /aria-modal|role="(?:dialog|alertdialog)"|layer-(?:popover|modal|toast|critical)/);
+        continue;
+      }
       if (content?.type === "Identifier" && content.name === "review" && targetSource === "selectionEdit.inlineHost" && source.includes("useWorkspaceMarkdownSelectionEdit(")) {
         const host = readShared("components/workspace-editor/useWorkspaceMarkdownSelectionEdit.ts");
         assert.match(host, /host\.className = "za-markdown-review-widget"/);

@@ -34,6 +34,7 @@ export type FileTreeRowProps = {
   transientFiles?: boolean;
   onContextMenu?: (event: ReactMouseEvent, path: string) => void;
   decoration?: ReactNode;
+  changeTone?: "added" | "deleted" | "modified" | "directory";
   sectioned?: boolean;
   onDragStart?: (event: ReactDragEvent, path: string, kind: FileTreeKind) => void;
   onDragEnd?: () => void;
@@ -56,6 +57,7 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
     transientFiles,
     onContextMenu,
     decoration,
+    changeTone,
     sectioned,
     onDragStart,
     onDragEnd,
@@ -77,6 +79,7 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
       aria-selected={selected}
       aria-expanded={kind === "dir" ? expanded : undefined}
       aria-level={sectioned ? depth + 1 : undefined}
+      data-workspace-change-tone={changeTone}
       tabIndex={0}
       className={cn(
         "group flex w-full cursor-pointer select-none items-center rounded-md leading-5",
@@ -126,13 +129,17 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
             <Loader2 className="size-3.5 animate-spin" />
           ) : (
             <ChevronRight
-              className={cn("size-3.5 transition-transform", expanded && "rotate-90")}
+              className={cn(
+                "size-3.5 transition-transform",
+                changeTone === "directory" && "text-muted-foreground",
+                expanded && "rotate-90",
+              )}
             />
           )}
         </button>
-      ) : (
+      ) : !changeTone ? (
         <span className={cn("shrink-0", sectioned ? "size-4" : "size-5")} />
-      )}
+      ) : null}
       <div
         className={cn(
           "flex min-w-0 flex-1 items-center bg-transparent p-0",
@@ -141,8 +148,12 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
           hidden && "opacity-60 group-hover:opacity-80",
         )}
       >
-        <TypeIcon className={cn("shrink-0", sectioned ? "size-4" : "size-3.5")} />
-        <span className="min-w-0 truncate">{name}</span>
+        {changeTone !== "directory" && (
+          <TypeIcon className={cn("shrink-0", sectioned ? "size-4" : "size-3.5")} />
+        )}
+        <span className={cn("min-w-0", changeTone ? "za-workspace-tree-change-name" : "truncate")}>
+          {name}
+        </span>
       </div>
       {decoration}
     </div>

@@ -25,6 +25,8 @@ pub mod revision_preview;
 pub mod turn_review;
 
 const GIT_DIFF_MAX_BYTES: usize = 512 * 1024;
+const GIT_REVIEW_PAGE_FILE_LIMIT: usize = 128;
+const GIT_REVIEW_PAGE_LINE_LIMIT: u64 = 9_000;
 const GIT_UNTRACKED_FILE_MAX_BYTES: u64 = 128 * 1024;
 const GIT_COMMAND_TIMEOUT_SECS: u64 = 60;
 // Cloning a large repository easily outlives the default 60s command budget;
@@ -139,12 +141,22 @@ pub struct GitDiffResponse {
     pub files: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<GitCommitFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub totals: Option<GitDiffTotals>,
     pub patch: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub patch_omitted: bool,
     pub stat: String,
     pub truncated: bool,
     pub binary_files: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshot_id: Option<uuid::Uuid>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitDiffTotals {
+    pub additions: u64,
+    pub deletions: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +168,10 @@ pub struct GitCommitFile {
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview_index: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additions: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +279,10 @@ struct GitGatewayArgs {
     remote_url: Option<String>,
     message: Option<String>,
     mode: Option<String>,
+    full_context: Option<bool>,
+    hide_whitespace: Option<bool>,
+    paginate_large: Option<bool>,
+    previous_path: Option<String>,
     commit: Option<String>,
     start_point: Option<String>,
     limit: Option<usize>,
@@ -1718,7 +1738,11 @@ fn merge_git_outputs(outputs: impl IntoIterator<Item = GitOutput>) -> GitOutput 
     }
 }
 
-fn build_untracked_file_patch(repo_root: &str, path: &str) -> Result<Option<String>, String> {
+fn read_untracked_review_file(
+    repo_root: &str,
+    path: &str,
+    include_patch: bool,
+) -> Result<(Option<String>, Option<u64>, bool), String> {
     let clean_path = validate_repo_relative_path(path)?;
     let repo_root_path =
         fs::canonicalize(repo_root).map_err(|error| format!("Git 仓库路径不可访问：{error}"))?;
@@ -1729,28 +1753,57 @@ fn build_untracked_file_patch(repo_root: &str, path: &str) -> Result<Option<Stri
     }
     let metadata = fs::metadata(&absolute_path)
         .map_err(|error| format!("无法读取未跟踪文件 {clean_path}：{error}"))?;
-    if !metadata.is_file() || metadata.len() > GIT_UNTRACKED_FILE_MAX_BYTES {
-        return Ok(None);
+    if !metadata.is_file() {
+        return Ok((None, None, true));
+    }
+    if metadata.len() > GIT_UNTRACKED_FILE_MAX_BYTES {
+        // The preview is bounded, but a large text file still contributes to the summary.
+        let absolute_path = absolute_path.to_str().ok_or("Git 文件路径编码无效。")?;
+        let output = git_output(
+            repo_root,
+            &[
+                "diff",
+                "--no-index",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--numstat",
+                "-z",
+                "--",
+                "/dev/null",
+                absolute_path,
+            ],
+        )?;
+        if !matches!(output.status.code(), Some(0 | 1)) {
+            return Err(trim_output(&output.stderr));
+        }
+        let numstat = String::from_utf8_lossy(&output.stdout);
+        let counts = parse_review_numstat(numstat.split_terminator('\0'))
+            .ok_or("Could not read untracked Git change statistics.")?;
+        let additions = counts
+            .values()
+            .flatten()
+            .next()
+            .map(|counts| counts.additions);
+        return Ok((None, additions, true));
     }
     let bytes = fs::read(&absolute_path)
         .map_err(|error| format!("无法读取未跟踪文件 {clean_path}：{error}"))?;
     if bytes.contains(&0) {
-        return Ok(None);
+        return Ok((None, None, true));
     }
     let content = match String::from_utf8(bytes) {
         Ok(content) => content,
-        Err(_) => return Ok(None),
+        Err(_) => return Ok((None, None, true)),
     };
-    let added_line_count = if content.is_empty() {
-        0
-    } else {
-        content.lines().count().max(1)
-    };
+    let added_line_count = content.lines().count() as u64;
+    if !include_patch {
+        return Ok((None, Some(added_line_count), false));
+    }
     let mut patch = format!(
         "diff --git a/{clean_path} b/{clean_path}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/{clean_path}\n@@ -0,0 +1,{added_line_count} @@\n"
     );
     if content.is_empty() {
-        return Ok(Some(patch));
+        return Ok((Some(patch), Some(added_line_count), false));
     }
     for line in content.split_inclusive('\n') {
         let line = line.trim_end_matches('\n');
@@ -1761,59 +1814,41 @@ fn build_untracked_file_patch(repo_root: &str, path: &str) -> Result<Option<Stri
     if !content.ends_with('\n') {
         patch.push_str("\\ No newline at end of file\n");
     }
-    Ok(Some(patch))
+    Ok((Some(patch), Some(added_line_count), false))
 }
 
-fn append_untracked_file_patches(
+fn read_untracked_review(
     repo_root: &str,
-    entries: &[GitStatusEntry],
+    entries: impl Iterator<Item = String>,
     path_filter: Option<&str>,
-    patch: &mut String,
-    binary_files: &mut Vec<String>,
-) -> Result<(), String> {
-    for entry in entries.iter().filter(|entry| entry.untracked) {
-        if !repo_path_matches_filter(&entry.path, path_filter) {
-            continue;
+    include_patch: bool,
+) -> Result<(Vec<GitCommitFile>, String, Vec<String>), String> {
+    let mut changes = Vec::new();
+    let mut patch = String::new();
+    let mut binary_files = Vec::new();
+    for path in entries.filter(|path| repo_path_matches_filter(path, path_filter)) {
+        let (body, additions, preview_unavailable) = read_untracked_review_file(
+            repo_root,
+            &path,
+            include_patch && patch.len() <= GIT_DIFF_MAX_BYTES,
+        )?;
+        if let Some(body) = body {
+            patch.push_str(&body);
         }
-        match build_untracked_file_patch(repo_root, &entry.path)? {
-            Some(untracked_patch) => {
-                if !patch.is_empty() && !patch.ends_with('\n') {
-                    patch.push('\n');
-                }
-                patch.push_str(&untracked_patch);
-            }
-            None => binary_files.push(entry.path.clone()),
+        if preview_unavailable {
+            binary_files.push(path.clone());
         }
+        changes.push(GitCommitFile {
+            path,
+            old_path: None,
+            status: "A".to_string(),
+            kind: "untracked".to_string(),
+            preview_index: None,
+            additions,
+            deletions: additions.map(|_| 0),
+        });
     }
-    Ok(())
-}
-
-fn append_initial_worktree_file_patches(
-    repo_root: &str,
-    entries: &[GitStatusEntry],
-    path_filter: Option<&str>,
-    patch: &mut String,
-    binary_files: &mut Vec<String>,
-) -> Result<(), String> {
-    for entry in entries {
-        if !repo_path_matches_filter(&entry.path, path_filter) {
-            continue;
-        }
-        let clean_path = validate_repo_relative_path(&entry.path)?;
-        if !Path::new(repo_root).join(&clean_path).exists() {
-            continue;
-        }
-        match build_untracked_file_patch(repo_root, &clean_path)? {
-            Some(initial_patch) => {
-                if !patch.is_empty() && !patch.ends_with('\n') {
-                    patch.push('\n');
-                }
-                patch.push_str(&initial_patch);
-            }
-            None => binary_files.push(clean_path),
-        }
-    }
-    Ok(())
+    Ok((changes, patch, binary_files))
 }
 
 fn repo_path_matches_filter(entry: &str, path: Option<&str>) -> bool {
@@ -1824,16 +1859,6 @@ fn repo_path_matches_filter(entry: &str, path: Option<&str>) -> bool {
                 .strip_prefix(path)
                 .is_some_and(|rest| rest.starts_with('/'))
     })
-}
-
-fn untracked_review_change(path: &str) -> GitCommitFile {
-    GitCommitFile {
-        path: path.to_string(),
-        old_path: None,
-        status: "A".to_string(),
-        kind: "untracked".to_string(),
-        preview_index: None,
-    }
 }
 
 fn operation_response(
@@ -2288,6 +2313,7 @@ fn commit_file_kind(status: &str) -> String {
         'R' => "renamed",
         'C' => "copied",
         'T' => "type_changed",
+        'U' => "unmerged",
         _ => "modified",
     }
     .to_string()
@@ -2325,6 +2351,8 @@ fn parse_name_status_line(line: &str) -> Option<GitCommitFile> {
             status,
             kind: commit_file_kind(raw_status),
             preview_index: None,
+            additions: None,
+            deletions: None,
         });
     }
     let path = parts.next()?.trim().to_string();
@@ -2337,6 +2365,8 @@ fn parse_name_status_line(line: &str) -> Option<GitCommitFile> {
         status,
         kind: commit_file_kind(raw_status),
         preview_index: None,
+        additions: None,
+        deletions: None,
     })
 }
 
@@ -2374,6 +2404,8 @@ fn parse_name_status_records(raw: &str) -> Vec<GitCommitFile> {
                 status,
                 kind: commit_file_kind(raw_status),
                 preview_index: None,
+                additions: None,
+                deletions: None,
             });
             continue;
         }
@@ -2389,12 +2421,14 @@ fn parse_name_status_records(raw: &str) -> Vec<GitCommitFile> {
             status,
             kind: commit_file_kind(raw_status),
             preview_index: None,
+            additions: None,
+            deletions: None,
         });
     }
     files
 }
 
-fn read_review_metadata(repo_root: &str, args: &[&str], format: &str) -> Result<String, String> {
+fn read_review_metadata(repo_root: &str, args: &[&str]) -> Result<String, String> {
     let mut options = true;
     let mut metadata_args = Vec::with_capacity(args.len() + 1);
     for arg in args {
@@ -2404,32 +2438,69 @@ fn read_review_metadata(repo_root: &str, args: &[&str], format: &str) -> Result<
                 metadata_args.push("--");
             }
             "--patch" if options => {
-                metadata_args.push(format);
-                if format == "--raw" {
-                    metadata_args.push("--no-abbrev");
-                }
+                metadata_args.extend(["--raw", "--no-abbrev", "--numstat", "-z"]);
             }
-            "--stat" if options => metadata_args.push("-z"),
+            "--stat" if options => (),
             other => metadata_args.push(other),
         }
     }
-    Ok(git_success(repo_root, &metadata_args)?.stdout)
+    Ok(git_review_output(repo_root, &metadata_args)?.stdout)
 }
 
-fn review_numstat_paths(output: &str) -> Option<HashSet<&str>> {
-    let mut records = output.split_terminator('\0');
-    let mut paths = HashSet::new();
+type ReviewNumstat<'a> = HashMap<(&'a str, Option<&'a str>), Option<GitDiffTotals>>;
+
+fn parse_review_numstat<'a>(
+    mut records: impl Iterator<Item = &'a str>,
+) -> Option<ReviewNumstat<'a>> {
+    let mut stats = HashMap::new();
     while let Some(record) = records.next() {
-        let path = record.splitn(3, '\t').nth(2)?;
-        if path.is_empty() {
-            // A rename or copy is a numstat record followed by its two literal paths.
-            records.next()?;
-            paths.insert(records.next()?);
+        let mut fields = record.splitn(3, '\t');
+        let (additions, deletions, path) = (fields.next()?, fields.next()?, fields.next()?);
+        let (path, previous_path) = if path.is_empty() {
+            let previous_path = records.next()?;
+            (records.next()?, Some(previous_path))
         } else {
-            paths.insert(path);
-        }
+            (path, None)
+        };
+        let counts = if additions == "-" && deletions == "-" {
+            None
+        } else {
+            Some(GitDiffTotals {
+                additions: additions.parse().ok()?,
+                deletions: deletions.parse().ok()?,
+            })
+        };
+        stats.insert((path, previous_path), counts);
     }
-    Some(paths)
+    Some(stats)
+}
+
+fn attach_review_stats(change: &mut GitCommitFile, stats: &ReviewNumstat<'_>) -> bool {
+    let key = (change.path.as_str(), change.old_path.as_deref());
+    let counts = stats.get(&key);
+    change.additions = counts.and_then(|counts| counts.map(|counts| counts.additions));
+    change.deletions = counts.and_then(|counts| counts.map(|counts| counts.deletions));
+    counts.is_some()
+}
+
+fn review_totals(changes: &[GitCommitFile]) -> GitDiffTotals {
+    changes
+        .iter()
+        .fold(GitDiffTotals::default(), |mut totals, change| {
+            totals.additions += change.additions.unwrap_or_default();
+            totals.deletions += change.deletions.unwrap_or_default();
+            totals
+        })
+}
+
+fn should_paginate_review(
+    options: &GitReviewDiffOptions,
+    changes: &[GitCommitFile],
+    totals: GitDiffTotals,
+) -> bool {
+    options.paginate_large
+        && (changes.len() > GIT_REVIEW_PAGE_FILE_LIMIT
+            || totals.additions + totals.deletions > GIT_REVIEW_PAGE_LINE_LIMIT)
 }
 
 fn read_review_changes(
@@ -2437,19 +2508,26 @@ fn read_review_changes(
     args: &[&str],
     hide_whitespace: bool,
 ) -> Result<Vec<GitCommitFile>, String> {
-    let raw = read_review_metadata(repo_root, args, "--raw")?;
-    let mut changes: Vec<_> = revision_preview::raw_changes(&raw)
+    let raw = read_review_metadata(repo_root, args)?;
+    let mut records = raw.split_terminator('\0').peekable();
+    let raw_changes = revision_preview::take_raw_changes(&mut records);
+    let stats = parse_review_numstat(records).ok_or("Could not read Git change statistics.")?;
+    let conflicts: HashSet<_> = raw_changes
         .iter()
-        .map(revision_preview::RawChange::change)
+        .filter(|change| change.is_unmerged())
+        .map(|change| change.path)
         .collect();
-    if hide_whitespace {
-        // --name-status includes paths whose only edits disappear with -w.
-        let numstat = read_review_metadata(repo_root, args, "--numstat")?;
-        let visible =
-            review_numstat_paths(&numstat).ok_or("Could not read filtered Git changes.")?;
-        changes.retain(|change| visible.contains(change.path.as_str()));
-    }
-    Ok(changes)
+    Ok(raw_changes
+        .iter()
+        // Unstaged conflict metadata can contain both U and M for the same file.
+        .filter(|change| change.is_unmerged() || !conflicts.contains(change.path))
+        .filter_map(|raw_change| {
+            let mut change = raw_change.change();
+            // A whitespace-only modification can remain in --raw even if -w omits it in --numstat.
+            let visible = attach_review_stats(&mut change, &stats);
+            (!hide_whitespace || visible || change.status == "U").then_some(change)
+        })
+        .collect())
 }
 
 fn clean_git_ref_label(raw: &str) -> Option<String> {
@@ -2964,33 +3042,28 @@ pub(crate) fn git_compare_commit_with_remote_sync(
         );
     }
     let range = format!("{remote_ref}...{commit}");
-    let output = git_success(
-        &state.repo_root,
-        &["diff", "--patch", "--stat", "--find-renames", &range],
-    )?;
-    let files = git_success(
-        &state.repo_root,
-        &["diff", "--name-only", "--find-renames", &range],
-    )
-    .map(|output| {
-        output
-            .stdout
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(ToString::to_string)
-            .collect()
-    })
-    .unwrap_or_default();
+    let args = [
+        "diff",
+        "--patch",
+        "--stat",
+        "--find-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        &range,
+    ];
+    let output = git_review_output(&state.repo_root, &args)?;
+    let changes = read_review_changes(&state.repo_root, &args, false)?;
     let (stat, patch) = split_stat_and_patch(&output.stdout);
     let (patch, truncated) = truncate_patch(patch);
     Ok(GitDiffResponse {
         base_ref: remote_ref,
         head_ref: commit,
         mode: "remote_compare".to_string(),
-        files,
-        changes: Vec::new(),
+        files: changes.iter().map(|change| change.path.clone()).collect(),
+        totals: Some(review_totals(&changes)),
+        changes,
         patch,
+        patch_omitted: false,
         stat,
         truncated,
         binary_files: Vec::new(),
@@ -2998,6 +3071,7 @@ pub(crate) fn git_compare_commit_with_remote_sync(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn git_commit_diff_sync(
     workdir: String,
     commit: String,
@@ -3010,6 +3084,31 @@ pub(crate) fn git_commit_diff_sync(
 struct GitReviewDiffOptions {
     full_context: bool,
     hide_whitespace: bool,
+    paginate_large: bool,
+    previous_path: Option<String>,
+}
+
+fn review_previous_path(
+    state: &GitRepositoryState,
+    path: Option<&str>,
+    previous_path: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some((path, previous_path)) = path.zip(previous_path) else {
+        return Ok(None);
+    };
+    let previous_path = validate_repo_relative_path(previous_path)?;
+    let root = fs::canonicalize(&state.repo_root).map_err(|error| error.to_string())?;
+    let workdir = fs::canonicalize(&state.workdir).map_err(|error| error.to_string())?;
+    let scope = workdir
+        .strip_prefix(root)
+        .map_err(|_| "Git 文件路径必须位于当前工作区内。")?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let scope = (!scope.is_empty()).then_some(scope.as_str());
+    if !repo_path_matches_filter(path, scope) || !repo_path_matches_filter(&previous_path, scope) {
+        return Err("Git 文件路径必须位于当前工作区内。".into());
+    }
+    Ok(Some(previous_path))
 }
 
 fn git_commit_diff_with_context(
@@ -3060,10 +3159,21 @@ fn git_commit_diff_with_context(
     if let Some(path) = clean_path.as_deref() {
         args.push(path.to_string());
     }
+    args.extend(review_previous_path(
+        &state,
+        clean_path.as_deref(),
+        options.previous_path.as_deref(),
+    )?);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = git_review_output(&state.repo_root, &arg_refs)?;
     let changes = read_review_changes(&state.repo_root, &arg_refs, options.hide_whitespace)?;
-    let (stat, patch) = split_stat_and_patch(&output.stdout);
+    let totals = review_totals(&changes);
+    let patch_omitted = should_paginate_review(&options, &changes, totals);
+    let (stat, patch) = if patch_omitted {
+        (String::new(), String::new())
+    } else {
+        let output = git_review_output(&state.repo_root, &arg_refs)?;
+        split_stat_and_patch(&output.stdout)
+    };
     let (patch, truncated) = truncate_patch(patch);
     Ok(GitDiffResponse {
         base_ref: if first_parent.is_empty() {
@@ -3075,7 +3185,9 @@ fn git_commit_diff_with_context(
         mode: "commit".to_string(),
         files: changes.iter().map(|change| change.path.clone()).collect(),
         changes,
+        totals: Some(totals),
         patch,
+        patch_omitted,
         stat,
         truncated,
         binary_files: Vec::new(),
@@ -3083,6 +3195,7 @@ fn git_commit_diff_with_context(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn git_diff_sync(
     workdir: String,
     mode: Option<String>,
@@ -3105,24 +3218,19 @@ fn git_diff_with_context(
         .transpose()?;
     let has_head = ref_exists(&state.repo_root, "HEAD");
     if mode == "working_tree" && !has_head {
-        let mut patch = String::new();
-        let mut binary_files = Vec::new();
-        append_initial_worktree_file_patches(
-            &state.repo_root,
-            &state.entries,
-            clean_path.as_deref(),
-            &mut patch,
-            &mut binary_files,
-        )?;
-        let changes: Vec<_> = state
+        let entries = state
             .entries
             .iter()
-            .filter(|entry| {
-                repo_path_matches_filter(&entry.path, clean_path.as_deref())
-                    && Path::new(&state.repo_root).join(&entry.path).exists()
-            })
-            .map(|entry| untracked_review_change(&entry.path))
-            .collect();
+            .filter(|entry| Path::new(&state.repo_root).join(&entry.path).exists());
+        let (changes, patch, binary_files) = read_untracked_review(
+            &state.repo_root,
+            entries.map(|entry| entry.path.clone()),
+            clean_path.as_deref(),
+            true,
+        )?;
+        let totals = review_totals(&changes);
+        let patch_omitted = should_paginate_review(&options, &changes, totals);
+        let patch = if patch_omitted { String::new() } else { patch };
         let (patch, truncated) = truncate_patch(patch);
         return Ok(GitDiffResponse {
             base_ref: "ROOT".to_string(),
@@ -3130,7 +3238,9 @@ fn git_diff_with_context(
             mode,
             files: changes.iter().map(|change| change.path.clone()).collect(),
             changes,
+            totals: Some(totals),
             patch,
+            patch_omitted,
             stat: String::new(),
             truncated,
             binary_files,
@@ -3155,6 +3265,7 @@ fn git_diff_with_context(
     if options.hide_whitespace {
         args.push("--ignore-all-space".to_string());
     }
+    let branch = !matches!(mode.as_str(), "working_tree" | "staged" | "unstaged");
     if mode == "working_tree" {
         args.push("HEAD".to_string());
     } else if mode == "staged" {
@@ -3170,35 +3281,52 @@ fn git_diff_with_context(
         head_ref = "WORKTREE".to_string();
     } else {
         base_ref = revision_preview::review_branch(&state, &mode)?;
-        args.push(format!("{base_ref}...HEAD"));
+        args.push(revision_preview::review_merge_base(&state, &base_ref)?);
+        head_ref = "WORKTREE".to_string();
     }
     args.push("--".to_string());
     if let Some(path) = clean_path.as_deref() {
         args.push(path.to_string());
     }
+    args.extend(review_previous_path(
+        &state,
+        clean_path.as_deref(),
+        options.previous_path.as_deref(),
+    )?);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = git_review_output(&state.repo_root, &arg_refs)?;
     let mut changes = read_review_changes(&state.repo_root, &arg_refs, options.hide_whitespace)?;
-    let (stat, mut patch) = split_stat_and_patch(&output.stdout);
-    let mut binary_files = Vec::new();
-    if matches!(mode.as_str(), "working_tree" | "unstaged") {
-        append_untracked_file_patches(
+    let (untracked_patch, binary_files) = if branch
+        || matches!(mode.as_str(), "working_tree" | "unstaged")
+    {
+        let include_patch = !should_paginate_review(&options, &changes, review_totals(&changes));
+        let (untracked_changes, patch, binary_files) = read_untracked_review(
             &state.repo_root,
-            &state.entries,
-            clean_path.as_deref(),
-            &mut patch,
-            &mut binary_files,
-        )?;
-        changes.extend(
             state
                 .entries
                 .iter()
-                .filter(|entry| {
-                    entry.untracked && repo_path_matches_filter(&entry.path, clean_path.as_deref())
-                })
-                .map(|entry| untracked_review_change(&entry.path)),
-        );
-    }
+                .filter(|entry| entry.untracked)
+                .map(|entry| entry.path.clone()),
+            clean_path.as_deref(),
+            include_patch,
+        )?;
+        changes.extend(untracked_changes);
+        (patch, binary_files)
+    } else {
+        (String::new(), Vec::new())
+    };
+    let totals = review_totals(&changes);
+    let patch_omitted = should_paginate_review(&options, &changes, totals);
+    let (stat, patch) = if patch_omitted {
+        (String::new(), String::new())
+    } else {
+        let output = git_review_output(&state.repo_root, &arg_refs)?;
+        let (stat, mut patch) = split_stat_and_patch(&output.stdout);
+        if !untracked_patch.is_empty() && !patch.is_empty() && !patch.ends_with('\n') {
+            patch.push('\n');
+        }
+        patch.push_str(&untracked_patch);
+        (stat, patch)
+    };
     let (patch, truncated) = truncate_patch(patch);
     if mode == "working_tree" {
         base_ref = "HEAD".to_string();
@@ -3210,7 +3338,9 @@ fn git_diff_with_context(
         mode,
         files: changes.iter().map(|change| change.path.clone()).collect(),
         changes,
+        totals: Some(totals),
         patch,
+        patch_omitted,
         stat,
         truncated,
         binary_files,
@@ -3733,6 +3863,12 @@ pub(crate) fn git_gateway_action_sync(
 ) -> Result<Value, String> {
     let action = action.trim().to_ascii_lowercase();
     let args = parse_gateway_args(args_json)?;
+    let review_options = GitReviewDiffOptions {
+        full_context: args.full_context.unwrap_or_default() && args.path.is_some(),
+        hide_whitespace: args.hide_whitespace.unwrap_or_default(),
+        paginate_large: args.paginate_large.unwrap_or_default(),
+        previous_path: args.previous_path,
+    };
     let value = match action.as_str() {
         "status" => serde_json::to_value(git_status_sync(workdir)?),
         "discover_repositories" => serde_json::to_value(git_discover_repositories_sync(workdir)?),
@@ -3781,12 +3917,18 @@ pub(crate) fn git_gateway_action_sync(
             workdir,
             args.commit.unwrap_or_default(),
         )?),
-        "commit_diff" => serde_json::to_value(git_commit_diff_sync(
+        "commit_diff" => serde_json::to_value(git_commit_diff_with_context(
             workdir,
             args.commit.unwrap_or_default(),
             args.path,
+            review_options,
         )?),
-        "diff" => serde_json::to_value(git_diff_sync(workdir, args.mode, args.path)?),
+        "diff" => serde_json::to_value(git_diff_with_context(
+            workdir,
+            args.mode,
+            args.path,
+            review_options,
+        )?),
         "stage" => serde_json::to_value(git_stage_sync(workdir, args.path.unwrap_or_default())?),
         "stage_all" => serde_json::to_value(git_stage_all_sync(workdir)?),
         "unstage" => {
@@ -4022,11 +4164,15 @@ pub async fn git_diff(
     path: Option<String>,
     full_context: Option<bool>,
     hide_whitespace: Option<bool>,
+    paginate_large: Option<bool>,
+    previous_path: Option<String>,
 ) -> Result<GitDiffResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let options = GitReviewDiffOptions {
             full_context: full_context.unwrap_or_default() && path.is_some(),
             hide_whitespace: hide_whitespace.unwrap_or_default(),
+            paginate_large: paginate_large.unwrap_or_default(),
+            previous_path,
         };
         git_diff_with_context(workdir, mode, path, options)
     })
@@ -4074,11 +4220,15 @@ pub async fn git_commit_diff(
     path: Option<String>,
     full_context: Option<bool>,
     hide_whitespace: Option<bool>,
+    paginate_large: Option<bool>,
+    previous_path: Option<String>,
 ) -> Result<GitDiffResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let options = GitReviewDiffOptions {
             full_context: full_context.unwrap_or_default() && path.is_some(),
             hide_whitespace: hide_whitespace.unwrap_or_default(),
+            paginate_large: paginate_large.unwrap_or_default(),
+            previous_path,
         };
         git_commit_diff_with_context(workdir, commit, path, options)
     })
@@ -4361,13 +4511,130 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let file_path = temp.path().join("crlf.txt");
         fs::write(&file_path, "first\r\nsecond\r\n").expect("write crlf file");
-        let patch = build_untracked_file_patch(&temp.path().to_string_lossy(), "crlf.txt")
-            .expect("build patch")
-            .expect("text patch");
+        let (patch, additions, _) =
+            read_untracked_review_file(&temp.path().to_string_lossy(), "crlf.txt", true)
+                .expect("build patch");
+        assert_eq!(additions, Some(2));
+        let patch = patch.expect("text patch");
         assert!(
             patch.contains("+first\r\n+second\r\n"),
             "untracked patch should preserve CRLF line endings:\n{patch:?}"
         );
+    }
+
+    #[test]
+    fn git_review_large_branch_counts_complete_index_and_reads_renamed_file() {
+        if Command::new("git").arg("--version").output().is_err() {
+            return;
+        }
+        let repo = tempfile::tempdir().unwrap();
+        let path = repo.path();
+        let workdir = path.to_string_lossy().into_owned();
+        run_temp_git(path, &["init", "-b", "main"]);
+        fs::write(path.join("readme.txt"), "base\n").unwrap();
+        fs::write(path.join("original.txt"), "renamed unchanged\n").unwrap();
+        run_temp_git(path, &["add", "."]);
+        let commit = |message| {
+            run_temp_git(
+                path,
+                &[
+                    "-c",
+                    "user.name=Review Test",
+                    "-c",
+                    "user.email=review@example.test",
+                    "commit",
+                    "-m",
+                    message,
+                ],
+            );
+        };
+        commit("Base");
+        run_temp_git(path, &["branch", "review-base"]);
+        let text = "one tracked line used to exceed the patch transport limit\n".repeat(10_000);
+        fs::write(path.join("a-large.txt"), &text).unwrap();
+        run_temp_git(path, &["add", "a-large.txt"]);
+        commit("Add tracked change");
+        fs::write(path.join("readme.txt"), "base\nunstaged\n").unwrap();
+        run_temp_git(path, &["mv", "original.txt", "renamed.txt"]);
+        fs::write(path.join("z-untracked.txt"), "untracked\n").unwrap();
+        fs::write(
+            path.join("z-large-untracked.txt"),
+            "untracked file with a long line\n".repeat(5_000),
+        )
+        .unwrap();
+        fs::write(path.join("z-binary.bin"), b"\0new").unwrap();
+        let mode = "branch:refs/heads/review-base";
+        let normal = git_diff_sync(workdir.clone(), Some(mode.into()), None).unwrap();
+        assert!(normal.truncated);
+        assert!(!normal.patch_omitted);
+        assert!(!normal.patch.contains("diff --git a/z-untracked.txt"));
+        let options = GitReviewDiffOptions {
+            paginate_large: true,
+            ..Default::default()
+        };
+        let review =
+            git_diff_with_context(workdir.clone(), Some(mode.into()), None, options).unwrap();
+        assert!(review.patch_omitted);
+        assert!(review.patch.is_empty());
+        assert!(!review.truncated);
+        assert_eq!(review.head_ref, "WORKTREE");
+        assert_eq!(review.files.len(), 6);
+        assert_eq!(
+            review.totals,
+            Some(GitDiffTotals {
+                additions: 15_002,
+                deletions: 0
+            })
+        );
+        assert_eq!(review.totals, normal.totals);
+        let find = |path| {
+            review
+                .changes
+                .iter()
+                .find(|change| change.path == path)
+                .unwrap()
+        };
+        assert_eq!(find("a-large.txt").additions, Some(10_000));
+        assert_eq!(find("readme.txt").additions, Some(1));
+        assert_eq!(find("z-large-untracked.txt").additions, Some(5_000));
+        assert_eq!(find("z-binary.bin").additions, None);
+        assert_eq!(
+            find("renamed.txt").old_path.as_deref(),
+            Some("original.txt")
+        );
+        assert_eq!(find("renamed.txt").additions, Some(0));
+
+        let options = GitReviewDiffOptions {
+            previous_path: Some("original.txt".into()),
+            ..Default::default()
+        };
+        let selected = git_diff_with_context(
+            workdir.clone(),
+            Some(mode.into()),
+            Some("renamed.txt".into()),
+            options,
+        )
+        .unwrap();
+        assert_eq!(selected.files, ["renamed.txt"]);
+        assert!(selected
+            .patch
+            .contains("rename from original.txt\nrename to renamed.txt"));
+        let selected = git_diff_sync(
+            workdir.clone(),
+            Some(mode.into()),
+            Some("z-untracked.txt".into()),
+        )
+        .unwrap();
+        assert_eq!(selected.files, ["z-untracked.txt"]);
+        assert!(selected.patch.contains("+untracked"));
+        let gateway = git_gateway_action_sync(
+            "diff".into(),
+            workdir,
+            serde_json::json!({ "mode": mode, "paginateLarge": true }).to_string(),
+        )
+        .unwrap();
+        assert_eq!(gateway["patchOmitted"], true);
+        assert_eq!(gateway["totals"]["additions"], 15_002);
     }
 
     fn run_temp_git(repo_root: &Path, args: &[&str]) {
@@ -4880,7 +5147,9 @@ mod tests {
         )
         .expect("explicit branch diff");
         assert_eq!(branch.base_ref, "refs/heads/review-base");
-        assert_eq!(branch.files, ["src/a.txt"]);
+        assert_eq!(branch.head_ref, "WORKTREE");
+        assert_eq!(branch.files, ["src/[a].txt", "src/a.txt", "src/new.txt"]);
+        assert!(!branch.patch.contains("src-other/no.txt"));
         assert!(branch.patch.contains("+worktree content"));
         assert!(git_diff_sync(
             workdir,

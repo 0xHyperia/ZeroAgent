@@ -63,6 +63,51 @@
   }
 }
 
+[data-workspace-change-tone] {
+  --za-tree-added: light-dark(#00a240, #40c977);
+  --za-tree-deleted: light-dark(#ba2623, #fa423e);
+  --za-tree-modified: #339cff;
+  --za-tree-status: var(--za-tree-modified);
+}
+
+[data-workspace-change-tone="added"] {
+  --za-tree-status: var(--za-tree-added);
+}
+
+[data-workspace-change-tone="deleted"] {
+  --za-tree-status: var(--za-tree-deleted);
+}
+
+.za-workspace-tree-change-name {
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--za-tree-status);
+}
+
+[data-workspace-change-tone="directory"] .za-workspace-tree-change-name {
+  color: inherit;
+}
+
+.za-workspace-tree-change-indicator {
+  color: var(--za-tree-status);
+}
+
+.za-workspace-tree-change-counts {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  white-space: nowrap;
+  font: 12px system-ui;
+}
+
+.za-workspace-tree-change-counts > [data-added] {
+  color: var(--za-tree-added);
+}
+
+.za-workspace-tree-change-counts > [data-deleted] {
+  color: var(--za-tree-deleted);
+}
+
 .za-workspace-tab-track {
   display: flex;
   flex: none;

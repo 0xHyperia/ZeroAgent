@@ -27,9 +27,11 @@
 
 .za-workspace-file-path ol {
   max-width: 100%;
+  min-height: 32px;
   margin: 0;
   border: 1px solid var(--za-border);
   border-radius: 999px;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 5%);
   padding: 0 3px;
   list-style: none;
 }
@@ -54,7 +56,7 @@
   min-width: 0;
   overflow: hidden;
   border-radius: 999px;
-  padding: 4px 5px;
+  padding: 5px 6px;
   font-size: 12px;
   line-height: 18px;
   white-space: nowrap;
@@ -72,6 +74,7 @@ button.za-workspace-file-path-label[aria-expanded="true"] {
   overflow: auto;
   overscroll-behavior: contain;
   padding: 4px;
+  border-radius: 16px;
 }
 
 .za-breadcrumb-entry {
@@ -81,7 +84,7 @@ button.za-workspace-file-path-label[aria-expanded="true"] {
   min-height: 28px;
   align-items: center;
   gap: 6px;
-  border-radius: 6px;
+  border-radius: 8px;
   padding-inline-end: 6px;
   text-align: start;
 }
@@ -120,55 +123,132 @@ button.za-workspace-file-path-label[aria-expanded="true"] {
 }
 
 .za-workspace-file-mode-actions > button,
-.za-workspace-file-tool-group {
-  min-height: 34px;
-  border: 1px solid var(--za-border);
+.za-workspace-file-tool-group,
+.za-workspace-file-overflow-trigger,
+.za-workspace-file-empty-root {
+  min-height: 32px;
+  border: 1px solid color-mix(in srgb, hsl(var(--foreground)) 8%, transparent);
   border-radius: 999px;
   background: var(--za-surface);
-  box-shadow: 0 1px 2px color-mix(in srgb, hsl(var(--foreground)) 6%, transparent);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 5%);
 }
 
 .za-workspace-file-tool-group {
+  min-width: 0;
+  margin: 0;
   gap: 2px;
-  padding: 2px 3px;
+  padding: 1px 2px;
+}
+
+.za-workspace-file-empty-root {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 10px;
+}
+
+.za-workspace-file-overflow-trigger {
+  display: grid;
+  width: 32px;
+  place-items: center;
 }
 
 .za-workspace-file-tool-group > button,
-.za-workspace-file-open > button {
+.za-workspace-file-open > button,
+.za-workspace-file-format-tools > button {
+  height: 28px;
   border-radius: 999px;
 }
 
-.za-workspace-file-tool-group > button[aria-pressed="true"] {
-  background: color-mix(in srgb, hsl(var(--primary)) 12%, var(--za-surface));
-  color: hsl(var(--primary));
+.za-workspace-file-tool-group > button:has(> svg:only-child) {
+  min-width: 28px;
+}
+
+.za-workspace-file-overflow-trigger:hover,
+.za-workspace-file-overflow-trigger[data-popup-open],
+.za-workspace-file-tool-group > button[data-popup-open],
+.za-workspace-file-open > button[data-popup-open] {
+  background: var(--za-control-hover);
+}
+
+.za-workspace-file-tool-group > [data-workspace-file-tree-toggle][aria-pressed="true"] {
+  color: light-dark(#2563c9, #86b6ff);
+  background: light-dark(#eaf2fc, #1d3454);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 10%, transparent);
 }
 
 .za-workspace-file-mode-actions:empty {
   display: none;
 }
 
+.za-workspace-file-mode-actions .za-review-base,
+.za-workspace-file-mode-actions .za-review-comparison-detail {
+  max-width: 10rem;
+}
+
 .za-workspace-file-open {
   gap: 0;
+}
+
+.za-workspace-file-open > button:first-child {
+  border-start-end-radius: 4px;
+  border-end-end-radius: 4px;
+}
+
+.za-workspace-file-open > button:last-child {
+  border-start-start-radius: 4px;
+  border-end-start-radius: 4px;
 }
 
 .za-workspace-file-format-tools:empty {
   display: none;
 }
 
-.za-workspace-file-format-popover {
-  flex-wrap: wrap;
-  border-top: 1px solid var(--za-border);
-  margin-top: 4px;
-  padding-top: 4px;
+.za-workspace-file-format-tools {
+  gap: 2px;
 }
 
-.za-workspace-file-diff-view-action > button {
-  justify-content: flex-start;
-  width: 100%;
+.za-workspace-compact-menu {
+  width: max-content;
+  min-width: min(180px, var(--available-width, 100vw));
+  max-width: min(320px, var(--available-width, 100vw));
+  border-radius: 16px;
+  border-color: color-mix(in srgb, hsl(var(--foreground)) 9%, transparent);
+  padding: 4px;
 }
 
-.za-workspace-file-format-popover fieldset {
+.za-workspace-file-options-menu {
+  min-width: min(220px, var(--available-width, 100vw));
+}
+
+.za-workspace-compact-menu .za-menu-item {
+  min-height: 28px;
+  gap: 6px;
+  border-radius: 10px;
+  padding: 4px 8px;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.za-workspace-compact-menu .za-menu-item[data-preferred] {
+  background: var(--za-control-hover);
+}
+
+.za-workspace-compact-menu [role="separator"] {
+  margin-inline: 8px;
+}
+
+.za-workspace-file-overflow .za-workspace-file-tool-group {
   flex-wrap: wrap;
+  justify-content: flex-end;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.za-workspace-file-overflow .za-workspace-file-format-tools {
+  flex-wrap: wrap;
+  flex-shrink: 1;
 }
 
 @container workspace-file-header (width < 560px) {
@@ -178,6 +258,10 @@ button.za-workspace-file-path-label[aria-expanded="true"] {
 }
 
 @container workspace-file-header (width < 470px) {
+  .za-workspace-file-mode-actions .za-review-base-head {
+    display: none;
+  }
+
   .za-workspace-file-tool-group {
     gap: 0;
     padding-inline: 1px;
@@ -198,6 +282,10 @@ button.za-workspace-file-path-label[aria-expanded="true"] {
 }
 
 @container workspace-file-header (width < 390px) {
+  .za-workspace-file-mode-actions .za-review-base-trigger > span {
+    display: none;
+  }
+
   .za-workspace-file-mode-actions .za-review-comparison-detail {
     display: none;
   }

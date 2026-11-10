@@ -29,6 +29,10 @@ export const GIT_REVIEW_SPLIT_GRID_CLASS = "grid-cols-trajectory-details grid-ro
 export const LARGE_DIFF_CHUNK_CHAR_LIMIT = 120 * 1024;
 export const LARGE_DIFF_CHUNK_LINE_LIMIT = 1800;
 
+const REVIEW_PAGE_FILE_LIMIT = 128;
+const REVIEW_PAGE_CHANGE_LIMIT = 9_000;
+const REVIEW_PAGE_BYTE_LIMIT = 12 * 1024 * 1024;
+
 export type PatchChunk = {
   key: string;
   label: string;
@@ -37,6 +41,7 @@ export type PatchChunk = {
   large: boolean;
   summary?: "binary" | "unavailable";
   deleted?: boolean;
+  lineStats?: { additions: number; deletions: number };
 };
 
 export type DiffStatFile = {
@@ -299,9 +304,8 @@ export function parentPath(path: string) {
 }
 
 export function getPatchFileNames(chunk: string, fallback: string) {
-  const lines = chunk.split("\n");
-  const hunkStart = lines.findIndex((line) => line.startsWith("@@ "));
-  const headerLines = hunkStart === -1 ? lines : lines.slice(0, hunkStart);
+  const hunkStart = chunk.indexOf("\n@@ ");
+  const headerLines = (hunkStart < 0 ? chunk : chunk.slice(0, hunkStart)).split("\n");
   const oldHeader = headerLines.find((line) => line.startsWith("--- "));
   const newHeader = headerLines.find((line) => line.startsWith("+++ "));
   if (oldHeader && newHeader) {
@@ -320,7 +324,7 @@ export function getPatchFileNames(chunk: string, fallback: string) {
       newFileName: cleanDiffPath(renameTo.replace(/^(?:rename|copy) to /, ""), false) || fallback,
     };
   }
-  const gitHeader = lines.find((line) => line.startsWith("diff --git "));
+  const gitHeader = headerLines.find((line) => line.startsWith("diff --git "));
   if (gitHeader) {
     const match = /^diff --git ("(?:[^"\\]|\\.)*"|a\/.+?) ("(?:[^"\\]|\\.)*"|b\/.+)$/.exec(
       gitHeader,
@@ -444,13 +448,21 @@ export function buildPatchChunks(patch: string, title: string): PatchChunk[] {
 export function buildWorkspaceReviewRows(diff: GitDiffResponse | undefined, title: string) {
   const rows = buildPatchChunks(diff?.patch ?? "", title);
   if (!diff) return rows;
-  const represented = new Set(rows.map((row) => row.label));
+  const represented = new Map(rows.map((row) => [row.label, row]));
   const binaryPaths = new Set(diff.binaryFiles);
-  const changes = diff.changes ?? (diff.files ?? []).map((path) => ({ path, kind: "" }));
+  const changes: readonly GitCommitFile[] =
+    diff.changes ?? (diff.files ?? []).map((path) => ({ path, kind: "", status: "" }));
   for (const change of changes) {
-    if (represented.has(change.path)) continue;
-    represented.add(change.path);
-    rows.push({
+    const lineStats =
+      change.additions !== undefined && change.deletions !== undefined
+        ? { additions: change.additions, deletions: change.deletions }
+        : undefined;
+    const existing = represented.get(change.path);
+    if (existing) {
+      existing.lineStats = lineStats;
+      continue;
+    }
+    const row: PatchChunk = {
       key: `summary:${change.path}`,
       label: change.path,
       chunk: "",
@@ -458,9 +470,28 @@ export function buildWorkspaceReviewRows(diff: GitDiffResponse | undefined, titl
       large: false,
       summary: binaryPaths.has(change.path) ? "binary" : "unavailable",
       deleted: change.kind === "deleted",
-    });
+      lineStats,
+    };
+    rows.push(row);
+    represented.set(change.path, row);
   }
   return rows;
+}
+
+export function shouldPageWorkspaceReview(
+  diff: GitDiffResponse | undefined,
+  fileCount: number,
+  changedLines: number,
+) {
+  return Boolean(
+    diff &&
+      fileCount > 0 &&
+      (diff.patchOmitted ||
+        diff.truncated ||
+        fileCount > REVIEW_PAGE_FILE_LIMIT ||
+        changedLines > REVIEW_PAGE_CHANGE_LIMIT ||
+        (diff.patch?.length ?? 0) > REVIEW_PAGE_BYTE_LIMIT),
+  );
 }
 
 export function statusTone(entry: GitStatusEntry) {

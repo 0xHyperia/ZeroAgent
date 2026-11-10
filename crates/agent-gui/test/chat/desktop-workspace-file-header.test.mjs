@@ -96,18 +96,22 @@ test("file tools remain available in the compact header and keep their reader st
   assert.equal(pageButton()?.textContent, "Page 1");
   assert.ok(container.contains(pageButton()));
   await act(async () => pageButton().click());
+  await act(async () => pageButton().focus());
   await act(async () => resize(420));
   const overflow = findButton(container, /^(File controls|文件控件)$/);
   assert.ok(overflow);
+  assert.equal(document.activeElement, overflow);
   assert.equal(overflow.hidden, false);
   await act(async () => overflow.click());
   assert.equal(overflow.getAttribute("aria-expanded"), "true");
   assert.equal(pageButton()?.textContent, "Page 2");
   assert.ok(pageButton().closest("[data-popover-content], [data-slot=popover-content]"));
   await act(async () => pageButton().click());
+  await act(async () => pageButton().focus());
   await act(async () => resize(760));
   assert.ok(container.contains(pageButton()));
   assert.equal(pageButton().textContent, "Page 3");
+  assert.ok(container.querySelector(".za-workspace-file-tool-group").contains(document.activeElement));
 });
 
 test("preview and comparison actions share one file tool group and tree toggle", async (t) => {

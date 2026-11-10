@@ -138,6 +138,51 @@ export function normalizeFileTreeRelativePath(path: string) {
     .replace(/^\/+|\/+$/g, "");
 }
 
+function lexicalOrder(left: string, right: string) {
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+function compareReviewPathSegment(left: string, right: string) {
+  const lowerLeft = left.toLowerCase();
+  const lowerRight = right.toLowerCase();
+  const tokenize = (value: string) =>
+    (value.match(/[0-9]+|[^0-9]+/g) ?? []).map((part) =>
+      /^[0-9]/.test(part) ? Number(part) : part,
+    );
+  const leftTokens = tokenize(lowerLeft);
+  const rightTokens = tokenize(lowerRight);
+  for (let index = 0; index < Math.min(leftTokens.length, rightTokens.length); index += 1) {
+    const leftToken = leftTokens[index];
+    const rightToken = rightTokens[index];
+    if (leftToken === rightToken) continue;
+    const order =
+      typeof leftToken === "number" && typeof rightToken === "number"
+        ? Math.sign(leftToken - rightToken)
+        : lexicalOrder(String(leftToken), String(rightToken));
+    if (order) return order;
+  }
+  return (
+    leftTokens.length - rightTokens.length ||
+    lexicalOrder(lowerLeft, lowerRight) ||
+    lexicalOrder(left, right)
+  );
+}
+
+/** Compare file paths in the same order as a fully expanded changed-files tree. */
+export function compareWorkspaceReviewPaths(left: string, right: string) {
+  const leftParts = left.split("/");
+  const rightParts = right.split("/");
+  for (let index = 0; index < Math.min(leftParts.length, rightParts.length); index += 1) {
+    const leftPart = leftParts[index];
+    const rightPart = rightParts[index];
+    const leftIsFile = index === leftParts.length - 1;
+    const rightIsFile = index === rightParts.length - 1;
+    if (leftIsFile !== rightIsFile) return Number(leftIsFile) - Number(rightIsFile);
+    if (leftPart !== rightPart) return compareReviewPathSegment(leftPart, rightPart);
+  }
+  return 0;
+}
+
 // "a/b/c" -> ["", "a", "a/b"]: every directory that must be expanded for the
 // path's own row to become visible (the path itself is excluded).
 export function ancestorDirsOfPath(path: string): string[] {
