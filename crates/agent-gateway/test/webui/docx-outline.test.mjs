@@ -32,6 +32,20 @@ test("region annotations only quote known same-page anchors and reject forged ge
  const nested={id:'a',start:0,end:4};nested.anchors=[nested];
  assert.equal(checkedDocumentSelection({...payload,anchors:[nested]},blocks).quote,'真实标题','nested fields have no authority and cannot recurse');
 });
+
+test("Word page annotations accept genuine blank points and regions without inventing a quote", () => {
+ const { checkedDocumentSelection } = loader.loadModule("@liveagent/ui/components/resource-preview/docxReaderDocument.ts");
+ const point = { left: 0.9, top: 0.1, width: 0, height: 0 };
+ const target = { id: "za-reader-page-2", start: 0, end: 0, x: 720, y: 900, quote: "untrusted", region: point };
+ const selected = checkedDocumentSelection(target, [], 2);
+ assert.equal(selected.page, 2);
+ assert.equal(selected.quote, "");
+ assert.deepEqual(selected.region, point);
+ assert.deepEqual(checkedDocumentSelection({ ...target, region: { ...point, width: 0.05, height: 0.1 } }, [], 2).region, { ...point, width: 0.05, height: 0.1 });
+ assert.equal(checkedDocumentSelection(target, [], 1), null);
+ assert.equal(checkedDocumentSelection({ ...target, end: 1 }, [], 2), null);
+ assert.equal(checkedDocumentSelection({ ...target, region: { ...point, left: 1.2 } }, [], 2), null);
+});
 const model = (paragraphs, styles = []) => ({ documentPart: { body: { type: "document", children: paragraphs } }, stylesPart: { styles } });
 
 test("DOCX page navigation uses original pages, bounded inert covers and unique native destinations", () => {
@@ -145,6 +159,8 @@ test("real DOCX bytes are inspected before parse/render and produce an opaque no
   assert.match(frame.srcdoc, /script-src 'nonce-[a-f0-9]+'; connect-src 'none'/);
   assert.match(frame.srcdoc, /base-uri 'none'/);
   const rendered = new JSDOM(frame.srcdoc); t.after(() => rendered.window.close());
+  assert.equal(app.host.querySelector('aside[aria-label="文档导航"]'), null);
+  await app.env.act(async () => app.host.querySelector('[aria-label="展开文档导航"]').click());
   const navigation=app.host.querySelector('aside[aria-label="文档导航"] nav');
   assert.ok(navigation);
   assert.deepEqual([...navigation.querySelectorAll("button")].map(item=>item.textContent),["实际中文章节","独立三级标题"]);

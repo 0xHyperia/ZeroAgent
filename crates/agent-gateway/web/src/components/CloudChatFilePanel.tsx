@@ -55,6 +55,7 @@ type Props = {
   onRequestRevision?: (
     resource: CloudChatFile,
     comments: readonly DocumentRevisionComment[],
+    evidence?: readonly File[],
   ) => Promise<boolean>;
   client: CloudChatFilesClient;
   initialFileId?: string;
@@ -586,8 +587,8 @@ export function CloudChatFilePanel(props: Props) {
                 }}
                 onRequestRevision={
                   props.onRequestRevision && cloudFileCanReference(selected)
-                    ? (comments) =>
-                        currentProps.current.onRequestRevision?.(selected, comments) ?? false
+                    ? (comments, evidence) =>
+                        currentProps.current.onRequestRevision?.(selected, comments, evidence) ?? false
                     : undefined
                 }
                 onDownload={() => void download(selected)}

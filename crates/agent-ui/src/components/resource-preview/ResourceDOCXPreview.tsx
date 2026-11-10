@@ -11,7 +11,11 @@ import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./Prev
 import { PreviewScrollArea } from "./PreviewScrollArea";
 import { PreviewLeadingTools, PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
-import { ResourceDocumentComments, type RevisionSelection } from "./ResourceDocumentComments";
+import {
+  type DocumentRevisionComment,
+  ResourceDocumentComments,
+  type RevisionSelection,
+} from "./ResourceDocumentComments";
 import { READER_NAVIGATION_INSET, readerScrollBehavior } from "./readerInteraction";
 import { nextReaderZoom } from "./readerZoom";
 import { usePreviewReadingState } from "./readingSession";
@@ -32,12 +36,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   const [reader, setReader] = useState<ReturnType<typeof prepareReaderDocument> | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const surface = useRef<HTMLDivElement>(null);
-  const [navigation, setNavigation] = usePreviewReadingState(
-    "docxNavigation",
-    typeof window.matchMedia === "function" && window.matchMedia("(max-width: 820px)").matches
-      ? "closed"
-      : "contents",
-  );
+  const [navigation, setNavigation] = usePreviewReadingState("docxNavigation", "closed");
   const [page, setPage] = useState(1);
   const [heading, setHeading] = useState("");
   const [annotating, setAnnotating] = useState(false);
@@ -190,8 +189,8 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     },
     [reader],
   );
-  function navigate(id: string) {
-    post({ type: "navigate", id });
+  function navigate(id: string, comment?: DocumentRevisionComment) {
+    post({ type: "navigate", id, region: comment?.region });
     if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 820px)").matches)
       setNavigation("closed");
   }
@@ -349,7 +348,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
         (event.data.type === "selection" && annotating) ||
         (event.data.type === "image-shortcut" && onRequestRevision && !annotating)
       ) {
-        const chosen = checkedDocumentSelection(event.data, reader.blocks);
+        const chosen = checkedDocumentSelection(event.data, reader.blocks, reader.pageCount);
         const rect = frame.current?.getBoundingClientRect(),
           host = surface.current?.getBoundingClientRect();
         if (
@@ -360,8 +359,15 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
         ) {
           if (event.data.type === "selection") setImageShortcut(null);
           const update = event.data.type === "image-shortcut" ? setImageShortcut : setSelection;
+          const { pageWidth, pageHeight } = event.data;
+          const hasGeometry = [pageWidth, pageHeight].every(
+            (value) => Number.isFinite(value) && value > 0 && value <= 100_000,
+          );
           update({
             ...chosen,
+            ...(hasGeometry
+              ? { document: { pageCount: reader.pageCount, pageWidth, pageHeight } }
+              : {}),
             x: Math.min(
               Math.max(12, rect.left - host.left + chosen.x * scale - 360),
               Math.max(12, host.width - 372),

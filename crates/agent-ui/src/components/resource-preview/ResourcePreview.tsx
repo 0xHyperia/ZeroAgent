@@ -28,7 +28,12 @@ export type ResourcePreviewProps = {
   sourceRange?: { fromLine: number; toLine?: number };
   sourcePaths?: { path?: string; relativePath?: string };
   markdownSelectionActions?: MarkdownSelectionActions;
-  onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
+  /** Workspace media retains its rectangular skeleton through file and decoder loads. */
+  loadingSkeleton?: "media";
+  onRequestRevision?: (
+    comments: readonly DocumentRevisionComment[],
+    evidence?: readonly File[],
+  ) => Promise<boolean> | boolean;
   /** A non-interactive, bounded cover rendered from the same verified original. */
   variant?: "reader" | "thumbnail";
 };
@@ -164,6 +169,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
         mime: resource.mime,
         thumbnail,
         loadingStartedAt: loadingClock.current.startedAt,
+        loadingSkeleton: props.loadingSkeleton,
         sourceRange: props.sourceRange,
         sourcePaths: props.sourcePaths,
         markdownSelectionActions: props.markdownSelectionActions,

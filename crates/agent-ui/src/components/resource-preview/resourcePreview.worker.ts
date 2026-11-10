@@ -2,7 +2,11 @@ import type { PresentationData } from "@office-kit/pptx";
 import type { Workbook } from "exceljs";
 import type { WorkBook } from "xlsx";
 import { inspectPreviewArchive } from "./previewArchive";
-import type { PreviewWorkerInput, PreviewWorkerResult } from "./previewWorkerProtocol";
+import type {
+  PreviewWorkerInput,
+  PreviewWorkerResult,
+  SlideRevisionMetadata,
+} from "./previewWorkerProtocol";
 import { canReadStyledWorkbook } from "./sheetArchive";
 import { excelSheetModel, type SheetModel, sheetStyle } from "./sheetModel";
 import { prepareStyledSheet } from "./sheetSource";
@@ -12,18 +16,22 @@ let workbook: WorkBook | null = null;
 let formattedWorkbook: Workbook | null = null;
 let formatLimited = false;
 
-async function renderSlide(index: number): Promise<PreviewWorkerResult> {
+async function renderSlide(
+  index: number,
+  includeAnnotations = false,
+): Promise<PreviewWorkerResult> {
   if (!presentation || !Number.isInteger(index)) throw new Error("幻灯片尚未就绪。");
-  const [{ getSlides }, { renderSlideToSvg }] = await Promise.all([
+  const [pptx, { renderSlideToSvg }] = await Promise.all([
     import("@office-kit/pptx"),
     import("@office-kit/pptx-preview"),
   ]);
-  const slides = getSlides(presentation);
+  const slides = pptx.getSlides(presentation);
   if (index < 0 || index >= slides.length || slides.length > 150)
     throw new Error("演示文稿超过预览页数限制。");
   const context =
     typeof OffscreenCanvas === "undefined" ? null : new OffscreenCanvas(1, 1).getContext("2d");
-  const svg = renderSlideToSvg(presentation, slides[index], {
+  const slide = slides[index];
+  const svg = renderSlideToSvg(presentation, slide, {
     textLayout: "svg",
     resolveFamily: (family) => family || "sans-serif",
     ...(context
@@ -39,7 +47,51 @@ async function renderSlide(index: number): Promise<PreviewWorkerResult> {
       : {}),
   });
   if (svg.length > 8 * 1024 * 1024) throw new Error("此幻灯片过于复杂，请下载原件查看。");
-  return { svg, slideCount: slides.length };
+  return {
+    svg,
+    slideCount: slides.length,
+    slideRevision: includeAnnotations ? describeSlide(pptx, presentation, slide) : undefined,
+  };
+}
+
+function describeSlide(
+  pptx: typeof import("@office-kit/pptx"),
+  deck: PresentationData,
+  slide: ReturnType<typeof pptx.getSlides>[number],
+): SlideRevisionMetadata | undefined {
+  const size = pptx.getSlideSize(deck);
+  if (!size || size.width <= 0 || size.height <= 0) return;
+  const shapes = pptx.getSlideShapes(slide);
+  // Children have local coordinates. Use the containing group until the renderer exposes its transform.
+  const nested = new Set(
+    shapes.flatMap((shape) => pptx.getGroupChildren(shape).map(pptx.getShapeId)),
+  );
+  const elements: SlideRevisionMetadata["elements"] = [];
+  for (const shape of shapes.slice(-512)) {
+    if (nested.has(pptx.getShapeId(shape)) || pptx.isShapeHidden(shape)) continue;
+    const bounds = pptx.getShapeBoundsResolved(deck, shape);
+    if (!bounds || bounds.w <= 0 || bounds.h <= 0) continue;
+    elements.push({
+      id: String(pptx.getShapeId(shape)),
+      name: pptx.getShapeName(shape).slice(0, 200),
+      kind: pptx.getShapeKind(shape),
+      rotation: pptx.getShapeRotation(shape),
+      quote: pptx.getShapeText(shape).trim().slice(0, 500),
+      region: {
+        left: bounds.x / size.width,
+        top: bounds.y / size.height,
+        width: bounds.w / size.width,
+        height: bounds.h / size.height,
+      },
+    });
+  }
+  return {
+    slideId: pptx.getSlidePartName(slide),
+    slideTitle: pptx.getSlideTitle(slide)?.slice(0, 200),
+    width: size.width,
+    height: size.height,
+    elements,
+  };
 }
 
 async function renderSheet(name: string): Promise<PreviewWorkerResult> {
@@ -122,7 +174,7 @@ async function renderSheet(name: string): Promise<PreviewWorkerResult> {
 }
 
 async function handle(input: PreviewWorkerInput): Promise<PreviewWorkerResult> {
-  if (input.type === "slide") return renderSlide(input.index);
+  if (input.type === "slide") return renderSlide(input.index, input.includeAnnotations);
   if (input.type === "sheet") return renderSheet(input.name);
   const { bytes } = input;
   if (bytes.byteLength > 32 * 1024 * 1024) throw new Error("文件超过在线预览大小限制。");
@@ -147,7 +199,7 @@ async function handle(input: PreviewWorkerInput): Promise<PreviewWorkerResult> {
       throw new Error("演示文稿超过 150 页，请下载原件查看。");
     const { loadPresentation } = await import("@office-kit/pptx");
     presentation = await loadPresentation(bytes);
-    return renderSlide(0);
+    return renderSlide(0, input.includeAnnotations);
   }
   const { read } = await import("xlsx");
   formatLimited =

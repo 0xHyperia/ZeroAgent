@@ -1214,9 +1214,10 @@ export function GatewayAppView({
       isCurrentAgent() && !isConversationBusy(displayedConversationId)
     );
     return requestWorkspaceRevision(revision, {
+      workspaceRoot: terminalProjectPath,
       canSend,
-      importSource: (source) => importDeviceConversationFiles(
-        terminalProjectPath, [source], AbortSignal.timeout(60_000),
+      importSources: (sources) => importDeviceConversationFiles(
+        terminalProjectPath, sources, AbortSignal.timeout(60_000),
       ),
       send: async (text, uploadedFiles) => {
         const outcome = await sendChat(text, {

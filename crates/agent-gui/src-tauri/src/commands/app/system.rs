@@ -270,6 +270,7 @@ fn is_archive_upload(path: &Path) -> bool {
     matches!(
         upload_extension_lower(path).as_deref(),
         Some("zip")
+            | Some("pptx")
             | Some("rar")
             | Some("7z")
             | Some("tar")
@@ -4267,6 +4268,16 @@ mod tests {
             .expect("xlsx should be accepted")
             .kind,
             "spreadsheet"
+        );
+        assert_eq!(
+            detect_uploaded_bytes_kind(
+                "deck.pptx",
+                Some("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+                b"PK\x03\x04",
+            )
+            .expect("pptx should be staged as an OOXML archive")
+            .kind,
+            "archive"
         );
         assert_eq!(
             detect_uploaded_bytes_kind("bundle.tar.gz", Some("application/gzip"), b"gzip")

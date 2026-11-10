@@ -1,4 +1,4 @@
-import { type RefObject, useContext, useEffect, useRef, useState } from "react";
+import { type RefObject, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -25,6 +25,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import type {
+  DocumentPageGeometry,
   DocumentRegion,
   DocumentSelection,
   DocumentSelectionAnchor,
@@ -33,6 +34,29 @@ import { PreviewIdentityContext } from "./PreviewChrome";
 import { usePreviewReadingState } from "./readingSession";
 import { useReaderFloatingPosition } from "./useReaderFloatingPosition";
 
+export type DocumentRevisionTarget =
+  | { kind: "sheet"; sheet: string; range: string; anchor?: string }
+  | {
+      kind: "slide";
+      slide: number;
+      slideId?: string;
+      slideTitle?: string;
+      element?: {
+        id: string;
+        name: string;
+        kind: string;
+        rotation?: number;
+        bounds?: DocumentRegion;
+      };
+      point?: { x: number; y: number };
+      elementOffset?: { x: number; y: number };
+    };
+type PdfRevisionTarget = {
+  pageCount: number;
+  pageWidth: number;
+  pageHeight: number;
+  kind: "point" | "region" | "text";
+};
 export type DocumentRevisionComment = {
   id: string;
   page: number;
@@ -44,19 +68,33 @@ export type DocumentRevisionComment = {
   region?: DocumentRegion;
   anchors?: DocumentSelectionAnchor[];
   kind?: "image";
+  target?: DocumentRevisionTarget;
+  pdf?: PdfRevisionTarget;
+  document?: DocumentPageGeometry;
 };
 export type RevisionSelection = DocumentSelection & {
   quote: string;
   page: number;
   visible?: boolean;
+  target?: DocumentRevisionTarget;
+  pdf?: PdfRevisionTarget;
 };
 function selectionKey(value: RevisionSelection | null) {
   return value ? JSON.stringify([value.id, value.start, value.end, value.region]) : "";
 }
 
-export function documentRevisionText(name: string, comments: readonly DocumentRevisionComment[]) {
-  return `请根据以下批注修改所引用的文件「${name}」，保留未要求修改的内容，并保存为新版本。批注页码来自当前浏览器预览；请同时核对原文。\n\n${comments.map((item, index) => `${index + 1}. 第 ${item.page} 页 · ${item.anchors?.map((anchor) => `${anchor.id} 字符 ${anchor.start}–${anchor.end}`).join("；") ?? `${item.block} · 字符 ${item.start}–${item.end}`}${item.region ? ` · 页面区域（左/上/宽/高）：${[item.region.left, item.region.top, item.region.width, item.region.height].map((value) => `${Math.round(value * 100)}%`).join("/")}` : ""}\n原文：${item.quote}\n修改要求：${item.comment}`).join("\n\n")}`;
+export function documentRevisionLocation(item: Pick<DocumentRevisionComment, "target" | "page">) {
+  if (item.target?.kind === "sheet") return `${item.target.sheet} · ${item.target.range}`;
+  if (item.target?.kind === "slide")
+    return `第 ${item.target.slide} 张${item.target.element?.name ? ` · ${item.target.element.name}` : ""}`;
+  return `第 ${item.page} 页`;
 }
+
+export type RevisionSelectionBounds = {
+  target: DOMRectReadOnly;
+  viewport: DOMRectReadOnly;
+  observe?: Element;
+};
 
 /** Explicit submission only. Host supplies immutable resource authority and the normal send path. */
 export function ResourceDocumentComments(props: {
@@ -68,6 +106,8 @@ export function ResourceDocumentComments(props: {
   onMarks: (comments: readonly DocumentRevisionComment[]) => void;
   exitRef?: RefObject<(() => void) | null>;
   editRef?: RefObject<((id: string) => void) | null>;
+  prepareEvidence?: (comments: readonly DocumentRevisionComment[]) => Promise<readonly File[]>;
+  resolveSelectionBounds?: (selection: RevisionSelection) => RevisionSelectionBounds | undefined;
 }) {
   const { onRequestRevision } = useContext(PreviewIdentityContext);
   const [comments, setComments] = usePreviewReadingState("documentComments", []);
@@ -88,9 +128,7 @@ export function ResourceDocumentComments(props: {
         setEditing(existing?.id ?? null);
         setInput(existing?.comment ?? "");
       }
-      const changed = selectionKey(props.selection) !== selectionKey(editingSelection.current);
       editingSelection.current = props.selection;
-      if (changed) inputRef.current?.focus({ preventScroll: true });
     } else {
       editingSelection.current = null;
       setEditing(null);
@@ -104,6 +142,53 @@ export function ResourceDocumentComments(props: {
   const [listOpen, setListOpen] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const floating = useReaderFloatingPosition(props.enabled || comments.length > 0);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const { selection, resolveSelectionBounds } = props;
+  const overlay = floating.root;
+  useLayoutEffect(() => {
+    const root = overlay.current;
+    if (!root || !selection || !resolveSelectionBounds) return;
+    const parent = root.parentElement;
+    const update = () => {
+      const bounds = resolveSelectionBounds(selection);
+      const area = root.getBoundingClientRect();
+      if (!bounds) return setPosition(null);
+      const { target, viewport } = bounds;
+      if (
+        target.right < viewport.left ||
+        target.left > viewport.right ||
+        target.bottom < viewport.top ||
+        target.top > viewport.bottom
+      )
+        return setPosition(null);
+      const width = Math.min(360, area.width - 24);
+      const x = Math.max(12, Math.min(target.left - area.left, area.width - width - 12));
+      const bottom = Math.min(target.bottom, viewport.bottom) - area.top;
+      const y = Math.max(8, Math.min(bottom, area.height - 64));
+      setPosition((previous) => (previous?.x === x && previous.y === y ? previous : { x, y }));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(root);
+    const target = resolveSelectionBounds(selection)?.observe;
+    if (target) observer.observe(target);
+    parent?.addEventListener("scroll", update, true);
+    return () => {
+      observer.disconnect();
+      parent?.removeEventListener("scroll", update, true);
+    };
+  }, [overlay, selection, resolveSelectionBounds]);
+  const key = selectionKey(selection);
+  const hasAnchor = !resolveSelectionBounds || !!position;
+  const inputVisible = !!selection && selection.visible !== false && hasAnchor && props.enabled;
+  const focusedKey = useRef("");
+  useEffect(() => {
+    if (!key) focusedKey.current = "";
+    if (inputVisible && inputRef.current && focusedKey.current !== key) {
+      inputRef.current.focus({ preventScroll: true });
+      focusedKey.current = key;
+    }
+  }, [inputVisible, key]);
   function exit() {
     if (busy) return;
     if (comments.length || input.trim()) setConfirmDiscard(true);
@@ -138,6 +223,9 @@ export function ResourceDocumentComments(props: {
       ...(selection.kind ? { kind: selection.kind } : {}),
       ...(selection.region ? { region: selection.region } : {}),
       ...(selection.anchors ? { anchors: selection.anchors } : {}),
+      ...(selection.target ? { target: selection.target } : {}),
+      ...(selection.pdf ? { pdf: selection.pdf } : {}),
+      ...(selection.document ? { document: selection.document } : {}),
     };
     publish(
       editing ? comments.map((old) => (old.id === editing ? item : old)) : [...comments, item],
@@ -153,8 +241,10 @@ export function ResourceDocumentComments(props: {
     setBusy(true);
     setError("");
     try {
-      if (await onRequestRevision(comments)) {
+      const evidence = await props.prepareEvidence?.(comments);
+      if (await onRequestRevision(comments, evidence)) {
         publish([]);
+        props.onSelection(null);
         props.onEnabled(false);
       } else setError("批注尚未发送，请先检查当前对话状态。批注已保留。");
     } catch (cause) {
@@ -200,6 +290,9 @@ export function ResourceDocumentComments(props: {
       region: item.region,
       anchors: item.anchors,
       kind: item.kind,
+      target: item.target,
+      pdf: item.pdf,
+      document: item.document,
     };
     editingSelection.current = selection;
     props.onSelection(selection);
@@ -227,12 +320,13 @@ export function ResourceDocumentComments(props: {
         }
       }}
     >
-      {props.selection && props.selection.visible !== false && props.enabled ? (
+      {selection && inputVisible ? (
         <form
           className="za-document-comment-input"
           style={{
-            left: Math.max(16, props.selection.x),
-            top: Math.max(72, props.selection.y + 8),
+            left: resolveSelectionBounds ? position?.x : Math.max(16, selection.x),
+            top:
+              resolveSelectionBounds && position ? position.y + 8 : Math.max(72, selection.y + 8),
           }}
           onSubmit={(event) => {
             event.preventDefault();
@@ -294,15 +388,17 @@ export function ResourceDocumentComments(props: {
                       type="button"
                       className="za-document-comment-jump"
                       disabled={busy}
-                      aria-label={`定位第 ${itemIndex + 1} 条批注，第 ${item.page} 页`}
+                      aria-label={`定位第 ${itemIndex + 1} 条批注，${documentRevisionLocation(item)}`}
                       onClick={() => {
                         setIndex(itemIndex);
                         props.onNavigate(item.block, item);
                         setListOpen(false);
                       }}
                     >
-                      <span className="za-document-comment-list-page">第 {item.page} 页</span>
-                      <q>{item.quote}</q>
+                      <span className="za-document-comment-list-page">
+                        {documentRevisionLocation(item)}
+                      </span>
+                      {item.quote && <q>{item.quote}</q>}
                       <span className="za-document-comment-list-text">{item.comment}</span>
                     </button>
                     <div className="za-document-comment-list-actions">

@@ -47,9 +47,9 @@ import {
   createCodeMentionReference,
 } from "@liveagent/ui/lib/chat/mentionReferences";
 import * as monaco from "@liveagent/ui/lib/monacoEditor";
-import { enableWorkspaceSourceSyntax } from "@liveagent/ui/lib/sourceSyntax";
 import type { SftpClient } from "@liveagent/ui/lib/sftp/types";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import { enableWorkspaceSourceSyntax } from "@liveagent/ui/lib/sourceSyntax";
 import "../../lib/monacoWorkers";
 import {
   type MouseEvent as ReactMouseEvent,
@@ -65,6 +65,7 @@ import {
 import { createPortal } from "react-dom";
 import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTextGeneration";
 import type { MarkdownSelectionActions } from "../resource-preview/PreviewChrome";
+import { PreviewLoading } from "../resource-preview/PreviewFeedback";
 import WorkspaceMarkdownEditor, {
   type WorkspaceMarkdownEditorHandle,
 } from "./WorkspaceMarkdownEditor";
@@ -1163,14 +1164,16 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
         ) : (
           <div ref={containerRef} className={cn("absolute inset-0", !activeTab && "hidden")} />
         )}
-        {!activeTab ? (
+        {!activeTab && isOpening ? (
+          <PreviewLoading
+            message={t("workspaceEditor.opening")}
+            skeleton={markdownMode ? "document" : "code"}
+          />
+        ) : null}
+        {!activeTab && !isOpening ? (
           <EmptyState variant="workspace">
-            {isOpening ? (
-              <Loader2 className="size-5 animate-spin" />
-            ) : (
-              <FilePenLine className="size-6" />
-            )}
-            <div>{isOpening ? t("workspaceEditor.opening") : t("workspaceEditor.emptyHint")}</div>
+            <FilePenLine className="size-6" />
+            <div>{t("workspaceEditor.emptyHint")}</div>
             {globalError ? (
               <div
                 className={cn(

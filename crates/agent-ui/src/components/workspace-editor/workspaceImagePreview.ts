@@ -83,6 +83,12 @@ export function isWorkspacePreviewPath(path: string) {
   return getWorkspacePreviewKind(path) !== null;
 }
 
+export function workspacePreviewLoadingSkeleton(kind: WorkspacePreviewKind | null) {
+  if (kind === "image" || kind === "audio" || kind === "video") return "media";
+  if (kind === "markdown" || kind === "pdf") return "document";
+  return undefined;
+}
+
 export function isWorkspaceEditablePreviewPath(path: string) {
   const extension = workspacePathExtension(path);
   if (!extension) return false;

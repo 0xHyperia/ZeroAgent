@@ -21,6 +21,7 @@ import { ChevronRight, List, SquareMousePointer } from "../IconSet";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { DocumentNavigation } from "./DocumentNavigation";
+import type { DocumentRegion } from "./docxReaderDocument";
 import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
@@ -32,6 +33,7 @@ import {
   previewPageKey,
 } from "./PreviewToolbar";
 import { pdfPreviewAssetsURL } from "./pdfPreviewAssets";
+import { capturePDFRevisionEvidence } from "./pdfRevisionEvidence";
 import { pdfTextRange } from "./pdfTextRange";
 import { boundedPreviewScale, previewScale } from "./previewGeometry";
 import {
@@ -51,6 +53,18 @@ import { usePreviewViewport } from "./usePreviewViewport";
 GlobalWorkerOptions.workerSrc = pdfWorkerURL;
 const DEFAULT_PAGE = { width: 816, height: 1056 };
 const NO_COMMENTS: readonly DocumentRevisionComment[] = [];
+
+function normalizedPDFRegion(rect: DocumentRegion, paper: DOMRect): DocumentRegion {
+  const clamp = (value: number) => Math.max(0, Math.min(1, value));
+  const left = clamp((rect.left - paper.left) / paper.width);
+  const top = clamp((rect.top - paper.top) / paper.height);
+  return {
+    left,
+    top,
+    width: clamp((rect.left + rect.width - paper.left) / paper.width) - left,
+    height: clamp((rect.top + rect.height - paper.top) / paper.height) - top,
+  };
+}
 
 function openPreviewPDF(bytes: Uint8Array) {
   const assets = pdfPreviewAssetsURL(pdfVersion);
@@ -220,6 +234,8 @@ export default function ResourcePDFPreview({
 
   const workspace = useRef<HTMLDivElement>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const prepareEvidence = (comments: readonly DocumentRevisionComment[]) =>
+    document ? capturePDFRevisionEvidence(document, comments, assertCurrent) : Promise.resolve([]);
   const [painted, setPainted] = useState(false);
   const markPainted = useCallback(() => setPainted(true), []);
   const [page, setPage] = usePreviewReadingState("pdfPage", 1);
@@ -518,6 +534,7 @@ export default function ResourcePDFPreview({
                 setCommentDestination((old) => ({ comment, request: (old?.request ?? 0) + 1 }));
             }}
             onMarks={setMarkedComments}
+            prepareEvidence={prepareEvidence}
           />
         ) : null}
       </div>
@@ -570,6 +587,7 @@ function PDFPage({
   const text = useRef<HTMLDivElement>(null);
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const logicalPage = useRef<{ width: number; height: number } | null>(null);
   const [near, setNear] = useState(false);
   const [size, setSize] = useState(DEFAULT_PAGE);
   const [busy, setBusy] = useState(true);
@@ -579,7 +597,7 @@ function PDFPage({
   const [marks, setMarks] = useState<
     { key: string; left: number; top: number; width: number; height: number }[]
   >([]);
-  const drag = useRef<{ x: number; y: number } | null>(null);
+  const drag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [lasso, setLasso] = useState<{
     left: number;
     top: number;
@@ -629,6 +647,7 @@ function PDFPage({
         if (!active) return;
         const units = 96 / 72,
           base = pdfPage.getViewport({ scale: units });
+        logicalPage.current = pdfPage.getViewport({ scale: 1 });
         setSize((old) =>
           old.width === base.width && old.height === base.height
             ? old
@@ -681,7 +700,6 @@ function PDFPage({
   }, [enabled]);
   // Geometry is measured from the newly rendered glyph layer, never from stale PDF coordinates.
   useLayoutEffect(() => {
-    if (!textRevision) return;
     const paper = holder.current,
       layer = text.current;
     const box = paper?.getBoundingClientRect();
@@ -692,7 +710,12 @@ function PDFPage({
     const rectangles: typeof marks = [];
     for (const comment of comments) {
       if (comment.block !== `pdf-page-${number}`) continue;
-      if (comment.region) {
+      const range =
+        !textRevision || (comment.region && comment.pdf?.kind !== "text")
+          ? null
+          : pdfTextRange(layer, comment.start, comment.end, comment.quote);
+      const glyphs = range?.getClientRects?.();
+      if (!glyphs?.length && comment.region) {
         rectangles.push({
           key: comment.id,
           left: comment.region.left * 100,
@@ -702,9 +725,8 @@ function PDFPage({
         });
         continue;
       }
-      const range = pdfTextRange(layer, comment.start, comment.end, comment.quote);
-      if (!range || typeof range.getClientRects !== "function") continue;
-      for (const rect of Array.from(range.getClientRects()).slice(0, 128)) {
+      if (!glyphs) continue;
+      for (const rect of Array.from(glyphs).slice(0, 128)) {
         if (!rect.width || !rect.height || rectangles.length >= 512) continue;
         rectangles.push({
           key: `${comment.id}-${rectangles.length}`,
@@ -718,7 +740,6 @@ function PDFPage({
     setMarks(rectangles);
   }, [comments, number, enabled, busy, textRevision]);
   useLayoutEffect(() => {
-    if (!textRevision) return;
     if (
       !commentDestination ||
       commentDestination.request === navigatedRequest.current ||
@@ -729,13 +750,28 @@ function PDFPage({
     )
       return;
     const comment = commentDestination.comment;
+    if (comment.region && comment.pdf?.kind !== "text" && holder.current) {
+      const scroll = root.current;
+      const target = holder.current.getBoundingClientRect();
+      const viewport = scroll?.getBoundingClientRect();
+      if (scroll && viewport) {
+        navigatedRequest.current = commentDestination.request;
+        const center = (comment.region.top + comment.region.height / 2) * target.height;
+        scroll.scrollBy({
+          top: target.top + center - viewport.top - viewport.height / 2,
+          behavior: readerScrollBehavior(),
+        });
+      }
+      return;
+    }
+    if (!textRevision) return;
     const range = pdfTextRange(text.current, comment.start, comment.end, comment.quote);
     const element = range?.startContainer.parentElement;
     if (element) {
       navigatedRequest.current = commentDestination.request;
       element.scrollIntoView?.({ block: "center", behavior: readerScrollBehavior() });
     }
-  }, [commentDestination, number, enabled, busy, textRevision]);
+  }, [commentDestination, number, enabled, busy, textRevision, root]);
   return (
     // biome-ignore lint/a11y/useSemanticElements: A rendered PDF page groups text and canvas, rather than form fields.
     <div
@@ -745,16 +781,28 @@ function PDFPage({
       className="za-preview-pdf-page"
       data-annotating={annotating}
       onPointerDown={(event) => {
-        if (!annotating || event.button !== 0 || event.shiftKey) return;
+        if (
+          !annotating ||
+          busy ||
+          error ||
+          !event.isPrimary ||
+          event.button !== 0 ||
+          event.shiftKey
+        )
+          return;
         event.preventDefault();
         window.getSelection()?.removeAllRanges();
         const box = event.currentTarget.getBoundingClientRect();
-        drag.current = { x: event.clientX - box.left, y: event.clientY - box.top };
+        drag.current = {
+          pointerId: event.pointerId,
+          x: event.clientX - box.left,
+          y: event.clientY - box.top,
+        };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
         const start = drag.current;
-        if (!start) return;
+        if (!start || start.pointerId !== event.pointerId) return;
         const box = event.currentTarget.getBoundingClientRect();
         const x = Math.max(0, Math.min(box.width, event.clientX - box.left)),
           y = Math.max(0, Math.min(box.height, event.clientY - box.top));
@@ -765,66 +813,86 @@ function PDFPage({
           height: Math.abs(start.y - y),
         });
       }}
-      onPointerCancel={() => {
+      onPointerCancel={(event) => {
+        if (drag.current?.pointerId !== event.pointerId) return;
         drag.current = null;
         setLasso(null);
       }}
       onPointerUp={(event) => {
         const start = drag.current;
+        if (!start || start.pointerId !== event.pointerId) return;
         drag.current = null;
-        if (!start || !onSelection || !text.current) return;
+        setLasso(null);
+        const pageSize = logicalPage.current;
+        if (!onSelection || !pageSize) return;
         const paper = event.currentTarget.getBoundingClientRect(),
           host = workspace?.current?.getBoundingClientRect();
-        const area = lasso;
-        setLasso(null);
-        if (!host) return;
-        const nodes = [...text.current.querySelectorAll<HTMLElement>('span[role="presentation"]')];
+        if (!host || !paper.width || !paper.height) return;
+        const x = Math.max(0, Math.min(paper.width, event.clientX - paper.left));
+        const y = Math.max(0, Math.min(paper.height, event.clientY - paper.top));
+        const area = {
+          left: Math.min(start.x, x),
+          top: Math.min(start.y, y),
+          width: Math.abs(start.x - x),
+          height: Math.abs(start.y - y),
+        };
+        const isArea = area.width >= 3 || area.height >= 3;
+        const nodes =
+          text.current?.querySelectorAll<HTMLElement>('span[role="presentation"]') ?? [];
+        let clickedText: DOMRect | undefined;
         let offset = 0,
           from = -1,
           to = -1;
         for (const node of nodes) {
           const bounds = node.getBoundingClientRect(),
             length = node.textContent?.length ?? 0;
-          const hit =
-            area && area.width > 5 && area.height > 5
-              ? bounds.left < paper.left + area.left + area.width &&
-                bounds.right > paper.left + area.left &&
-                bounds.top < paper.top + area.top + area.height &&
-                bounds.bottom > paper.top + area.top
-              : event.clientX >= bounds.left &&
-                event.clientX <= bounds.right &&
-                event.clientY >= bounds.top &&
-                event.clientY <= bounds.bottom;
+          const hit = isArea
+            ? bounds.left < paper.left + area.left + area.width &&
+              bounds.right > paper.left + area.left &&
+              bounds.top < paper.top + area.top + area.height &&
+              bounds.bottom > paper.top + area.top
+            : event.clientX >= bounds.left &&
+              event.clientX <= bounds.right &&
+              event.clientY >= bounds.top &&
+              event.clientY <= bounds.bottom;
           if (hit) {
             if (from < 0) from = offset;
             to = offset + length;
+            if (!isArea && length && bounds.width && bounds.height) {
+              clickedText = bounds;
+              break;
+            }
           }
           offset += length;
         }
-        if (from < 0 || to <= from) return;
-        const quote = (text.current.textContent ?? "").slice(from, Math.min(to, from + 2000));
-        const region =
-          area && area.width > 5 && area.height > 5
-            ? {
-                left: area.left / paper.width,
-                top: area.top / paper.height,
-                width: area.width / paper.width,
-                height: area.height / paper.height,
-              }
-            : undefined;
+        const quote =
+          from < 0 ? "" : (text.current?.textContent ?? "").slice(from, Math.min(to, from + 2000));
+        const region = normalizedPDFRegion(
+          isArea
+            ? { ...area, left: paper.left + area.left, top: paper.top + area.top }
+            : (clickedText ?? { left: paper.left + x, top: paper.top + y, width: 0, height: 0 }),
+          paper,
+        );
         onSelection({
           id: `pdf-page-${number}`,
           page: number,
-          start: from,
-          end: from + quote.length,
+          start: Math.max(0, from),
+          end: Math.max(0, from) + quote.length,
           quote,
           x: Math.max(12, Math.min(event.clientX - host.left, host.width - 352)),
           y: Math.min(event.clientY - host.top, host.height - 150),
           region,
+          pdf: {
+            pageCount: document.numPages,
+            pageWidth: pageSize.width,
+            pageHeight: pageSize.height,
+            kind: isArea ? "region" : clickedText ? "text" : "point",
+          },
         });
       }}
       onMouseUp={(event) => {
-        if (!annotating || !onSelection || !text.current) return;
+        const pageSize = logicalPage.current;
+        if (!annotating || busy || error || !onSelection || !text.current || !pageSize) return;
         const selection = window.getSelection();
         const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
         if (
@@ -840,8 +908,9 @@ function PDFPage({
         const start = prefix.toString().length,
           quote = range.toString().slice(0, 2000);
         const rect = range.getBoundingClientRect(),
-          box = workspace?.current?.getBoundingClientRect();
-        if (!quote.trim() || !box) return;
+          box = workspace?.current?.getBoundingClientRect(),
+          paper = event.currentTarget.getBoundingClientRect();
+        if (!quote.trim() || !box || !paper.width || !paper.height) return;
         event.stopPropagation();
         onSelection({
           id: `pdf-page-${number}`,
@@ -849,6 +918,13 @@ function PDFPage({
           start,
           end: start + quote.length,
           quote,
+          region: normalizedPDFRegion(rect, paper),
+          pdf: {
+            pageCount: document.numPages,
+            pageWidth: pageSize.width,
+            pageHeight: pageSize.height,
+            kind: "text",
+          },
           x: Math.max(12, Math.min(rect.left - box.left, box.width - 352)),
           y: Math.min(rect.bottom - box.top, box.height - 150),
         });

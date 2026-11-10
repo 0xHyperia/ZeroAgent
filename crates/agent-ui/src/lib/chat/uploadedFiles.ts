@@ -4,6 +4,7 @@ import {
   normalizeConversationMentionReferences,
 } from "@liveagent/ui/lib/chat/mentionReferences";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
+import { hasDocumentRevisionHeader } from "./documentRevisionMessage";
 
 export type UploadedReadableFileKind =
   | "text"
@@ -443,7 +444,7 @@ export function getUserMessageDisplayText(
     return displayContent;
   }
   const text = flattenUserContent(message.content);
-  return text.includes(IMAGE_EDIT_CONTEXT_HEADER)
+  return text.includes(IMAGE_EDIT_CONTEXT_HEADER) || hasDocumentRevisionHeader(text)
     ? parseUserMessageContentWithUploads(text).displayText
     : text;
 }
@@ -452,7 +453,7 @@ export function getUserMessageAttachments(message: { role: string } & Record<str
   const raw = message[ATTACHMENTS_FIELD];
   if (!Array.isArray(raw)) {
     const text = flattenUserContent(message.content);
-    return text.includes(IMAGE_EDIT_CONTEXT_HEADER)
+    return text.includes(IMAGE_EDIT_CONTEXT_HEADER) || hasDocumentRevisionHeader(text)
       ? parseUserMessageContentWithUploads(text).attachments
       : [];
   }

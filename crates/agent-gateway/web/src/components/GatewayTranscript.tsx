@@ -9,6 +9,7 @@ import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/Backgroun
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
+import { DocumentRevisionMessageBody } from "@liveagent/ui/components/chat/DocumentRevisionMessageChip";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
 import { RetryDetailsBlock } from "@liveagent/ui/components/chat/RetryDetailsBlock";
 import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
@@ -21,6 +22,10 @@ import { Loader2 } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/LocaleContext";
 import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
 import { type ChatFileLink, chatAttachmentFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import {
+  copyDocumentRevision,
+  parseDocumentRevisionMessage,
+} from "@liveagent/ui/lib/chat/documentRevisionMessage";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { ReplyShareSource } from "@liveagent/ui/lib/chat/replyShare";
 import {
@@ -354,11 +359,14 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
   } = props;
   const { locale, t } = useLocale();
   const effectiveMessageRef = row.messageRef;
+  const revision =
+    row.documentRevision ?? parseDocumentRevisionMessage(row.inlineEditText ?? row.text);
   const missingStableRef = !effectiveMessageRef;
   const editDisabled =
     readOnly ||
     isStreaming ||
     !onResendFromEdit ||
+    Boolean(revision) ||
     missingStableRef ||
     Boolean(row.contentOmitted || (row.contentPreview && row.inlineEditText === undefined));
   const editTitle = row.contentOmitted
@@ -410,15 +418,25 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
       className="chat-user-bubble-wrap group relative ml-auto max-w-user-bubble-web"
       data-user-bubble-wrap
     >
-      <GatewayUserMessageBubbleBody
-        text={row.text}
-        attachments={row.attachments}
-        onOpenAttachment={onOpenAttachment}
-        workspaceRoot={workspaceRoot}
-        onLoadUploadedImagePreview={onLoadUploadedImagePreview}
-        loadCommitDetails={loadCommitDetails}
-      />
-      {(row.contentOmitted || row.contentPreview) && onLoadContent ? (
+      {revision ? (
+        <DocumentRevisionMessageBody
+          revision={revision}
+          attachments={row.attachments}
+          workspaceRoot={workspaceRoot}
+          onOpenAttachment={onOpenAttachment}
+          onLoadUploadedImagePreview={onLoadUploadedImagePreview}
+        />
+      ) : (
+        <GatewayUserMessageBubbleBody
+          text={row.text}
+          attachments={row.attachments}
+          onOpenAttachment={onOpenAttachment}
+          workspaceRoot={workspaceRoot}
+          onLoadUploadedImagePreview={onLoadUploadedImagePreview}
+          loadCommitDetails={loadCommitDetails}
+        />
+      )}
+      {!revision && (row.contentOmitted || row.contentPreview) && onLoadContent ? (
         <button
           type="button"
           className="mt-8px rounded-md border border-border px-10px py-6px text-xs hover:bg-accent"
@@ -436,10 +454,13 @@ const GatewayUserMessageRowBody = memo(function GatewayUserMessageRowBody(props:
       <TranscriptUserMessageActions
         timestamp={row.timestamp}
         copied={isCopied}
-        copyDisabled={row.contentOmitted || (row.contentPreview && !row.copyContent)}
-        copyTitle={row.copyDisabledReason}
+        copyDisabled={!revision && (row.contentOmitted || (row.contentPreview && !row.copyContent))}
+        copyTitle={revision ? undefined : row.copyDisabledReason}
         onCopy={() => {
-          void (row.copyContent?.() ?? copyTextToClipboard(row.text)).then((copied) => {
+          const copy = revision
+            ? copyTextToClipboard(copyDocumentRevision(revision))
+            : (row.copyContent?.() ?? copyTextToClipboard(row.text));
+          void copy.then((copied) => {
             if (!copied) return;
             setCopiedMessageId(row.key);
             window.setTimeout(() => {

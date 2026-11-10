@@ -107,6 +107,30 @@ test("PDF comment anchors survive glyph span splits and reject changed originals
   assert.equal(pdfTextRange(layer,3,10,'udChat ').toString(),'udChat ');
 });
 
+test("reading snapshots retain typed revision targets and zero-area document points", async (t) => {
+  const app = await setup(t);
+  const { createReadingSnapshotStore } = app.env.loadModule("@liveagent/ui/components/resource-preview/readingSession.tsx");
+  const store = createReadingSnapshotStore();
+  const base = { id: "comment", page: 1, block: "file-target", start: 0, end: 0, quote: "", comment: "Revise here" };
+  const point = { left: 0.25, top: 0.5, width: 0, height: 0 };
+  const dimensions = { pageCount: 2, pageWidth: 816, pageHeight: 1056 };
+  const cases = [
+    { ...base, target: { kind: "sheet", sheet: "Sales", range: "A1:C5", anchor: "A1" } },
+    { ...base, region: point, target: { kind: "slide", slide: 1, slideId: "ppt/slides/slide1.xml", point: { x: 0.25, y: 0.5 }, element: { id: "8", name: "Title", kind: "shape", rotation: 10 } } },
+    { ...base, region: point, pdf: { ...dimensions, kind: "point" } },
+    { ...base, region: { ...point, height: 0.05 }, pdf: { ...dimensions, kind: "region" } },
+    { ...base, document: dimensions },
+  ];
+  for (const [index, item] of cases.entries()) {
+    store.write(String(index), "documentComments", [item]);
+    assert.deepEqual(store.read(String(index))?.documentComments, [item]);
+  }
+  store.write("invalid", "documentComments", [{ ...base, region: { ...point, left: 1.2 }, pdf: { ...dimensions, kind: "point" } }]);
+  assert.equal(store.read("invalid"), undefined);
+  store.write("invalid", "documentComments", [{ ...base, target: { kind: "sheet", sheet: "Sales", range: "=SUM(A1)" } }]);
+  assert.equal(store.read("invalid"), undefined);
+});
+
 test("comment list locates and edits individual anchors, deletes one, and retains the rest after a rejected send",async t=>{
  const app=await setup(t),h=app.env.React.createElement;
  const {ResourceDocumentComments}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceDocumentComments.tsx"),{PreviewIdentityContext}=app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");

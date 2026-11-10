@@ -15,6 +15,13 @@ import Plus from "~icons/lucide/plus";
 import RotateCw from "~icons/lucide/rotate-cw";
 import Scan from "~icons/lucide/scan";
 import { useLocale } from "../../i18n";
+import { MoreHorizontal } from "../IconSet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewDock } from "./PreviewDock";
@@ -300,6 +307,7 @@ function ImageCanvas(props: Props) {
   };
   const transform = `translate(-50%, -50%) translate(${bounded.x}px, ${bounded.y}px) rotate(${bounded.rotation}deg)`;
   const imageStyle = { width: size.width * scale, height: size.height * scale, transform };
+  const rotate = () => commit({ ...bounded, rotation: (bounded.rotation + 90) % 360, x: 0, y: 0 });
   const imageTools = (
     <>
       <Button
@@ -331,7 +339,7 @@ function ImageCanvas(props: Props) {
         tooltip="顺时针旋转"
         aria-label="旋转图像"
         disabled={!ready}
-        onClick={() => commit({ ...bounded, rotation: (bounded.rotation + 90) % 360, x: 0, y: 0 })}
+        onClick={rotate}
       >
         <RotateCw />
       </Button>
@@ -368,7 +376,38 @@ function ImageCanvas(props: Props) {
           gestures={false}
           onChange={(next) => zoom(typeof next === "number" ? next : "fit-page")}
         />
-        {workspaceTab ? <div className="za-workspace-image-tools">{imageTools}</div> : null}
+        {workspaceTab ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={zh ? "图像操作" : "Image actions"}
+                  tooltip={zh ? "图像操作" : "Image actions"}
+                  disabled={!ready}
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={rotate}>
+                <RotateCw className="size-4" />
+                {zh ? "顺时针旋转" : "Rotate clockwise"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => commit(initialImageView)}>
+                <Scan className="size-4" />
+                {zh ? "重置视图" : "Reset view"}
+              </DropdownMenuItem>
+              {props.onViewSource ? (
+                <DropdownMenuItem onClick={props.onViewSource}>
+                  {zh ? "查看源码" : "View source"}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </PreviewToolbar>
       <div
         ref={container}
@@ -440,7 +479,11 @@ function ImageCanvas(props: Props) {
         </div>
         {!ready ? (
           <div className="za-image-loading">
-            <PreviewLoading message="正在解码图像…" onCancel={props.onCancel} />
+            <PreviewLoading
+              message="正在解码图像…"
+              onCancel={props.onCancel}
+              skeleton={workspaceTab ? "media" : undefined}
+            />
           </div>
         ) : null}
         {!props.conversation && !workspaceTab && (

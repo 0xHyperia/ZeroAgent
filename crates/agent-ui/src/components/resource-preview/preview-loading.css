@@ -1,4 +1,4 @@
-/* Two distinct reading states: a turning cover ring and a stationary file shimmer. */
+/* Covers, formatted documents and workspace source each show a separate loading state. */
 .za-preview-loading[data-loading-variant] {
   position: relative;
   display: flex;
@@ -15,6 +15,10 @@
   min-height: 100px;
   background: #808080;
   color: #fff;
+}
+.za-preview-loading[data-loading-kind="media"] {
+  width: 100%;
+  height: 100%;
 }
 .za-preview-cover-ring {
   position: relative;
@@ -39,35 +43,76 @@
   animation-delay: var(--za-loading-elapsed, 0ms);
 }
 .za-preview-file-loading {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  color: hsl(var(--foreground) / 0.23);
+  flex: none;
+  width: 56px;
+  height: 56px;
+  color: hsl(var(--foreground));
 }
-.za-preview-file-loading svg {
-  width: 44px;
-  height: 44px;
-  color: inherit;
-  stroke-width: 1.6;
+.za-preview-file-loading-base {
+  opacity: 0.24;
 }
-.dark .za-preview-file-loading {
-  color: hsl(var(--foreground) / 0.4);
+.dark .za-preview-file-loading-base {
+  opacity: 0.68;
 }
-.za-preview-file-loading::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  background: linear-gradient(
-    120deg,
-    transparent 45%,
-    var(--za-preview-loading-canvas, var(--za-surface-subtle)) 50%,
-    transparent 55%
-  );
-  background-size: 280% 100%;
-  animation: za-preview-file-shimmer 1800ms linear infinite;
+.za-preview-file-loading-badge {
+  fill: var(--za-preview-loading-canvas, var(--za-surface));
+  font:
+    700 5.4px system-ui,
+    sans-serif;
+}
+.za-preview-file-shimmer-highlight {
+  color: var(--za-preview-loading-canvas, var(--za-surface));
+}
+.dark .za-preview-file-shimmer-highlight {
+  color: hsl(var(--foreground));
+}
+.za-preview-file-shimmer {
+  animation: za-preview-file-shimmer 2200ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
   animation-delay: var(--za-loading-elapsed, 0ms);
+}
+.za-preview-skeleton {
+  align-self: stretch;
+  flex: 1;
+  min-width: 0;
+  padding: 12px 16px;
+  overflow: hidden;
+}
+.za-preview-skeleton[data-skeleton-kind="code"] {
+  padding: 0;
+}
+.za-preview-skeleton[data-skeleton-kind="media"] {
+  padding-inline: 12px;
+}
+.za-preview-skeleton-row {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+.za-preview-skeleton[data-skeleton-kind="code"] .za-preview-skeleton-row {
+  padding-inline-start: 5ch;
+}
+.za-preview-skeleton-bar {
+  position: relative;
+  height: 14px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: hsl(var(--muted-foreground) / 0.1);
+}
+.za-preview-skeleton[data-skeleton-kind="code"] .za-preview-skeleton-bar {
+  height: 12px;
+}
+.za-preview-skeleton[data-skeleton-kind="media"] .za-preview-skeleton-bar {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+.za-preview-skeleton-bar::before {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, hsl(var(--muted-foreground) / 0.16), transparent);
+  animation: za-preview-skeleton-shimmer 3s linear infinite;
+  animation-delay: calc(var(--za-loading-elapsed, 0ms) + var(--za-skeleton-delay, 0ms));
+  content: "";
 }
 .za-preview-loading-cancel {
   position: absolute;
@@ -114,10 +159,18 @@
 }
 @keyframes za-preview-file-shimmer {
   from {
-    background-position: 150% 0;
+    transform: translateX(-54px);
   }
   to {
-    background-position: -50% 0;
+    transform: translateX(26px);
+  }
+}
+@keyframes za-preview-skeleton-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
   }
 }
 @keyframes za-preview-content-enter {
@@ -130,11 +183,13 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .za-preview-cover-ring-arc,
-  .za-preview-file-loading::after,
+  .za-preview-file-shimmer,
+  .za-preview-skeleton-bar::before,
   .za-preview-frame-content[data-ready="true"] {
     animation: none;
   }
-  .za-preview-file-loading::after {
+  .za-preview-file-shimmer,
+  .za-preview-skeleton-bar::before {
     display: none;
   }
 }

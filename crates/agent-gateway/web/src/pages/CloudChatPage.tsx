@@ -28,10 +28,7 @@ import {
   useConversationImagePreview,
 } from "@liveagent/ui/components/resource-preview/ConversationImagePreview";
 import type { ConversationImageEdit } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
-import {
-  type DocumentRevisionComment,
-  documentRevisionText,
-} from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
+import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
 import { ResourceThumbnail } from "@liveagent/ui/components/resource-preview/ResourcePreview";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
@@ -48,6 +45,11 @@ import { t as translate } from "@liveagent/ui/i18n/index";
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
+import {
+  buildDocumentRevisionMessage,
+  MAX_REVISION_EVIDENCE,
+  parseDocumentRevisionMessage,
+} from "@liveagent/ui/lib/chat/documentRevisionMessage";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
@@ -3721,6 +3723,7 @@ export function CloudChatPage({
             text: preview.truncated ? `${text}\n\n${preview.notice}` : text,
             contentOmitted: message.content_omitted,
             contentPreview: preview.truncated,
+            documentRevision: parseDocumentRevisionMessage(fullText) ?? undefined,
             retryText: preview.truncated ? fullText : undefined,
             inlineEditText:
               preview.truncated &&
@@ -5039,6 +5042,7 @@ export function CloudChatPage({
   async function requestDocumentRevision(
     resource: CloudChatFile | CloudChatArtifactVersion,
     comments: readonly DocumentRevisionComment[],
+    evidence: readonly File[] = [],
   ) {
     if (
       !comments.length ||
@@ -5069,18 +5073,64 @@ export function CloudChatPage({
         : !cloudFileCanReference(latest))
     )
       return false;
-    const text =
-      artifact && comments.every((comment) => comment.block.startsWith("site:"))
-        ? siteRevisionText(resource.name, comments)
-        : documentRevisionText(resource.name, comments);
+    if (!("family_id" in latest) || !comments.every((comment) => comment.block.startsWith("site:"))) {
+      if (streaming || pendingQueue.editingItem) return false;
+      const screenshots: CloudChatFile[] = [];
+      if (evidence.length) {
+        if (uploadAbortRef.current || uploadBatchRef.current) return false;
+        const controller = new AbortController();
+        uploadAbortRef.current = controller;
+        try {
+          for (const image of evidence.slice(0, MAX_REVISION_EVIDENCE)) {
+            guard();
+            if (!isCurrentView(view)) return false;
+            const uploadId = crypto.randomUUID();
+            let uploaded: CloudChatFile;
+            try {
+              uploaded = await filesClient.upload(
+                image,
+                view.conversationId,
+                controller.signal,
+                uploadId,
+              );
+            } catch (cause) {
+              if (!(cause instanceof CloudFileUploadUnconfirmedError)) throw cause;
+              try {
+                uploaded = await filesClient.readUpload(uploadId, controller.signal);
+              } catch (lookupError) {
+                if (lookupError instanceof CloudChatFileError && lookupError.status === 404) continue;
+                throw lookupError;
+              }
+            }
+            guard();
+            if (cloudFileCanReference(uploaded)) screenshots.push(uploaded);
+          }
+        } finally {
+          if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
+        }
+      }
+      if (!isCurrentView(view)) return false;
+      const text = buildDocumentRevisionMessage(latest.name, comments, {
+        evidenceNames: screenshots.map(({ name }) => name),
+      });
+      return (
+        (await send(
+          {
+            composer: createTextComposerDraft(text),
+            files: "family_id" in latest ? screenshots : [latest, ...screenshots],
+            artifacts: "family_id" in latest ? [latest] : [],
+            presentation: captureComposerDraft().presentation,
+            researchEnabled: false,
+          },
+          true,
+        )) === true
+      );
+    }
+    const text = siteRevisionText(resource.name, comments);
     const original = captureComposerDraft();
     if (!original.composer?.text.includes(text)) fillStarter(text);
     const next = captureComposerDraft();
-    if (artifact) {
-      if (!next.artifacts.some((item) => item.id === resource.id))
-        next.artifacts.push(latest as CloudChatArtifactVersion);
-    } else if (!next.files.some((item) => item.id === resource.id))
-      next.files.push(latest as CloudChatFile);
+    if (!next.artifacts.some((item) => item.id === latest.id)) next.artifacts.push(latest);
     if (next.files.length + next.artifacts.length > 8) {
       restoreComposerDraft(original, view);
       throw new Error("本条消息已有 8 项资料，请先移除一项后再发送批注。");

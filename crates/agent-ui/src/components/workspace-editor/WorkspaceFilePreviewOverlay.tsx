@@ -20,8 +20,7 @@ import {
   Info,
   Loader2,
   Maximize2,
-  Minus,
-  Plus,
+  MoreHorizontal,
   RefreshCw,
   RotateCwSquare,
   X,
@@ -34,16 +33,15 @@ import {
   getWorkspacePreviewKind,
   isWorkspaceEditablePreviewPath,
   type WorkspacePreviewKind,
+  workspacePreviewLoadingSkeleton,
 } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import {
   clampImageViewerPan,
   clampImageViewerState,
   fitImageViewerSize,
   IMAGE_VIEWER_MAX_SCALE,
-  IMAGE_VIEWER_MIN_SCALE,
   type ImageViewerSize,
   type ImageViewerState,
-  imageViewerScaleAfterStep,
   imageViewerScaleAfterWheelDelta,
   resetImageViewerState,
   workspaceImageAbsolutePathForCopy,
@@ -56,24 +54,35 @@ import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
 import {
   lazy,
-  type ReactNode,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import {
+  workspaceGitPathFromRoot,
+  workspaceGitRelativePath,
+} from "../project-tools/workspaceGitPaths";
 import { ConversationReaderPanel } from "../resource-preview/ConversationReaderPanel";
 import {
   type MarkdownSelectionActions,
   PreviewIdentityContext,
+  PreviewToolbarMount,
 } from "../resource-preview/PreviewChrome";
 import { PreviewLoading, PreviewUnavailable } from "../resource-preview/PreviewFeedback";
+import { PreviewToolbar, PreviewZoomControl } from "../resource-preview/PreviewToolbar";
 import type { DocumentRevisionComment } from "../resource-preview/ResourceDocumentComments";
 import { ResourcePreview } from "../resource-preview/ResourcePreview";
 import { ResourceTitleMenu } from "../resource-preview/ResourceReaderDetails";
-import { DropdownMenuItem } from "../ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { TooltipButton } from "../ui/tooltip-button";
 import type { WorkspaceHTMLLink } from "./workspaceHtmlDocument";
 
@@ -102,6 +111,8 @@ type ReadWorkspacePreviewResponse = {
 export type WorkspaceDocumentRevision = {
   source: File;
   comments: readonly DocumentRevisionComment[];
+  evidence?: readonly File[];
+  workspacePath?: string;
   assertCurrent: () => void;
 };
 
@@ -522,9 +533,16 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
     props.onRequestRevision &&
     currentPreview &&
     (currentPreview.kind === "pdf" ||
-      (currentPreview.kind === "document" && /\.docx$/i.test(currentPreview.path)))
-      ? (comments: readonly DocumentRevisionComment[]) => {
+      (currentPreview.kind === "document" && /\.docx$/i.test(currentPreview.path)) ||
+      (currentPreview.kind === "spreadsheet" && /\.xlsx$/i.test(currentPreview.path)) ||
+      (currentPreview.kind === "presentation" && /\.pptx$/i.test(currentPreview.path)))
+      ? (comments: readonly DocumentRevisionComment[], evidence?: readonly File[]) => {
           assertCurrent(currentPreview);
+          // The FS bridge returns a project-relative logical path after a scoped read.
+          const workdir = activePreviewRequest?.workdir ?? "";
+          const workspacePath = activePreviewRequest?.stagedAttachment
+            ? null
+            : workspaceGitPathFromRoot(workdir, currentPreview.path);
           return (
             currentProps.current.onRequestRevision?.({
               source: new File(
@@ -533,6 +551,11 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
                 { type: currentPreview.mimeType },
               ),
               comments,
+              evidence,
+              workspacePath:
+                workspacePath && workspaceGitRelativePath(workdir, workspacePath)
+                  ? workspacePath
+                  : undefined,
               assertCurrent: () => assertCurrent(currentPreview),
             }) ?? false
           );
@@ -624,7 +647,14 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           (loading || !error || activeRequest?.id !== openRequest?.id ? (
             <PreviewIdentityContext.Provider value={{ name, mime: "" }}>
               <div className="cloud-reader-opening">
-                <PreviewLoading message={t("workspaceFilePreview.loading")} />
+                <PreviewLoading
+                  message={t("workspaceFilePreview.loading")}
+                  skeleton={
+                    props.tabbed && !activePreviewRequest.stagedAttachment
+                      ? workspacePreviewLoadingSkeleton(kind)
+                      : undefined
+                  }
+                />
               </div>
             </PreviewIdentityContext.Provider>
           ) : null)}
@@ -788,7 +818,10 @@ function PreviewBody(props: {
   onOpenHTMLLink?: (link: WorkspaceHTMLLink) => void;
   readingViewId?: string;
   markdownSelectionActions?: MarkdownSelectionActions;
-  onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
+  onRequestRevision?: (
+    comments: readonly DocumentRevisionComment[],
+    evidence?: readonly File[],
+  ) => Promise<boolean> | boolean;
 }) {
   const {
     preview,
@@ -862,6 +895,11 @@ function PreviewBody(props: {
           }}
           onDownload={props.onDownload}
           markdownSelectionActions={props.markdownSelectionActions}
+          loadingSkeleton={
+            props.tabbed && workspacePreviewLoadingSkeleton(preview.kind) === "media"
+              ? "media"
+              : undefined
+          }
           onRequestRevision={props.onRequestRevision}
         />
       </div>
@@ -920,32 +958,6 @@ function PreviewBody(props: {
   );
 }
 
-function ImagePreviewToolButton(props: {
-  label: string;
-  disabled?: boolean;
-  pressed?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  const { label, disabled, pressed, onClick, children } = props;
-  return (
-    <button
-      type="button"
-      className={cn(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors",
-        "hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
-      )}
-      title={label}
-      aria-label={label}
-      aria-pressed={pressed}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
 function imageViewerAnchor(
   event: { clientX: number; clientY: number },
   viewport: HTMLDivElement | null,
@@ -1000,7 +1012,8 @@ function WorkspaceImagePreviewBody(props: {
     onOpenImagePath,
     onActionError,
   } = props;
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
+  const toolbar = useContext(PreviewToolbarMount);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const dragRef = useRef<{
@@ -1024,8 +1037,6 @@ function WorkspaceImagePreviewBody(props: {
   const imageNumber = activeImageIndex >= 0 ? activeImageIndex + 1 : 1;
   const canOpenPrevious = activeImageIndex > 0;
   const canOpenNext = activeImageIndex >= 0 && activeImageIndex < imagePaths.length - 1;
-  const canZoomOut = viewerState.scale > IMAGE_VIEWER_MIN_SCALE;
-  const canZoomIn = viewerState.scale < IMAGE_VIEWER_MAX_SCALE;
   const counter = t("workspaceFilePreview.imageCounter")
     .replace("{index}", String(imageNumber))
     .replace("{total}", String(imageCount));
@@ -1080,20 +1091,6 @@ function WorkspaceImagePreviewBody(props: {
 
   const enterTranslateX = transitionDirection > 0 ? 18 : transitionDirection < 0 ? -18 : 0;
   const enterScale = transitionDirection === 0 ? 0.985 : 0.99;
-
-  const zoomByStep = useCallback(
-    (direction: -1 | 1, anchor = { x: 0, y: 0 }) => {
-      setViewerState((current) =>
-        zoomImageViewerAtPoint(
-          current,
-          imageViewerScaleAfterStep(current.scale, direction),
-          anchor,
-          viewerOptions,
-        ),
-      );
-    },
-    [viewerOptions],
-  );
 
   const zoomByWheel = useCallback(
     (deltaY: number, deltaMode: number, anchor: { x: number; y: number }) => {
@@ -1188,101 +1185,102 @@ function WorkspaceImagePreviewBody(props: {
   }, [contextMenu, showInfo]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-muted/25">
-      <div
-        className={cn(
-          "flex h-10 shrink-0 items-center justify-between gap-2 overflow-x-auto",
-          "border-b border-border bg-background/90 px-2",
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-1">
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.previousImage")}
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <PreviewToolbar label={t("workspaceFilePreview.imageViewer")}>
+        <div className="flex shrink-0 items-center">
+          <TooltipButton
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("workspaceFilePreview.previousImage")}
+            tooltip={t("workspaceFilePreview.previousImage")}
             disabled={!canOpenPrevious || isSwitchingImage}
             onClick={() => openImageAt(activeImageIndex - 1)}
           >
             <ChevronRight className="size-4 rotate-180" />
-          </ImagePreviewToolButton>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.nextImage")}
+          </TooltipButton>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{counter}</span>
+          <TooltipButton
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("workspaceFilePreview.nextImage")}
+            tooltip={t("workspaceFilePreview.nextImage")}
             disabled={!canOpenNext || isSwitchingImage}
             onClick={() => openImageAt(activeImageIndex + 1)}
           >
             <ChevronRight className="size-4" />
-          </ImagePreviewToolButton>
-          <span className="ml-1 shrink-0 text-xs text-muted-foreground">{counter}</span>
+          </TooltipButton>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.zoomOut")}
-            disabled={!canZoomOut}
-            onClick={() => zoomByStep(-1)}
-          >
-            <Minus className="size-4" />
-          </ImagePreviewToolButton>
-          <span className="w-11 text-center text-xs tabular-nums text-muted-foreground">
-            {Math.round(viewerState.scale * 100)}%
-          </span>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.zoomIn")}
-            disabled={!canZoomIn}
-            onClick={() => zoomByStep(1)}
-          >
-            <Plus className="size-4" />
-          </ImagePreviewToolButton>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.rotateLeft")}
-            onClick={() => rotateImage(-1)}
-          >
-            <RotateCwSquare className="size-4 -scale-x-100" />
-          </ImagePreviewToolButton>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.rotateRight")}
-            onClick={() => rotateImage(1)}
-          >
-            <RotateCwSquare className="size-4" />
-          </ImagePreviewToolButton>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.resetImage")}
-            onClick={() => setViewerState(resetImageViewerState())}
-          >
-            <RefreshCw className="size-4" />
-          </ImagePreviewToolButton>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.downloadImage")}
-            onClick={() => void handleSaveImage()}
-          >
-            <Download className="size-4" />
-          </ImagePreviewToolButton>
-          {canOpenInSystemViewer ? (
-            <ImagePreviewToolButton
-              label={t("workspaceFilePreview.openInSystemImageViewer")}
-              onClick={onOpenInSystemViewer}
-            >
-              <ExternalLink className="size-4" />
-            </ImagePreviewToolButton>
-          ) : null}
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.copyImage")}
-            onClick={() => void handleCopyImage()}
-          >
-            <Copy className="size-4" />
-          </ImagePreviewToolButton>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.toggleImageInfo")}
-            pressed={showInfo}
-            onClick={() => setShowInfo((current) => !current)}
-          >
-            <Info className="size-4" />
-          </ImagePreviewToolButton>
-          <ImagePreviewToolButton
-            label={t("workspaceFilePreview.fullscreen")}
-            onClick={() => void handleFullscreen()}
-          >
-            <Maximize2 className="size-4" />
-          </ImagePreviewToolButton>
-        </div>
-      </div>
+        <PreviewZoomControl
+          label={locale === "zh-CN" ? "图像缩放" : "Image zoom"}
+          value={viewerState.scale * 100}
+          maxPercent={IMAGE_VIEWER_MAX_SCALE * 100}
+          fitPage={false}
+          fitWidth={false}
+          gestures={false}
+          onChange={(next) =>
+            setViewerState((current) =>
+              zoomImageViewerAtPoint(
+                current,
+                typeof next === "number" ? next / 100 : 1,
+                { x: 0, y: 0 },
+                viewerOptions,
+              ),
+            )
+          }
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <TooltipButton
+                variant="ghost"
+                size="icon-sm"
+                aria-label={locale === "zh-CN" ? "图像操作" : "Image actions"}
+                tooltip={locale === "zh-CN" ? "图像操作" : "Image actions"}
+              >
+                <MoreHorizontal className="size-4" />
+              </TooltipButton>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => rotateImage(-1)}>
+              <RotateCwSquare className="size-4 -scale-x-100" />
+              {t("workspaceFilePreview.rotateLeft")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => rotateImage(1)}>
+              <RotateCwSquare className="size-4" />
+              {t("workspaceFilePreview.rotateRight")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setViewerState(resetImageViewerState())}>
+              <RefreshCw className="size-4" />
+              {t("workspaceFilePreview.resetImage")}
+            </DropdownMenuItem>
+            {!toolbar ? (
+              <DropdownMenuItem onClick={() => void handleSaveImage()}>
+                <Download className="size-4" />
+                {t("workspaceFilePreview.downloadImage")}
+              </DropdownMenuItem>
+            ) : null}
+            {canOpenInSystemViewer && !toolbar?.workspaceTab ? (
+              <DropdownMenuItem onClick={onOpenInSystemViewer}>
+                <ExternalLink className="size-4" />
+                {t("workspaceFilePreview.openInSystemImageViewer")}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem onClick={() => void handleCopyImage()}>
+              <Copy className="size-4" />
+              {t("workspaceFilePreview.copyImage")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowInfo((current) => !current)}>
+              <Info className="size-4" />
+              {t("workspaceFilePreview.toggleImageInfo")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleFullscreen()}>
+              <Maximize2 className="size-4" />
+              {t("workspaceFilePreview.fullscreen")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </PreviewToolbar>
       <div
         ref={viewportRef}
         role="application"

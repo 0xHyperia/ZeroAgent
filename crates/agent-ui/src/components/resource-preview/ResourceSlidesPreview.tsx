@@ -1,12 +1,14 @@
-import { useContext, useEffect, useRef, useState } from "react";
-import { ChevronRight, LayoutGrid, PanelLeft, Play, X } from "../IconSet";
+import { type RefCallback, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ChevronRight, LayoutGrid, PanelLeft, Play, SquareMousePointer, X } from "../IconSet";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
-import { PreviewToolbarMount } from "./PreviewChrome";
+import type { DocumentRegion } from "./docxReaderDocument";
+import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
 import {
+  PreviewLeadingTools,
   PreviewPageControls,
   PreviewToolbar,
   PreviewZoomControl,
@@ -14,9 +16,205 @@ import {
 } from "./PreviewToolbar";
 import { boundedPreviewScale, previewScale } from "./previewGeometry";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
+import type { SlideRevisionMetadata } from "./previewWorkerProtocol";
+import {
+  type DocumentRevisionComment,
+  ResourceDocumentComments,
+  type RevisionSelection,
+} from "./ResourceDocumentComments";
 import ResourceImagePreview from "./ResourceImagePreview";
+import { COMMENT_CURSOR, COMMENT_PIN } from "./readerInteraction";
 import { usePreviewReadingState } from "./readingSession";
 import { usePreviewViewport } from "./usePreviewViewport";
+
+type SlidePoint = { x: number; y: number };
+type SlideAnnotation = {
+  enabled: boolean;
+  marks: readonly DocumentRevisionComment[];
+  selection: RevisionSelection | null;
+  onEdit: (id: string) => void;
+  onPick: (point: SlidePoint, area?: DocumentRegion) => void;
+};
+
+function slideSelection(
+  page: number,
+  slide: SlideRevisionMetadata | undefined,
+  point: SlidePoint,
+  area?: DocumentRegion,
+): RevisionSelection {
+  let element: SlideRevisionMetadata["elements"][number] | undefined;
+  if (slide && !area) {
+    for (let index = slide.elements.length - 1; index >= 0; index--) {
+      const candidate = slide.elements[index];
+      const { x, y } = slideElementOffset(slide, point, candidate.region, candidate.rotation);
+      if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+        element = candidate;
+        break;
+      }
+    }
+  }
+  const region = area ?? { left: point.x, top: point.y, width: 0, height: 0 };
+  const quote = element?.quote ?? "";
+  return {
+    id: JSON.stringify(["slide", slide?.slideId ?? page, element?.id ?? region]),
+    page,
+    region,
+    start: 0,
+    end: quote.length,
+    x: 0,
+    y: 0,
+    quote,
+    target: {
+      kind: "slide",
+      slide: page,
+      slideId: slide?.slideId,
+      slideTitle: slide?.slideTitle,
+      ...(element && slide
+        ? {
+            element: {
+              id: element.id,
+              name: element.name,
+              kind: element.kind,
+              rotation: element.rotation,
+              bounds: element.region,
+            },
+            elementOffset: slideElementOffset(slide, point, element.region, element.rotation),
+          }
+        : {}),
+      point,
+    },
+  };
+}
+
+function slideElementOffset(
+  slide: SlideRevisionMetadata,
+  point: SlidePoint,
+  region: DocumentRegion,
+  rotation: number,
+) {
+  const x = (point.x - region.left - region.width / 2) * slide.width;
+  const y = (point.y - region.top - region.height / 2) * slide.height;
+  const radians = (rotation * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return {
+    x: 0.5 + (x * cosine + y * sine) / (region.width * slide.width),
+    y: 0.5 + (y * cosine - x * sine) / (region.height * slide.height),
+  };
+}
+
+function SlideAnnotationLayer({ enabled, marks, selection, onEdit, onPick }: SlideAnnotation) {
+  const start = useRef<{ id: number; point: SlidePoint } | null>(null);
+  const [area, setArea] = useState<DocumentRegion>();
+  function getPoint(node: HTMLElement, x: number, y: number) {
+    const rect = node.getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (x - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (y - rect.top) / rect.height)),
+    };
+  }
+  function getArea(first: SlidePoint, last: SlidePoint) {
+    return {
+      left: Math.min(first.x, last.x),
+      top: Math.min(first.y, last.y),
+      width: Math.abs(first.x - last.x),
+      height: Math.abs(first.y - last.y),
+    };
+  }
+  function reset() {
+    start.current = null;
+    setArea(undefined);
+  }
+  function renderRegion(region: DocumentRegion, rotation?: number) {
+    if (!region.width || !region.height) return null;
+    return (
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute rounded-sm border-2 border-dashed border-[#3478df] bg-[#3478df1a]"
+        style={{
+          left: `${region.left * 100}%`,
+          top: `${region.top * 100}%`,
+          width: `${region.width * 100}%`,
+          height: `${region.height * 100}%`,
+          transform: rotation ? `rotate(${rotation}deg)` : undefined,
+        }}
+      />
+    );
+  }
+  return (
+    <>
+      {enabled && (
+        <button
+          type="button"
+          aria-label="选择幻灯片上的内容并添加批注"
+          className="absolute inset-0 touch-none bg-transparent"
+          style={{ cursor: COMMENT_CURSOR }}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !event.isPrimary) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            start.current = {
+              id: event.pointerId,
+              point: getPoint(event.currentTarget, event.clientX, event.clientY),
+            };
+          }}
+          onPointerMove={(event) => {
+            const initial = start.current;
+            if (initial?.id === event.pointerId) {
+              setArea(
+                getArea(initial.point, getPoint(event.currentTarget, event.clientX, event.clientY)),
+              );
+            }
+          }}
+          onPointerUp={(event) => {
+            const initial = start.current;
+            if (initial?.id !== event.pointerId) return;
+            const point = getPoint(event.currentTarget, event.clientX, event.clientY);
+            const box = getArea(initial.point, point);
+            const rect = event.currentTarget.getBoundingClientRect();
+            const dragged = box.width * rect.width >= 5 && box.height * rect.height >= 5;
+            onPick(point, dragged ? box : undefined);
+            reset();
+          }}
+          onPointerCancel={reset}
+          onLostPointerCapture={reset}
+          onClick={(event) => {
+            if (event.detail === 0) onPick({ x: 0.5, y: 0.5 });
+          }}
+        />
+      )}
+      {area
+        ? renderRegion(area)
+        : selection?.region &&
+          renderRegion(
+            (selection.target?.kind === "slide" && selection.target.element?.bounds) ||
+              selection.region,
+            selection.target?.kind === "slide" ? selection.target.element?.rotation : undefined,
+          )}
+      {marks.map((mark) => {
+        const point = mark.target?.kind === "slide" ? mark.target.point : undefined;
+        if (!point) return null;
+        return (
+          <Button
+            key={mark.id}
+            variant="ghost"
+            size="icon-sm"
+            className="absolute -translate-y-1/2 -translate-x-1/2 rounded-full hover:bg-transparent"
+            style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
+            aria-label="编辑幻灯片批注"
+            tooltip={mark.comment}
+            onClick={() => onEdit(mark.id)}
+          >
+            <span
+              aria-hidden="true"
+              className="size-6 bg-contain bg-center bg-no-repeat"
+              style={{ backgroundImage: COMMENT_PIN }}
+            />
+          </Button>
+        );
+      })}
+    </>
+  );
+}
 
 function safeSlide(svg: string) {
   if (/<!DOCTYPE|<!ENTITY/i.test(svg)) throw new Error("幻灯片包含不支持的嵌入内容。");
@@ -65,11 +263,20 @@ export default function ResourceSlidesPreview(
   const [zoom, setZoom] = usePreviewReadingState("slideZoom", "fit-page");
   const [count, setCount] = useState(0);
   const [svg, setSVG] = useState("");
+  const [slideRevision, setSlideRevision] = useState<SlideRevisionMetadata>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
   const [outline, setOutline] = useState(false);
   const [grid, setGrid] = usePreviewReadingState("slideGrid", false);
   const [presenting, setPresenting] = useState(false);
+  const { onRequestRevision } = useContext(PreviewIdentityContext);
+  const includeAnnotations = !!onRequestRevision && !props.thumbnail;
+  const [annotating, setAnnotating] = useState(false);
+  const [selection, setSelection] = useState<RevisionSelection | null>(null);
+  const [marks, setMarks] = useState<readonly DocumentRevisionComment[]>([]);
+  const exitRef = useRef<(() => void) | null>(null);
+  const editRef = useRef<((id: string) => void) | null>(null);
+  const [slideFrame, setSlideFrame] = useState<HTMLDivElement | null>(null);
   const chrome = useContext(PreviewToolbarMount);
   const setFileMenu = chrome?.setFileMenu;
   const gridRoot = useRef<HTMLElement>(null);
@@ -88,18 +295,20 @@ export default function ResourceSlidesPreview(
     lifetime.current = controller.signal;
     const seq = ++generation.current;
     void (async () => {
-      let result = await worker.request({ type: "load", kind: "pptx", bytes });
+      let result = await worker.request({ type: "load", kind: "pptx", bytes, includeAnnotations });
       assertCurrent();
       if (controller.signal.aborted || generation.current !== seq) return;
       const pages = result.slideCount ?? 0;
       if (!pages || pages > 150) throw new Error("幻灯片页数超出预览范围。");
       const restored = props.thumbnail ? 1 : Math.max(1, Math.min(initialPage.current, pages));
-      if (restored !== 1) result = await worker.request({ type: "slide", index: restored - 1 });
+      if (restored !== 1)
+        result = await worker.request({ type: "slide", index: restored - 1, includeAnnotations });
       assertCurrent();
       if (controller.signal.aborted || generation.current !== seq) return;
       setPage(restored);
       setCount(pages);
       setSVG(result.svg ?? "");
+      setSlideRevision(result.slideRevision);
       setBusy(false);
     })().catch((cause) => {
       if (!controller.signal.aborted && generation.current === seq) {
@@ -113,20 +322,34 @@ export default function ResourceSlidesPreview(
       worker.dispose();
       client.current = null;
     };
-  }, [bytes, assertCurrent, setPage, props.thumbnail]);
+  }, [bytes, assertCurrent, setPage, props.thumbnail, includeAnnotations]);
 
   async function navigate(target: number) {
-    if (!client.current || !Number.isInteger(target) || target < 1 || target > count) return;
+    if (
+      !client.current ||
+      target === page ||
+      !Number.isInteger(target) ||
+      target < 1 ||
+      target > count
+    )
+      return;
     const seq = ++generation.current;
     setPage(target);
     setSVG("");
+    setSlideRevision(undefined);
+    setSelection(null);
     setBusy(true);
     setError("");
     try {
-      const result = await client.current.request({ type: "slide", index: target - 1 });
+      const result = await client.current.request({
+        type: "slide",
+        index: target - 1,
+        includeAnnotations,
+      });
       assertCurrent();
       if (lifetime.current?.aborted || generation.current !== seq) return;
       setSVG(result.svg ?? "");
+      setSlideRevision(result.slideRevision);
     } catch (cause) {
       if (!lifetime.current?.aborted && generation.current === seq)
         setError(cause instanceof Error ? cause.message : "此页未能打开。");
@@ -134,6 +357,27 @@ export default function ResourceSlidesPreview(
       if (!lifetime.current?.aborted && generation.current === seq) setBusy(false);
     }
   }
+
+  const resolveSelectionBounds = useCallback(
+    (item: RevisionSelection) => {
+      const frame = slideFrame;
+      const view = frame?.closest("[data-scroll-viewport]");
+      if (!frame || !view || grid || busy || page !== item.page || !item.region) return;
+      const area = frame.getBoundingClientRect();
+      const { left, top, width, height } = item.region;
+      const anchor = item.target?.kind === "slide" ? item.target.point : undefined;
+      const target = anchor
+        ? new DOMRect(area.left + anchor.x * area.width, area.top + anchor.y * area.height, 0, 0)
+        : new DOMRect(
+            area.left + left * area.width,
+            area.top + top * area.height,
+            width * area.width,
+            height * area.height,
+          );
+      return { target, viewport: view.getBoundingClientRect(), observe: frame };
+    },
+    [busy, grid, page, slideFrame],
+  );
 
   useEffect(() => {
     if (!setFileMenu || props.thumbnail) return;
@@ -166,6 +410,28 @@ export default function ResourceSlidesPreview(
   return (
     <>
       <PreviewToolbar label="幻灯片" detail="只读">
+        <PreviewLeadingTools>
+          {includeAnnotations && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="za-request-revision"
+              data-active={annotating}
+              aria-pressed={annotating}
+              disabled={busy || !!error}
+              onClick={() => {
+                if (annotating) exitRef.current?.();
+                else {
+                  setGrid(false);
+                  setAnnotating(true);
+                }
+              }}
+            >
+              <SquareMousePointer className="size-4" />
+              请求修改
+            </Button>
+          )}
+        </PreviewLeadingTools>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -214,7 +480,7 @@ export default function ResourceSlidesPreview(
           <Play className="size-4" />
         </Button>
       </PreviewToolbar>
-      <div className="za-preview-slides-layout">
+      <div className="za-preview-slides-layout relative">
         {outline && !grid ? (
           <nav ref={rail} className="za-preview-slide-rail" aria-label="选择幻灯片">
             <span className="za-preview-rail-count">{count} 页</span>
@@ -277,6 +543,38 @@ export default function ResourceSlidesPreview(
             onError={setError}
             onMaxPercent={setMaxPercent}
             onScale={setActualPercent}
+            frameRef={setSlideFrame}
+            annotation={
+              includeAnnotations
+                ? {
+                    enabled: annotating,
+                    marks: marks.filter((mark) => mark.page === page),
+                    selection,
+                    onEdit: (id) => editRef.current?.(id),
+                    onPick: (point, area) => {
+                      assertCurrent();
+                      setSelection(slideSelection(page, slideRevision, point, area));
+                    },
+                  }
+                : undefined
+            }
+          />
+        )}
+        {includeAnnotations && (
+          <ResourceDocumentComments
+            enabled={annotating}
+            onEnabled={setAnnotating}
+            selection={selection}
+            onSelection={setSelection}
+            exitRef={exitRef}
+            editRef={editRef}
+            onMarks={setMarks}
+            resolveSelectionBounds={resolveSelectionBounds}
+            onNavigate={(_block, comment) => {
+              if (comment?.target?.kind !== "slide") return;
+              setGrid(false);
+              void navigate(comment.target.slide);
+            }}
           />
         )}
       </div>
@@ -478,6 +776,8 @@ function SlideImage({
   onError,
   onMaxPercent,
   onScale,
+  frameRef,
+  annotation,
 }: PreviewRecovery & {
   svg: string;
   name: string;
@@ -492,6 +792,8 @@ function SlideImage({
   onError: (message: string) => void;
   onMaxPercent: (percent: number) => void;
   onScale?: (percent: number) => void;
+  frameRef?: RefCallback<HTMLDivElement>;
+  annotation?: SlideAnnotation;
 }) {
   const [image, setImage] = useState<{ url: string; width: number; height: number } | null>(null);
   const [paintedURL, setPaintedURL] = useState("");
@@ -545,22 +847,28 @@ function SlideImage({
         />
       ) : (
         <div className="za-preview-visual-inner">
-          <img
-            src={image.url}
-            alt={name}
-            className="za-preview-slide za-preview-frame-content"
-            data-ready={paintedURL === image.url}
-            style={{ width: `${image.width * scale}px` }}
-            onLoad={() => {
-              try {
-                assertCurrent();
-                setPaintedURL(image.url);
-              } catch {
-                onError("此预览已失效，请重新打开文件。");
-              }
-            }}
-            onError={() => onError("此页未能显示，请下载原件查看。")}
-          />
+          <div className="relative" ref={frameRef}>
+            <img
+              src={image.url}
+              alt={name}
+              className="za-preview-slide za-preview-frame-content"
+              data-ready={paintedURL === image.url}
+              style={{
+                width: `${image.width * scale}px`,
+                aspectRatio: `${image.width} / ${image.height}`,
+              }}
+              onLoad={() => {
+                try {
+                  assertCurrent();
+                  setPaintedURL(image.url);
+                } catch {
+                  onError("此预览已失效，请重新打开文件。");
+                }
+              }}
+              onError={() => onError("此页未能显示，请下载原件查看。")}
+            />
+            {annotation && paintedURL === image.url && <SlideAnnotationLayer {...annotation} />}
+          </div>
           {paintedURL !== image.url ? (
             <div className="za-preview-frame-pending">
               <PreviewLoading onCancel={onCancel} />

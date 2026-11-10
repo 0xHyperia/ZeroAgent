@@ -1,6 +1,11 @@
 import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/BackgroundNoticeMessage";
+import { DocumentRevisionMessageBody } from "@liveagent/ui/components/chat/DocumentRevisionMessageChip";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
 import { type ChatFileLink, chatAttachmentFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import {
+  copyDocumentRevision,
+  parseDocumentRevisionMessage,
+} from "@liveagent/ui/lib/chat/documentRevisionMessage";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import {
   type PendingUploadedFile,
@@ -60,6 +65,35 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
     return <BackgroundNoticeMessage text={item.text} className={compactedClass} />;
   }
 
+  const revision = parseDocumentRevisionMessage(item.text);
+  if (revision) {
+    return (
+      <div
+        className={cn(
+          "chat-user-bubble-wrap group relative ml-auto max-w-user-bubble-web",
+          compactedClass,
+        )}
+        data-user-bubble-wrap
+      >
+        <DocumentRevisionMessageBody
+          revision={revision}
+          attachments={item.attachments}
+          workspaceRoot={workspaceRoot}
+          onOpenAttachment={openAttachment}
+          onLoadUploadedImagePreview={loadComposerUploadedImagePreview}
+        />
+        <UserRowFooter
+          itemKey={item.key}
+          text={copyDocumentRevision(revision)}
+          timestamp={item.timestamp}
+          hasStableRef={false}
+          messageId={effectiveMessageRef?.messageId}
+          onStartEdit={onStartEdit}
+        />
+      </div>
+    );
+  }
+
   if (isEditing && effectiveMessageRef) {
     return (
       <EditableUserMessageBubble
@@ -84,9 +118,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
     );
   }
 
-  const imageStrip = visibleFiles.filter(
-    (file) => file.kind === "image" && file.absolutePath,
-  );
+  const imageStrip = visibleFiles.filter((file) => file.kind === "image" && file.absolutePath);
   const bubbleFiles = visibleFiles.filter((file) => !imageStrip.includes(file));
 
   return (

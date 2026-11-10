@@ -12,10 +12,14 @@ export const PreviewIdentityContext = createContext<{
   mime: string;
   thumbnail?: boolean;
   loadingStartedAt?: number;
+  loadingSkeleton?: "media";
   sourceRange?: { fromLine: number; toLine?: number };
   sourcePaths?: { path?: string; relativePath?: string };
   markdownSelectionActions?: MarkdownSelectionActions;
-  onRequestRevision?: (comments: readonly DocumentRevisionComment[]) => Promise<boolean> | boolean;
+  onRequestRevision?: (
+    comments: readonly DocumentRevisionComment[],
+    evidence?: readonly File[],
+  ) => Promise<boolean> | boolean;
 }>({ name: "file", mime: "" });
 export const PreviewToolbarMount = createContext<{
   target: HTMLElement | null;

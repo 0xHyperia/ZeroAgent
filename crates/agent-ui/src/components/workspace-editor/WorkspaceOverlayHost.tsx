@@ -21,6 +21,7 @@ import type { SftpClient } from "@liveagent/ui/lib/sftp/types";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import type { TerminalClient, TerminalSession } from "@liveagent/ui/lib/terminal/types";
 import { type ComponentProps, lazy, Suspense } from "react";
+import { getWorkspacePreviewKind, workspacePreviewLoadingSkeleton } from "./workspaceImagePreview";
 
 const WorkspaceCodeEditorOverlay = lazy(async () => {
   await preparePreferredMonacoNlsLocale();
@@ -109,7 +110,14 @@ function WorkspaceOverlayLoading(props: { className: string; label: string }) {
 export function WorkspaceFileEditor(props: ComponentProps<typeof WorkspaceCodeEditorOverlay>) {
   const { t } = useLocale();
   return (
-    <Suspense fallback={<PreviewLoading message={t("workspaceEditor.opening")} />}>
+    <Suspense
+      fallback={
+        <PreviewLoading
+          message={t("workspaceEditor.opening")}
+          skeleton={props.embeddedMarkdownMode ? "document" : "code"}
+        />
+      }
+    >
       <WorkspaceCodeEditorOverlay {...props} />
     </Suspense>
   );
@@ -138,7 +146,14 @@ export function WorkspaceFileReader(
           >
             <PreviewIdentityContext.Provider value={{ name, mime: "" }}>
               <div className="cloud-reader-opening">
-                <PreviewLoading message={translate("workspaceFilePreview.loading", locale)} />
+                <PreviewLoading
+                  message={translate("workspaceFilePreview.loading", locale)}
+                  skeleton={
+                    props.tabbed && openRequest && !openRequest.stagedAttachment
+                      ? workspacePreviewLoadingSkeleton(getWorkspacePreviewKind(openRequest.path))
+                      : undefined
+                  }
+                />
               </div>
             </PreviewIdentityContext.Provider>
           </ConversationReaderPanel>

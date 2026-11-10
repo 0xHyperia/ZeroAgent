@@ -6,6 +6,7 @@ import { COMMENT_CURSOR, COMMENT_PIN } from "./readerInteraction";
 export type DocumentAnchor = { id: string; page: number; text: string; kind?: "image" };
 export type DocumentHeading = { id: string; title: string; level: number };
 export type DocumentPage = { id: string; cover: string };
+export type DocumentPageGeometry = { pageCount: number; pageWidth: number; pageHeight: number };
 export type DocumentRegion = { left: number; top: number; width: number; height: number };
 export type DocumentSelectionAnchor = { id: string; start: number; end: number };
 export type DocumentSelection = {
@@ -17,10 +18,11 @@ export type DocumentSelection = {
   kind?: "image";
   region?: DocumentRegion;
   anchors?: DocumentSelectionAnchor[];
+  document?: DocumentPageGeometry;
 };
 
 /** Application-owned code only. Opaque sandbox; no origin, network, files or host API. */
-function readerBridge(token: string) {
+function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   const send = (value: object) => parent.postMessage({ token, ...value }, "*");
   let enabled = false;
   let canModify = false;
@@ -176,7 +178,28 @@ function readerBridge(token: string) {
   const choose = (event: MouseEvent, target = event.target) => {
     if (!enabled || !(target instanceof Element)) return;
     const block = target.closest<HTMLElement>("[data-reader-block]");
-    if (!block) return;
+    if (!block) {
+      const page = target.closest<HTMLElement>("[data-reader-page]");
+      const paper = page?.getBoundingClientRect();
+      if (!page || !paper?.width || !paper.height) return;
+      send({
+        type: "selection",
+        id: page.id,
+        start: 0,
+        end: 0,
+        x: event.clientX,
+        y: event.clientY,
+        pageWidth: paper.width,
+        pageHeight: paper.height,
+        region: {
+          left: Math.max(0, Math.min(1, (event.clientX - paper.left) / paper.width)),
+          top: Math.max(0, Math.min(1, (event.clientY - paper.top) / paper.height)),
+          width: 0,
+          height: 0,
+        },
+      });
+      return;
+    }
     const savedId = noteIds.get(block);
     if (savedId) {
       send({ type: "edit-comment", id: savedId });
@@ -208,7 +231,7 @@ function readerBridge(token: string) {
       range && !range.collapsed ? range.getBoundingClientRect() : block.getBoundingClientRect();
     const paper = block.closest("[data-reader-page]")?.getBoundingClientRect();
     const region =
-      block.dataset.readerKind === "image" && paper?.width && paper.height
+      paper?.width && paper.height
         ? {
             left: (rect.left - paper.left) / paper.width,
             top: (rect.top - paper.top) / paper.height,
@@ -223,7 +246,9 @@ function readerBridge(token: string) {
       end: Math.min(end, start + 2000),
       x: rect.right,
       y: rect.bottom,
-      ...(region && validDocumentRegion(region) ? { region } : {}),
+      pageWidth: paper?.width,
+      pageHeight: paper?.height,
+      ...(region && validRegion(region) ? { region } : {}),
     });
   };
   // Ordinary reading keeps text selection intact; only embedded images expose this shortcut.
@@ -256,7 +281,9 @@ function readerBridge(token: string) {
       end: image.dataset.readerText?.length ?? 0,
       x: rect.right,
       y: rect.bottom,
-      ...(region && validDocumentRegion(region) ? { region } : {}),
+      pageWidth: paper?.width,
+      pageHeight: paper?.height,
+      ...(region && validRegion(region) ? { region } : {}),
     });
   });
   document.addEventListener("keydown", (event) => {
@@ -349,20 +376,20 @@ function readerBridge(token: string) {
       }
     }
     box.remove();
-    if (anchors.length)
-      send({
-        type: "selection",
-        ...anchors[0],
-        anchors,
-        x: rect.right,
-        y: rect.bottom,
-        region: {
-          left: (rect.left - paper.left) / paper.width,
-          top: (rect.top - paper.top) / paper.height,
-          width: rect.width / paper.width,
-          height: rect.height / paper.height,
-        },
-      });
+    send({
+      type: "selection",
+      ...(anchors.length ? { ...anchors[0], anchors } : { id: current.page.id, start: 0, end: 0 }),
+      x: rect.right,
+      y: rect.bottom,
+      pageWidth: paper.width,
+      pageHeight: paper.height,
+      region: {
+        left: (rect.left - paper.left) / paper.width,
+        top: (rect.top - paper.top) / paper.height,
+        width: rect.width / paper.width,
+        height: rect.height / paper.height,
+      },
+    });
   });
   document.addEventListener("pointercancel", () => {
     drag = null;
@@ -394,7 +421,15 @@ function readerBridge(token: string) {
       const element =
         document.getElementById(message.id) ??
         document.querySelector(`[data-reader-block="${message.id}"]`);
-      if (element) send({ type: "navigate", top: element.getBoundingClientRect().top });
+      if (element) {
+        const page = element.closest("[data-reader-page]");
+        const paper = page?.getBoundingClientRect();
+        const top =
+          paper && validRegion(message.region, true)
+            ? paper.top + message.region.top * paper.height
+            : element.getBoundingClientRect().top;
+        send({ type: "navigate", top });
+      }
     }
     if (
       message.type === "viewport" &&
@@ -437,9 +472,9 @@ function readerBridge(token: string) {
     }
     if (message.type === "track") {
       tracked =
-        /^za-reader-block-\d+$/.test(message.id) &&
+        /^za-reader-(?:page|block)-\d+$/.test(message.id) &&
         Number.isSafeInteger(message.page) &&
-        (!message.region || validDocumentRegion(message.region))
+        (!message.region || validRegion(message.region, true))
           ? { id: message.id, page: message.page, region: message.region }
           : null;
       document.querySelectorAll<HTMLElement>("[data-reader-block]").forEach((element) => {
@@ -470,11 +505,12 @@ function readerBridge(token: string) {
         item.remove();
       });
       for (const item of message.items) {
-        if (!Number.isSafeInteger(item.page) || !validDocumentRegion(item.region)) continue;
+        if (!Number.isSafeInteger(item.page) || !validRegion(item.region, true)) continue;
         const page = document.getElementById(`za-reader-page-${item.page}`);
         if (!page) continue;
         const mark = document.createElement("div");
         mark.className = "za-reader-region za-reader-saved-region";
+        mark.toggleAttribute("data-point", item.region.width === 0 && item.region.height === 0);
         page.style.position = "relative";
         Object.assign(mark.style, {
           left: `${item.region.left * 100}%`,
@@ -535,9 +571,10 @@ export function prepareReaderDocument(root: HTMLElement, outline: readonly DocxO
   }
   const blocks: DocumentAnchor[] = [],
     pages: DocumentPage[] = [];
+  const papers = [...root.querySelectorAll<HTMLElement>("section.docx")];
   let coverBudget = 6000;
   const styles = [...root.querySelectorAll("style")].map((node) => node.outerHTML).join("");
-  for (const [index, page] of [...root.querySelectorAll<HTMLElement>("section.docx")].entries()) {
+  for (const [index, page] of papers.entries()) {
     page.id = `za-reader-page-${index + 1}`;
     page.dataset.readerPage = String(index + 1);
     for (const block of page.querySelectorAll<HTMLElement>("p")) {
@@ -579,7 +616,7 @@ export function prepareReaderDocument(root: HTMLElement, outline: readonly DocxO
     }
   }
   const token = crypto.randomUUID().replaceAll("-", "");
-  const script = `const validDocumentRegion=${validDocumentRegion.toString()};(${readerBridge.toString()})(${JSON.stringify(token)})`;
+  const script = `(${readerBridge.toString()})(${JSON.stringify(token)},${validDocumentRegion.toString()})`;
   const css = `<style>
 html,body{overflow:hidden;scrollbar-width:none}
 body{padding:0!important}
@@ -596,6 +633,7 @@ body[data-annotating] [data-reader-block][data-active]{background:#3478df1a;outl
 body[data-annotating] [data-reader-block][data-commented]:hover{outline-color:#2563eb;background:#3478df24}
 .za-reader-comment-tip{position:absolute;z-index:20;padding:8px 12px;max-width:280px;background:white;color:#171717;border:1px solid #e5e5e5;border-radius:9px;box-shadow:0 4px 16px #0002;font:calc(14px / var(--reader-scale,1))/1.5 system-ui;pointer-events:none;overflow-wrap:anywhere}
 .za-reader-region{position:absolute;border:2px dashed #3478df;background:#3478df1a;pointer-events:none;box-sizing:border-box;z-index:5}
+.za-reader-region[data-point]{border:0;background:none}
 .za-reader-region-drawing{position:fixed}
 ::selection{background:#b8d9fa}
 </style>`;
@@ -603,15 +641,42 @@ body[data-annotating] [data-reader-block][data-commented]:hover{outline-color:#2
     `${css}${root.outerHTML}<script nonce="${token}">${script}</script>`,
     "document",
   ).replace("script-src 'none'", `script-src 'nonce-${token}'`);
-  return { source, token, headings, pages, blocks };
+  return { source, token, headings, pages, blocks, pageCount: papers.length };
 }
 
 export function checkedDocumentSelection(
   value: unknown,
   blocks: readonly DocumentAnchor[],
+  pageCount = 0,
 ): (DocumentSelection & { quote: string; page: number }) | null {
   if (!value || typeof value !== "object") return null;
   const selection = value as DocumentSelection;
+  const pageNumber =
+    typeof selection.id === "string" && /^za-reader-page-([1-9]\d*)$/.exec(selection.id);
+  if (pageNumber) {
+    const page = Number(pageNumber[1]);
+    if (
+      page > pageCount ||
+      selection.anchors !== undefined ||
+      selection.start !== 0 ||
+      selection.end !== 0 ||
+      !validDocumentRegion(selection.region, true) ||
+      ![selection.x, selection.y].every(
+        (value) => Number.isFinite(value) && Math.abs(value) <= 100_000,
+      )
+    )
+      return null;
+    return {
+      id: selection.id,
+      start: 0,
+      end: 0,
+      x: selection.x,
+      y: selection.y,
+      quote: "",
+      page,
+      region: selection.region,
+    };
+  }
   if (selection.region !== undefined && !validDocumentRegion(selection.region)) return null;
   if (selection.anchors !== undefined) {
     if (
@@ -686,15 +751,14 @@ export function checkedDocumentSelection(
   };
 }
 
-export function validDocumentRegion(region: unknown): region is DocumentRegion {
+export function validDocumentRegion(region: unknown, allowPoint = false): region is DocumentRegion {
   if (!region || typeof region !== "object") return false;
   const r = region as DocumentRegion;
   return (
     [r.left, r.top, r.width, r.height].every(
       (value) => Number.isFinite(value) && value >= 0 && value <= 1,
     ) &&
-    r.width > 0 &&
-    r.height > 0 &&
+    ((r.width > 0 && r.height > 0) || (allowPoint && r.width === 0 && r.height === 0)) &&
     r.left + r.width <= 1.001 &&
     r.top + r.height <= 1.001
   );

@@ -1967,9 +1967,10 @@ function ChatPageContent(props: ChatPageProps) {
         currentConversationIdRef.current === conversationId &&
         !isConversationRunning(conversationId);
       return requestWorkspaceRevision(revision, {
+        workspaceRoot: displayedConversationWorkdir,
         canSend,
-        importSource: (source) => importReadableFiles(
-          [source],
+        importSources: (sources) => importReadableFiles(
+          sources,
           { conversationId, workdir: displayedConversationWorkdir },
           undefined,
           false,

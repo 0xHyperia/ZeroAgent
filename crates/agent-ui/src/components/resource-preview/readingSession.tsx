@@ -39,6 +39,85 @@ type ReadingSnapshot = {
   sheetWrap: boolean;
 };
 
+function boundedText(value: unknown, maximum: number): value is string {
+  return typeof value === "string" && value.length <= maximum;
+}
+
+function normalizedPoint(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const { x, y } = value as { x: number; y: number };
+  return [x, y].every((part) => Number.isFinite(part) && part >= 0 && part <= 1);
+}
+
+function validCommentGeometry(item: DocumentRevisionComment) {
+  for (const geometry of [item.pdf, item.document]) {
+    if (
+      geometry !== undefined &&
+      (!geometry ||
+        !Number.isSafeInteger(geometry.pageCount) ||
+        geometry.pageCount < item.page ||
+        geometry.pageCount > 1000 ||
+        ![geometry.pageWidth, geometry.pageHeight].every(
+          (value) => Number.isFinite(value) && value > 0 && value <= 100_000,
+        ))
+    )
+      return false;
+  }
+  const { target, region, pdf } = item;
+  if (pdf && !["point", "region", "text"].includes(pdf.kind)) return false;
+  if (target?.kind === "sheet") {
+    const cell = /^[A-Z]{1,3}[1-9]\d{0,6}$/i;
+    const range = /^[A-Z]{1,3}[1-9]\d{0,6}(?::[A-Z]{1,3}[1-9]\d{0,6})?$/i;
+    if (
+      !boundedText(target.sheet, 128) ||
+      !target.sheet ||
+      !boundedText(target.range, 21) ||
+      !range.test(target.range) ||
+      (target.anchor !== undefined &&
+        (!boundedText(target.anchor, 10) || !cell.test(target.anchor)))
+    )
+      return false;
+  } else if (target?.kind === "slide") {
+    if (
+      target.slide !== item.page ||
+      (target.slideId !== undefined && !boundedText(target.slideId, 128)) ||
+      (target.slideTitle !== undefined && !boundedText(target.slideTitle, 200)) ||
+      (target.point !== undefined && !normalizedPoint(target.point)) ||
+      (target.elementOffset !== undefined && !normalizedPoint(target.elementOffset))
+    )
+      return false;
+    const { element } = target;
+    if (
+      element &&
+      (!boundedText(element.id, 64) ||
+        !boundedText(element.name, 200) ||
+        !boundedText(element.kind, 40) ||
+        (element.rotation !== undefined && !Number.isFinite(element.rotation)) ||
+        (element.bounds !== undefined &&
+          (!element.bounds ||
+            ![
+              element.bounds.left,
+              element.bounds.top,
+              element.bounds.width,
+              element.bounds.height,
+            ].every((value) => Number.isFinite(value) && Math.abs(value) <= 100))))
+    )
+      return false;
+  } else if (target !== undefined) return false;
+
+  if (region === undefined || validDocumentRegion(region, !!item.document)) return true;
+  if (!region || (!pdf && target?.kind !== "slide")) return false;
+  const { left, top, width, height } = region;
+  return (
+    [left, top, width, height].every(
+      (value) => Number.isFinite(value) && value >= 0 && value <= 1,
+    ) &&
+    left + width <= 1.001 &&
+    top + height <= 1.001 &&
+    (pdf?.kind === "region" ? width > 0 || height > 0 : width === 0 && height === 0)
+  );
+}
+
 /** Only small presentation values are retained. Never store file bytes or authority here. */
 export function createReadingSnapshotStore() {
   const entries = new Map<string, Partial<ReadingSnapshot>>();
@@ -81,11 +160,11 @@ export function createReadingSnapshotStore() {
               typeof item.comment !== "string" ||
               item.comment.length > 2000 ||
               typeof item.block !== "string" ||
-              item.block.length > 80 ||
+              item.block.length > (item.target ? 256 : 80) ||
               !Number.isSafeInteger(item.page) ||
               item.page < 1 ||
               item.page > 1000 ||
-              (item.region !== undefined && !validDocumentRegion(item.region)) ||
+              !validCommentGeometry(item) ||
               (item.anchors !== undefined &&
                 (!Array.isArray(item.anchors) ||
                   item.anchors.length > 20 ||

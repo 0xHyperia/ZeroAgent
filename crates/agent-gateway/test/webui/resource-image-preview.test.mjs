@@ -50,12 +50,23 @@ test("image decoder loading is stable, native-pixel zoom and rotation share a ce
 test("workspace image uses the full reading canvas and keeps actions in the shared file toolbar", async (t) => {
   const app = await setup(t);
   await app.render({}, false, true);
+  assert.ok(app.host.querySelector('[data-skeleton-kind="media"]'));
   await app.decode();
   assert.equal(app.host.querySelector(".za-image-workspace").dataset.workspaceImage, "raster");
   assert.equal(app.host.querySelector(".za-image-dock-position"), null);
   assert.equal(app.host.querySelector("img").style.width, "576px");
-  assert.ok(app.host.querySelector('.za-workspace-image-tools button[aria-label="旋转图像"]'));
-  await app.click("旋转图像");
+  const tools = app.host.querySelector(".za-preview-toolbar-tools");
+  assert.equal(tools.querySelectorAll("button").length, 2);
+  const menu = tools.querySelector('button[aria-label="图像操作"],button[aria-label="Image actions"]');
+  assert.ok(menu);
+  await app.env.act(async () => {
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  });
+  const rotate = [...document.querySelectorAll('[role="menuitem"]')].find(
+    (item) => /^(顺时针旋转|Rotate clockwise)$/.test(item.textContent),
+  );
+  assert.ok(rotate);
+  await app.env.act(async () => rotate.click());
   assert.match(app.host.querySelector("img").style.transform, /rotate\(90deg\)/);
 });
 

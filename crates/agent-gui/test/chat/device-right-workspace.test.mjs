@@ -35,6 +35,15 @@ const { useGatewayProjectTools } = loadModule("src/app/hooks/useGatewayProjectTo
 const { requestWorkspaceRevision } = loadModule(
   "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision",
 );
+const {
+  buildDocumentRevisionMessage,
+  copyDocumentRevision,
+  documentRevisionEvidence,
+  documentRevisionSource,
+  parseDocumentRevisionMessage,
+} = loadModule("@liveagent/ui/lib/chat/documentRevisionMessage");
+const { buildUserMessageContentWithUploads, getUserMessageDisplayText, getUserMessageAttachments } =
+  loadModule("@liveagent/ui/lib/chat/uploadedFiles");
 test.after(() => env.cleanup());
 
 const project = "/workspace";
@@ -144,18 +153,29 @@ test("device file links and Git use shared tabs scoped to the conversation and d
 
 test("device document revisions attach the original and never send after the authorized scope changes", async () => {
   const source = new File(["original"], "report.pdf", { type: "application/pdf" });
+  const screenshot = new File(["proof"], "pdf-comment-1-page-2.png", { type: "image/png" });
   const comments = [
     { id: "first", page: 2, block: "body", start: 0, end: 8, quote: "old text", comment: "new text" },
   ];
-  const uploaded = { fileName: "report.pdf", relativePath: "uploads/report.pdf" };
+  const uploaded = [source, screenshot].map((file, index) => ({
+    fileName: file.name,
+    relativePath: `uploads/1/${file.name}`,
+    absolutePath: `C:/profile/uploads/1/${file.name}`,
+    kind: index === 0 ? "pdf" : "image",
+    sizeBytes: file.size,
+  }));
   let current = true;
-  const revision = { source, comments, assertCurrent: () => assert.ok(current) };
+  const revision = {
+    source, comments, evidence: [screenshot], workspacePath: "D:/repo/report.pdf",
+    assertCurrent: () => assert.ok(current),
+  };
   const sent = [];
   const host = {
+    workspaceRoot: "D:/repo",
     canSend: () => current,
-    importSource: async (file) => {
-      assert.equal(file, source);
-      return [uploaded];
+    importSources: async (files) => {
+      assert.deepEqual(files, [source, screenshot]);
+      return uploaded;
     },
     send: async (text, files) => {
       sent.push({ text, files });
@@ -163,14 +183,46 @@ test("device document revisions attach the original and never send after the aut
     },
   };
   assert.equal(await requestWorkspaceRevision(revision, host), true);
-  assert.match(sent[0].text, /report\.pdf[\s\S]*old text[\s\S]*new text[\s\S]*保留原件/);
-  assert.deepEqual(sent[0].files, [uploaded]);
+  assert.match(sent[0].text, /D:\/repo\/report\.pdf.*in place/);
+  assert.deepEqual(sent[0].files, uploaded);
+  const persisted = { role: "user", content: buildUserMessageContentWithUploads(sent[0].text, uploaded) };
+  const parsed = parseDocumentRevisionMessage(getUserMessageDisplayText(persisted));
+  const reloadedAttachments = getUserMessageAttachments(persisted);
+  assert.equal(documentRevisionSource(parsed, reloadedAttachments).absolutePath, uploaded[0].absolutePath);
+  assert.equal(documentRevisionEvidence(parsed, reloadedAttachments)[0].fileName, screenshot.name);
+  assert.equal(copyDocumentRevision(parsed), "report.pdf\nold text\nnew text");
+  assert.equal(await requestWorkspaceRevision(revision, { ...host, workspaceRoot: "D:/other" }), true);
+  assert.match(sent[1].text, /Save the edits as a new file or artifact version/);
+  assert.doesNotMatch(sent[1].text, /D:\/repo\/report\.pdf/);
   assert.equal(await requestWorkspaceRevision(revision, {
     ...host,
-    importSource: async () => {
+    importSources: async () => {
       current = false;
-      return [uploaded];
+      return uploaded;
     },
   }), false);
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 2);
+});
+
+test("reader revisions retain format-specific anchors without exposing instructions in the transcript", () => {
+  const anchor = { id: "first", page: 1, block: "body", start: 2, end: 5, quote: "foo", comment: "改成\nbar" };
+  for (const [name, kind, details, expected] of [
+    ["报告.docx", "document", {}, '"block":"body"'],
+    ["报告.pdf", "pdf", {
+      pdf: { pageCount: 2, pageWidth: 600, pageHeight: 800, kind: "region" },
+      region: { left: 0.1, top: 0.2, width: 0.3, height: 0.4 },
+    }, '"bottomLeftY":320'],
+    ["报价.xlsx", "workbook", { target: { kind: "sheet", sheet: "报价", range: "B2:C4" } }, "报价!B2:C4"],
+    ["演示.pptx", "presentation", {
+      target: { kind: "slide", slide: 1, element: { id: "7", name: "标题", kind: "shape" } },
+    }, '"id":"7"'],
+  ]) {
+    const text = buildDocumentRevisionMessage(name, [{ ...anchor, ...details }, { ...anchor, id: "second" }]);
+    assert.ok(text.includes(expected), name);
+    const parsed = parseDocumentRevisionMessage(text);
+    assert.equal(parsed.kind, kind);
+    assert.equal(parsed.comments.length, 2);
+    assert.equal(parsed.comments[0].comment, "改成\nbar");
+    assert.doesNotMatch(copyDocumentRevision(parsed), /Diff comments|Anchor:|Side: R/);
+  }
 });

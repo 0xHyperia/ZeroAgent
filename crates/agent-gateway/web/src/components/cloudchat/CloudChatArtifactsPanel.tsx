@@ -41,6 +41,7 @@ type Props = {
   onRequestRevision?: (
     resource: CloudChatArtifactVersion,
     comments: readonly DocumentRevisionComment[],
+    evidence?: readonly File[],
   ) => Promise<boolean>;
   client: CloudChatArtifactsClient;
   conversationId?: string;
@@ -985,8 +986,8 @@ export function CloudChatArtifactsPanel(props: Props) {
                 }}
                 onRequestRevision={
                   props.onRequestRevision && inSourceConversation
-                    ? (comments) =>
-                        currentProps.current.onRequestRevision?.(selected, comments) ?? false
+                    ? (comments, evidence) =>
+                        currentProps.current.onRequestRevision?.(selected, comments, evidence) ?? false
                     : undefined
                 }
                 onDownload={() => void download()}

@@ -1,4 +1,5 @@
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
+import type { DocumentRevisionMessage } from "@liveagent/ui/lib/chat/documentRevisionMessage";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { RetryAttemptRecord } from "@liveagent/ui/lib/chat/retryAttempts";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
@@ -83,6 +84,7 @@ export type TranscriptRow =
       contentPreview?: boolean;
       retryText?: string;
       inlineEditText?: string;
+      documentRevision?: DocumentRevisionMessage;
       copyContent?: () => Promise<boolean>;
       copyDisabledReason?: string;
       timestamp?: number;
