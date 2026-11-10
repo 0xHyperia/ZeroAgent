@@ -1356,6 +1356,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "projectTools.terminalTitle": "Terminal",
   "projectTools.fileTreeTitle": "File Tree",
   "projectTools.gitReviewTitle": "Git Review",
+  "projectTools.workspaceChangesTitle": "Changes",
   "projectTools.tunnelTitle": "Tunnel",
   "projectTools.backgroundTasksTitle": "Background Tasks",
   "projectTools.backgroundTasksDescription": "View and manage background processes",

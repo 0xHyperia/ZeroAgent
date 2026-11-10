@@ -2,20 +2,41 @@ import { useEffect, useState } from "react";
 import { resolveWorkbenchLayoutStorage } from "../../lib/workbench/layoutStorage";
 import { WORKSPACE_GIT_TURN_REVIEW_EVENT } from "./workspaceGitPaths";
 
-type Presentation = { layout: "split" | "unified"; wrapLines: boolean };
+export type WorkspaceGitPresentation = {
+  layout: "auto" | "split" | "unified";
+  wrapLines: boolean;
+  fullContext: boolean;
+  richPreview: boolean;
+  wordDiffs: boolean;
+  hideWhitespace: boolean;
+  hideImports: boolean;
+};
 const PRESENTATION_KEY = "zeroagent.workspace-git.diff-presentation";
 const PRESENTATION_EVENT = "zeroagent:workspace-git-presentation";
-const defaultPresentation: Presentation = { layout: "unified", wrapLines: true };
+const defaultPresentation: WorkspaceGitPresentation = {
+  layout: "auto",
+  wrapLines: false,
+  fullContext: true,
+  richPreview: true,
+  wordDiffs: true,
+  hideWhitespace: false,
+  hideImports: false,
+};
 let fallback = defaultPresentation;
 
-function readPresentation(): Presentation {
+function readPresentation(): WorkspaceGitPresentation {
   try {
     const raw = resolveWorkbenchLayoutStorage()?.getItem(PRESENTATION_KEY);
     if (raw) {
-      const value = JSON.parse(raw) as Partial<Presentation> | null;
+      const value = JSON.parse(raw) as Partial<WorkspaceGitPresentation> | null;
       return {
-        layout: value?.layout === "split" ? "split" : "unified",
-        wrapLines: value?.wrapLines !== false,
+        layout: value?.layout === "split" || value?.layout === "unified" ? value.layout : "auto",
+        wrapLines: value?.wrapLines === true,
+        fullContext: value?.fullContext !== false,
+        richPreview: value?.richPreview !== false,
+        wordDiffs: value?.wordDiffs !== false,
+        hideWhitespace: value?.hideWhitespace === true,
+        hideImports: value?.hideImports === true,
       };
     }
   } catch {
@@ -35,7 +56,7 @@ export function useWorkspaceGitPresentation() {
       window.removeEventListener("storage", sync);
     };
   }, []);
-  const update = (patch: Partial<Presentation>) => {
+  const update = (patch: Partial<WorkspaceGitPresentation>) => {
     const next = { ...readPresentation(), ...patch };
     fallback = next;
     try {

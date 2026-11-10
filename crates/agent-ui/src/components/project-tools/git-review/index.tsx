@@ -7,7 +7,6 @@
 
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
-import { GitBranch } from "../../IconSet";
 import { Button } from "../../ui/button";
 import { useRightDockToolContext } from "../RightDockContext";
 import { WorkspaceFileDiff } from "../WorkspaceFileDiff";
@@ -55,18 +54,7 @@ function WorkspaceReviewPanel({ active = true }: GitReviewPanelProps) {
           onOpenFile={review.onOpenFile}
           workspaceActivityClient={clients.workspaceActivity ?? undefined}
           onInsertComposerSegments={git.onInsertComposerSegments}
-          toolbarActions={
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs"
-              onClick={() => setOperations(true)}
-            >
-              <GitBranch className="size-3.5" />
-              {zh ? "Git 操作" : "Git actions"}
-            </Button>
-          }
+          onOpenGitActions={() => setOperations(true)}
         />
       </div>
       {operations && (

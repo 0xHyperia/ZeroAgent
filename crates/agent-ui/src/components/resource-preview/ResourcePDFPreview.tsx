@@ -1,4 +1,5 @@
 import {
+  AnnotationMode,
   GlobalWorkerOptions,
   getDocument,
   type PDFDocumentProxy,
@@ -15,7 +16,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { List, SquareMousePointer } from "../IconSet";
+import { useLocale } from "../../i18n";
+import { ChevronRight, List, SquareMousePointer } from "../IconSet";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { DocumentNavigation } from "./DocumentNavigation";
@@ -49,6 +51,119 @@ import { usePreviewViewport } from "./usePreviewViewport";
 GlobalWorkerOptions.workerSrc = pdfWorkerURL;
 const DEFAULT_PAGE = { width: 816, height: 1056 };
 const NO_COMMENTS: readonly DocumentRevisionComment[] = [];
+
+function openPreviewPDF(bytes: Uint8Array) {
+  const assets = pdfPreviewAssetsURL(pdfVersion);
+  return getDocument({
+    data: bytes.slice(),
+    enableXfa: false,
+    cMapUrl: `${assets}cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `${assets}standard_fonts/`,
+    wasmUrl: `${assets}wasm/`,
+    iccUrl: `${assets}iccs/`,
+    useSystemFonts: true,
+  });
+}
+
+const assertInlinePdfCurrent = () => {};
+
+export function GitReviewPDFPreview({ bytes }: { bytes: Uint8Array }) {
+  const { locale } = useLocale();
+  const zh = locale === "zh-CN";
+  const { container, viewport } = usePreviewViewport();
+  const [loaded, setLoaded] = useState<{ bytes: Uint8Array; pdf: PDFDocumentProxy | null }>();
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    let active = true;
+    const task = openPreviewPDF(bytes);
+    const publish = (pdf: PDFDocumentProxy | null) => {
+      if (active) setLoaded({ bytes, pdf });
+    };
+    const stop = () => {
+      if (!active) return;
+      active = false;
+      void task.destroy().catch(() => {});
+    };
+    const timer = setTimeout(() => {
+      publish(null);
+      stop();
+    }, 30_000);
+    setPage(1);
+    void task.promise.then(
+      (pdf) => {
+        clearTimeout(timer);
+        publish(pdf.numPages > 0 && pdf.numPages <= 1000 ? pdf : null);
+      },
+      () => {
+        clearTimeout(timer);
+        publish(null);
+      },
+    );
+    return () => {
+      clearTimeout(timer);
+      stop();
+    };
+  }, [bytes]);
+  const current = loaded?.bytes === bytes ? loaded : undefined;
+  const pdf = current?.pdf;
+  return (
+    <div className="za-review-pdf" ref={container}>
+      {!current ? (
+        <div className="za-review-preview-status" role="status">
+          {zh ? "正在加载预览…" : "Loading preview…"}
+        </div>
+      ) : pdf ? (
+        <>
+          {viewport.width > 0 && (
+            <PDFPage
+              key={page}
+              document={pdf}
+              number={page}
+              selected
+              zoom="fit-width"
+              pane={{ width: viewport.width, height: 0 }}
+              root={container}
+              assertCurrent={assertInlinePdfCurrent}
+              renderText={false}
+            />
+          )}
+          {pdf.numPages > 1 && (
+            <nav className="za-review-pdf-pages" aria-label={zh ? "PDF 页面导航" : "PDF pages"}>
+              <Button
+                variant="ghost"
+                size="sm"
+                tooltip={zh ? "上一页" : "Previous page"}
+                aria-label={zh ? "上一页" : "Previous page"}
+                disabled={page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <ChevronRight className="size-3.5 rotate-180" />
+              </Button>
+              <span aria-live="polite">
+                {page}/{pdf.numPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                tooltip={zh ? "下一页" : "Next page"}
+                aria-label={zh ? "下一页" : "Next page"}
+                disabled={page >= pdf.numPages}
+                onClick={() => setPage((current) => Math.min(pdf.numPages, current + 1))}
+              >
+                <ChevronRight className="size-3.5" />
+              </Button>
+            </nav>
+          )}
+        </>
+      ) : (
+        <div className="za-review-preview-status">
+          {zh ? "无法渲染 PDF 预览" : "Unable to render PDF preview"}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ResourcePDFPreview({
   bytes,
@@ -160,17 +275,7 @@ export default function ResourcePDFPreview({
   useEffect(() => {
     let active = true;
     setPainted(false);
-    const assets = pdfPreviewAssetsURL(pdfVersion);
-    const task = getDocument({
-      data: bytes.slice(),
-      enableXfa: false,
-      cMapUrl: `${assets}cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `${assets}standard_fonts/`,
-      wasmUrl: `${assets}wasm/`,
-      iccUrl: `${assets}iccs/`,
-      useSystemFonts: true,
-    });
+    const task = openPreviewPDF(bytes);
     const timer = setTimeout(() => {
       if (active) {
         setError("PDF 较复杂，读取超时。请下载原件查看。");
@@ -439,6 +544,7 @@ function PDFPage({
   onPainted,
   hideLoading,
   cover = false,
+  renderText = true,
 }: PreviewRecovery & {
   onPainted?: () => void;
   hideLoading?: boolean;
@@ -450,6 +556,7 @@ function PDFPage({
   onSelection?: (value: RevisionSelection) => void;
   workspace?: RefObject<HTMLDivElement | null>;
   cover?: boolean;
+  renderText?: boolean;
   document: PDFDocumentProxy;
   number: number;
   selected: boolean;
@@ -532,7 +639,11 @@ function PDFPage({
         const viewport = pdfPage.getViewport({ scale: units * safeScale });
         element.width = Math.max(1, Math.floor(viewport.width));
         element.height = Math.max(1, Math.floor(viewport.height));
-        render = pdfPage.render({ canvas: element, viewport });
+        render = pdfPage.render({
+          canvas: element,
+          viewport,
+          ...(renderText ? {} : { annotationMode: AnnotationMode.DISABLE }),
+        });
         await render.promise;
         assertCurrent();
         if (active) setBusy(false);
@@ -559,7 +670,7 @@ function PDFPage({
       layer?.cancel();
       textElement?.replaceChildren();
     };
-  }, [document, number, enabled, zoom, pane.width, pane.height, assertCurrent]);
+  }, [document, number, enabled, zoom, pane.width, pane.height, assertCurrent, renderText]);
   useEffect(() => {
     if (!enabled && canvas.current) {
       canvas.current.width = 0;
@@ -755,7 +866,7 @@ function PDFPage({
           visibility: !busy && (near || selected) && !error ? "visible" : "hidden",
         }}
       />
-      <div ref={text} className="za-pdf-text-layer" />
+      {renderText && <div ref={text} className="za-pdf-text-layer" />}
       <div className="za-pdf-comment-marks" aria-hidden="true">
         {lasso ? (
           <span

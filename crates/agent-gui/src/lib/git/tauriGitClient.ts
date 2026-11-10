@@ -13,6 +13,18 @@ import {
 } from "@liveagent/ui/lib/git/types";
 
 export const tauriGitClient: GitClient = {
+  supportsFullDiffContext: true,
+  supportsWhitespaceDiff: true,
+  async readDiffPreview({ workdir, comparison, path, expectedPatch, conversationId, snapshotId }) {
+    return invoke("git_workspace_diff_preview", {
+      workdir,
+      comparison,
+      path,
+      expected_patch: expectedPatch,
+      conversation_id: conversationId,
+      snapshot_id: snapshotId,
+    });
+  },
   async status(workdir) {
     return normalizeGitRepositoryState(await invoke("git_status", { workdir }), workdir);
   },
@@ -48,13 +60,28 @@ export const tauriGitClient: GitClient = {
       workdir,
     );
   },
-  async diff(workdir, mode, path) {
-    return normalizeGitDiffResponse(await invoke("git_diff", { workdir, mode, path }));
+  async diff(workdir, mode, path, options) {
+    return normalizeGitDiffResponse(
+      await invoke("git_diff", {
+        workdir,
+        mode,
+        path,
+        full_context: options?.fullContext,
+        hide_whitespace: options?.hideWhitespace,
+      }),
+    );
   },
-  async lastTurnDiff(workdir, conversationId, path) {
+  async lastTurnDiff(workdir, conversationId, path, options) {
     return normalizeGitDiffResponse(
       await invoke("git_workspace_turn_review", {
-        request: { action: "read", workdir, conversationId, path },
+        request: {
+          action: "read",
+          workdir,
+          conversationId,
+          path,
+          fullContext: options?.fullContext,
+          hideWhitespace: options?.hideWhitespace,
+        },
       }),
     );
   },
@@ -75,8 +102,16 @@ export const tauriGitClient: GitClient = {
       await invoke("git_compare_commit_with_remote", { workdir, commit }),
     );
   },
-  async commitDiff(workdir, commit, path) {
-    return normalizeGitDiffResponse(await invoke("git_commit_diff", { workdir, commit, path }));
+  async commitDiff(workdir, commit, path, options) {
+    return normalizeGitDiffResponse(
+      await invoke("git_commit_diff", {
+        workdir,
+        commit,
+        path,
+        full_context: options?.fullContext,
+        hide_whitespace: options?.hideWhitespace,
+      }),
+    );
   },
   async stage(workdir, path) {
     return normalizeGitOperationResponse(await invoke("git_stage", { workdir, path }), workdir);

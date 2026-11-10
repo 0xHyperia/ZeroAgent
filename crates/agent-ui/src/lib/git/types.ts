@@ -66,6 +66,19 @@ export type GitDiffResponse = {
   stat: string;
   truncated: boolean;
   binaryFiles: string[];
+  snapshotId?: string;
+};
+
+export type GitDiffPreviewFile = { mime: string; base64: string };
+
+export type GitDiffPreview = {
+  before: GitDiffPreviewFile | null;
+  after: GitDiffPreviewFile | null;
+};
+
+export type GitDiffOptions = {
+  fullContext?: boolean;
+  hideWhitespace?: boolean;
 };
 
 export type GitCommitFile = {
@@ -73,6 +86,7 @@ export type GitCommitFile = {
   oldPath?: string | null;
   status: string;
   kind: string;
+  previewIndex?: string;
 };
 
 export type GitCommitSummary = {
@@ -208,6 +222,16 @@ export function selectedGitRepositoryLabel(
 }
 
 export type GitClient = {
+  supportsFullDiffContext?: boolean;
+  supportsWhitespaceDiff?: boolean;
+  readDiffPreview?(request: {
+    workdir: string;
+    comparison: string;
+    path: string;
+    expectedPatch?: string;
+    conversationId?: string;
+    snapshotId?: string;
+  }): Promise<GitDiffPreview>;
   status(workdir: string): Promise<GitRepositoryState>;
   discoverRepositories?(workdir: string): Promise<GitRepositoryDiscovery>;
   branches(workdir: string): Promise<GitBranchesResponse>;
@@ -218,12 +242,23 @@ export type GitClient = {
     workdir: string,
     mode: "branch" | `branch:${string}` | "working_tree" | "staged" | "unstaged",
     path?: string,
+    options?: GitDiffOptions,
   ): Promise<GitDiffResponse>;
   log(workdir: string, options?: GitLogOptions): Promise<GitLogResponse>;
   commitDetails(workdir: string, commit: string): Promise<GitCommitDetailsResponse>;
   compareCommitWithRemote(workdir: string, commit: string): Promise<GitDiffResponse>;
-  commitDiff(workdir: string, commit: string, path?: string): Promise<GitDiffResponse>;
-  lastTurnDiff?(workdir: string, conversationId: string, path?: string): Promise<GitDiffResponse>;
+  commitDiff(
+    workdir: string,
+    commit: string,
+    path?: string,
+    options?: GitDiffOptions,
+  ): Promise<GitDiffResponse>;
+  lastTurnDiff?(
+    workdir: string,
+    conversationId: string,
+    path?: string,
+    options?: GitDiffOptions,
+  ): Promise<GitDiffResponse>;
   stage(workdir: string, path: string): Promise<GitOperationResponse>;
   stageAll(workdir: string): Promise<GitOperationResponse>;
   unstage(workdir: string, path: string): Promise<GitOperationResponse>;
@@ -379,6 +414,7 @@ export function normalizeGitWorktreeInfo(input: unknown): GitWorktreeInfo {
 
 export function normalizeGitDiffResponse(input: unknown): GitDiffResponse {
   const source = asObject(input);
+  const snapshotId = asString(source.snapshotId ?? source.snapshot_id);
   return {
     baseRef: asString(source.baseRef ?? source.base_ref),
     headRef: asString(source.headRef ?? source.head_ref),
@@ -391,16 +427,19 @@ export function normalizeGitDiffResponse(input: unknown): GitDiffResponse {
     stat: asString(source.stat),
     truncated: asBoolean(source.truncated),
     binaryFiles: stringArray(source.binaryFiles ?? source.binary_files),
+    ...(snapshotId ? { snapshotId } : {}),
   };
 }
 
 export function normalizeGitCommitFile(input: unknown): GitCommitFile {
   const source = asObject(input);
+  const previewIndex = asString(source.previewIndex ?? source.preview_index);
   return {
     path: asString(source.path),
     oldPath: asString(source.oldPath ?? source.old_path) || null,
     status: asString(source.status),
     kind: asString(source.kind),
+    ...(previewIndex ? { previewIndex } : {}),
   };
 }
 

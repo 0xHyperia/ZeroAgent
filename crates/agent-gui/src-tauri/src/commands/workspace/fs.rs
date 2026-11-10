@@ -742,7 +742,7 @@ fn build_numbered_text_window(
     )
 }
 
-fn infer_image_mime(path: &Path) -> Option<&'static str> {
+pub(super) fn infer_image_mime(path: &Path) -> Option<&'static str> {
     match path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -788,7 +788,7 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
     trimmed.starts_with("<svg") || trimmed.contains("<svg")
 }
 
-fn infer_image_mime_from_bytes(bytes: &[u8]) -> Option<&'static str> {
+pub(super) fn infer_image_mime_from_bytes(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
         return Some("image/png");
     }

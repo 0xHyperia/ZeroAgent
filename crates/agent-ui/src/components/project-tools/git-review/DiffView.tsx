@@ -11,11 +11,14 @@ import { DiffModeEnum, DiffView, SplitSide } from "@git-diff-view/react";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./DiffView.css";
 import {
+  ChevronRight,
   Copy,
+  ExternalLink,
   FolderTree,
   GitBranch,
   Loader2,
   MessageSquareText,
+  MoreHorizontal,
   SquarePen,
   Trash2,
 } from "@liveagent/ui/components/IconSet";
@@ -31,7 +34,7 @@ import {
   sortDiffLineComments,
   upsertDiffLineComment,
 } from "@liveagent/ui/lib/chat/diffLineComments";
-import type { GitDiffResponse } from "@liveagent/ui/lib/git/types";
+import type { GitDiffPreview, GitDiffResponse } from "@liveagent/ui/lib/git/types";
 import {
   memo,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -47,9 +50,20 @@ import {
 } from "react";
 import { cn } from "../../../lib/shared/utils";
 import { formatShortcutLabel } from "../../../lib/shortcuts/shortcutKeys";
+import { sourceLanguageForName } from "../../../lib/sourceLanguages";
+import { getFileTypeIcon } from "../../chat/fileTypeIcons";
 import type { MentionComposerDraftSegment } from "../../chat/MentionComposerModel";
+import { Markdown } from "../../Markdown";
 import { Button } from "../../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../ui/dropdown-menu";
 import { ShortcutTooltip } from "../../ui/shortcut-tooltip";
+import type { WorkspaceGitPresentation } from "../workspaceGitReviewState";
+import { GitBinaryReviewPreview, gitReviewPreviewKind } from "./GitBinaryReviewPreview";
 import {
   basename,
   buildPatchChunks,
@@ -59,6 +73,13 @@ import {
   parseDiffStat,
   writeTextToClipboard,
 } from "./model";
+import {
+  countReviewChanges,
+  filterReviewHunks,
+  loadReviewImportParser,
+  type ReviewFileContents,
+  type ReviewImportParser,
+} from "./workspaceReviewDiff";
 
 const RAW_DIFF_PREVIEW_CHAR_LIMIT = 60 * 1024;
 
@@ -417,6 +438,20 @@ function resolveDiffLineCommentLine(
   return { lineKind, code: line?.value ?? "" };
 }
 
+type WorkspaceReview = {
+  presentation: WorkspaceGitPresentation;
+  rows: PatchChunk[];
+  allowAutoSplit: boolean;
+  isExpanded: (key: string) => boolean;
+  onToggleFile: (key: string) => void;
+  loadFileContents: (item: PatchChunk) => Promise<ReviewFileContents | null>;
+  loadBinaryPreview?: (item: PatchChunk) => Promise<GitDiffPreview | null>;
+};
+
+const reviewMarkdownComponents = {
+  img: ({ alt }: { alt?: string }) => (alt ? <span>{alt}</span> : null),
+};
+
 const DiffChunkView = memo(function DiffChunkView(props: {
   item: PatchChunk;
   isDark: boolean;
@@ -424,17 +459,43 @@ const DiffChunkView = memo(function DiffChunkView(props: {
   layout?: "unified" | "split";
   wrapLines?: boolean;
   onOpenFile?: (path: string) => void;
+  workspaceReview?: WorkspaceReview;
 }) {
-  const { item, isDark, commenting, layout, wrapLines, onOpenFile } = props;
-  const { t } = useLocale();
+  const { item, isDark, commenting, layout, wrapLines, onOpenFile, workspaceReview } = props;
+  const { t, locale } = useLocale();
+  const zh = locale === "zh-CN";
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const bodyId = useId();
+  const expanded = workspaceReview?.isExpanded(item.key) ?? true;
+  const { additions, deletions } = useMemo(() => countReviewChanges(item.chunk), [item.chunk]);
+  const viewLayout =
+    workspaceReview?.presentation.layout === "auto"
+      ? workspaceReview.allowAutoSplit && additions > 0 && deletions > 0
+        ? "split"
+        : "unified"
+      : layout;
+  const markdownPreview =
+    workspaceReview?.presentation.richPreview &&
+    /\.(?:md|markdown|mdown|mdx|mkd)$/i.test(item.label) &&
+    !/^\+\+\+ \/dev\/null$/m.test(item.chunk);
+  const loadFileContents = workspaceReview?.loadFileContents;
+  const loadBinaryPreview = workspaceReview?.loadBinaryPreview;
+  const binaryKind = loadBinaryPreview
+    ? gitReviewPreviewKind(item.label, workspaceReview?.presentation.richPreview ?? false)
+    : null;
+  const loadFullContext = workspaceReview?.presentation.fullContext;
+  const hideImports = workspaceReview?.presentation.hideImports ?? false;
+  const isWorkspaceReview = Boolean(workspaceReview);
+  const summary =
+    workspaceReview &&
+    (item.summary ?? (/^Binary files /m.test(item.chunk) ? "binary" : undefined));
   // Lazy parse/highlight: a chunk only builds its DiffFile once it scrolls
   // near the viewport, so a multi-file commit diff no longer freezes the main
   // thread synchronously on selection.
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (visible) return undefined;
+    if (visible || !expanded) return undefined;
     const element = containerRef.current;
     if (!element) return undefined;
     if (typeof IntersectionObserver === "undefined") {
@@ -451,39 +512,118 @@ const DiffChunkView = memo(function DiffChunkView(props: {
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [visible]);
+  }, [expanded, visible]);
+
+  const [contentResult, setContentResult] = useState<{
+    item: PatchChunk;
+    load: NonNullable<typeof loadFileContents>;
+    contents: ReviewFileContents | null;
+  }>();
+  const fileContents =
+    contentResult?.item === item && contentResult.load === loadFileContents
+      ? contentResult.contents
+      : null;
+  useEffect(() => {
+    if (
+      !visible ||
+      !expanded ||
+      binaryKind ||
+      !loadFileContents ||
+      !(loadFullContext || markdownPreview || hideImports) ||
+      item.large ||
+      summary ||
+      (contentResult?.item === item && contentResult.load === loadFileContents)
+    )
+      return;
+    let disposed = false;
+    void loadFileContents(item).then((contents) => {
+      if (!disposed) setContentResult({ item, load: loadFileContents, contents });
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [
+    contentResult,
+    binaryKind,
+    expanded,
+    hideImports,
+    item,
+    loadFileContents,
+    loadFullContext,
+    markdownPreview,
+    visible,
+    summary,
+  ]);
+  const [importParser, setImportParser] = useState<{
+    path: string;
+    parser?: ReviewImportParser;
+  }>();
+  useEffect(() => {
+    if (!expanded || !hideImports || !fileContents) return;
+    let disposed = false;
+    void loadReviewImportParser(item.label).then(
+      (parser) => {
+        if (!disposed) setImportParser({ path: item.label, parser });
+      },
+      () => {},
+    );
+    return () => {
+      disposed = true;
+    };
+  }, [expanded, fileContents, hideImports, item.label]);
+  const comments = commenting?.comments ?? NO_LINE_COMMENTS;
+  const visiblePatch = useMemo(
+    () =>
+      filterReviewHunks(item.chunk, item.label, {
+        hideImports,
+        contents: fileContents,
+        importParser: importParser?.path === item.label ? importParser.parser : undefined,
+        annotatedLines: comments,
+      }),
+    [comments, fileContents, hideImports, importParser, item.chunk, item.label],
+  );
 
   const diffFile = useMemo(() => {
-    if (!visible || item.large) return null;
+    if (!visible || item.large || !visiblePatch || summary) return null;
     try {
       const names = getPatchFileNames(item.chunk, item.label);
+      const context = loadFullContext && visiblePatch === item.chunk ? fileContents : null;
       const instance = new DiffFile(
         names.oldFileName,
-        "",
+        context?.before ?? "",
         names.newFileName,
-        "",
-        [item.chunk],
-        "diff",
-        "diff",
+        context?.after ?? "",
+        [visiblePatch],
+        isWorkspaceReview ? (sourceLanguageForName(names.oldFileName) ?? "plaintext") : "diff",
+        isWorkspaceReview ? (sourceLanguageForName(names.newFileName) ?? "plaintext") : "diff",
       );
       instance.initTheme(isDark ? "dark" : "light");
       instance.init();
       instance.buildUnifiedDiffLines();
-      if (layout === "split") instance.buildSplitDiffLines();
+      if (viewLayout === "split") instance.buildSplitDiffLines();
       return instance;
     } catch {
       return null;
     }
-  }, [isDark, item, layout, visible]);
+  }, [
+    fileContents,
+    isDark,
+    isWorkspaceReview,
+    item,
+    loadFullContext,
+    viewLayout,
+    visible,
+    visiblePatch,
+    summary,
+  ]);
 
   const rawPreview = useMemo(() => {
-    if (!item.large) return item.chunk;
-    return item.chunk.length > RAW_DIFF_PREVIEW_CHAR_LIMIT
-      ? `${item.chunk.slice(0, RAW_DIFF_PREVIEW_CHAR_LIMIT)}\n\n${t("projectTools.gitReview.diffPreviewTruncated")}`
-      : item.chunk;
-  }, [item, t]);
+    if (!visiblePatch) return "";
+    return item.large && visiblePatch.length > RAW_DIFF_PREVIEW_CHAR_LIMIT
+      ? `${visiblePatch.slice(0, RAW_DIFF_PREVIEW_CHAR_LIMIT)}\n\n${t("projectTools.gitReview.diffPreviewTruncated")}`
+      : visiblePatch;
+  }, [item.large, t, visiblePatch]);
 
-  const comments = commenting?.comments ?? NO_LINE_COMMENTS;
   const onSaveComment = commenting?.onSave;
   const onDeleteComment = commenting?.onDelete;
   const commentingEnabled = Boolean(onSaveComment && onDeleteComment);
@@ -556,64 +696,178 @@ const DiffChunkView = memo(function DiffChunkView(props: {
   // Rough height estimate so the scroll range stays stable while the chunk is
   // still a placeholder (large chunks render a capped raw preview instead).
   const placeholderHeight = item.large ? 416 : Math.max(48, item.lineCount * 20);
+  const filePath =
+    fileNames.newFileName === "/dev/null" ? fileNames.oldFileName : fileNames.newFileName;
+  const pathName = basename(item.label);
+  const pathPrefix = item.label.slice(0, item.label.length - pathName.length);
+  const FileIcon = getFileTypeIcon(item.label, "file");
+  const openLabel = zh ? "打开文件" : "Open file";
+  const moreLabel = zh ? "文件操作" : "File actions";
+  const deleted =
+    item.deleted ||
+    /^\+\+\+ \/dev\/null$/m.test(item.chunk) ||
+    /^deleted file mode /m.test(item.chunk);
+  const openFile = onOpenFile && !deleted ? () => onOpenFile(filePath) : undefined;
+  const diffBody = summary ? (
+    <p className="za-review-file-status">
+      {summary === "binary"
+        ? zh
+          ? "二进制文件"
+          : "Binary file"
+        : zh
+          ? "无法显示该文件的差异"
+          : "No textual diff is available for this file"}
+    </p>
+  ) : !visible ? (
+    <div aria-hidden="true" style={{ height: placeholderHeight }} />
+  ) : !visiblePatch ? (
+    <p className="za-review-file-status">
+      {zh ? "此文件的差异已按选项隐藏" : "Changes hidden by the current options"}
+    </p>
+  ) : markdownPreview && fileContents && visiblePatch === item.chunk ? (
+    <div className="za-review-rendered-markdown">
+      <Markdown
+        content={fileContents.after}
+        className="document-markdown"
+        readOnly
+        componentOverrides={reviewMarkdownComponents}
+      />
+    </div>
+  ) : diffFile ? (
+    <DiffView
+      diffFile={diffFile}
+      diffViewMode={viewLayout === "split" ? DiffModeEnum.Split : DiffModeEnum.Unified}
+      diffViewTheme={isDark ? "dark" : "light"}
+      diffViewHighlight
+      diffViewWrap={wrapLines ?? false}
+      diffViewFontSize={12}
+      {...(commentingEnabled
+        ? {
+            diffViewAddWidget: true,
+            extendData,
+            renderWidgetLine,
+            renderExtendLine,
+          }
+        : {})}
+    />
+  ) : (
+    <pre className="git-review-diff-selectable-content max-h-104 select-text overflow-auto p-3 text-xs leading-relaxed text-muted-foreground">
+      {rawPreview}
+    </pre>
+  );
 
   return (
-    <div ref={containerRef} className="border-b border-border/60 last:border-b-0">
-      <div
-        className={cn(
-          "flex select-none items-center gap-2",
-          "border-b border-border/60 bg-muted/20 px-3 py-1.5",
-          "text-xs font-medium text-muted-foreground",
-        )}
-      >
-        {onOpenFile ? (
+    <div
+      ref={containerRef}
+      data-workspace-review-file={workspaceReview ? item.key : undefined}
+      className="border-b border-border/60 last:border-b-0"
+    >
+      {workspaceReview ? (
+        <div className="za-review-file-row">
           <button
             type="button"
             title={item.label}
-            className="min-w-0 flex-1 truncate rounded px-1 text-left hover:text-foreground focus-visible:outline-ring"
-            onClick={() =>
-              onOpenFile(
-                fileNames.newFileName === "/dev/null"
-                  ? fileNames.oldFileName
-                  : fileNames.newFileName,
-              )
-            }
+            className="za-review-file-toggle"
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            onClick={() => workspaceReview.onToggleFile(item.key)}
           >
-            {item.label}
+            <FileIcon className="size-4 shrink-0" />
+            <span className="za-review-file-name">
+              {pathPrefix && <span className="za-review-file-directory">{pathPrefix}</span>}
+              <span>{pathName}</span>
+            </span>
+            <ChevronRight
+              className={cn("za-review-file-chevron size-3 shrink-0", expanded && "rotate-90")}
+            />
           </button>
-        ) : (
-          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-        )}
-        {item.large ? (
-          <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-tiny text-amber-700 dark:text-amber-300">
-            {t("projectTools.gitReview.largeDiff")}
+          <span className="za-review-counts">
+            <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
+            <span className="text-rose-600 dark:text-rose-400">−{deletions}</span>
           </span>
-        ) : null}
-      </div>
-      {!visible ? (
-        <div aria-hidden="true" style={{ height: placeholderHeight }} />
-      ) : diffFile ? (
-        <DiffView
-          diffFile={diffFile}
-          diffViewMode={layout === "split" ? DiffModeEnum.Split : DiffModeEnum.Unified}
-          diffViewTheme={isDark ? "dark" : "light"}
-          diffViewHighlight
-          diffViewWrap={wrapLines ?? false}
-          diffViewFontSize={12}
-          {...(commentingEnabled
-            ? {
-                diffViewAddWidget: true,
-                extendData,
-                renderWidgetLine,
-                renderExtendLine,
-              }
-            : {})}
-        />
+          {openFile && (
+            <button
+              type="button"
+              className="za-review-icon"
+              aria-label={openLabel}
+              title={openLabel}
+              onClick={openFile}
+            >
+              <ExternalLink className="size-3.5" />
+            </button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              type="button"
+              className="za-review-icon"
+              aria-label={moreLabel}
+              title={moreLabel}
+            >
+              <MoreHorizontal className="size-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {openFile && (
+                <DropdownMenuItem onSelect={openFile}>
+                  <ExternalLink className="size-4" />
+                  {openLabel}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={() => writeTextToClipboard(item.label)}>
+                <Copy className="size-4" />
+                {zh ? "复制文件路径" : "Copy file path"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ) : (
-        <pre className="git-review-diff-selectable-content max-h-104 select-text overflow-auto p-3 text-xs leading-relaxed text-muted-foreground">
-          {rawPreview}
-        </pre>
+        <div
+          className={cn(
+            "flex select-none items-center gap-2",
+            "border-b border-border/60 bg-muted/20 px-3 py-1.5",
+            "text-xs font-medium text-muted-foreground",
+          )}
+        >
+          {onOpenFile ? (
+            <button
+              type="button"
+              title={item.label}
+              className="min-w-0 flex-1 truncate rounded px-1 text-left hover:text-foreground focus-visible:outline-ring"
+              onClick={() =>
+                onOpenFile(
+                  fileNames.newFileName === "/dev/null"
+                    ? fileNames.oldFileName
+                    : fileNames.newFileName,
+                )
+              }
+            >
+              {item.label}
+            </button>
+          ) : (
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          )}
+          {item.large ? (
+            <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-tiny text-amber-700 dark:text-amber-300">
+              {t("projectTools.gitReview.largeDiff")}
+            </span>
+          ) : null}
+        </div>
       )}
+      <div
+        id={bodyId}
+        hidden={!expanded}
+        data-review-word-diffs={workspaceReview?.presentation.wordDiffs}
+      >
+        {binaryKind && loadBinaryPreview
+          ? expanded && (
+              <GitBinaryReviewPreview
+                item={item}
+                load={loadBinaryPreview}
+                kind={binaryKind}
+                fallback={/\.svg$/i.test(item.label) ? diffBody : undefined}
+              />
+            )
+          : diffBody}
+      </div>
     </div>
   );
 });
@@ -729,6 +983,7 @@ export function DiffContent(props: {
   layout?: "unified" | "split";
   wrapLines?: boolean;
   onOpenFile?: (path: string) => void;
+  workspaceReview?: WorkspaceReview;
   /** Enables per-line comments; pending comments are handed over as composer
    *  segments and cleared once the composer accepts them. */
   onInsertComposerSegments?: (segments: MentionComposerDraftSegment[]) => boolean;
@@ -742,6 +997,7 @@ export function DiffContent(props: {
     layout,
     wrapLines,
     onOpenFile,
+    workspaceReview,
     onInsertComposerSegments,
   } = props;
   const { locale, t } = useLocale();
@@ -769,9 +1025,10 @@ export function DiffContent(props: {
       maxScrollLeft: 0,
       scrollLeft: 0,
     });
+  const workspaceRows = workspaceReview?.rows;
   const patchChunks = useMemo(
-    () => buildPatchChunks(diff?.patch ?? "", title),
-    [diff?.patch, title],
+    () => workspaceRows ?? buildPatchChunks(diff?.patch ?? "", title),
+    [diff?.patch, title, workspaceRows],
   );
   const showLoadingState = loading && !error && !diff;
   const showDiffStat = showStat && Boolean(diff?.stat);
@@ -1247,6 +1504,7 @@ export function DiffContent(props: {
               layout={layout}
               wrapLines={wrapLines}
               onOpenFile={onOpenFile}
+              workspaceReview={workspaceReview}
             />
           ))}
         </div>

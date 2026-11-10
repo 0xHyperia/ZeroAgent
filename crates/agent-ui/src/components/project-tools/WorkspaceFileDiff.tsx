@@ -1,19 +1,27 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLocale } from "../../i18n";
 import type {
   GitBranchesResponse,
   GitClient,
   GitCommitSummary,
   GitDiffResponse,
+  GitRepositoryState,
 } from "../../lib/git/types";
 import { hostAwareErrorMessage } from "../../lib/shared/hostErrors";
 import type { WorkspaceActivityClient } from "../../lib/workspace-activity/types";
 import { useWorkspaceInvalidation } from "../../lib/workspace-activity/useWorkspaceInvalidation";
-import { ChevronDown, ChevronRight, Columns2, List, Loader2 } from "../IconSet";
+import { ChevronDown, ChevronRight, Loader2 } from "../IconSet";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
@@ -25,6 +33,15 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { DiffContent } from "./git-review/DiffView";
+import "./git-review/DiffView.css";
+import { buildWorkspaceReviewRows, type PatchChunk } from "./git-review/model";
+import { WorkspaceReviewToolbar } from "./git-review/WorkspaceReviewToolbar";
+import {
+  buildReviewApplyCommand,
+  countReviewChanges,
+  readReviewFileContents,
+  sameReviewFileRevision,
+} from "./git-review/workspaceReviewDiff";
 import type { RightDockGitContext } from "./RightDockContext";
 import {
   isWorkspaceGitBaseBranch,
@@ -81,6 +98,7 @@ type ComparisonMenuProps = {
   comparison: WorkspaceGitComparison;
   conversationId?: string;
   onComparisonChange: (comparison: WorkspaceGitComparison) => void;
+  summary?: ReactNode;
 };
 
 function WorkspaceGitBranchOptions({
@@ -166,6 +184,7 @@ export function WorkspaceGitComparisonMenu({
   comparison,
   conversationId,
   onComparisonChange,
+  summary,
 }: ComparisonMenuProps) {
   const { locale, t } = useLocale();
   const zh = locale === "zh-CN";
@@ -207,7 +226,11 @@ export function WorkspaceGitComparisonMenu({
         type="button"
         title={sha ?? baseBranch ?? undefined}
         aria-label={zh ? "比较范围" : "Comparison source"}
-        className="flex h-7 min-w-0 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium hover:bg-muted focus-visible:outline-ring"
+        className={
+          summary
+            ? "za-review-comparison"
+            : "flex h-7 min-w-0 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium hover:bg-muted focus-visible:outline-ring"
+        }
       >
         {comparisonName(locale, comparison)}
         {sha && (
@@ -217,6 +240,7 @@ export function WorkspaceGitComparisonMenu({
           <span className="max-w-24 truncate font-normal text-muted-foreground">{baseBranch}</span>
         )}
         <ChevronDown className="size-3.5 text-muted-foreground" />
+        {summary}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-44">
         <DropdownMenuRadioGroup value={baseBranch ? "branch" : comparison}>
@@ -293,27 +317,13 @@ type Props = {
   conversationId?: string;
   onComparisonChange?: (comparison: WorkspaceGitComparison) => void;
   hideComparisonMenu?: boolean;
-  toolbarActions?: ReactNode;
+  onOpenGitActions?: () => void;
   onOpenFile?: (path: string) => void;
   workspaceActivityClient?: WorkspaceActivityClient;
   onInsertComposerSegments?: RightDockGitContext["onInsertComposerSegments"];
 };
 
-type DiffLoadResult = { diff?: GitDiffResponse; error?: string; repoRoot?: string };
-
-function diffLineCounts(patch: string) {
-  let additions = 0;
-  let deletions = 0;
-  let inHunk = false;
-  for (const line of patch.split("\n")) {
-    if (line.startsWith("diff --git ")) inHunk = false;
-    if (line.startsWith("@@ ")) inHunk = true;
-    if (!inHunk) continue;
-    if (line.startsWith("+")) additions += 1;
-    else if (line.startsWith("-")) deletions += 1;
-  }
-  return { additions, deletions };
-}
+type DiffLoadResult = { diff?: GitDiffResponse; error?: string; repository?: GitRepositoryState };
 
 export function WorkspaceFileDiff({
   active,
@@ -324,7 +334,7 @@ export function WorkspaceFileDiff({
   conversationId,
   onComparisonChange,
   hideComparisonMenu,
-  toolbarActions,
+  onOpenGitActions,
   onOpenFile,
   workspaceActivityClient,
   onInsertComposerSegments,
@@ -333,11 +343,32 @@ export function WorkspaceFileDiff({
   const zh = locale === "zh-CN";
   const [localComparison, setLocalComparison] = useState<WorkspaceGitComparison>("working_tree");
   const selectedComparison = comparison ?? localComparison;
-  const [{ layout, wrapLines }, setPresentation] = useWorkspaceGitPresentation();
+  const [presentation, setPresentation] = useWorkspaceGitPresentation();
+  const { layout, wrapLines } = presentation;
   const turnRevision = useWorkspaceGitTurnRevision(
     selectedComparison === "last-turn" ? conversationId : undefined,
   );
   const [version, setVersion] = useState(0);
+  const [fileExpansion, setFileExpansion] = useState<{
+    scope: string;
+    defaultOpen: boolean;
+    overrides: Record<string, boolean>;
+  }>();
+  const reviewRef = useRef<HTMLElement>(null);
+  const [viewport, setViewport] = useState<"compact" | "toolbar" | "split">("compact");
+  useLayoutEffect(() => {
+    const element = reviewRef.current;
+    if (!element) return;
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      setViewport(width >= 800 ? "split" : width >= 625 ? "toolbar" : "compact");
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const scope = JSON.stringify([workdir, path, selectedComparison, conversationId, turnRevision]);
   const [result, setResult] = useState<DiffLoadResult & { scope: string; version: number }>();
   const selected = result?.scope === scope ? result : null;
@@ -389,7 +420,7 @@ export function WorkspaceFileDiff({
           path,
           conversationId,
         );
-        publish(diff ? { diff, repoRoot: repository.repoRoot } : { error: unavailable });
+        publish(diff ? { diff, repository } : { error: unavailable });
       })().catch((error: unknown) =>
         publish({
           error:
@@ -417,23 +448,197 @@ export function WorkspaceFileDiff({
     workdir,
   ]);
 
-  const patch = selected?.diff?.patch;
-  const { additions, deletions } = useMemo(() => diffLineCounts(patch ?? ""), [patch]);
+  const rawDiff = selected?.diff;
+  const patch = rawDiff?.patch;
+  const repository = selected?.repository;
+  const hideWhitespace = presentation.hideWhitespace && Boolean(client.supportsWhitespaceDiff);
+  const [whitespaceResult, setWhitespaceResult] = useState<{
+    raw: GitDiffResponse;
+    diff: GitDiffResponse | null;
+  }>();
+  useEffect(() => {
+    if (!active || !hideWhitespace || !rawDiff || !repository) return;
+    let disposed = false;
+    const publish = (diff: GitDiffResponse | null) => {
+      if (disposed) return;
+      const sameSnapshot = !rawDiff.snapshotId || rawDiff.snapshotId === diff?.snapshotId;
+      setWhitespaceResult({ raw: rawDiff, diff: sameSnapshot ? diff : null });
+    };
+    void Promise.resolve(
+      loadWorkspaceGitComparison(
+        client,
+        repository,
+        workdir,
+        selectedComparison,
+        path,
+        conversationId,
+        { hideWhitespace: true },
+      ),
+    ).then(publish, () => publish(null));
+    return () => {
+      disposed = true;
+    };
+  }, [
+    active,
+    client,
+    conversationId,
+    hideWhitespace,
+    path,
+    rawDiff,
+    repository,
+    selectedComparison,
+    workdir,
+  ]);
+  const filtered = hideWhitespace && whitespaceResult?.raw === rawDiff ? whitespaceResult : null;
+  const displayedDiff = filtered?.diff ?? rawDiff;
+  const title = comparisonName(locale, selectedComparison);
+  const rows = useMemo(
+    () => buildWorkspaceReviewRows(displayedDiff, title),
+    [displayedDiff, title],
+  );
+  const rawRows = useMemo(
+    () =>
+      displayedDiff === rawDiff
+        ? null
+        : new Map(buildWorkspaceReviewRows(rawDiff, title).map((row) => [row.label, row])),
+    [displayedDiff, rawDiff, title],
+  );
+  const { additions, deletions } = useMemo(
+    () => countReviewChanges(displayedDiff?.patch ?? ""),
+    [displayedDiff?.patch],
+  );
+  const resolveFilePath = useCallback(
+    (file: string) => {
+      if (!repository?.repoRoot) return null;
+      const absolute = workspaceGitPathFromRoot(repository.repoRoot, file);
+      return absolute && workspaceGitRelativePath(workdir, absolute) ? absolute : null;
+    },
+    [repository, workdir],
+  );
   const openPath =
-    onOpenFile && selected?.repoRoot
+    onOpenFile && repository
       ? (file: string) => {
-          if (!selected.repoRoot) return;
-          const absolute = workspaceGitPathFromRoot(selected.repoRoot, file);
-          if (absolute && workspaceGitRelativePath(workdir, absolute)) onOpenFile(absolute);
+          const absolute = resolveFilePath(file);
+          if (absolute) onOpenFile(absolute);
         }
       : undefined;
+  const supportsFullContext = Boolean(client.supportsFullDiffContext);
+  const loadBinaryPreview = useCallback(
+    (item: PatchChunk) => {
+      const diff = rawDiff;
+      if (!active || !client.readDiffPreview || !diff || !resolveFilePath(item.label))
+        return Promise.resolve(null);
+      if (selectedComparison === "last-turn" && (!conversationId || !diff.snapshotId))
+        return Promise.resolve(null);
+      const original = (rawRows?.get(item.label) ?? item).chunk;
+      const expectedPatch = /^index [a-f0-9]+\.\.[a-f0-9]+(?: \d+)?$/m.test(original)
+        ? original
+        : diff.changes?.find((change) => change.path === item.label)?.previewIndex;
+      if (selectedComparison !== "last-turn" && !expectedPatch) return Promise.resolve(null);
+      return client.readDiffPreview({
+        workdir,
+        comparison: selectedComparison,
+        path: item.label,
+        expectedPatch,
+        conversationId,
+        snapshotId: diff.snapshotId,
+      });
+    },
+    [
+      active,
+      client,
+      conversationId,
+      rawDiff,
+      rawRows,
+      resolveFilePath,
+      selectedComparison,
+      workdir,
+    ],
+  );
+  const loadFileContents = useCallback(
+    async (item: PatchChunk) => {
+      if (!active || !repository || selected?.diff?.truncated || item.large) return null;
+      const original = (rawRows?.get(item.label) ?? item).chunk;
+      const alreadyComplete = readReviewFileContents(original, false);
+      if (alreadyComplete) return alreadyComplete;
+      const absolutePath = resolveFilePath(item.label);
+      if (!absolutePath || !supportsFullContext) return null;
+      try {
+        const fullDiff = await loadWorkspaceGitComparison(
+          client,
+          repository,
+          workdir,
+          selectedComparison,
+          absolutePath,
+          conversationId,
+          { fullContext: true },
+        );
+        if (!fullDiff || fullDiff.truncated || !sameReviewFileRevision(original, fullDiff.patch))
+          return null;
+        return readReviewFileContents(fullDiff.patch, true);
+      } catch {
+        return null;
+      }
+    },
+    [
+      active,
+      client,
+      conversationId,
+      rawRows,
+      repository,
+      resolveFilePath,
+      selected?.diff?.truncated,
+      selectedComparison,
+      supportsFullContext,
+      workdir,
+    ],
+  );
+  const currentExpansion = fileExpansion?.scope === scope ? fileExpansion : undefined;
+  const defaultOpen = currentExpansion?.defaultOpen ?? true;
+  const isExpanded = (key: string) => currentExpansion?.overrides[key] ?? defaultOpen;
+  const allExpanded =
+    defaultOpen && !Object.values(currentExpansion?.overrides ?? {}).includes(false);
+  const setExpanded = (key: string, open: boolean) => {
+    setFileExpansion((previous) => ({
+      scope,
+      defaultOpen,
+      overrides: { ...(previous?.scope === scope ? previous.overrides : {}), [key]: open },
+    }));
+  };
+  const jumpToFile = (key: string) => {
+    setExpanded(key, true);
+    window.requestAnimationFrame(() => {
+      const row = [
+        ...(reviewRef.current?.querySelectorAll<HTMLElement>("[data-workspace-review-file]") ?? []),
+      ].find((element) => element.dataset.workspaceReviewFile === key);
+      row?.scrollIntoView?.({ block: "start" });
+      row?.querySelector("button")?.focus({ preventScroll: true });
+    });
+  };
+  const applyCommand =
+    patch &&
+    !loading &&
+    !selected?.diff?.truncated &&
+    !selected?.diff?.binaryFiles?.length &&
+    !rows.some((row) => row.summary) &&
+    selectedComparison !== "last-turn"
+      ? buildReviewApplyCommand(patch)
+      : null;
+  const summary =
+    additions > 0 || deletions > 0 ? (
+      <span className="za-review-counts">
+        <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
+        <span className="text-rose-600 dark:text-rose-400">−{deletions}</span>
+      </span>
+    ) : null;
 
   return (
     <section
-      aria-label={t("projectTools.gitReviewTitle")}
-      className="flex h-full min-h-0 min-w-0 flex-col"
+      ref={reviewRef}
+      aria-label={t("projectTools.workspaceChangesTitle")}
+      className="za-workspace-review flex h-full min-h-0 min-w-0 flex-col"
     >
-      <div className="flex h-10 min-w-0 shrink-0 items-center gap-1 border-b border-border/70 px-2">
+      <div className="za-review-header">
         {!hideComparisonMenu && (
           <WorkspaceGitComparisonMenu
             client={client}
@@ -441,51 +646,37 @@ export function WorkspaceFileDiff({
             comparison={selectedComparison}
             conversationId={conversationId}
             onComparisonChange={onComparisonChange ?? setLocalComparison}
+            summary={summary}
           />
         )}
         {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-        {(additions > 0 || deletions > 0) && (
-          <span className="flex items-center gap-1 font-mono text-[11px]">
-            <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
-            <span className="text-rose-600 dark:text-rose-400">−{deletions}</span>
-          </span>
-        )}
+        {hideComparisonMenu && summary}
         <span className="flex-1" />
-        {toolbarActions}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            type="button"
-            aria-label={zh ? "差异显示方式" : "Diff layout"}
-            className="flex h-7 items-center gap-1 rounded-lg px-2 text-muted-foreground hover:bg-muted focus-visible:outline-ring"
-          >
-            {layout === "split" ? <Columns2 className="size-4" /> : <List className="size-4" />}
-            <ChevronDown className="size-3" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuRadioGroup value={layout}>
-              <DropdownMenuRadioItem
-                value="unified"
-                onSelect={() => setPresentation({ layout: "unified" })}
-              >
-                {zh ? "统一视图" : "Unified"}
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem
-                value="split"
-                onSelect={() => setPresentation({ layout: "split" })}
-              >
-                {zh ? "并排视图" : "Split"}
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem
-              checked={wrapLines}
-              onCheckedChange={(next) => setPresentation({ wrapLines: next })}
-            >
-              {zh ? "自动换行" : "Wrap lines"}
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <WorkspaceReviewToolbar
+          presentation={presentation}
+          onPresentationChange={setPresentation}
+          supportsFullContext={supportsFullContext}
+          supportsWhitespace={Boolean(client.supportsWhitespaceDiff)}
+          rows={rows}
+          onJump={jumpToFile}
+          expanded={allExpanded}
+          onToggleExpanded={() =>
+            setFileExpansion({ scope, defaultOpen: !allExpanded, overrides: {} })
+          }
+          refreshing={loading}
+          onRefresh={refresh}
+          applyCommand={applyCommand}
+          onOpenGitActions={onOpenGitActions}
+          wide={viewport !== "compact"}
+        />
       </div>
+      {filtered && !filtered.diff && (
+        <p role="status" className="za-review-file-status">
+          {zh
+            ? "无法隐藏空白变化，已显示原始差异。"
+            : "Could not hide whitespace changes. Showing the original diff."}
+        </p>
+      )}
       {selected?.error && (
         <div
           role="alert"
@@ -499,14 +690,23 @@ export function WorkspaceFileDiff({
       )}
       {!selected?.error && (
         <DiffContent
-          title={comparisonName(locale, selectedComparison)}
-          diff={selected?.diff}
+          title={title}
+          diff={displayedDiff}
           loading={loading}
           showStat={false}
-          layout={layout}
+          layout={layout === "auto" ? "unified" : layout}
           wrapLines={wrapLines}
           onOpenFile={openPath}
           onInsertComposerSegments={onInsertComposerSegments}
+          workspaceReview={{
+            presentation,
+            rows,
+            allowAutoSplit: viewport === "split",
+            isExpanded,
+            onToggleFile: (key) => setExpanded(key, !isExpanded(key)),
+            loadFileContents,
+            loadBinaryPreview: active && client.readDiffPreview ? loadBinaryPreview : undefined,
+          }}
         />
       )}
     </section>

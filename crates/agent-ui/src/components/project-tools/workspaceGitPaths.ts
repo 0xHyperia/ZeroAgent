@@ -1,4 +1,4 @@
-import type { GitClient, GitRepositoryState } from "../../lib/git/types";
+import type { GitClient, GitDiffOptions, GitRepositoryState } from "../../lib/git/types";
 
 export type WorkspaceGitComparison =
   | "working_tree"
@@ -29,25 +29,32 @@ export function loadWorkspaceGitComparison(
   comparison: WorkspaceGitComparison,
   path?: string,
   conversationId?: string,
+  options?: GitDiffOptions,
 ) {
   const absolute = path && workspaceGitPathFromRoot(workdir, path);
   if (path && (!absolute || !workspaceGitRelativePath(workdir, absolute))) return null;
   const filter = workspaceGitRelativePath(repository.repoRoot, absolute || workdir);
   if (path && !filter) return null;
+  const diffOptions: [GitDiffOptions] | [] = options ? [options] : [];
   if (comparison === "last-turn")
     return conversationId && client.lastTurnDiff
-      ? client.lastTurnDiff(workdir, conversationId, path ? (filter ?? undefined) : undefined)
+      ? client.lastTurnDiff(
+          workdir,
+          conversationId,
+          path ? (filter ?? undefined) : undefined,
+          ...diffOptions,
+        )
       : null;
   const commit = workspaceGitCommit(comparison);
-  if (commit) return client.commitDiff(workdir, commit, filter ?? undefined);
+  if (commit) return client.commitDiff(workdir, commit, filter ?? undefined, ...diffOptions);
   if (isWorkspaceGitBaseBranch(comparison))
-    return client.diff(workdir, comparison, filter ?? undefined);
+    return client.diff(workdir, comparison, filter ?? undefined, ...diffOptions);
   switch (comparison) {
     case "working_tree":
     case "branch":
     case "staged":
     case "unstaged":
-      return client.diff(workdir, comparison, filter ?? undefined);
+      return client.diff(workdir, comparison, filter ?? undefined, ...diffOptions);
     default:
       return null;
   }

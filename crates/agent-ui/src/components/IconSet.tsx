@@ -197,6 +197,23 @@ function createIcon(Source: IconSource): IconComponent {
   };
 }
 
+export const DiffSquare = createIcon(function DiffSquareSource(props) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <rect x="2.65" y="2.65" width="10.7" height="10.7" rx="2" />
+      <path d="M6.3 6.3h3.4m-1.7-1.7V8m-1.7 2.65h3.4" />
+    </svg>
+  );
+});
+
 const skillIconOuterPath = `M8102 20439 c-298 -35 -568 -170 -777 -390 -175 -183 -288 -406 -337
 -667 -10 -54 -13 -1300 -13 -6347 0 -6030 1 -6283 18 -6365 74 -347 266 -634
 550 -822 144 -95 269 -147 459 -191 92 -21 104 -21 1808 -26 l1715 -6 3690

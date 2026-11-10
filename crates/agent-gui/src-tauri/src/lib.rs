@@ -332,6 +332,7 @@ macro_rules! app_invoke_handler {
             commands::git::git_create_worktree,
             commands::git::git_remove_worktree,
             commands::git::git_diff,
+            commands::git::revision_preview::git_workspace_diff_preview,
             commands::git::turn_review::git_workspace_turn_review,
             commands::git::git_log,
             commands::git::git_commit_details,

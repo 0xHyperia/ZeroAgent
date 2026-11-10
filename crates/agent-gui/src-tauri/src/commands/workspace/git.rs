@@ -19,6 +19,8 @@ use crate::runtime::process::{
     terminate_process_tree_by_pid,
 };
 
+#[path = "git_revision_preview.rs"]
+pub mod revision_preview;
 #[path = "git_turn_review.rs"]
 pub mod turn_review;
 
@@ -141,6 +143,8 @@ pub struct GitDiffResponse {
     pub stat: String,
     pub truncated: bool,
     pub binary_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +154,8 @@ pub struct GitCommitFile {
     pub old_path: Option<String>,
     pub status: String,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_index: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -726,15 +732,41 @@ fn git_success_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> Result<GitOutput, String> {
+    git_success_capture(workdir, args, timeout, true)
+}
+
+fn git_review_output(workdir: &str, args: &[&str]) -> Result<GitOutput, String> {
+    git_success_capture(
+        workdir,
+        args,
+        Duration::from_secs(GIT_COMMAND_TIMEOUT_SECS),
+        false,
+    )
+}
+
+fn git_success_capture(
+    workdir: &str,
+    args: &[&str],
+    timeout: Duration,
+    trim_stdout: bool,
+) -> Result<GitOutput, String> {
     let mut last_error = String::new();
     for attempt in 0..GIT_TRANSIENT_RETRY_ATTEMPTS {
         let output = git_output_with_timeout(workdir, args, timeout)?;
-        let stdout = trim_output(&output.stdout);
         let stderr = trim_output(&output.stderr);
         if output.status.success() {
+            let stdout = if trim_stdout {
+                trim_output(&output.stdout)
+            } else {
+                String::from_utf8_lossy(&output.stdout).into_owned()
+            };
             return Ok(GitOutput { stdout, stderr });
         }
-        let message = if stderr.is_empty() { stdout } else { stderr };
+        let message = if stderr.is_empty() {
+            trim_output(&output.stdout)
+        } else {
+            stderr
+        };
         if attempt + 1 < GIT_TRANSIENT_RETRY_ATTEMPTS && is_transient_git_lock_error(&message) {
             last_error = message;
             std::thread::sleep(Duration::from_millis(GIT_TRANSIENT_RETRY_DELAY_MS));
@@ -1745,7 +1777,7 @@ fn append_untracked_file_patches(
         }
         match build_untracked_file_patch(repo_root, &entry.path)? {
             Some(untracked_patch) => {
-                if !patch.trim().is_empty() {
+                if !patch.is_empty() && !patch.ends_with('\n') {
                     patch.push('\n');
                 }
                 patch.push_str(&untracked_patch);
@@ -1773,7 +1805,7 @@ fn append_initial_worktree_file_patches(
         }
         match build_untracked_file_patch(repo_root, &clean_path)? {
             Some(initial_patch) => {
-                if !patch.trim().is_empty() {
+                if !patch.is_empty() && !patch.ends_with('\n') {
                     patch.push('\n');
                 }
                 patch.push_str(&initial_patch);
@@ -1800,6 +1832,7 @@ fn untracked_review_change(path: &str) -> GitCommitFile {
         old_path: None,
         status: "A".to_string(),
         kind: "untracked".to_string(),
+        preview_index: None,
     }
 }
 
@@ -2291,6 +2324,7 @@ fn parse_name_status_line(line: &str) -> Option<GitCommitFile> {
             },
             status,
             kind: commit_file_kind(raw_status),
+            preview_index: None,
         });
     }
     let path = parts.next()?.trim().to_string();
@@ -2302,6 +2336,7 @@ fn parse_name_status_line(line: &str) -> Option<GitCommitFile> {
         old_path: None,
         status,
         kind: commit_file_kind(raw_status),
+        preview_index: None,
     })
 }
 
@@ -2338,6 +2373,7 @@ fn parse_name_status_records(raw: &str) -> Vec<GitCommitFile> {
                 },
                 status,
                 kind: commit_file_kind(raw_status),
+                preview_index: None,
             });
             continue;
         }
@@ -2352,33 +2388,68 @@ fn parse_name_status_records(raw: &str) -> Vec<GitCommitFile> {
             old_path: None,
             status,
             kind: commit_file_kind(raw_status),
+            preview_index: None,
         });
     }
     files
 }
 
-fn read_review_changes(repo_root: &str, args: &[&str]) -> Result<Vec<GitCommitFile>, String> {
+fn read_review_metadata(repo_root: &str, args: &[&str], format: &str) -> Result<String, String> {
     let mut options = true;
-    let args: Vec<&str> = args
-        .iter()
-        .map(|arg| {
-            if !options {
-                return *arg;
+    let mut metadata_args = Vec::with_capacity(args.len() + 1);
+    for arg in args {
+        match *arg {
+            "--" if options => {
+                options = false;
+                metadata_args.push("--");
             }
-            match *arg {
-                "--" => {
-                    options = false;
-                    "--"
+            "--patch" if options => {
+                metadata_args.push(format);
+                if format == "--raw" {
+                    metadata_args.push("--no-abbrev");
                 }
-                "--patch" => "--name-status",
-                "--stat" => "-z",
-                other => other,
             }
-        })
+            "--stat" if options => metadata_args.push("-z"),
+            other => metadata_args.push(other),
+        }
+    }
+    Ok(git_success(repo_root, &metadata_args)?.stdout)
+}
+
+fn review_numstat_paths(output: &str) -> Option<HashSet<&str>> {
+    let mut records = output.split_terminator('\0');
+    let mut paths = HashSet::new();
+    while let Some(record) = records.next() {
+        let path = record.splitn(3, '\t').nth(2)?;
+        if path.is_empty() {
+            // A rename or copy is a numstat record followed by its two literal paths.
+            records.next()?;
+            paths.insert(records.next()?);
+        } else {
+            paths.insert(path);
+        }
+    }
+    Some(paths)
+}
+
+fn read_review_changes(
+    repo_root: &str,
+    args: &[&str],
+    hide_whitespace: bool,
+) -> Result<Vec<GitCommitFile>, String> {
+    let raw = read_review_metadata(repo_root, args, "--raw")?;
+    let mut changes: Vec<_> = revision_preview::raw_changes(&raw)
+        .iter()
+        .map(revision_preview::RawChange::change)
         .collect();
-    Ok(parse_name_status_records(
-        &git_success(repo_root, &args)?.stdout,
-    ))
+    if hide_whitespace {
+        // --name-status includes paths whose only edits disappear with -w.
+        let numstat = read_review_metadata(repo_root, args, "--numstat")?;
+        let visible =
+            review_numstat_paths(&numstat).ok_or("Could not read filtered Git changes.")?;
+        changes.retain(|change| visible.contains(change.path.as_str()));
+    }
+    Ok(changes)
 }
 
 fn clean_git_ref_label(raw: &str) -> Option<String> {
@@ -2923,6 +2994,7 @@ pub(crate) fn git_compare_commit_with_remote_sync(
         stat,
         truncated,
         binary_files: Vec::new(),
+        snapshot_id: None,
     })
 }
 
@@ -2931,19 +3003,28 @@ pub(crate) fn git_commit_diff_sync(
     commit: String,
     path: Option<String>,
 ) -> Result<GitDiffResponse, String> {
+    git_commit_diff_with_context(workdir, commit, path, GitReviewDiffOptions::default())
+}
+
+#[derive(Default)]
+struct GitReviewDiffOptions {
+    full_context: bool,
+    hide_whitespace: bool,
+}
+
+fn git_commit_diff_with_context(
+    workdir: String,
+    commit: String,
+    path: Option<String>,
+    options: GitReviewDiffOptions,
+) -> Result<GitDiffResponse, String> {
     let state = ensure_ready_state(&workdir)?;
     let commit = validate_commit_sha(&state.repo_root, &commit)?;
     let clean_path = path
         .as_deref()
         .map(validate_repo_relative_path)
         .transpose()?;
-    let parent_output = git_success(&state.repo_root, &["show", "-s", "--format=%P", &commit])?;
-    let first_parent = parent_output
-        .stdout
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_string();
+    let first_parent = revision_preview::first_parent(&state.repo_root, &commit)?;
     let mut args: Vec<String> = if first_parent.is_empty() {
         vec![
             "--literal-pathspecs".to_string(),
@@ -2965,13 +3046,23 @@ pub(crate) fn git_commit_diff_sync(
             commit.clone(),
         ]
     };
+    args.splice(
+        2..2,
+        ["--full-index", "--no-ext-diff", "--no-textconv"].map(str::to_owned),
+    );
+    if options.full_context {
+        args.insert(2, "--unified=1000000".to_string());
+    }
+    if options.hide_whitespace {
+        args.insert(2, "--ignore-all-space".to_string());
+    }
     args.push("--".to_string());
     if let Some(path) = clean_path.as_deref() {
         args.push(path.to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = git_success(&state.repo_root, &arg_refs)?;
-    let changes = read_review_changes(&state.repo_root, &arg_refs)?;
+    let output = git_review_output(&state.repo_root, &arg_refs)?;
+    let changes = read_review_changes(&state.repo_root, &arg_refs, options.hide_whitespace)?;
     let (stat, patch) = split_stat_and_patch(&output.stdout);
     let (patch, truncated) = truncate_patch(patch);
     Ok(GitDiffResponse {
@@ -2988,6 +3079,7 @@ pub(crate) fn git_commit_diff_sync(
         stat,
         truncated,
         binary_files: Vec::new(),
+        snapshot_id: None,
     })
 }
 
@@ -2995,6 +3087,15 @@ pub(crate) fn git_diff_sync(
     workdir: String,
     mode: Option<String>,
     path: Option<String>,
+) -> Result<GitDiffResponse, String> {
+    git_diff_with_context(workdir, mode, path, GitReviewDiffOptions::default())
+}
+
+fn git_diff_with_context(
+    workdir: String,
+    mode: Option<String>,
+    path: Option<String>,
+    options: GitReviewDiffOptions,
 ) -> Result<GitDiffResponse, String> {
     let state = ensure_ready_state(&workdir)?;
     let mode = mode.unwrap_or_else(|| "branch".to_string());
@@ -3033,6 +3134,7 @@ pub(crate) fn git_diff_sync(
             stat: String::new(),
             truncated,
             binary_files,
+            snapshot_id: None,
         });
     }
     let mut base_ref = String::new();
@@ -3043,7 +3145,16 @@ pub(crate) fn git_diff_sync(
         "--patch".to_string(),
         "--stat".to_string(),
         "--find-renames".to_string(),
+        "--full-index".to_string(),
+        "--no-ext-diff".to_string(),
+        "--no-textconv".to_string(),
     ];
+    if options.full_context {
+        args.push("--unified=1000000".to_string());
+    }
+    if options.hide_whitespace {
+        args.push("--ignore-all-space".to_string());
+    }
     if mode == "working_tree" {
         args.push("HEAD".to_string());
     } else if mode == "staged" {
@@ -3058,22 +3169,7 @@ pub(crate) fn git_diff_sync(
         base_ref = "INDEX".to_string();
         head_ref = "WORKTREE".to_string();
     } else {
-        base_ref = if let Some(reference) = mode.strip_prefix("branch:") {
-            if !(reference.starts_with("refs/heads/") || reference.starts_with("refs/remotes/"))
-                || git_success(&state.repo_root, &["check-ref-format", reference]).is_err()
-                || !ref_exists(&state.repo_root, reference)
-            {
-                return Err("找不到选定的基线分支。".to_string());
-            }
-            reference.to_string()
-        } else {
-            resolve_review_base(&state)
-        };
-        if base_ref.is_empty() {
-            return Err(
-                "找不到可用于审查的基线分支。请先设置 upstream 或 fetch 主分支。".to_string(),
-            );
-        }
+        base_ref = revision_preview::review_branch(&state, &mode)?;
         args.push(format!("{base_ref}...HEAD"));
     }
     args.push("--".to_string());
@@ -3081,8 +3177,8 @@ pub(crate) fn git_diff_sync(
         args.push(path.to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = git_success(&state.repo_root, &arg_refs)?;
-    let mut changes = read_review_changes(&state.repo_root, &arg_refs)?;
+    let output = git_review_output(&state.repo_root, &arg_refs)?;
+    let mut changes = read_review_changes(&state.repo_root, &arg_refs, options.hide_whitespace)?;
     let (stat, mut patch) = split_stat_and_patch(&output.stdout);
     let mut binary_files = Vec::new();
     if matches!(mode.as_str(), "working_tree" | "unstaged") {
@@ -3118,6 +3214,7 @@ pub(crate) fn git_diff_sync(
         stat,
         truncated,
         binary_files,
+        snapshot_id: None,
     })
 }
 
@@ -3923,10 +4020,18 @@ pub async fn git_diff(
     workdir: String,
     mode: Option<String>,
     path: Option<String>,
+    full_context: Option<bool>,
+    hide_whitespace: Option<bool>,
 ) -> Result<GitDiffResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || git_diff_sync(workdir, mode, path))
-        .await
-        .map_err(|error| format!("git_diff join 失败：{error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        let options = GitReviewDiffOptions {
+            full_context: full_context.unwrap_or_default() && path.is_some(),
+            hide_whitespace: hide_whitespace.unwrap_or_default(),
+        };
+        git_diff_with_context(workdir, mode, path, options)
+    })
+    .await
+    .map_err(|error| format!("git_diff join 失败：{error}"))?
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -3967,10 +4072,18 @@ pub async fn git_commit_diff(
     workdir: String,
     commit: String,
     path: Option<String>,
+    full_context: Option<bool>,
+    hide_whitespace: Option<bool>,
 ) -> Result<GitDiffResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || git_commit_diff_sync(workdir, commit, path))
-        .await
-        .map_err(|error| format!("git_commit_diff join 失败：{error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        let options = GitReviewDiffOptions {
+            full_context: full_context.unwrap_or_default() && path.is_some(),
+            hide_whitespace: hide_whitespace.unwrap_or_default(),
+        };
+        git_commit_diff_with_context(workdir, commit, path, options)
+    })
+    .await
+    .map_err(|error| format!("git_commit_diff join 失败：{error}"))?
 }
 
 #[tauri::command(rename_all = "snake_case")]

@@ -35,6 +35,8 @@ export type PatchChunk = {
   chunk: string;
   lineCount: number;
   large: boolean;
+  summary?: "binary" | "unavailable";
+  deleted?: boolean;
 };
 
 export type DiffStatFile = {
@@ -260,9 +262,24 @@ export function splitPatchByFile(patch: string) {
   return chunks;
 }
 
-export function cleanDiffPath(value: string) {
-  if (!value || value === "/dev/null") return "";
-  return value.replace(/^[ab]\//, "");
+export function cleanDiffPath(value: string, withPrefix = true) {
+  const quoted = /^"((?:[^"\\]|\\.)*)"/.exec(value)?.[1];
+  if (quoted !== undefined) {
+    const bytes: number[] = [];
+    const encoder = new TextEncoder();
+    const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
+    for (const segment of quoted.match(/\\[0-7]{3}|\\.|[^\\]+/g) ?? []) {
+      if (/^\\[0-7]{3}$/.test(segment)) bytes.push(Number.parseInt(segment.slice(1), 8));
+      else if (segment.startsWith("\\")) {
+        const escaped = segment.slice(1);
+        bytes.push(escapes[escaped] ?? escaped.charCodeAt(0));
+      } else {
+        for (const byte of encoder.encode(segment)) bytes.push(byte);
+      }
+    }
+    value = new TextDecoder().decode(Uint8Array.from(bytes));
+  }
+  return withPrefix ? value.replace(/^[ab]\//, "") : value;
 }
 
 export function dirname(path: string) {
@@ -283,9 +300,31 @@ export function parentPath(path: string) {
 
 export function getPatchFileNames(chunk: string, fallback: string) {
   const lines = chunk.split("\n");
+  const hunkStart = lines.findIndex((line) => line.startsWith("@@ "));
+  const headerLines = hunkStart === -1 ? lines : lines.slice(0, hunkStart);
+  const oldHeader = headerLines.find((line) => line.startsWith("--- "));
+  const newHeader = headerLines.find((line) => line.startsWith("+++ "));
+  if (oldHeader && newHeader) {
+    const headerPath = (line: string) => cleanDiffPath(line.slice(4).split("\t", 1)[0] ?? "");
+    return {
+      oldFileName: headerPath(oldHeader) || fallback,
+      newFileName: headerPath(newHeader) || fallback,
+    };
+  }
+  const renameFrom = headerLines.find((line) => /^(?:rename|copy) from /.test(line));
+  const renameTo = headerLines.find((line) => /^(?:rename|copy) to /.test(line));
+  if (renameFrom && renameTo) {
+    return {
+      oldFileName:
+        cleanDiffPath(renameFrom.replace(/^(?:rename|copy) from /, ""), false) || fallback,
+      newFileName: cleanDiffPath(renameTo.replace(/^(?:rename|copy) to /, ""), false) || fallback,
+    };
+  }
   const gitHeader = lines.find((line) => line.startsWith("diff --git "));
   if (gitHeader) {
-    const match = /^diff --git a\/(.+) b\/(.+)$/.exec(gitHeader);
+    const match = /^diff --git ("(?:[^"\\]|\\.)*"|a\/.+?) ("(?:[^"\\]|\\.)*"|b\/.+)$/.exec(
+      gitHeader,
+    );
     if (match) {
       return {
         oldFileName: cleanDiffPath(match[1] ?? "") || fallback,
@@ -293,11 +332,9 @@ export function getPatchFileNames(chunk: string, fallback: string) {
       };
     }
   }
-  const oldHeader = lines.find((line) => line.startsWith("--- "));
-  const newHeader = lines.find((line) => line.startsWith("+++ "));
   return {
-    oldFileName: cleanDiffPath(oldHeader?.slice(4).trim() ?? "") || fallback,
-    newFileName: cleanDiffPath(newHeader?.slice(4).trim() ?? "") || fallback,
+    oldFileName: fallback,
+    newFileName: fallback,
   };
 }
 
@@ -392,7 +429,7 @@ export function buildPatchChunks(patch: string, title: string): PatchChunk[] {
   if (!patch.trim()) return [];
   return splitPatchByFile(patch).map((chunk, index) => {
     const names = getPatchFileNames(chunk, `${title}-${index + 1}`);
-    const label = names.newFileName || names.oldFileName || `${title} ${index + 1}`;
+    const label = names.newFileName === "/dev/null" ? names.oldFileName : names.newFileName;
     const lineCount = countLines(chunk);
     return {
       key: `${names.oldFileName}:${names.newFileName}:${index}`,
@@ -402,6 +439,28 @@ export function buildPatchChunks(patch: string, title: string): PatchChunk[] {
       large: chunk.length > LARGE_DIFF_CHUNK_CHAR_LIMIT || lineCount > LARGE_DIFF_CHUNK_LINE_LIMIT,
     };
   });
+}
+
+export function buildWorkspaceReviewRows(diff: GitDiffResponse | undefined, title: string) {
+  const rows = buildPatchChunks(diff?.patch ?? "", title);
+  if (!diff) return rows;
+  const represented = new Set(rows.map((row) => row.label));
+  const binaryPaths = new Set(diff.binaryFiles);
+  const changes = diff.changes ?? (diff.files ?? []).map((path) => ({ path, kind: "" }));
+  for (const change of changes) {
+    if (represented.has(change.path)) continue;
+    represented.add(change.path);
+    rows.push({
+      key: `summary:${change.path}`,
+      label: change.path,
+      chunk: "",
+      lineCount: 0,
+      large: false,
+      summary: binaryPaths.has(change.path) ? "binary" : "unavailable",
+      deleted: change.kind === "deleted",
+    });
+  }
+  return rows;
 }
 
 export function statusTone(entry: GitStatusEntry) {

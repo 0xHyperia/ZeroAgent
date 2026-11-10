@@ -7,12 +7,14 @@ const componentPath = (name) =>
   fileURLToPath(new URL(`../../../agent-ui/src/components/project-tools/${name}`, import.meta.url));
 
 const presentations = [];
+let currentWorkspaceReview;
 const env = await createDomTestEnv({
   mocks: {
     [componentPath("file-tree/index.tsx")]: { FileTreePanel: () => null },
     [componentPath("git-review/DiffView.tsx")]: {
-      DiffContent: ({ layout, wrapLines }) => {
+      DiffContent: ({ layout, wrapLines, workspaceReview }) => {
         presentations.push({ layout, wrapLines });
+        currentWorkspaceReview = workspaceReview;
         return null;
       },
     },
@@ -26,6 +28,8 @@ const { WorkspaceFileDiff } = loadModule("@liveagent/ui/components/project-tools
 const { RightDockToolContext } = loadModule("@liveagent/ui/components/project-tools/RightDockContext.tsx");
 const { WORKSPACE_GIT_TURN_REVIEW_EVENT } = loadModule("@liveagent/ui/components/project-tools/workspaceGitPaths.ts");
 const { useWorkspaceGitPresentation } = loadModule("@liveagent/ui/components/project-tools/workspaceGitReviewState.ts");
+const { buildPatchChunks, getPatchFileNames } = loadModule("@liveagent/ui/components/project-tools/git-review/model.ts");
+const { buildReviewApplyCommand, filterReviewHunks, readReviewFileContents, sameReviewFileRevision } = loadModule("@liveagent/ui/components/project-tools/git-review/workspaceReviewDiff.ts");
 
 function mount(t) {
   const container = document.body.appendChild(document.createElement("div"));
@@ -232,4 +236,98 @@ test("diff layout and wrapping are shared and survive remounting the file reader
   assert.deepEqual(presentations.at(-1), { layout: "split", wrapLines: false });
   await render("file");
   assert.deepEqual(presentations.at(-1), { layout: "split", wrapLines: false });
+});
+
+const reviewPatch = [
+  "diff --git a/src/example.ts b/src/example.ts",
+  "index 0123abc..f123abc 100644",
+  "--- a/src/example.ts",
+  "+++ b/src/example.ts",
+  "@@ -1,3 +1,3 @@",
+  " import {",
+  "-  oldName,",
+  "+  newName,",
+  ' } from "./module";',
+  "",
+].join("\n");
+
+test("the review only expands files with complete matching revision content", () => {
+  assert.equal(readReviewFileContents(reviewPatch, false), null);
+  const contents = readReviewFileContents(reviewPatch, true);
+  assert.equal(contents.before, 'import {\n  oldName,\n} from "./module";\n');
+  assert.equal(contents.after, 'import {\n  newName,\n} from "./module";\n');
+  const partial = reviewPatch.replace("@@ -1,3 +1,3 @@", "@@ -4,3 +4,3 @@");
+  assert.equal(readReviewFileContents(partial, true), null);
+  assert.ok(sameReviewFileRevision(partial, reviewPatch));
+  assert.ok(!sameReviewFileRevision(partial, reviewPatch.replace("f123abc", "f456def")));
+  assert.ok(!sameReviewFileRevision(partial, reviewPatch + reviewPatch));
+});
+
+test("review filters preserve non-import hunks and the original patch", () => {
+  const contents = readReviewFileContents(reviewPatch, true);
+  assert.equal(filterReviewHunks(reviewPatch, "src/example.ts", { hideImports: true, contents }), null);
+  assert.equal(filterReviewHunks(reviewPatch, "src/example.ts", { hideImports: true }), reviewPatch);
+  const stringContents = {
+    before: 'const sample = `\n  oldName,\n`;',
+    after: 'const sample = `\n  newName,\n`;',
+  };
+  assert.equal(filterReviewHunks(reviewPatch, "src/example.ts", { hideImports: true, contents: stringContents }), reviewPatch);
+  assert.match(reviewPatch, /\+  newName,/);
+  assert.equal(buildReviewApplyCommand("diff --git a/a b/a\nBinary files a/a and b/a differ\n"), null);
+  const command = buildReviewApplyCommand(reviewPatch);
+  assert.ok(command.includes(reviewPatch));
+  assert.match(command, /git apply --3way <<'ZEROAGENT_PATCH'/);
+});
+
+test("diff rows retain quoted Unicode paths and use the original path for deleted files", () => {
+  const deleted = [
+    'diff --git "a/src/\\345\\217\\230\\346\\233\\264.md" "b/src/\\345\\217\\230\\346\\233\\264.md"',
+    "deleted file mode 100644",
+    '--- "a/src/\\345\\217\\230\\346\\233\\264.md"',
+    "+++ /dev/null",
+    "@@ -1 +0,0 @@",
+    "-# old",
+  ].join("\n");
+  assert.deepEqual(getPatchFileNames(deleted, "fallback"), {
+    oldFileName: "src/变更.md",
+    newFileName: "/dev/null",
+  });
+  assert.equal(buildPatchChunks(deleted, "Changes")[0].label, "src/变更.md");
+});
+
+test("changes toolbar selects display options and copies only the exact underlying patch", async (t) => {
+  const { container, root } = mount(t);
+  const copied = [];
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => copied.push(text) } });
+  t.after(() => delete navigator.clipboard);
+  const calls = [];
+  const client = {
+    supportsFullDiffContext: true,
+    status: async () => gitStatus(),
+    diff: async (...args) => {
+      calls.push(args);
+      return { patch: reviewPatch };
+    },
+  };
+  await act(async () => root.render(React.createElement(WorkspaceFileDiff, {
+    active: true, client, workdir: "C:/repo/src",
+  })));
+  await waitForUpdate();
+  assert.match(container.textContent, /\+1/);
+  const options = [...container.querySelectorAll("button")].find((button) => /^(Changes options|变更选项)$/.test(button.getAttribute("aria-label")));
+  await act(async () => options.click());
+  const hideImports = [...document.querySelectorAll('[role="menuitemcheckbox"]')].find((item) => /Hide imports|隐藏导入内容/.test(item.textContent));
+  await act(async () => hideImports.click());
+  assert.equal(currentWorkspaceReview.presentation.hideImports, true);
+  await act(async () => options.click());
+  const copy = [...document.querySelectorAll('[role="menuitem"]')].find((item) => /(?:Copy|复制) git apply/.test(item.textContent));
+  await act(async () => copy.click());
+  assert.equal(copied.length, 1);
+  assert.ok(copied[0].includes(reviewPatch));
+  const contents = await currentWorkspaceReview.loadFileContents(buildPatchChunks(reviewPatch, "Changes")[0]);
+  assert.match(contents.after, /newName/);
+  assert.deepEqual(calls, [
+    ["C:/repo/src", "working_tree", "src"],
+    ["C:/repo/src", "working_tree", "src/example.ts", { fullContext: true }],
+  ]);
 });

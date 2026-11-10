@@ -1287,6 +1287,7 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "projectTools.terminalTitle": "终端",
   "projectTools.fileTreeTitle": "文件树",
   "projectTools.gitReviewTitle": "Git 审查",
+  "projectTools.workspaceChangesTitle": "变更",
   "projectTools.tunnelTitle": "内网穿透",
   "projectTools.backgroundTasksTitle": "后台任务",
   "projectTools.backgroundTasksDescription": "查看和管理后台进程",
