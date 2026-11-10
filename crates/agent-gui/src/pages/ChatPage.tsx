@@ -38,7 +38,10 @@ import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/Wor
 import { PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
-import { expandedPathsForFileTreePath } from "@liveagent/ui/components/project-tools/rightDockModel";
+import {
+  expandedPathsForFileTreePath,
+  MIN_DOCKED_WORKSPACE_WITH_CAPTIONS,
+} from "@liveagent/ui/components/project-tools/rightDockModel";
 import {
   WorkspaceMainPanel,
   WorkspacePanelGroup,
@@ -177,7 +180,7 @@ import { AppUpdateButton } from "../components/AppUpdateButton";
 import { PaneLoadingSkeleton } from "../components/app/PaneLoadingSkeleton";
 import { UserMenu } from "../components/chat/UserMenu";
 import { isMacOsTauri, MacOsTitleBarToggle } from "../components/MacOsTitleBarSpacer";
-import { WindowsTitleBar } from "../components/WindowsTitleBar";
+import { isWindowsTauriRuntime, WindowsTitleBar } from "../components/WindowsTitleBar";
 import type { CompactionStatus } from "../lib/chat/compaction/types";
 import {
   buildRequestContext,
@@ -5159,99 +5162,102 @@ function ChatPageContent(props: ChatPageProps) {
     </WorkbenchNavigationMount>
   ) : null;
 
+  const workbenchChrome =
+    !accountDestination && activeView === "image-studio-hub" ? (
+      <AppHeaderFrame sidebarOpen={sidebarOpen}>
+        <div
+          className="relative flex h-full items-center gap-3 pl-4 pr-[var(--workbench-caption-width,1rem)]"
+          data-tauri-drag-region
+        >
+          {!stackedWorkbench && !sidebarOpen && (
+            <button
+              type="button"
+              onClick={handleToggleSidebar}
+              aria-expanded={sidebarOpen}
+              aria-label={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}
+              className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground [-webkit-app-region:no-drag]"
+            >
+              <PanelLeft className="size-4" />
+            </button>
+          )}
+          <MacOsTitleBarToggle
+            sidebarOpen={sidebarOpen}
+            onToggle={handleToggleSidebar}
+            onOpenSettings={() => onOpenSettings()}
+            appUpdate={appUpdate}
+          />
+          {headerLeadingActions}
+          <span className="pointer-events-none flex-1 text-sm font-medium">
+            {t("settings.navImageStudio")}
+          </span>
+        </div>
+      </AppHeaderFrame>
+    ) : (
+      <AppWorkbenchChrome
+        navigationActions={
+          <MacOsTitleBarToggle
+            sidebarOpen={sidebarOpen}
+            onToggle={handleToggleSidebar}
+            onOpenSettings={() => onOpenSettings()}
+            appUpdate={appUpdate}
+          />
+        }
+        settings={settings}
+        sidebarOpen={sidebarOpen}
+        onOpenSettings={onOpenSettings}
+        onToggleTheme={onToggleTheme}
+        onOpenSidebar={handleToggleSidebar}
+        accountInRail
+        leadingActions={
+          <>
+            {!accountDestination &&
+            activeView === "chat" &&
+            hasConversationReply &&
+            !sidebarOpen ? (
+              <TooltipButton
+                variant="ghost"
+                size="icon"
+                title={t("chat.newConversation")}
+                aria-label={t("chat.newConversation")}
+                onClick={handleNewRecentConversation}
+              >
+                <SquarePen className="size-4.5" />
+              </TooltipButton>
+            ) : null}
+            {!accountDestination && headerLeadingActions}
+            {!accountDestination &&
+            activeView === "chat" &&
+            hasConversationReply &&
+            !workbenchHasMultiplePanes ? (
+              <ConversationViewTabs
+                active={renderedConversationView}
+                onChange={setActiveConversationView}
+              />
+            ) : null}
+          </>
+        }
+        trailingActions={
+          !accountDestination && (
+            <ProjectToolsPanelToggle
+              isOpen={rightDockOpen}
+              sessionCount={projectTerminalSessions.length}
+              disabledMessage={canOpenWorkspaceBrowser ? undefined : projectToolsUserDisabledMessage}
+              onToggle={() => setRightDockOpen((open) => !open)}
+            />
+          )
+        }
+      />
+    );
+
   return (
     <WorkbenchShell
       ref={navigationPreview.rootRef}
       data-app-frame="three-column"
       layout={stackedWorkbench ? "stacked-panels" : "panels"}
       navigationRail={stackedWorkbench ? undefined : navigationRail}
+      windowControls={<WindowsTitleBar controlsOnly followImagePreview />}
     >
-      {!accountDestination && activeView === "image-studio-hub" ? (
-        <AppHeaderFrame sidebarOpen={sidebarOpen}>
-          <div className="relative flex h-full items-center gap-3 pl-4" data-tauri-drag-region>
-            {!isMacOsTauri() && !sidebarOpen && (
-              <button
-                type="button"
-                onClick={handleToggleSidebar}
-                aria-expanded={sidebarOpen}
-                aria-label={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}
-                className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground [-webkit-app-region:no-drag]"
-              >
-                <PanelLeft className="size-4" />
-              </button>
-            )}
-            <MacOsTitleBarToggle
-              sidebarOpen={sidebarOpen}
-              onToggle={handleToggleSidebar}
-              onOpenSettings={() => onOpenSettings()}
-              appUpdate={appUpdate}
-            />
-            {headerLeadingActions}
-            <span className="pointer-events-none flex-1 text-sm font-medium">
-              {t("settings.navImageStudio")}
-            </span>
-            <WindowsTitleBar controlsOnly />
-          </div>
-        </AppHeaderFrame>
-      ) : (
-        <AppWorkbenchChrome
-          windowControls={<WindowsTitleBar controlsOnly followImagePreview />}
-          navigationActions={
-            <MacOsTitleBarToggle
-              sidebarOpen={sidebarOpen}
-              onToggle={handleToggleSidebar}
-              onOpenSettings={() => onOpenSettings()}
-              appUpdate={appUpdate}
-            />
-          }
-          settings={settings}
-          sidebarOpen={sidebarOpen}
-          onOpenSettings={onOpenSettings}
-          onToggleTheme={onToggleTheme}
-          onOpenSidebar={handleToggleSidebar}
-          accountInRail
-          leadingActions={
-            <>
-              {!accountDestination &&
-              activeView === "chat" &&
-              hasConversationReply &&
-              !sidebarOpen ? (
-                <TooltipButton
-                  variant="ghost"
-                  size="icon"
-                  title={t("chat.newConversation")}
-                  aria-label={t("chat.newConversation")}
-                  onClick={handleNewRecentConversation}
-                >
-                  <SquarePen className="size-4.5" />
-                </TooltipButton>
-              ) : null}
-              {!accountDestination && headerLeadingActions}
-              {!accountDestination &&
-              activeView === "chat" &&
-              hasConversationReply &&
-              !workbenchHasMultiplePanes ? (
-                <ConversationViewTabs
-                  active={renderedConversationView}
-                  onChange={setActiveConversationView}
-                />
-              ) : null}
-            </>
-          }
-          trailingActions={
-            !accountDestination && (
-              <ProjectToolsPanelToggle
-                isOpen={rightDockOpen}
-                sessionCount={projectTerminalSessions.length}
-                disabledMessage={
-                  canOpenWorkspaceBrowser ? undefined : projectToolsUserDisabledMessage
-                }
-                onToggle={() => setRightDockOpen((open) => !open)}
-              />
-            )
-          }
-        />
-      )}
+      {stackedWorkbench ? workbenchChrome : null}
       <WorkbenchBody>
         {workbenchDragGhost}
         {stackedWorkbench ? navigationRail : null}
@@ -5401,8 +5407,9 @@ function ChatPageContent(props: ChatPageProps) {
           immediate={!!accountDestination || activeView !== "chat"}
           expanded={tabbedWorkspace && desktopTabs.view.expanded}
           preferBalanced={tabbedWorkspace && Boolean(activeWorkspaceTab)}
+          minDockedWidth={isWindowsTauriRuntime() ? MIN_DOCKED_WORKSPACE_WITH_CAPTIONS : undefined}
         >
-          <WorkspaceMainPanel>
+          <WorkspaceMainPanel chrome={stackedWorkbench ? undefined : workbenchChrome}>
             {/* ---- Center column: workbench chrome + conversation surfaces ---- */}
             <div
               data-app-frame-column="main"

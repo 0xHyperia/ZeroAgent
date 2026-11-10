@@ -32,10 +32,11 @@ test("gateway mounts workbench chrome outside the shared application view", () =
   const shellIndex = gatewayAppViewSource.indexOf("<WorkbenchShell");
   const chromeIndex = gatewayAppViewSource.indexOf("<AppWorkbenchChrome");
   const bodyIndex = gatewayAppViewSource.indexOf("<WorkbenchBody");
+  const mainPanelIndex = gatewayAppViewSource.indexOf("<WorkspaceMainPanel chrome={workbenchChrome}");
   const mainIndex = gatewayAppViewSource.indexOf("<main", bodyIndex);
   const applicationViewIndex = gatewayAppViewSource.indexOf("<ApplicationView", mainIndex);
-  assert.ok(shellIndex >= 0 && shellIndex < chromeIndex && chromeIndex < bodyIndex);
-  assert.ok(bodyIndex < mainIndex && mainIndex < applicationViewIndex);
+  assert.ok(chromeIndex >= 0 && chromeIndex < shellIndex && shellIndex < bodyIndex);
+  assert.ok(bodyIndex < mainPanelIndex && mainPanelIndex < mainIndex && mainIndex < applicationViewIndex);
   const mainOpening = gatewayAppViewSource.slice(mainIndex, gatewayAppViewSource.indexOf(">", mainIndex));
   assert.match(mainOpening, /className=\{accountDestination \? "hidden" : GATEWAY_MAIN_SHELL_CLASS\}/);
   assert.match(mainOpening, /inert=\{!!accountDestination\}/);

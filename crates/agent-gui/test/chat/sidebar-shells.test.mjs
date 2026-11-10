@@ -181,12 +181,11 @@ test("standard resizable panels restore width, preserve main content, and save k
   let setOpen;
   function Harness() {
     const [open, updateOpen] = React.useState(false); setOpen = updateOpen;
-    return React.createElement(React.Fragment, null,
-      React.createElement("header", { "data-app-workbench-chrome": "" },
-        React.createElement(ProjectToolsPanelToggle, {isOpen: open, sessionCount: 0, onToggle: () => updateOpen(value => !value)})),
-      React.createElement(WorkspacePanelGroup, { open, width: 400, onClose: () => updateOpen(false), onWidthChange: width => widths.push(width) },
-      React.createElement(WorkspaceMainPanel, null, React.createElement("input", { id: "main-draft", defaultValue: "draft" })),
-      React.createElement(WorkspaceToolsPanel, null, React.createElement("div", { id: "tools-content" }, "Tools"))));
+    const chrome = React.createElement("header", { "data-app-workbench-chrome": "" },
+      React.createElement(ProjectToolsPanelToggle, {isOpen: open, sessionCount: 0, onToggle: () => updateOpen(value => !value)}));
+    return React.createElement(WorkspacePanelGroup, { open, width: 400, onClose: () => updateOpen(false), onWidthChange: width => widths.push(width) },
+      React.createElement(WorkspaceMainPanel, { chrome }, React.createElement("input", { id: "main-draft", defaultValue: "draft" })),
+      React.createElement(WorkspaceToolsPanel, null, React.createElement("div", { id: "tools-content" }, "Tools")));
   }
   try {
     await act(async () => root.render(React.createElement(Harness)));
@@ -195,7 +194,7 @@ test("standard resizable panels restore width, preserve main content, and save k
     const toggle = header.querySelector("button");
     const tools = container.querySelector('#workspace-tools');
     assert.ok(tools);
-    assert.equal(container.querySelector("#workspace-main").contains(toggle), false);
+    assert.ok(container.querySelector("#workspace-main").contains(toggle));
     assert.equal(toggle.hasAttribute("title"), false);
     assert.equal(tools.getAttribute("aria-hidden"), "true");
     await act(async () => toggle.click());

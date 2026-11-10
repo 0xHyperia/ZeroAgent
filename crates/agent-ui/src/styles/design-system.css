@@ -245,6 +245,40 @@
 :where(.application-rail, [data-navigation-rail-placeholder]) + [data-workbench-frame] {
   margin: 4px;
 }
+[data-workbench-window-controls] {
+  position: absolute;
+  z-index: 25;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  display: flex;
+  height: var(--app-header-height, 48px);
+  pointer-events: none;
+}
+[data-workbench-window-controls] [data-windows-window-controls] {
+  pointer-events: auto;
+}
+[data-workbench-frame]:has(> [data-workbench-window-controls] [data-windows-window-controls]) {
+  /* Three 32px buttons, two 4px gaps, and 4px padding on each end. */
+  --workbench-caption-width: 7rem;
+}
+[data-workspace-tools-docked] > [data-workspace-main-has-chrome] [data-app-workbench-chrome] {
+  box-shadow: inset 0 -1px var(--za-workbench-border);
+}
+:is([data-workspace-tools-docked], [data-workspace-tools-expanded]):has(
+    > [data-workspace-main-has-chrome]
+  )
+  > [data-slot="resizable-panel"] [data-workspace-tools-header] {
+  height: var(--app-header-height, 48px);
+  padding-inline-end: calc(var(--workbench-caption-width, 0px) + 0.5rem);
+  border-bottom-color: var(--za-workbench-border);
+}
+[data-workbench-frame] [data-slot="resizable-panel-group"]:not(
+    [data-workspace-tools-docked],
+    [data-workspace-tools-expanded]
+  )
+  > [data-workspace-main-has-chrome] [data-app-workbench-chrome] > header {
+  padding-inline-end: calc(var(--workbench-caption-width, 0px) + 1rem);
+}
 /* Frame the workspace beside the navigation rail. The inner seams stay square. */
 [data-workbench-frame]::after {
   content: "";

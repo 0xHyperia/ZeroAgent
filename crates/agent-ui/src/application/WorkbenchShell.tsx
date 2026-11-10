@@ -7,10 +7,15 @@ type DivProps = ComponentPropsWithRef<"div">;
 export function WorkbenchShell({
   layout = "panels",
   navigationRail,
+  windowControls,
   children,
   className,
   ...props
-}: DivProps & { layout?: "panels" | "stacked-panels" | "page"; navigationRail?: ReactNode }) {
+}: DivProps & {
+  layout?: "panels" | "stacked-panels" | "page";
+  navigationRail?: ReactNode;
+  windowControls?: ReactNode;
+}) {
   return (
     <div
       {...props}
@@ -28,6 +33,7 @@ export function WorkbenchShell({
             data-workbench-frame=""
             className="app-workbench-layout relative min-h-0 min-w-0 flex-1 overflow-hidden"
           >
+            {windowControls && <div data-workbench-window-controls="">{windowControls}</div>}
             {children}
           </div>
         </>

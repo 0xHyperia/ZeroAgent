@@ -69,12 +69,14 @@ const conversationPaneHarnessModelSource = readFileSync(
   "utf8",
 );
 
-test("application chrome is a shell row above both sidebars and the resizable workspace", () => {
+test("application chrome belongs to the main pane beside the tools and outside the chat view", () => {
   assert.match(chatPageSource, /data-app-frame="three-column"/);
   assert.match(
     chatPageSource,
-    /data-app-frame="three-column"[\s\S]*?<AppWorkbenchChrome[\s\S]*?<WorkbenchBody[\s\S]*?<WorkspacePanelGroup[\s\S]*?<ApplicationView/,
+    /data-app-frame="three-column"[\s\S]*?<WorkbenchBody[\s\S]*?<WorkspacePanelGroup[\s\S]*?<WorkspaceMainPanel chrome=\{stackedWorkbench \? undefined : workbenchChrome\}[\s\S]*?<ApplicationView/,
   );
+  assert.match(chatPageSource, /\{stackedWorkbench \? workbenchChrome : null\}/);
+  assert.match(chatPageSource, /windowControls=\{<WindowsTitleBar controlsOnly followImagePreview \/>\}/);
   assert.match(chatPageSource, /<AppWorkbenchChrome/);
   assert.ok(chatPageSource.indexOf("<AppWorkbenchChrome") < chatPageSource.indexOf("<ApplicationView"));
   assert.ok(chatPageSource.indexOf("<ApplicationView") < chatPageSource.indexOf("<RightDockPanel"));

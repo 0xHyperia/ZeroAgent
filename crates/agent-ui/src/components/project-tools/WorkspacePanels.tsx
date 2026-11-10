@@ -58,6 +58,7 @@ export function WorkspacePanelGroup({
   immediate = false,
   expanded = false,
   preferBalanced = false,
+  minDockedWidth = 0,
   children,
 }: {
   open: boolean;
@@ -67,12 +68,14 @@ export function WorkspacePanelGroup({
   immediate?: boolean;
   expanded?: boolean;
   preferBalanced?: boolean;
+  minDockedWidth?: number;
   children: ReactNode;
 }) {
-  const mobile = useIsMobile();
+  const mobileViewport = useIsMobile();
   const panelRef = usePanelRef();
   const groupElement = useRef<HTMLDivElement | null>(null);
   const [availableWidth, setAvailableWidth] = useState(1000);
+  const mobile = mobileViewport || availableWidth < minDockedWidth;
   const [resizing, setResizing] = useState(false);
   // Size constraints follow the workspace, not the browser viewport or active panel size.
   useLayoutEffect(() => {
@@ -191,16 +194,24 @@ export function WorkspacePanelGroup({
     </Context.Provider>
   );
 }
-export function WorkspaceMainPanel({ children }: { children: ReactNode }) {
+export function WorkspaceMainPanel({
+  chrome,
+  children,
+}: {
+  chrome?: ReactNode;
+  children: ReactNode;
+}) {
   const { mobile, mainMinimum, expanded } = usePanels();
   return (
     <ResizablePanel
       id="workspace-main"
+      data-workspace-main-has-chrome={chrome ? "" : undefined}
       minSize={mobile ? 0 : mainMinimum}
-      className="flex min-h-0 min-w-0"
+      className={cn("flex min-h-0 min-w-0", chrome && "flex-col")}
       aria-hidden={expanded || undefined}
       inert={expanded || undefined}
     >
+      {chrome}
       {children}
     </ResizablePanel>
   );
@@ -328,7 +339,7 @@ export function WorkspaceToolsPanel({
         >
           <SheetContent
             side="right"
-            className="w-full max-w-none p-0"
+            className="w-full max-w-none p-0 [&_[data-project-tools-close]]:inline-flex"
             showCloseButton={false}
             aria-describedby={undefined}
           >

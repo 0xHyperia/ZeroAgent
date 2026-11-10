@@ -1019,6 +1019,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
           />
 
           <div
+            data-workspace-tools-header=""
             data-right-workspace-chrome={workspace ? "" : undefined}
             className={cn(
               "flex shrink-0 items-center border-b border-border/60",
@@ -1110,8 +1111,9 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             {workspace && (
               <>
                 <span
-                  className="min-w-0 flex-1"
+                  className="min-w-0 flex-1 self-stretch"
                   data-right-workspace-tab-spacer=""
+                  data-tauri-drag-region
                   aria-hidden="true"
                 />
                 <TooltipButton
@@ -1160,8 +1162,12 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                 onClick={onClose}
                 title={t("projectTools.closePanel")}
                 aria-label={t("projectTools.closePanel")}
+                data-project-tools-close=""
                 tooltipSide="bottom"
-                className="rounded-lg text-muted-foreground hover:text-foreground md:hidden web:max-820:inline-flex"
+                className={cn(
+                  "rounded-lg text-muted-foreground hover:text-foreground",
+                  !workspace?.expanded && "md:hidden web:max-820:inline-flex",
+                )}
               >
                 <X className="size-4" />
               </TooltipButton>

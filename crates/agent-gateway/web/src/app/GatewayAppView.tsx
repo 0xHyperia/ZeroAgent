@@ -33,6 +33,7 @@ import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceClon
 import { WorkspaceCloneTaskOverlay } from "@liveagent/ui/components/chat/WorkspaceCloneTaskOverlay";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
+import { MIN_DOCKED_WORKSPACE_WITH_CAPTIONS } from "@liveagent/ui/components/project-tools/rightDockModel";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import {
   WorkspaceMainPanel,
@@ -1626,6 +1627,63 @@ export function GatewayAppView({
       }
     />
   );
+  const workbenchChrome = (
+    <AppWorkbenchChrome
+      settings={settings}
+      sidebarOpen={sidebarOpen}
+      onOpenSettings={openSettings}
+      onToggleTheme={() =>
+        setSettings((prev) => ({
+          ...prev,
+          theme: getNextTheme(prev.theme),
+        }))
+      }
+      onOpenSidebar={() => setSidebarOpen((open) => !open)}
+      leadingActions={
+        <>
+          {desktopHost && !accountDestination && <DesktopHostSlot kind="header" />}
+          {!accountDestination &&
+          activeView === "chat" &&
+          hasConversationReply &&
+          !workbenchHasMultiplePanes ? (
+            <ConversationViewTabs
+              active={renderedConversationView}
+              onChange={setActiveConversationView}
+            />
+          ) : null}
+        </>
+      }
+      trailingActions={
+        !accountDestination && (
+          <>
+            <ProjectToolsPanelToggle
+              isOpen={rightDockOpen}
+              sessionCount={projectTerminalSessions.length}
+              disabledMessage={projectToolsDisabledMessage}
+              className="mr-6px max-520:mr-8px"
+              onToggle={() => setRightDockOpen((open) => !open)}
+            />
+            {!desktopHost && !historyShareToken && (
+              <ExecutionEnvironmentSwitcher
+                environments={environments}
+                selection={selection}
+                disabled={isUploadingFiles}
+                onSwitch={async (environment, workspace) => {
+                  if (activeView === "chat") {
+                    const draft = composerRef.current?.getDraft();
+                    if (draft) setCachedComposerDraft(displayedConversationId, draft);
+                  }
+                  await switchExecutionTarget(environment, workspace);
+                  setActiveView("chat");
+                }}
+              />
+            )}
+          </>
+        )
+      }
+    />
+  );
+
   return (
     <LocaleContext.Provider value={localeContextValue}>
       <Toaster />
@@ -1664,6 +1722,9 @@ export function GatewayAppView({
             inert={settingsOpen}
             aria-hidden={settingsOpen || undefined}
             className="gateway-editor-host flex-1"
+            windowControls={
+              desktopHost && !settingsOpen ? <DesktopHostSlot kind="window" /> : undefined
+            }
             navigationRail={
               !sidebar.isMobile ? (
                 <WorkbenchNavigationMount target={navigationTarget}>
@@ -1672,63 +1733,6 @@ export function GatewayAppView({
               ) : null
             }
           >
-            <AppWorkbenchChrome
-              settings={settings}
-              sidebarOpen={sidebarOpen}
-              onOpenSettings={openSettings}
-              onToggleTheme={() =>
-                setSettings((prev) => ({
-                  ...prev,
-                  theme: getNextTheme(prev.theme),
-                }))
-              }
-              onOpenSidebar={() => setSidebarOpen((open) => !open)}
-              leadingActions={
-                <>
-                  {desktopHost && !accountDestination && <DesktopHostSlot kind="header" />}
-                  {!accountDestination &&
-                  activeView === "chat" &&
-                  hasConversationReply &&
-                  !workbenchHasMultiplePanes ? (
-                    <ConversationViewTabs
-                      active={renderedConversationView}
-                      onChange={setActiveConversationView}
-                    />
-                  ) : null}
-                </>
-              }
-              windowControls={
-                desktopHost && !settingsOpen ? <DesktopHostSlot kind="window" /> : undefined
-              }
-              trailingActions={
-                !accountDestination && (
-                  <>
-                    <ProjectToolsPanelToggle
-                      isOpen={rightDockOpen}
-                      sessionCount={projectTerminalSessions.length}
-                      disabledMessage={projectToolsDisabledMessage}
-                      className="mr-6px max-520:mr-8px"
-                      onToggle={() => setRightDockOpen((open) => !open)}
-                    />
-                    {!desktopHost && !historyShareToken && (
-                      <ExecutionEnvironmentSwitcher
-                        environments={environments}
-                        selection={selection}
-                        disabled={isUploadingFiles}
-                        onSwitch={async (environment, workspace) => {
-                          if (activeView === "chat") {
-                            const draft = composerRef.current?.getDraft();
-                            if (draft) setCachedComposerDraft(displayedConversationId, draft);
-                          }
-                          await switchExecutionTarget(environment, workspace);
-                          setActiveView("chat");
-                        }}
-                      />
-                    )}
-                  </>
-                )
-              }
-            />
             <WorkbenchBody>
               {!sidebar.isMobile && !sidebar.open ? (
                 <div data-sidebar-hover-edge="" aria-hidden="true" />
@@ -1929,8 +1933,11 @@ export function GatewayAppView({
                 onWidthChange={handleRightDockWidthChange}
                 onClose={handleRightDockClose}
                 immediate={!!accountDestination || activeView !== "chat"}
+                minDockedWidth={
+                  desktopHost?.onWindowControlsTarget ? MIN_DOCKED_WORKSPACE_WITH_CAPTIONS : undefined
+                }
               >
-                <WorkspaceMainPanel>
+                <WorkspaceMainPanel chrome={workbenchChrome}>
                   {accountNavigation && (
                     <div
                       ref={accountSurface.setTarget}
