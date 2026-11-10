@@ -1,4 +1,6 @@
 import "monaco-editor/features/register.all";
+// The standalone feature bundle includes viewport tokens. The workspace supplies full-document tokens.
+import "monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticTokens";
 import "monaco-editor/languages/definitions/cpp/register";
 import "monaco-editor/languages/definitions/csharp/register";
 import "monaco-editor/languages/definitions/css/register";
@@ -32,9 +34,16 @@ import "monaco-editor/languages/definitions/yaml/register";
 import "monaco-editor/languages/features/css/register";
 import "monaco-editor/languages/features/html/register";
 import "monaco-editor/languages/features/json/register";
-import "monaco-editor/languages/features/typescript/register";
+import { typescriptDefaults } from "monaco-editor/languages/features/typescript/register";
 import * as monaco from "monaco-editor/editor";
 import { resolveMonacoLanguageForPath } from "./monacoLanguage";
+
+// The browser worker sees open documents, without the workspace's tsconfig or dependencies.
+typescriptDefaults.setDiagnosticsOptions({
+  ...typescriptDefaults.getDiagnosticsOptions(),
+  noSemanticValidation: true,
+  noSuggestionDiagnostics: true,
+});
 
 export * from "monaco-editor/editor";
 

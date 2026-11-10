@@ -186,3 +186,64 @@ test("Markdown fenced code uses the same full grammar engine and normalizes alia
   );
   assert.equal(requireUi("shiki/package.json").version, "3.23.0");
 });
+
+test("editable source uses the preview palette without changing the Monaco language ID", async (t) => {
+  const previous = globalThis.document;
+  globalThis.document = { documentElement: { classList: { contains: () => false } } };
+  t.after(() => {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  });
+  const { enableWorkspaceSourceSyntax, prepareSourceSyntax } = loader.loadModule(
+    "@liveagent/ui/lib/sourceSyntax.ts",
+  );
+  const registered = new Map();
+  let resolveProvider;
+  const ready = new Promise((resolve) => { resolveProvider = resolve; });
+  const monaco = {
+    languages: {
+      getLanguages: () => [{ id: "javascript" }],
+      register() {},
+      setTokensProvider(id, provider) {
+        registered.set(id, provider);
+        return { dispose() {} };
+      },
+      registerDocumentSemanticTokensProvider(selector, provider) {
+        resolveProvider({ selector, provider });
+      },
+    },
+    editor: { defineTheme() {} },
+  };
+  enableWorkspaceSourceSyntax(monaco);
+  const { selector, provider } = await ready;
+  assert.deepEqual(selector, { scheme: "liveagent-editor" });
+  const line = 'const view = <div value={42}>hello</div>;';
+  const model = {
+    uri: { path: "/opaque/App.jsx" },
+    getLineCount: () => 1,
+    getValueLength: () => line.length,
+    getLineContent: () => line,
+    getVersionId: () => 1,
+    getLanguageId: () => "javascript",
+    isDisposed: () => false,
+  };
+  const result = await provider.provideDocumentSemanticTokens(model, null, {
+    isCancellationRequested: false,
+  });
+  const previewId = await prepareSourceSyntax("jsx", monaco);
+  const preview = registered.get(previewId);
+  const expected = preview.tokenize(line, preview.getInitialState()).tokens;
+  const { tokenTypes } = provider.getLegend();
+  const actual = [];
+  let startIndex = 0;
+  for (let index = 0; index < result.data.length; index += 5) {
+    startIndex += result.data[index + 1];
+    actual.push({ startIndex, scopes: tokenTypes[result.data[index + 3]] });
+  }
+  assert.deepEqual(actual, expected);
+  assert.ok(new Set(actual.map(({ scopes }) => scopes)).size > 3);
+  assert.equal(registered.has("javascript"), false);
+  assert.equal(await provider.provideDocumentSemanticTokens(model, null, {
+    isCancellationRequested: true,
+  }), null);
+});

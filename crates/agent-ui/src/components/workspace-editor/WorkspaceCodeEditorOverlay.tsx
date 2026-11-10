@@ -47,6 +47,7 @@ import {
   createCodeMentionReference,
 } from "@liveagent/ui/lib/chat/mentionReferences";
 import * as monaco from "@liveagent/ui/lib/monacoEditor";
+import { enableWorkspaceSourceSyntax } from "@liveagent/ui/lib/sourceSyntax";
 import type { SftpClient } from "@liveagent/ui/lib/sftp/types";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import "../../lib/monacoWorkers";
@@ -180,16 +181,18 @@ function toMessage(error: unknown, fallback: string) {
   return text || fallback;
 }
 
-function editorModelUri(tabKey: string) {
+function editorModelUri(tabKey: string, path: string) {
   const bytes = new TextEncoder().encode(tabKey);
   let hexKey = "";
   for (const byte of bytes) {
     hexKey += byte.toString(16).padStart(2, "0");
   }
+  // The TypeScript worker selects TSX and JSX parsing from the URI suffix.
+  const fileName = basename(path).replace(/\.[^.]+$/, (extension) => extension.toLowerCase());
   return monaco.Uri.from({
     scheme: "liveagent-editor",
     authority: "model",
-    path: `/${hexKey}`,
+    path: `/${hexKey}/${fileName}`,
   });
 }
 
@@ -767,6 +770,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   useEffect(() => {
     const container = containerRef.current;
     if (!container || editorRef.current) return;
+    enableWorkspaceSourceSyntax(monaco);
     const editor = monaco.editor.create(container, {
       automaticLayout: true,
       fontSize: 13,
@@ -777,6 +781,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       scrollBeyondLastLine: false,
       smoothScrolling: true,
       tabSize: 2,
+      "semanticHighlighting.enabled": true,
       theme: initialThemeRef.current === "dark" ? "vs-dark" : "vs",
     });
     editorRef.current = editor;
@@ -812,7 +817,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       model = monaco.editor.createModel(
         activeTab.content,
         activeTab.language,
-        editorModelUri(`${viewScope}\u0000${activeTab.key}`),
+        editorModelUri(`${viewScope}\u0000${activeTab.key}`, activeTab.path),
       );
       model.onDidChangeContent(() => {
         const value = model?.getValue() ?? "";
