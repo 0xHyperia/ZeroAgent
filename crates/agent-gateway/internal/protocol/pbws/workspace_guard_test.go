@@ -96,3 +96,48 @@ func TestWorkspaceGuardRejectsProjectBrowsingForWorkspaceSelection(t *testing.T)
 		t.Fatal("workspace-scoped project browsing accepted")
 	}
 }
+
+func TestStagedAttachmentPreviewUsesVerifiedConversationProject(t *testing.T) {
+	conn := &browserConn{
+		selectionScope: account.SelectionScopeDevice,
+		allowedWorkspaces: []account.Workspace{
+			{ID: "project-a", Path: "D:/repo/a"},
+		},
+	}
+	req := &gatewayv2.ChatFileOpenRequest{
+		ConversationId: "conversation", Path: `C:\profile\uploads\123\attachment.docx`, Source: "attachment-preview",
+	}
+	if err := vetChatFileOpen(req); err != nil {
+		t.Fatal(err)
+	}
+	req.Workdir = "D:/repo/a"
+	if err := vetChatFileOpen(req); err == nil {
+		t.Fatal("client-supplied project accepted")
+	}
+	req.Workdir = ""
+	env := &gatewayv2.GatewayEnvelope{Payload: &gatewayv2.GatewayEnvelope_ChatFileOpen{ChatFileOpen: req}}
+	if err := conn.vetWorkspaceAgentRequest(env); err != nil {
+		t.Fatal(err)
+	}
+	if conn.attachmentPreviewAllowed(nil) ||
+		conn.attachmentPreviewAllowed(&gatewayv2.ChatFileOpenResponse{Workdir: "D:/repo/a"}) {
+		t.Fatal("missing attachment preview accepted")
+	}
+	response := &gatewayv2.ChatFileOpenResponse{
+		Action:  "preview",
+		Workdir: "D:/repo/a", AttachmentPreview: &gatewayv2.FsReadWorkspaceImageResponse{Path: "attachment.docx"},
+	}
+	if !conn.attachmentPreviewAllowed(response) {
+		t.Fatal("attachment of the selected project rejected")
+	}
+	response.Workdir = "D:/repo/b"
+	if conn.attachmentPreviewAllowed(response) {
+		t.Fatal("attachment of an unselected project accepted")
+	}
+	conn.selectionScope = account.SelectionScopeWorkspace
+	conn.workspaceID = "project-a"
+	response.Workdir = "D:/repo/a"
+	if conn.vetWorkspaceAgentRequest(env) == nil || conn.attachmentPreviewAllowed(response) {
+		t.Fatal("a project-only selection could read the account upload staging area")
+	}
+}

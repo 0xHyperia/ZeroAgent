@@ -776,6 +776,8 @@ message ChatRequest {
   // means the project inherits the global MCP settings; present with no ids
   // means the run offers no MCP server.
   ChatMcpServerSelection mcp_servers = 17;
+  // Model-only directions accompanying the visible image-edit message.
+  string image_edit_instruction = 18;
 }
 
 message ChatMcpServerSelection {
@@ -1495,6 +1497,8 @@ message ChatFileOpenResponse {
   optional uint32 end_line = 6;
   optional uint32 column = 7;
   bool outside_workspace = 8;
+  // Returned only for the read-only attachment-preview source.
+  FsReadWorkspaceImageResponse attachment_preview = 9;
 }
 
 message FsWriteTextRequest {

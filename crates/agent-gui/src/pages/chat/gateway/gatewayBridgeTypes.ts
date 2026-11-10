@@ -45,6 +45,7 @@ export type GatewayChatRequestEvent = {
   /** message 是提示词指令（"/name args"），由 K-brain 展开，历史保留原文。 */
   promptCommand?: boolean;
   planCommand?: boolean;
+  imageEditInstruction?: string;
 };
 
 export type GatewayChatClaimedRequest = {

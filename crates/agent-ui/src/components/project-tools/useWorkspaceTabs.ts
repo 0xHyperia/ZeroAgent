@@ -192,15 +192,18 @@ export function useWorkspaceTabs(
                 ? {
                     ...existing,
                     temporary: existing.temporary && temporary,
-                    request: next.line
-                      ? {
-                          ...existing.request,
-                          line: next.line,
-                          endLine: next.endLine,
-                          column: next.column,
-                          id: next.id,
-                        }
-                      : existing.request,
+                    request:
+                      next.stagedAttachment && !existing.request.stagedAttachment
+                        ? next
+                        : next.line
+                          ? {
+                              ...existing.request,
+                              line: next.line,
+                              endLine: next.endLine,
+                              column: next.column,
+                              id: next.id,
+                            }
+                          : existing.request,
                     mode,
                     openedModes: existing.openedModes.includes(mode)
                       ? existing.openedModes

@@ -4,6 +4,38 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
+test("remote attachment lookup requires a recorded user attachment in the exact conversation", async () => {
+  const path = "C:\\profile\\uploads\\123\\report.docx";
+  const offsets = [];
+  const loader = createTsModuleLoader({ mocks: {
+    [fileURLToPath(new URL("../../src/lib/chat/history/chatHistory.ts", import.meta.url))]: {
+      async getChatHistoryWindow({ id, beforeOffset, expectedRevision }) {
+        offsets.push([id, beforeOffset, expectedRevision]);
+        return {
+          conversation: { cwd: "D:/work" },
+          revision: "revision-1",
+          oldestOffset: beforeOffset ? 0 : 120,
+          hasMoreBefore: !beforeOffset,
+          segments: [{ messages: beforeOffset ? [{
+            role: id === "owner" ? "user" : "assistant",
+            liveAgentAttachments: [{
+              absolutePath: path, relativePath: "report.docx", fileName: "report.docx",
+              kind: "document", sizeBytes: 30,
+            }],
+          }] : [] }],
+        };
+      },
+    },
+  } });
+  const { runGatewayHistoryAction } = loader.loadModule("src/pages/chat/gateway/gatewayHistoryActions.ts");
+  const lookup = (conversationId, attachmentPath) =>
+    runGatewayHistoryAction({ conversationId, action: "attachment_lookup", data: { path: attachmentPath } });
+  assert.deepEqual(await lookup("owner", path), { cwd: "D:/work" });
+  assert.deepEqual(offsets, [["owner", undefined, undefined], ["owner", 120, "revision-1"]]);
+  await assert.rejects(lookup("owner", path.replace("report", "different")), /unavailable/);
+  await assert.rejects(lookup("other", path), /unavailable/);
+});
+
 test("remote history shares the desktop K-brain projection and preserves message identities", async () => {
   const calls = [];
   const summary = { id: "conversation", cwd: "C:\\Users\\Tester\\project", messageCount: 10 };

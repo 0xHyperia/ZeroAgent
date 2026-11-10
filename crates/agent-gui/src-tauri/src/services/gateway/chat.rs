@@ -17,7 +17,7 @@ impl GatewayController {
         command: proto::ChatCommandRequest,
     ) -> Result<(), String> {
         match command.r#type.trim() {
-            "chat.submit" => {
+            kind @ ("chat.submit" | "chat.image_edit") => {
                 let Some(request) = command.request else {
                     return self
                         .send_gateway_chat_control_event_with_details(
@@ -25,10 +25,24 @@ impl GatewayController {
                             String::new(),
                             "failed",
                             "invalid_chat_command".to_string(),
-                            "chat.submit requires request payload".to_string(),
+                            format!("{kind} requires request payload"),
                         )
                         .await;
                 };
+                let has_image_edit = !request.image_edit_instruction.trim().is_empty();
+                if has_image_edit != (kind == "chat.image_edit")
+                    || (has_image_edit && request.conversation_id.trim().is_empty())
+                {
+                    return self
+                        .send_gateway_chat_control_event_with_details(
+                            request_id,
+                            request.conversation_id,
+                            "failed",
+                            "invalid_chat_command".to_string(),
+                            "invalid image edit command".to_string(),
+                        )
+                        .await;
+                }
                 let event_payload =
                     Self::build_gateway_chat_request_event(request_id, request, false, None);
                 self.enqueue_gateway_chat_request(event_payload).await
@@ -178,6 +192,7 @@ impl GatewayController {
             goal_text,
             prompt_command,
             plan_command,
+            image_edit_instruction,
             // 桌面端按自己的项目设置（workdir 对应的资源设置）决定 MCP 服务器，
             // 不采用 WebUI 随请求带来的选择。
             mcp_servers: _,
@@ -260,6 +275,7 @@ impl GatewayController {
             goal_text: goal_text.trim().to_string(),
             prompt_command,
             plan_command,
+            image_edit_instruction,
         }
     }
 

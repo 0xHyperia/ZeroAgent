@@ -335,7 +335,7 @@ type Props = {
   updateDraft: (id: string, change: (previous: EditDraft) => EditDraft) => void;
   sources: ConversationImageSources;
   onDownload: (item: ImageItem, signal: AbortSignal) => Promise<void>;
-  onEdit: (
+  onEdit?: (
     item: ImageItem,
     edit: ConversationImageEdit,
     signal: AbortSignal,
@@ -746,6 +746,7 @@ export function ConversationImagePreview(props: Props) {
     }
   };
   const submit = async (action?: ImageAction) => {
+    if (!props.onEdit) return;
     if (operation.current || hasWaiting || (!action && (!hasInstruction || comment || textMark)))
       return;
     const commentEdit = !action && commenting ? conversationImageCommentEdit(comments) : undefined;
@@ -1232,7 +1233,7 @@ export function ConversationImagePreview(props: Props) {
       </>
     ) : undefined;
   };
-  const showEdit = showWaiting || (!dedicated && !overview);
+  const showEdit = Boolean(props.onEdit) && (showWaiting || (!dedicated && !overview));
   const editLabel = zh ? "修改说明" : "Edit instructions";
   const editPlaceholder = annotating
     ? zh
@@ -1551,7 +1552,7 @@ export function ConversationImagePreview(props: Props) {
         </PreviewToolbarMount.Provider>
       ) : null}
       <div className="za-conversation-image-controls">
-        {!overview && (
+        {!overview && props.onEdit && (
           <div className="za-conversation-image-bottom">
             <PreviewDock
               label={zh ? "图像编辑工具" : "Image editing tools"}

@@ -9,6 +9,7 @@ export type SendChatOptions = {
   conversationId?: string;
   clientRequestId?: string;
   uploadedFiles?: PendingUploadedFile[];
+  imageEditInstruction?: string;
   referencedConversations?: ConversationMentionReference[];
   runtimeControls?: ChatRuntimeControls;
   workdir?: string;

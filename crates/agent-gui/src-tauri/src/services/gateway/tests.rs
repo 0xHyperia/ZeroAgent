@@ -147,6 +147,7 @@ fn gateway_chat_request(
         goal_text: String::new(),
         prompt_command: false,
         plan_command: false,
+        image_edit_instruction: String::new(),
     }
 }
 
@@ -233,6 +234,25 @@ fn gateway_chat_command_mapping_preserves_rebase_signal() {
         event.referenced_conversations[0].updated_at,
         1_772_000_000_000
     );
+}
+
+#[test]
+fn gateway_image_edit_mapping_keeps_visible_and_model_messages_separate() {
+    let request = proto::ChatRequest {
+        conversation_id: "conversation-1".to_string(),
+        message: "Remove the background".to_string(),
+        image_edit_instruction: "Use the original image".to_string(),
+        ..Default::default()
+    };
+    let event = GatewayController::build_gateway_chat_request_event(
+        "run-1".to_string(),
+        request,
+        false,
+        None,
+    );
+    assert_eq!(event.message, "Remove the background");
+    assert_eq!(event.image_edit_instruction, "Use the original image");
+    assert_eq!(event.conversation_id, "conversation-1");
 }
 
 #[test]

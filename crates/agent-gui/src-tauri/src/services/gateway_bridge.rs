@@ -1408,19 +1408,23 @@ pub async fn handle_fs_read_workspace_image(
     .await
     .map_err(|e| format!("gateway fs read workspace preview join failed: {e}"))?
     .map_err(|e| e.message)
-    .and_then(|response| {
-        Ok(proto::FsReadWorkspaceImageResponse {
-            path: response.path,
-            mime_type: response
-                .mime_type
-                .ok_or_else(|| "workspace preview response is missing mime type".to_string())?,
-            data: response
-                .data
-                .ok_or_else(|| "workspace preview response is missing data".to_string())?,
-            size_bytes: u64::try_from(response.size_bytes.unwrap_or_default()).unwrap_or(u64::MAX),
-            mtime_ms: response.mtime_ms,
-            content_hash: response.content_hash,
-        })
+    .and_then(workspace_preview_response)
+}
+
+pub(crate) fn workspace_preview_response(
+    response: crate::commands::fs::ReadResponse,
+) -> Result<proto::FsReadWorkspaceImageResponse, String> {
+    Ok(proto::FsReadWorkspaceImageResponse {
+        path: response.path,
+        mime_type: response
+            .mime_type
+            .ok_or_else(|| "workspace preview response is missing mime type".to_string())?,
+        data: response
+            .data
+            .ok_or_else(|| "workspace preview response is missing data".to_string())?,
+        size_bytes: u64::try_from(response.size_bytes.unwrap_or_default()).unwrap_or(u64::MAX),
+        mtime_ms: response.mtime_ms,
+        content_hash: response.content_hash,
     })
 }
 
@@ -1455,6 +1459,7 @@ where
         end_line: response.end_line,
         column: response.column,
         outside_workspace: response.outside_workspace,
+        attachment_preview: None,
     })
 }
 

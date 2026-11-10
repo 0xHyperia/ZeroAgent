@@ -410,6 +410,16 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 		_ = c.sendLocalError(requestID, errorMessage(err))
 		return
 	}
+	if request := env.GetChatFileOpen(); request.GetSource() == "attachment-preview" && response.GetError() == nil {
+		if c.selectionCurrent != nil && !c.selectionCurrent() {
+			c.core.Close()
+			return
+		}
+		if !c.attachmentPreviewAllowed(response.GetChatFileOpenResp()) {
+			_ = c.sendLocalError(requestID, "The conversation attachment is unavailable.")
+			return
+		}
+	}
 	if terminalResp := response.GetTerminalResponse(); terminalResp != nil {
 		req := env.GetTerminalRequest()
 		finalized := shared.FinalizeTerminalResponse(view, c.terminalInterest, strings.TrimSpace(req.GetAction()), strings.TrimSpace(req.GetProjectPathKey()), terminalResp)

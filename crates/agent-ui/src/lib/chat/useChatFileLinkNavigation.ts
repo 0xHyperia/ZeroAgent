@@ -17,6 +17,7 @@ type UseChatFileLinkNavigationParams = {
   conversationId: string;
   conversationWorkdir: string;
   resolveWorkdirOnHost?: boolean;
+  readStagedAttachments?: boolean;
   workspaceOwner?: string;
   terminalProjectPathKey: string;
   notifyError: (message: string) => void;
@@ -42,6 +43,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
     conversationId,
     conversationWorkdir,
     resolveWorkdirOnHost,
+    readStagedAttachments,
     workspaceOwner,
     terminalProjectPathKey,
     notifyError,
@@ -106,7 +108,17 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
             result.action === "preview" ||
             (link.preferPreview && isWorkspacePreviewPath(resultPath))
           ) {
-            openWorkspaceFilePreview({ ...workspaceRequest, returnFocusTo });
+            openWorkspaceFilePreview({
+              ...workspaceRequest,
+              returnFocusTo,
+              stagedAttachment:
+                readStagedAttachments &&
+                result.outsideWorkspace &&
+                link.preferPreview &&
+                link.source === "absolute"
+                  ? { conversationId, path: link.path }
+                  : undefined,
+            });
             return;
           }
           openWorkspaceEditorFile({
@@ -140,6 +152,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
       openWorkspaceEditorFile,
       openWorkspaceFilePreview,
       resolveWorkdirOnHost,
+      readStagedAttachments,
       scope,
       terminalProjectPathKey,
     ],

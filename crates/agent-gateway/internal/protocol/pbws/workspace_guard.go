@@ -24,6 +24,12 @@ func (c *browserConn) historyWorkdirAllowed(workdir string) bool {
 	return c.workspaceAllows(workdir)
 }
 
+func (c *browserConn) attachmentPreviewAllowed(response *gatewayv2.ChatFileOpenResponse) bool {
+	return (c.selectionScope == "" || c.selectionScope == account.SelectionScopeDevice) &&
+		response.GetAction() == "preview" && response.GetAttachmentPreview() != nil &&
+		c.historyWorkdirAllowed(response.GetWorkdir())
+}
+
 // Project the immutable authority before paging so totals, workdirs and rows
 // describe only this selection. The manager keeps its device-wide cut/sequence.
 func (c *browserConn) scopedHistorySnapshot(snapshot *gatewayv2.HistorySyncSnapshot) *gatewayv2.HistorySyncSnapshot {
@@ -135,6 +141,12 @@ func (c *browserConn) vetWorkspaceAgentRequest(env *gatewayv2.GatewayEnvelope) e
 		return nil
 	}
 	switch payload := env.GetPayload().(type) {
+	case *gatewayv2.GatewayEnvelope_ChatFileOpen:
+		// Historical attachment cards may come from parsed user text. Reading
+		// the account's staging area requires a device-level selection.
+		if payload.ChatFileOpen.GetSource() == "attachment-preview" && c.selectionScope != account.SelectionScopeDevice {
+			return errors.New("conversation attachment preview requires device control")
+		}
 	case *gatewayv2.GatewayEnvelope_HistoryList:
 		if strings.TrimSpace(payload.HistoryList.GetCwd()) != "" {
 			return c.requireWorkspace(payload.HistoryList.GetCwd())

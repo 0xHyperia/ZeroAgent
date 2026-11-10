@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::services::gateway_bridge;
+
 use super::*;
 
 fn summary(value: &Value) -> proto::ConversationSummary {
@@ -148,6 +150,47 @@ fn archived_list_json(value: &Value) -> Value {
 }
 
 impl GatewayController {
+    pub(crate) async fn read_conversation_attachment(
+        self: &std::sync::Arc<Self>,
+        request_id: String,
+        request: proto::ChatFileOpenRequest,
+    ) -> Result<proto::ChatFileOpenResponse, String> {
+        let path = request.path;
+        let result = self
+            .run_composer_action(GatewayComposerActionEvent {
+                request_id,
+                kind: "history".into(),
+                conversation_id: request.conversation_id,
+                action: "attachment_lookup".into(),
+                cron: String::new(),
+                interval: String::new(),
+                prompt: String::new(),
+                reasoning: String::new(),
+                loop_id: String::new(),
+                data: Some(json!({"path": &path})),
+            })
+            .await?;
+        let cwd = result["cwd"]
+            .as_str()
+            .ok_or_else(|| "The conversation attachment is unavailable.".to_string())?
+            .to_owned();
+        let preview = tauri::async_runtime::spawn_blocking(move || {
+            crate::commands::fs::read_staged_attachment_preview(&path)
+                .and_then(gateway_bridge::workspace_preview_response)
+        })
+        .await
+        .map_err(|_| "The conversation attachment is unavailable.".to_string())??;
+        Ok(proto::ChatFileOpenResponse {
+            action: "preview".into(),
+            kind: "file".into(),
+            workdir: cwd,
+            path: preview.path.clone(),
+            outside_workspace: true,
+            attachment_preview: Some(preview),
+            ..Default::default()
+        })
+    }
+
     pub(crate) async fn read_conversation_image(
         self: &std::sync::Arc<Self>,
         request_id: String,

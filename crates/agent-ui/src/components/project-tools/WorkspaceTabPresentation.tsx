@@ -383,11 +383,13 @@ function WorkspaceFileTabPane({
   } = options;
   const viewId = JSON.stringify([scope, tab.id]);
   const canPreview = isWorkspacePreviewPath(request.path);
-  const canEdit = !canPreview || isWorkspaceEditablePreviewPath(request.path);
+  const canEdit =
+    !request.stagedAttachment && (!canPreview || isWorkspaceEditablePreviewPath(request.path));
   const workspacePath = workspaceImageRelativePathForCopy(request.workdir, request.path);
   const liveMarkdown =
     getWorkspacePreviewKind(request.path) === "markdown" &&
     !request.remote &&
+    !request.stagedAttachment &&
     !!workspacePath &&
     !/^(?:[/\\@]|[a-z]:)/i.test(workspacePath) &&
     !workspacePath.split("/").includes("..");

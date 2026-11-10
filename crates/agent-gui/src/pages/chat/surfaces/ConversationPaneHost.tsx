@@ -2,8 +2,7 @@ import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/Chang
 import { FileDropOverlay } from "@liveagent/ui/components/chat/FileDropOverlay";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { ScheduledReplyPreview } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
-import { AssistantVisualContext } from "@liveagent/ui/components/chat/AssistantVisuals";
-import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
+import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ScrollFollowHandle } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -467,18 +466,12 @@ const RegisteredConversationPaneHostContent = forwardRef<
   );
 
   return (
-    <ConversationReaderWorkbench
-      open={images?.panel === true}
-      primaryVisible
-      readingScope={`device-image:${conversationId}`}
-      primary={
-        <AssistantVisualContext.Provider value={images?.visuals ?? null}>
-          {conversationWithSubagents}
-        </AssistantVisualContext.Provider>
-      }
+    <DeviceConversationImageSurface
+      host={images}
+      includeAttachments={Boolean(transcript.workspaceRoot)}
     >
-      {images?.reader}
-    </ConversationReaderWorkbench>
+      {conversationWithSubagents}
+    </DeviceConversationImageSurface>
   );
 });
 

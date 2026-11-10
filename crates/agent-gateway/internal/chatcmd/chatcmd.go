@@ -83,6 +83,11 @@ func NormalizeRequestBody(body *handler.ChatRequestBody) error {
 	if body.Message == "" && len(body.UploadedFiles) == 0 {
 		return errors.New("message is required")
 	}
+	body.ImageEditInstruction = strings.TrimSpace(body.ImageEditInstruction)
+	if len(body.ImageEditInstruction) > 16000 ||
+		(body.ImageEditInstruction != "" && (body.ConversationID == "" || body.Message == "" || HasComposerCommand(*body))) {
+		return errors.New("invalid image edit instruction")
+	}
 	return normalizeComposerCommand(body)
 }
 
@@ -156,7 +161,9 @@ func DispatchAcceptedCommand(
 	defer cancel()
 
 	commandType := "chat.submit"
-	if baseMessageRef != nil {
+	if body.ImageEditInstruction != "" {
+		commandType = "chat.image_edit"
+	} else if baseMessageRef != nil {
 		commandType = "chat.edit_resend"
 	}
 	if err := sm.SendToAgentContext(ctx, agentID, buildCommandEnvelope(start.RunID, commandType, body, baseMessageRef)); err != nil {
@@ -379,6 +386,7 @@ func buildProtoRequest(body handler.ChatRequestBody) *gatewayv2.ChatRequest {
 		GoalText:                body.GoalText,
 		PromptCommand:           body.PromptCommand,
 		PlanCommand:             body.PlanCommand,
+		ImageEditInstruction:    body.ImageEditInstruction,
 		McpServers:              protoMCPServerSelection(body.MCPServers),
 	}
 }
@@ -412,17 +420,18 @@ func RequestBodyFromProto(req *gatewayv2.ChatRequest) handler.ChatRequestBody {
 		return handler.ChatRequestBody{}
 	}
 	body := handler.ChatRequestBody{
-		ConversationID:    req.GetConversationId(),
-		ClientRequestID:   req.GetClientRequestId(),
-		Message:           req.GetMessage(),
-		ExecutionMode:     req.GetExecutionMode(),
-		Workdir:           req.GetWorkdir(),
-		CommandSafetyMode: req.GetCommandSafetyMode(),
-		QueuePolicy:       req.GetQueuePolicy(),
-		GoalAction:        req.GetGoalAction(),
-		GoalText:          req.GetGoalText(),
-		PromptCommand:     req.GetPromptCommand(),
-		PlanCommand:       req.GetPlanCommand(),
+		ConversationID:       req.GetConversationId(),
+		ClientRequestID:      req.GetClientRequestId(),
+		Message:              req.GetMessage(),
+		ExecutionMode:        req.GetExecutionMode(),
+		Workdir:              req.GetWorkdir(),
+		CommandSafetyMode:    req.GetCommandSafetyMode(),
+		QueuePolicy:          req.GetQueuePolicy(),
+		GoalAction:           req.GetGoalAction(),
+		GoalText:             req.GetGoalText(),
+		PromptCommand:        req.GetPromptCommand(),
+		PlanCommand:          req.GetPlanCommand(),
+		ImageEditInstruction: req.GetImageEditInstruction(),
 	}
 	if selection := req.GetMcpServers(); selection != nil {
 		body.MCPServers = &handler.ChatMCPServerSelectionBody{ServerIDs: append([]string{}, selection.GetServerIds()...)}

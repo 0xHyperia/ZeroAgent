@@ -62,6 +62,7 @@ export type { RetryAttemptRecord, TranscriptRow, TranscriptSnapshot, Turn } from
 
 export type TranscriptStore = {
   getSnapshot(): TranscriptSnapshot;
+  getTurn(runId: string): Readonly<Turn> | undefined;
   subscribe(listener: () => void): () => void;
   // Stream plumbing.
   applySync(result: ConversationSubscribeResult): void;
@@ -1309,6 +1310,7 @@ export function createTranscriptStore(options?: {
 
   return {
     getSnapshot: () => snapshot,
+    getTurn: (runId) => findTurnByRunId(runId) ?? undefined,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

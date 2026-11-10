@@ -1,9 +1,7 @@
+import { useWorkspaceFileOpening } from "@liveagent/ui/components/project-tools/useWorkspaceFileOpening";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { expandedPathsForFileTreePath } from "@liveagent/ui/components/project-tools/rightDockModel";
-import {
-  useWorkspaceTabs,
-  type WorkspaceFileRequest,
-} from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
+import { useWorkspaceTabs } from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
 import type { ToastTone } from "@liveagent/ui/components/ui/toast-manager";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import { workspaceImageRelativePathForCopy } from "@liveagent/ui/components/workspace-editor/workspaceImageViewer";
@@ -24,6 +22,7 @@ import { type AppSettings, workspaceProjectPathKey } from "@/lib/settings";
 import { createGatewayWorkspaceActivityClient } from "@/lib/workspace-activity/gatewayWorkspaceActivityClient";
 
 import { asErrorMessage } from "../chatEventUtils";
+import { isLocalDraftConversationId } from "../gatewayLocalDraft";
 import { isMobileSidebarLayout } from "../historyUtils";
 import type { useGatewayChatConfiguration } from "./useGatewayChatConfiguration";
 import type { useGatewayClients } from "./useGatewayClients";
@@ -68,7 +67,7 @@ export function useGatewayProjectTools({
   status,
   terminalClient,
 }: UseGatewayProjectToolsOptions) {
-  const { setRightDockOpen } = dock;
+  const { rightDockOpen, setRightDockOpen } = dock;
   const terminalProjectPath = isAgentMode
     ? displayedConversationWorkdir.trim() || activeWorkspaceProjectPath.trim()
     : "";
@@ -118,47 +117,35 @@ export function useGatewayProjectTools({
   });
   resetProjectToolsRuntimeRef.current = runtime.resetTerminalSessions;
   const tabbedWorkspace = isAgentMode && Boolean(terminalClient);
+  const restoreTabs =
+    tabbedWorkspace &&
+    settingsSyncReady &&
+    Boolean(status?.online && terminalProjectPathKey && displayedConversationId) &&
+    !isLocalDraftConversationId(displayedConversationId);
   const revealWorkspace = useCallback(() => setRightDockOpen(true), [setRightDockOpen]);
   const workspaceTabs = useWorkspaceTabs(
     workspaceOwner,
     runtime.workspaceViewScope,
     revealWorkspace,
+    restoreTabs
+      ? {
+          projectPathKey: terminalProjectPathKey,
+          workdir: terminalProjectPath,
+          open: rightDockOpen,
+          setOpen: setRightDockOpen,
+        }
+      : undefined,
   );
   const { openFile, openTree, activate } = workspaceTabs;
   const { hideWorkspaceSshTerminalOverlay } = runtime;
-  const openFileTab = useCallback(
-    (request: WorkspaceFileRequest, mode: "preview" | "source" | "diff", temporary = false) => {
-      if (
-        !tabbedWorkspace ||
-        projectToolsDisabledMessage ||
-        request.remote ||
-        request.projectPathKey !== terminalProjectPathKey
-      )
-        return false;
-      hideWorkspaceSshTerminalOverlay();
-      openFile(request, mode, temporary);
-      return true;
-    },
-    [
-      hideWorkspaceSshTerminalOverlay,
+  const { openFileTab, openWorkspaceEditorFile, openWorkspaceFilePreview } =
+    useWorkspaceFileOpening({
+      tabbed: tabbedWorkspace,
       openFile,
-      projectToolsDisabledMessage,
-      tabbedWorkspace,
-      terminalProjectPathKey,
-    ],
-  );
-  const openWorkspaceEditorFile = useCallback(
-    (request: WorkspaceFileRequest) => {
-      if (!openFileTab(request, "source")) runtime.openWorkspaceEditorFile(request);
-    },
-    [openFileTab, runtime.openWorkspaceEditorFile],
-  );
-  const openWorkspaceFilePreview = useCallback(
-    (request: WorkspaceFileRequest) => {
-      if (!openFileTab(request, "preview")) runtime.openWorkspaceFilePreview(request);
-    },
-    [openFileTab, runtime.openWorkspaceFilePreview],
-  );
+      closeTerminalOverlay: hideWorkspaceSshTerminalOverlay,
+      openEditorOverlay: runtime.openWorkspaceEditorFile,
+      openPreviewOverlay: runtime.openWorkspaceFilePreview,
+    });
   const handleOpenWorkspaceFile = useCallback(
     (path: string, imagePaths?: string[], temporary = false) => {
       const request = {
@@ -295,6 +282,7 @@ export function useGatewayProjectTools({
     conversationId: displayedConversationId,
     conversationWorkdir: displayedConversationWorkdir,
     resolveWorkdirOnHost: true,
+    readStagedAttachments: true,
     workspaceOwner,
     terminalProjectPathKey,
     notifyError: notifyChatFileLinkError,

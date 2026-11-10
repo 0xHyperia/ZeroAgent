@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
@@ -666,16 +667,15 @@ test("the library rail returns to the scoped list after a failed read and visiti
   assert.doesNotMatch(app.host.textContent, /暂时无法读取资料/);
   await app.click('[aria-label="返回全部位置"]');
   assert.equal(path(), "/space?scope=starred&type=document");
-  await app.env.act(async () => {
-    window.history.back();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+  const moveInHistory = (direction) => app.env.act(async () => {
+    const popped = once(window, "popstate", { signal: AbortSignal.timeout(5_000) });
+    window.history[direction]();
+    await popped;
   });
+  await moveInHistory("back");
   assert.equal(path(), scopedLibrary);
   assert.equal(app.host.querySelector('input[aria-label="搜索当前文件夹"]').value, "待恢复的筛选");
-  await app.env.act(async () => {
-    window.history.forward();
-    await new Promise((resolve) => setTimeout(resolve, 30));
-  });
+  await moveInHistory("forward");
   assert.equal(path(), "/space?scope=starred&type=document");
   await app.click('[data-rail-item="chat"]');
   await app.switchAccount(2);

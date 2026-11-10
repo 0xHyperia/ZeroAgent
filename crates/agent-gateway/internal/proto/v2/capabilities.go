@@ -16,6 +16,8 @@ const SttStreamV1Capability = "STT_STREAM_V1"
 // and the slash_command_list, goal_manage and loop_manage agent requests.
 const ComposerCommandsV1Capability = "COMPOSER_COMMANDS_V1"
 
+const ConversationImageEditsV1Capability = "CONVERSATION_IMAGE_EDITS_V1"
+
 // ProxyDetectV1Capability identifies desktop runtimes that handle the
 // proxy_detect agent request (app proxy settings: detect running local proxy
 // services and test them).

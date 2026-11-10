@@ -17,11 +17,8 @@ mocks["@liveagent/ui/i18n/index"] = { useLocale: () => ({ locale: "en", t: key =
 mocks["../../../lib/host"] = { isKBrainBackendEnabled: () => false };
 let surfaceRenders = 0;
 mocks["./ConversationSurface"] = { ConversationSurface: () => { surfaceRenders++; return null; } };
-mocks["@liveagent/ui/components/resource-preview/ConversationReaderWorkbench"] = {
-  ConversationReaderWorkbench: ({ primary }) => primary,
-};
-mocks["@liveagent/ui/components/chat/AssistantVisuals"] = {
-  AssistantVisualContext: { Provider: ({ children }) => children },
+mocks["@liveagent/ui/components/resource-preview/DeviceConversationImageSurface"] = {
+  DeviceConversationImageSurface: ({ children }) => children,
 };
 const env = await createDomTestEnv({ mocks });
 const { React, act, createRoot } = env;

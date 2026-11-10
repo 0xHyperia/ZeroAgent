@@ -2,6 +2,15 @@
   "schema_version": 1,
   "rules": [
     {
+      "glob": "{crates/agent-ui/src/components/project-tools/{WorkspacePanels,useWorkspaceFileOpening}.*,crates/agent-ui/src/components/resource-preview/{DeviceConversationImageSurface,ConversationImagePreview}.*,crates/agent-ui/src/components/workspace-editor/requestWorkspaceRevision.*}",
+      "ownership": "zeroagent_owned",
+      "risk": "high",
+      "checks": [
+        "同一提交逐项验收本机桌面、浏览器切入远程设备及桌面切入远程设备，核对图片、阅读器、工作区、草稿和交互",
+        "宿主保留账户、设备租约和文件授权，提交及回执绑定原会话和运行，内部编辑指令与用户消息分离"
+      ]
+    },
+    {
       "glob": "{crates/agent-gateway/internal/server/device_loopback*.go,crates/agent-gui/src-tauri/src/services/gateway/private_loopback.rs,crates/agent-gui/src-tauri/src/services/account_session/desktop_remote_loopback.rs}",
       "ownership": "zeroagent_owned",
       "risk": "critical",

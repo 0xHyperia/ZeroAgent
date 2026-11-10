@@ -1711,7 +1711,7 @@ test("GatewayWebSocketClient cancelChat sends a cancel chat command with convers
       chat_cancelled: { ok: true, run_id: "run-9", conversation_id: "conversation-1" },
     }),
   );
-  await cancelPromise;
+  assert.equal(await cancelPromise, true);
   resetGatewayWebSocketClient();
 });
 

@@ -93,6 +93,7 @@ function createHookHarness() {
   let stateIndex = 0;
 
   const react = {
+    createContext: (defaultValue) => ({ defaultValue }),
     useRef(initialValue) {
       const index = refIndex++;
       refs[index] ??= { current: initialValue };

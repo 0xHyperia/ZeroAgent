@@ -1,4 +1,5 @@
 import type { HistoryMessageRef } from "@liveagent/ui/lib/chat/historyMessageRef";
+import { getUserMessageAttachments } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { getHistoryMessageContentHash } from "../../../lib/chat/conversation/conversationState";
 import {
   branchChatHistory,
@@ -33,6 +34,8 @@ export async function runGatewayHistoryAction(event: GatewayComposerActionEvent)
   // minted alias would shadow that local id and misroute every later turn.
   const id = (target && !getKBrainSessionId(target) && getKBrainConversationId(target)) || target;
   switch (event.action) {
+    case "attachment_lookup":
+      return findGatewayConversationAttachment(id, String(data.path ?? ""));
     case "image_read":
       return readGatewayConversationImage(id, data);
     case "list": {
@@ -160,6 +163,40 @@ export async function runGatewayHistoryAction(event: GatewayComposerActionEvent)
     default:
       throw new Error(`Unsupported gateway history action: ${event.action}`);
   }
+}
+
+async function findGatewayConversationAttachment(id: string, path: string) {
+  if (id && path) {
+    let beforeOffset: number | undefined;
+    let expectedRevision: string | undefined;
+    while (true) {
+      const window = await getChatHistoryWindow({
+        id,
+        maxMessages: 120,
+        beforeOffset,
+        expectedRevision,
+        includeActiveSegment: false,
+      });
+      const found = window.segments.some((segment) =>
+        segment.messages.some((message) =>
+          message.role === "user" &&
+          getUserMessageAttachments({ ...message }).some((file) => file.absolutePath === path),
+        ),
+      );
+      if (found) return { cwd: window.conversation.cwd ?? "" };
+      if (
+        !window.hasMoreBefore ||
+        !Number.isSafeInteger(window.oldestOffset) ||
+        window.oldestOffset <= 0 ||
+        (beforeOffset !== undefined && window.oldestOffset >= beforeOffset)
+      ) {
+        break;
+      }
+      expectedRevision = window.revision;
+      beforeOffset = window.oldestOffset;
+    }
+  }
+  throw new Error("The conversation attachment is unavailable.");
 }
 
 async function readGatewayConversationImage(conversationId: string, data: Record<string, unknown>) {

@@ -4,10 +4,7 @@ import {
   LiveAssistantStatus,
 } from "@liveagent/ui/components/chat/AssistantBubble";
 import { AssistantDeliverables } from "@liveagent/ui/components/chat/AssistantDeliverables";
-import {
-  AssistantVisualActivity,
-  AssistantVisualContext,
-} from "@liveagent/ui/components/chat/AssistantVisuals";
+import { AssistantVisualActivity } from "@liveagent/ui/components/chat/AssistantVisuals";
 import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/BackgroundNoticeMessage";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
@@ -73,7 +70,6 @@ import type { HistoryMessageRef } from "@/lib/chat/conversationState";
 import { getRoundText } from "@/lib/chat/uiMessages";
 import { DEFAULT_CHAT_TRANSCRIPT_WIDTH } from "@/lib/settings";
 import { extractLiveRange } from "@/lib/transcript-virtual/liveRangeExtractor";
-import { useGatewayDeviceImages } from "./GatewayDeviceImages";
 import { findLiveTurnStartTimestamp } from "../lib/chat/transcript/rows";
 import type { RetryAttemptRecord, TranscriptRow } from "../lib/chat/transcript/types";
 import {
@@ -1400,7 +1396,6 @@ export function GatewayTranscript({
   readOnly = false,
   redactToolContent = false,
 }: GatewayTranscriptProps) {
-  const deviceImages = useGatewayDeviceImages(conversationId, readOnly);
   const transcriptListRef = useRef<HTMLDivElement | null>(null);
   const [transcriptScrollViewport, setTranscriptScrollViewport] = useState<HTMLDivElement | null>(
     null,
@@ -1465,7 +1460,6 @@ export function GatewayTranscript({
           expandByDefault={expandProcessByDefault}
           isViewportFollowing={isViewportFollowing}
         >
-          <AssistantVisualContext.Provider value={deviceImages.visuals}>
             <GatewayTranscriptListRegion
               key={conversationId ?? "shared"}
               conversationId={conversationId}
@@ -1503,7 +1497,6 @@ export function GatewayTranscript({
               readOnly={readOnly}
               redactToolContent={redactToolContent}
             />
-          </AssistantVisualContext.Provider>
         </ProcessDisclosureProvider>
         {shouldShowInlineError ? (
           <div
@@ -1519,7 +1512,6 @@ export function GatewayTranscript({
       </div>
       <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
       <ChatFileLinkContextMenuHost />
-      {deviceImages.preview}
     </div>
   );
 }

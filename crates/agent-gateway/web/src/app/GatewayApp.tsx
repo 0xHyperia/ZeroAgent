@@ -126,7 +126,7 @@ import {
 import { HISTORY_LIST_PAGE_SIZE, PROTECTED_DRAFT_CONVERSATION } from "./constants";
 import { GatewayAppView } from "./GatewayAppView";
 import { UploadedImagePreviewScope } from "@liveagent/ui/lib/chat/uploadedImagePreview";
-import { GatewayDeviceImageClient } from "../components/GatewayDeviceImages";
+import { importReadableFiles } from "@/lib/uploadReadableFiles";
 import {
   createGatewayChatCommandActions,
   type QueuedEditSession,
@@ -2353,6 +2353,19 @@ function useGatewayAppController() {
   const handleBranchConversation = useStableCallback(handleBranchConversationImpl);
   const handleResendFromEdit = useStableCallback(handleResendFromEditImpl);
   const handleLoadUploadedImagePreview = useStableCallback(handleLoadUploadedImagePreviewImpl);
+  const importDeviceConversationFiles = useStableCallback(async (
+    workdir: string, files: File[], signal: AbortSignal,
+  ) => {
+    if (!api) throw new Error("The device is unavailable.");
+    const isCurrent = api.captureActiveAgentScope();
+    const agentId = await resolveActiveAgentID();
+    signal.throwIfAborted();
+    if (!isCurrent() || !agentId) throw new Error("The device is unavailable.");
+    const result = await importReadableFiles(token, agentId, workdir, files, signal);
+    signal.throwIfAborted();
+    if (!isCurrent()) throw new Error("The device changed.");
+    return result.files;
+  });
 
   const translateWorkspaceProject = useCallback(
     (key: string) => translate(key, settings.locale),
@@ -3551,6 +3564,7 @@ function useGatewayAppController() {
     handleLoadEarlierHistory,
     handleLoadSharedHistoryStatus,
     handleLoadUploadedImagePreview,
+    importDeviceConversationFiles,
     handleLoadWorkspaceRemoteBranches,
     handleLogout,
     handleManualCompact,
@@ -3777,9 +3791,7 @@ function GatewayAppContent({ imageStudioIdentity }: GatewayAppProps) {
   }
   return (
     <UploadedImagePreviewScope.Provider value={result.workspaceOwner}>
-      <GatewayDeviceImageClient.Provider value={result.api}>
-        <GatewayAppView viewModel={result} imageStudioIdentity={imageStudioIdentity} />
-      </GatewayDeviceImageClient.Provider>
+      <GatewayAppView viewModel={result} imageStudioIdentity={imageStudioIdentity} />
     </UploadedImagePreviewScope.Provider>
   );
 }

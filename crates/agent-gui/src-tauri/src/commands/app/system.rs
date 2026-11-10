@@ -846,7 +846,7 @@ fn test_upload_staging_base() -> &'static Path {
 /// （Windows 上是 `\\?\C:\...` verbatim 形式，symlink 也已被解析），逻辑
 /// 路径与它按组件比较永远不相等，必须把暂存根也 canonicalize 成同构形式
 /// 再比。目录不存在（从未落过暂存文件）时返回 None，此时暂存分支不放行。
-fn canonical_upload_staging_base() -> Option<PathBuf> {
+pub(crate) fn canonical_upload_staging_base() -> Option<PathBuf> {
     let base = upload_staging_base().ok()?;
     fs::canonicalize(base).ok()
 }

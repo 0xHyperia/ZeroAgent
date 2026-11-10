@@ -5,6 +5,8 @@ import { createWebComposerCommandHost } from "../webComposerCommandHost";
 // 发送/停止/排队/上传/审批按本 Pane 的 conversationId 路由;选模型、编辑队列
 // 项、由正文重发等页面级操作在背景 Pane 上先走 focusGuard。Primary 把自己的
 // 输入框挂到页面 composerRef,卸载时把未发送草稿写回缓存。
+import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
+import { type ImportDeviceConversationFiles, useGatewayDeviceImages } from "@/components/GatewayDeviceImages";
 
 import {
   type ChangedFilesActions,
@@ -177,6 +179,9 @@ export type GatewayConversationPaneHostContext = {
     result: ConversationSubscribeResult,
   ) => void;
   sendChat: SendChatFn;
+  importDeviceConversationFiles: ImportDeviceConversationFiles;
+  fileReaderOpen?: boolean;
+  closeFileReader?: () => void;
   cancelChat: (conversationId: string) => Promise<void> | void;
   materializeComposerDraftForSend: (
     draft: MentionComposerDraft,
@@ -745,6 +750,20 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
     context.isConversationBusy(conversationId);
   const isRunningRef = useRef(isRunning);
   isRunningRef.current = isRunning;
+  const images = useGatewayDeviceImages({
+    api,
+    conversationId,
+    workdir,
+    enabled: !isDraft && !scheduledRun && !trajectoryActive,
+    offline: context.transportInputDisabled,
+    zh: context.settings.locale === "zh-CN",
+    store,
+    importFiles: context.importDeviceConversationFiles,
+    send: context.sendChat,
+    isRunning: () => isRunningRef.current,
+    fileReaderOpen: isPrimary && context.fileReaderOpen,
+    closeFileReader: isPrimary ? context.closeFileReader : undefined,
+  });
 
   const handleSend = useCallback(() => {
     if (sendInFlightRef.current || context.transportInputDisabled) return;
@@ -1195,7 +1214,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
 
   // Each pane explicitly owns its composer-height variable, so concurrent
   // panes never discover or update one another through a DOM ancestor query.
-  return (
+  const surface = (
     <div
       data-workbench-pane-id={paneId}
       data-workbench-surface="conversation"
@@ -1308,6 +1327,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             </div>
           )}
           <ChatComposerBar
+            focusImagePlacement
             surface="web"
             overlayHeightOwnerRef={chatFrameRef}
             runClarifyTurn={
@@ -1496,5 +1516,10 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         </section>
       </div>
     </div>
+  );
+  return (
+    <DeviceConversationImageSurface host={images} includeAttachments={Boolean(workdir)}>
+      {surface}
+    </DeviceConversationImageSurface>
   );
 }

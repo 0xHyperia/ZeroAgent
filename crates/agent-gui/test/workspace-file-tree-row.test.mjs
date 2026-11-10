@@ -84,8 +84,9 @@ test("workspace file tree opens files from anywhere in the hovered row", () => {
 
 test("desktop file-tree clicks preview a file and double click keeps it", () => {
   const { tree, calls } = renderRow({ transientFiles: true });
-  tree.props.onClick();
-  tree.props.onDoubleClick();
+  tree.props.onClick({ detail: 1 });
+  tree.props.onClick({ detail: 2 });
+  tree.props.onDoubleClick({ detail: 2 });
   assert.deepEqual(calls, [
     ["select", "assets/preview.png"],
     ["open", "assets/preview.png", true],

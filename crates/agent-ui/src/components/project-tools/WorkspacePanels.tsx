@@ -192,6 +192,35 @@ export function WorkspacePanelGroup({
     </Context.Provider>
   );
 }
+
+export function DeviceWorkbenchLayout(props: {
+  conversationVisible: boolean;
+  toolsOpen: boolean;
+  tabbed: boolean;
+  chrome: ReactNode;
+  main: ReactNode;
+  tools: ReactNode;
+  expanded?: boolean;
+  minDockedWidth?: number;
+  width: number;
+  onWidthChange: (width: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <WorkspacePanelGroup
+      open={props.conversationVisible && props.toolsOpen}
+      width={props.width}
+      onWidthChange={props.onWidthChange}
+      onClose={props.onClose}
+      immediate={!props.conversationVisible}
+      expanded={props.expanded}
+      minDockedWidth={props.minDockedWidth}
+    >
+      <WorkspaceMainPanel chrome={props.chrome}>{props.main}</WorkspaceMainPanel>
+      <WorkspaceToolsPanel retainContent={props.tabbed}>{props.tools}</WorkspaceToolsPanel>
+    </WorkspacePanelGroup>
+  );
+}
 export function WorkspaceMainPanel({
   chrome,
   children,

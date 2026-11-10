@@ -92,7 +92,7 @@ export type GatewayChatSystemSettings = {
 };
 
 export type GatewayChatCommandInput = {
-  type: "chat.submit" | "chat.edit_resend";
+  type: "chat.submit" | "chat.edit_resend" | "chat.image_edit";
   message: string;
   conversationId?: string;
   selectedModel?: GatewaySelectedModel;
@@ -109,6 +109,7 @@ export type GatewayChatCommandInput = {
   goalText?: string;
   promptCommand?: boolean;
   planCommand?: boolean;
+  imageEditInstruction?: string;
 };
 
 export type SkillListResponse = {
@@ -255,6 +256,7 @@ export type FsReadWorkspaceImageResponse = {
 };
 
 export type ChatFileOpenResponse = {
+  attachmentPreview?: FsReadWorkspaceImageResponse;
   action: "directory" | "editor" | "opened" | "preview" | "revealed";
   kind: "directory" | "file";
   workdir?: string;
@@ -576,6 +578,7 @@ export function buildChatCommandPayload(input: GatewayChatCommandInput) {
       goal_text: input.goalText ?? "",
       prompt_command: input.promptCommand === true,
       plan_command: input.planCommand === true,
+      image_edit_instruction: input.imageEditInstruction,
       mcp_servers: systemSettings?.mcpServerIds
         ? { server_ids: [...systemSettings.mcpServerIds] }
         : undefined,

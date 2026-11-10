@@ -73,7 +73,7 @@ test("application chrome belongs to the main pane beside the tools and outside t
   assert.match(chatPageSource, /data-app-frame="three-column"/);
   assert.match(
     chatPageSource,
-    /data-app-frame="three-column"[\s\S]*?<WorkbenchBody[\s\S]*?<WorkspacePanelGroup[\s\S]*?<WorkspaceMainPanel chrome=\{stackedWorkbench \? undefined : workbenchChrome\}[\s\S]*?<ApplicationView/,
+    /data-app-frame="three-column"[\s\S]*?<WorkbenchBody[\s\S]*?<DeviceWorkbenchLayout[\s\S]*?chrome=\{stackedWorkbench \? undefined : workbenchChrome\}[\s\S]*?<ApplicationView/,
   );
   assert.match(chatPageSource, /\{stackedWorkbench \? workbenchChrome : null\}/);
   assert.match(chatPageSource, /windowControls=\{<WindowsTitleBar controlsOnly followImagePreview \/>\}/);
@@ -176,7 +176,8 @@ test("closing a conversation pane resets its trajectory projection", () => {
 });
 
 test("sidebar layout and right dock resizing are delegated to standard shells", () => {
-  assert.match(chatPageSource, /<WorkspacePanelGroup/);
+  assert.match(chatPageSource, /<DeviceWorkbenchLayout/);
+  assert.match(workspacePanelsSource, /<WorkspacePanelGroup/);
   assert.match(workspacePanelsSource, /<ResizablePanelGroup/);
   assert.match(workspacePanelsSource, /<ResizableHandle/);
   assert.match(workspacePanelsSource, /<Sheet\s+open=\{open\}/);

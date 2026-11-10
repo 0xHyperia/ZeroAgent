@@ -33,6 +33,48 @@ function decodeClientFrame(bytes) {
   return pb.fromBinary(v2.WebClientFrameSchema, bytes);
 }
 
+test("sent attachments use a conversation read and return the original to the reader", () => {
+  const path = "C:\\profile\\uploads\\123\\report.docx";
+  const wire = decodeClientFrame(encodeRequestFrame("attachment", "chat.file_open", {
+    conversation_id: "chat-1", path, source: "attachment-preview",
+  }, "device-1"));
+  const request = wire.payload.value.payload.value;
+  assert.equal(request.conversationId, "chat-1");
+  assert.equal(request.workdir, "");
+  assert.equal(request.path, path);
+  assert.equal(request.source, "attachment-preview");
+  const preview = {
+    path: "report.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    data: "UEsDBA==",
+    sizeBytes: "4",
+    mtimeMs: "1",
+    contentHash: "hash",
+  };
+  const decoded = decodeServerFrame(
+    roundtrip(serverFrame({ agentResponse: { chatFileOpenResp: {
+      action: "preview", kind: "file", workdir: "D:/project", attachmentPreview: preview,
+    } } })),
+    { agentOnline: true },
+  );
+  assert.equal(decoded.kind, "response");
+  assert.deepEqual(decoded.payload.attachmentPreview, { ...preview, sizeBytes: 4, mtimeMs: 1 });
+});
+
+test("device image edits keep the displayed message separate on the wire", () => {
+  const payload = socketShared.buildChatCommandPayload({
+    type: "chat.image_edit",
+    conversationId: "chat-1",
+    message: "Remove the background",
+    imageEditInstruction: "Edit the original asset ia_fixture",
+  });
+  const wire = decodeClientFrame(encodeRequestFrame("request-image", "chat.command", payload, "device-1"));
+  assert.equal(wire.payload.case, "chatCommand");
+  assert.equal(wire.payload.value.type, "chat.image_edit");
+  assert.equal(wire.payload.value.request.message, "Remove the background");
+  assert.equal(wire.payload.value.request.imageEditInstruction, "Edit the original asset ia_fixture");
+});
+
 test("chat command payload normalizes conversation references before transport", () => {
   const command = socketShared.buildChatCommandPayload({
     type: "chat.submit",

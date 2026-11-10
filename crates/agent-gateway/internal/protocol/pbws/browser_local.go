@@ -165,7 +165,7 @@ func (c *browserConn) handleChatCommand(requestID, agentID string, cmd *gatewayv
 	baseMessageRef := chatcmd.MessageRefFromProto(cmd.GetBaseMessageRef())
 
 	switch commandType {
-	case "chat.submit":
+	case "chat.submit", "chat.image_edit":
 		baseMessageRef = nil
 	case "chat.edit_resend":
 		if baseMessageRef == nil {
@@ -188,6 +188,10 @@ func (c *browserConn) handleChatCommand(requestID, agentID string, cmd *gatewayv
 		_ = c.sendLocalError(requestID, err.Error())
 		return
 	}
+	if (commandType == "chat.image_edit") != (body.ImageEditInstruction != "") {
+		_ = c.sendLocalError(requestID, "invalid image edit command")
+		return
+	}
 	if err := c.vetChatWorkdir(body.Workdir); err != nil {
 		_ = c.sendLocalError(requestID, err.Error())
 		return
@@ -202,6 +206,11 @@ func (c *browserConn) handleChatCommand(requestID, agentID string, cmd *gatewayv
 		return
 	}
 
+	if body.ImageEditInstruction != "" &&
+		!c.sm.SupportsCapability(agentID, gatewayv2.ConversationImageEditsV1Capability) {
+		_ = c.sendLocalError(requestID, "This device does not support conversation image edits")
+		return
+	}
 	if c.srv.kbrainRelay != nil && agentID == c.srv.kbrainTargetID {
 		// 直连 K-brain 只支持提示词指令；/goal 需要桌面端的目标栏与续跑挂接。
 		if body.GoalAction != "" {

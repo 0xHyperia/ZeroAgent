@@ -1,3 +1,4 @@
+import { useWorkspaceFileOpening } from "@liveagent/ui/components/project-tools/useWorkspaceFileOpening";
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import { listen } from "@liveagent/app/shims/tauriEvent";
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
@@ -43,13 +44,11 @@ import {
   MIN_DOCKED_WORKSPACE_WITH_CAPTIONS,
 } from "@liveagent/ui/components/project-tools/rightDockModel";
 import {
-  WorkspaceMainPanel,
-  WorkspacePanelGroup,
-  WorkspaceToolsPanel,
+  DeviceWorkbenchLayout,
 } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
 import type { ConversationImageEditReceipt } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
-import { documentRevisionText } from "@liveagent/ui/components/resource-preview/ResourceDocumentComments";
+import { formatWorkspaceFileExcerpt, requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
@@ -335,7 +334,6 @@ import {
 } from "./chat/workbench/terminalPaneRuntime";
 import {
   useWorkspaceTabs,
-  type WorkspaceFileRequest,
 } from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
 import { useWindowWorkbench } from "./chat/workbench/useWindowWorkbench";
 import {
@@ -1023,38 +1021,13 @@ function ChatPageContent(props: ChatPageProps) {
   );
   const { openFile: openWorkspaceTab } = desktopTabs;
   const { handleOpenSshTerminal, hideWorkspaceSshTerminalOverlay } = workspaceOverlays;
-  const openWorkspaceEditorFile = useCallback(
-    (request: WorkspaceFileRequest) => {
-      if (!tabbedWorkspace || request.remote) {
-        workspaceOverlays.openWorkspaceEditorFile(request);
-        return;
-      }
-      hideWorkspaceSshTerminalOverlay();
-      openWorkspaceTab(request, "source");
-    },
-    [
-      hideWorkspaceSshTerminalOverlay,
-      openWorkspaceTab,
-      tabbedWorkspace,
-      workspaceOverlays.openWorkspaceEditorFile,
-    ],
-  );
-  const openWorkspaceFilePreview = useCallback(
-    (request: WorkspaceFileRequest) => {
-      if (!tabbedWorkspace) {
-        workspaceOverlays.openWorkspaceFilePreview(request);
-        return;
-      }
-      hideWorkspaceSshTerminalOverlay();
-      openWorkspaceTab(request, "preview");
-    },
-    [
-      hideWorkspaceSshTerminalOverlay,
-      openWorkspaceTab,
-      tabbedWorkspace,
-      workspaceOverlays.openWorkspaceFilePreview,
-    ],
-  );
+  const { openWorkspaceEditorFile, openWorkspaceFilePreview } = useWorkspaceFileOpening({
+    tabbed: tabbedWorkspace,
+    openFile: openWorkspaceTab,
+    closeTerminalOverlay: hideWorkspaceSshTerminalOverlay,
+    openEditorOverlay: workspaceOverlays.openWorkspaceEditorFile,
+    openPreviewOverlay: workspaceOverlays.openWorkspaceFilePreview,
+  });
   const selectWorkspacePath = useCallback(
     (path: string) => {
       if (!terminalProjectPathKey) return;
@@ -1986,36 +1959,30 @@ function ChatPageContent(props: ChatPageProps) {
     ? workspaceOverlays.workspaceViewScope
     : null;
   const requestWorkspaceDocumentRevision = useCallback(
-    async ({ source, comments, assertCurrent }: WorkspaceDocumentRevision) => {
+    (revision: WorkspaceDocumentRevision) => {
       const conversationId = currentConversationId;
       const view = workspaceOverlays.workspaceViewScope;
       const canSend = () =>
         revisionViewRef.current === view &&
         currentConversationIdRef.current === conversationId &&
         !isConversationRunning(conversationId);
-      if (!comments.length || comments.length > 20 || !canSend()) return false;
-      assertCurrent();
-      const uploadedFiles = await importReadableFiles(
-        [source],
-        { conversationId, workdir: displayedConversationWorkdir },
-        undefined,
-        false,
-      );
-      if (!canSend()) return false;
-      assertCurrent();
-      if (uploadedFiles?.length !== 1) return false;
-
-      const text = `${documentRevisionText(source.name, comments)}\n\n请在当前工作区另存修改稿并提供文件链接，保留原件和作为引用的附件。`;
-      return new Promise<boolean>((resolve, reject) => {
-        void sendActionRef
-          .current({
+      return requestWorkspaceRevision(revision, {
+        canSend,
+        importSource: (source) => importReadableFiles(
+          [source],
+          { conversationId, workdir: displayedConversationWorkdir },
+          undefined,
+          false,
+        ),
+        send: (text, uploadedFiles) => new Promise<boolean>((resolve, reject) => {
+          void sendActionRef.current({
             conversationIdOverride: conversationId,
             textOverride: text,
             uploadedFilesOverride: uploadedFiles,
             preserveComposerOnStart: true,
             onRunStarted: () => resolve(true),
-          })
-          .then(resolve, reject);
+          }).then(resolve, reject);
+        }),
       });
     },
     [
@@ -2030,18 +1997,12 @@ function ChatPageContent(props: ChatPageProps) {
   const workspaceVisible = chatVisible && rightDockOpen;
   const insertWorkspaceMarkdownSelection = useCallback(
     (text: string, path: string, comment?: string) => {
-      const selected = text.trim();
-      if (!selected || !workspaceVisible) return false;
       const zh = settings.locale === "zh-CN";
-      const label = `${zh ? "引用文件" : "File excerpt"} ${path.replace(/[\r\n]/g, " ")}`;
-      const quote = selected
-        .split(/\r?\n/)
-        .map((line) => `> ${line}`)
-        .join("\n");
-      const note = comment?.trim();
+      const excerpt = formatWorkspaceFileExcerpt(text, path, comment, zh);
+      if (!excerpt || !workspaceVisible) return false;
       const composer = composerRef.current;
       const accepted = composer?.appendSegments([
-        { type: "text", text: `\n\n${label}\n${quote}${note ? `\n\n${note}` : ""}\n` },
+        { type: "text", text: excerpt },
       ]);
       if (accepted) composer?.focus();
       else notifyChatFileLinkError(zh ? "当前输入框不可用" : "The composer is unavailable");
@@ -5399,17 +5360,17 @@ function ChatPageContent(props: ChatPageProps) {
           />
         )}
 
-        <WorkspacePanelGroup
-          open={!accountDestination && activeView === "chat" && rightDockOpen}
+        <DeviceWorkbenchLayout
+          conversationVisible={!accountDestination && activeView === "chat"}
+          toolsOpen={rightDockOpen}
+          tabbed={tabbedWorkspace}
+          chrome={stackedWorkbench ? undefined : workbenchChrome}
           width={settings.customSettings.rightDock.width}
           onWidthChange={handleRightDockWidthChange}
           onClose={() => setRightDockOpen(false)}
-          immediate={!!accountDestination || activeView !== "chat"}
           expanded={tabbedWorkspace && desktopTabs.view.expanded}
           minDockedWidth={isWindowsTauriRuntime() ? MIN_DOCKED_WORKSPACE_WITH_CAPTIONS : undefined}
-        >
-          <WorkspaceMainPanel chrome={stackedWorkbench ? undefined : workbenchChrome}>
-            {/* ---- Center column: workbench chrome + conversation surfaces ---- */}
+          main={
             <div
               data-app-frame-column="main"
               className="relative flex flex-col min-h-0 min-w-0 flex-1 overflow-hidden"
@@ -5598,8 +5559,8 @@ function ChatPageContent(props: ChatPageProps) {
                 />
               </div>
             </div>
-          </WorkspaceMainPanel>
-          <WorkspaceToolsPanel retainContent={tabbedWorkspace}>
+          }
+          tools={
             <RightDockPanel
               workspace={
                 tabbedWorkspace
@@ -5682,8 +5643,8 @@ function ChatPageContent(props: ChatPageProps) {
               onInsertCommitMention={handleRightDockInsertCommitMention}
               onInsertGitFileMention={handleRightDockInsertGitFileMention}
             />
-          </WorkspaceToolsPanel>
-        </WorkspacePanelGroup>
+          }
+        />
       </WorkbenchBody>
       {projectSettingsProject ? (
         <WorkspaceProjectSettingsModal

@@ -588,6 +588,7 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
             ),
           ),
           uploadedFilesOverride: uploadedFiles,
+          imageEditInstruction: payload.imageEditInstruction?.trim() || undefined,
           conversationIdOverride: resolvedConversationId,
           preserveComposerOnStart: payload.rebased !== true,
           executionModeOverride: gatewayBridgeRequest.executionModeOverride,

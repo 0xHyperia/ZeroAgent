@@ -2625,6 +2625,46 @@ fn fs_read_workspace_image_impl(path: &ScopedFsPath) -> Result<ReadResponse, FsE
     read_local_preview_file(target, path.logical_path.clone())
 }
 
+pub(crate) fn read_staged_attachment_preview(path: &str) -> Result<ReadResponse, String> {
+    let candidate = Path::new(path);
+    let unavailable = || "The conversation attachment is unavailable.".to_string();
+    if !candidate.is_absolute() {
+        return Err(unavailable());
+    }
+    let target = fs::canonicalize(candidate).map_err(|_| unavailable())?;
+    let root = crate::commands::system::canonical_upload_staging_base().ok_or_else(unavailable)?;
+    if !target.starts_with(root) || !target.is_file() {
+        return Err(unavailable());
+    }
+    let name = target
+        .file_name()
+        .ok_or_else(unavailable)?
+        .to_string_lossy()
+        .into_owned();
+    read_local_preview_file(target, name).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+#[test]
+fn staged_attachment_preview_reads_original_and_denies_other_paths() {
+    let root = crate::commands::system::canonical_upload_staging_base().expect("test uploads root");
+    let staged = tempfile::tempdir_in(root).expect("temporary upload batch");
+    let file = staged.path().join("订单.csv");
+    let contents = b"item,quantity\nfixture,2\n";
+    fs::write(&file, contents).unwrap();
+    let response = read_staged_attachment_preview(file.to_str().unwrap()).unwrap();
+    assert_eq!(response.path, "订单.csv");
+    assert_eq!(
+        BASE64_STANDARD.decode(response.data.unwrap()).unwrap(),
+        contents
+    );
+    let outside = tempfile::tempdir().unwrap();
+    let other = outside.path().join("other.csv");
+    fs::write(&other, contents).unwrap();
+    assert!(read_staged_attachment_preview(other.to_str().unwrap()).is_err());
+    assert!(read_staged_attachment_preview("订单.csv").is_err());
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub async fn fs_read_workspace_image(
     workdir: String,

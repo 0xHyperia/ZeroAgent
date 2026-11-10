@@ -87,6 +87,7 @@ export type WorkspaceFilePreviewOpenRequest = {
   path: string;
   imagePaths?: string[];
   returnFocusTo?: HTMLElement;
+  stagedAttachment?: { conversationId: string; path: string };
 };
 
 type ReadWorkspacePreviewResponse = {
@@ -377,10 +378,15 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         replacePreview(null);
       }
       try {
-        const response = await invokeFs<ReadWorkspacePreviewResponse>("fs_read_workspace_image", {
-          workdir: request.workdir,
-          path: request.path,
-        });
+        const response = request.stagedAttachment
+          ? await invokeFs<ReadWorkspacePreviewResponse>("fs_read_conversation_attachment", {
+              conversation_id: request.stagedAttachment.conversationId,
+              path: request.stagedAttachment.path,
+            })
+          : await invokeFs<ReadWorkspacePreviewResponse>("fs_read_workspace_image", {
+              workdir: request.workdir,
+              path: request.path,
+            });
         if (loadSequenceRef.current !== sequence || !currentProps.current.isOpen) return;
         const bytes = base64ToBytes(response.data);
         // Native contentHash is a cache/version fingerprint, not SHA-256. Bind the
@@ -394,7 +400,11 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         const blobBytes =
           kind === "html" &&
           text !== null &&
-          !(currentProps.current.tabbed && HTML_DOCUMENT.test(response.path || request.path))
+          !(
+            currentProps.current.tabbed &&
+            !request.stagedAttachment &&
+            HTML_DOCUMENT.test(response.path || request.path)
+          )
             ? new TextEncoder().encode(buildSandboxedHtmlPreviewSource(text))
             : bytes;
         const blob = new Blob([bytesToArrayBuffer(blobBytes)], { type: response.mimeType });
@@ -443,7 +453,11 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       kind === "image" ? normalizeImagePaths(activePreviewRequest?.imagePaths, activePath) : [],
     [activePath, activePreviewRequest?.imagePaths, kind],
   );
-  const canOpenEditor = Boolean(activePreviewRequest && isWorkspaceEditablePreviewPath(activePath));
+  const canOpenEditor = Boolean(
+    activePreviewRequest &&
+      !activePreviewRequest.stagedAttachment &&
+      isWorkspaceEditablePreviewPath(activePath),
+  );
   const canOpenExternal = Boolean(
     supportsExternalWorkspaceOpen && activePreviewRequest && activePath,
   );
@@ -537,7 +551,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       onOpenImagePath={openImagePath}
       onActionError={setError}
       reader={reader}
-      tabbed={props.tabbed}
+      tabbed={props.tabbed && !activePreviewRequest?.stagedAttachment}
       onOpenHTMLLink={props.onOpenHTMLLink}
       readingViewId={props.readingViewId}
       markdownSelectionActions={props.markdownSelectionActions}

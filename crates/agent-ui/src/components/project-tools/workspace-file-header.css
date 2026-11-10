@@ -86,11 +86,11 @@ button.za-workspace-file-path-label[aria-expanded="true"] {
   text-align: start;
 }
 
-.za-breadcrumb-entry:is(:hover, [aria-current="page"]) {
+.za-breadcrumb-entry:is(:hover, [aria-current]) {
   background: var(--za-control-hover);
 }
 
-.za-breadcrumb-entry:is(:focus-visible, [aria-current="page"]) {
+.za-breadcrumb-entry:is(:focus-visible, [aria-current]) {
   outline: 1px solid hsl(var(--ring));
   outline-offset: -1px;
 }

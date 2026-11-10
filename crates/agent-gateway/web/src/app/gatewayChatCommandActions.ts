@@ -240,12 +240,15 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
       await prepareChatRuntime("send", api, CHAT_RUNTIME_PREPARE_TIMEOUT_MS, isCurrentAgent);
       return api.chatCommand(
         {
-          type: sendOptions?.editMessageRef ? "chat.edit_resend" : "chat.submit",
+          type: sendOptions?.imageEditInstruction
+            ? "chat.image_edit"
+            : sendOptions?.editMessageRef ? "chat.edit_resend" : "chat.submit",
           message,
           conversationId: startedAsDraftConversation ? undefined : activeConversationId,
           selectedModel: buildGatewaySelectedModel(turnSelectedModel, activeProviders),
           systemSettings: buildGatewaySystemSettings(settings, effectiveWorkdir),
           uploadedFiles,
+          imageEditInstruction: sendOptions?.imageEditInstruction,
           referencedConversations: sendOptions?.referencedConversations,
           clientRequestId,
           runtimeControls,

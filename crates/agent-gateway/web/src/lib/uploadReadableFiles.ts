@@ -82,6 +82,7 @@ export async function importReadableFiles(
   agentId: string,
   workdir: string,
   files: File[],
+  signal?: AbortSignal,
 ): Promise<ImportReadableFilesResponse> {
   const normalizedToken = token.trim();
   const normalizedAgentId = agentId.trim();
@@ -114,6 +115,7 @@ export async function importReadableFiles(
       Authorization: `Bearer ${normalizedToken}`,
     },
     body: formData,
+    signal,
   });
 
   if (!response.ok) {

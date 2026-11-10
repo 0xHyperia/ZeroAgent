@@ -2,8 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 
+const breadcrumbListings = {
+  "": ["src/", "README.md"],
+  src: ["src/components/", "src/index.ts"],
+  "src/components": ["src/components/Panel.tsx", "src/components/Toolbar.tsx"],
+};
+const breadcrumbReads = [];
 const env = await createDomTestEnv({
   mocks: {
+    "@liveagent/ui/lib/tools/fsBackend": {
+      async invokeFs(command, { path = "" }) {
+        assert.equal(command, "fs_list");
+        breadcrumbReads.push(path);
+        return {
+          entries: breadcrumbListings[path].map((entry) => ({
+            path: entry.replace(/\/$/, ""),
+            kind: entry.endsWith("/") ? "dir" : "file",
+          })),
+        };
+      },
+    },
     "./rightDockRegistry": {
       getRightDockToolDefinition: () => ({
         titleKey: "projectTools.gitReviewTitle",
@@ -19,11 +37,70 @@ const { useWorkspaceTabs, workspaceFileTabId } = loadModule(
 );
 const { workbenchBrowserLinkUrl } = loadModule("@liveagent/ui/lib/chat/workbenchBrowserLink.ts");
 const { RightDockTabStrip } = loadModule("@liveagent/ui/components/project-tools/RightDockTabStrip.tsx");
+const { WorkspaceFileHeader } = loadModule(
+  "@liveagent/ui/components/project-tools/WorkspaceFileHeader.tsx",
+);
+const { TooltipProvider } = loadModule("@liveagent/ui/components/ui/tooltip");
 const { desktopWorkspaceTabWidths } = loadModule(
   "@liveagent/ui/components/project-tools/desktopWorkspaceTabLayout.ts",
 );
 
 const file = (path) => ({ projectPathKey: "d:/repo", workdir: "D:\\repo", path });
+
+test("breadcrumb root, folder and file open different selections", async (t) => {
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  t.after(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+  const opened = [];
+  const noop = () => {};
+  await act(async () => root.render(React.createElement(TooltipProvider, null,
+    React.createElement(WorkspaceFileHeader, {
+      active: true,
+      nativeFileActions: false,
+      request: file("src/components/Panel.tsx"),
+      setFormatTools: noop,
+      onOpenFile: (path) => opened.push(path),
+      onError: (error) => assert.fail(error),
+      readDraft: noop,
+      beforeOpen: async () => true,
+    }),
+  )));
+  const crumbs = container.querySelectorAll("nav ol button");
+  const popup = () => document.querySelector("[data-workspace-breadcrumb-picker]");
+  const current = () => popup()?.querySelector("[aria-current]");
+  const rows = () => [...popup().querySelectorAll(".za-breadcrumb-entry")].map((row) => row.textContent);
+  const click = (element) => act(async () => element.click());
+
+  await click(crumbs[0]);
+  assert.equal(current(), null);
+  assert.deepEqual(rows(), ["src", "README.md"]);
+  assert.deepEqual(breadcrumbReads, [""]);
+
+  await click(crumbs[1]);
+  assert.equal(current().textContent, "src");
+  assert.equal(current().getAttribute("aria-current"), "location");
+  assert.equal(current().getAttribute("aria-expanded"), "true");
+  assert.deepEqual(rows(), ["src", "components", "index.ts", "README.md"]);
+  assert.deepEqual(breadcrumbReads.slice(-2), ["", "src"]);
+
+  await click(current());
+  assert.deepEqual(rows(), ["src", "README.md"]);
+  await click(crumbs[2]);
+  assert.equal(current().textContent, "components");
+  assert.deepEqual(rows(), ["components", "Panel.tsx", "Toolbar.tsx", "index.ts"]);
+  assert.deepEqual(breadcrumbReads.slice(-2), ["src", "src/components"]);
+
+  await click(crumbs[3]);
+  assert.equal(current().textContent, "Panel.tsx");
+  assert.equal(current().getAttribute("aria-current"), "page");
+  assert.deepEqual(rows(), ["Panel.tsx", "Toolbar.tsx"]);
+  assert.equal(breadcrumbReads.at(-1), "src/components");
+  await click(popup().querySelectorAll(".za-breadcrumb-entry")[1]);
+  assert.deepEqual(opened, ["src/components/Toolbar.tsx"]);
+});
 
 test("desktop tabs share a fixed pane while reserving additional tab actions", () => {
   const sameTabs = [0, 0, 30, 0];

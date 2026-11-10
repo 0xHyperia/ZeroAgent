@@ -987,10 +987,15 @@ impl GatewayController {
                 tauri::async_runtime::spawn(async move {
                     let conversation_id = request.conversation_id.clone();
                     let lookup_id = format!("{request_id}:chat-file-workdir");
-                    let current_workdir =
-                        || controller.kbrain_conversation_workdir(lookup_id, conversation_id);
-                    let result =
-                        gateway_bridge::handle_chat_file_open(request, current_workdir).await;
+                    let result = if request.source == "attachment-preview" {
+                        controller
+                            .read_conversation_attachment(lookup_id, request)
+                            .await
+                    } else {
+                        let current_workdir =
+                            || controller.kbrain_conversation_workdir(lookup_id, conversation_id);
+                        gateway_bridge::handle_chat_file_open(request, current_workdir).await
+                    };
                     let envelope = match result {
                         Ok(response) => proto::AgentEnvelope {
                             request_id,

@@ -98,6 +98,29 @@ func TestComposerCommandSurvivesGatewayCommandRoundTrip(t *testing.T) {
 	}
 }
 
+func TestImageEditInstructionStaysSeparateFromVisibleMessage(t *testing.T) {
+	request := &gatewayv2.ChatRequest{
+		ConversationId: "conversation-1", ClientRequestId: "edit-1",
+		Message: "Remove the background", ImageEditInstruction: "Edit the original asset",
+	}
+	body := RequestBodyFromProto(request)
+	if err := NormalizeRequestBody(&body); err != nil {
+		t.Fatal(err)
+	}
+	out := buildCommandEnvelope("run-1", "chat.image_edit", body, nil).GetChatCommand().GetRequest()
+	if out.GetMessage() != request.Message || out.GetImageEditInstruction() != request.ImageEditInstruction {
+		t.Fatalf("image edit changed in transit: %v", out)
+	}
+	visible := BuildAcceptedCommandPayloads(body, nil)[0]
+	if visible["message"] != request.Message || visible["image_edit_instruction"] != nil {
+		t.Fatalf("edit instructions leaked into the transcript: %v", visible)
+	}
+	body.PlanCommand = true
+	if err := NormalizeRequestBody(&body); err == nil {
+		t.Fatal("image edit combined with plan command")
+	}
+}
+
 func TestNormalizeRequestBodyRejectsInvalidComposerCommands(t *testing.T) {
 	for name, body := range map[string]handler.ChatRequestBody{
 		"unknown goal action":      {GoalAction: "clear"},

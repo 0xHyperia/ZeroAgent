@@ -458,15 +458,22 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     };
   }
 
-  async cancelChat(conversationId: string, runId?: string): Promise<void> {
+  async cancelChat(conversationId: string, runId?: string): Promise<boolean> {
     const normalized = conversationId.trim();
-    if (!normalized) {
-      return;
-    }
-    await this.request("chat.cancel", {
-      conversation_id: normalized,
-      run_id: runId?.trim() || undefined,
-    });
+    if (!normalized) return false;
+    const targetRun = runId?.trim() || undefined;
+    const result = await this.request<{ ok: boolean; conversation_id: string; run_id: string }>(
+      "chat.cancel",
+      {
+        conversation_id: normalized,
+        run_id: targetRun,
+      },
+    );
+    return (
+      result?.ok === true &&
+      result.conversation_id === normalized &&
+      (!targetRun || result.run_id === targetRun)
+    );
   }
 
   async processSnapshot(): Promise<ManagedProcessStatePayload> {

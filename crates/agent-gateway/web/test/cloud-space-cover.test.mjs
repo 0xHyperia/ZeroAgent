@@ -141,6 +141,12 @@ test("shared draft thumbnails still release offscreen previews unless retention 
   const app = await mount(t, {}, "thumbnail");
   const thumbnail = app.host.querySelector(".za-resource-thumbnail");
   await app.intersect(thumbnail, true);
+  // The original has to pass asynchronous SHA-256 verification and lazy rendering.
+  const deadline = Date.now() + 2_000;
+  while (!app.rendered() && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await app.flush();
+  }
   assert.ok(app.rendered());
   await app.intersect(thumbnail, false);
   assert.equal(app.rendered(), null);

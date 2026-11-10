@@ -215,6 +215,16 @@ export async function invoke<T>(command: string, args?: Record<string, unknown>)
         String(args?.workdir ?? ""),
         String(args?.path ?? ""),
       )) as T;
+    case "fs_read_conversation_attachment": {
+      const result = await getGatewayWebSocketClient(loadToken().trim()).openChatFile({
+        conversationId: String(args?.conversation_id ?? ""),
+        workdir: "",
+        path: String(args?.path ?? ""),
+        source: "attachment-preview",
+      });
+      if (!result.attachmentPreview) throw new Error("The conversation attachment is unavailable.");
+      return result.attachmentPreview as T;
+    }
     case "open_chat_file_link":
       return (await getGatewayWebSocketClient(loadToken().trim()).openChatFile({
         conversationId: String(args?.conversation_id ?? ""),

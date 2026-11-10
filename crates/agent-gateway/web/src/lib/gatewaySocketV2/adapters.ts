@@ -447,6 +447,7 @@ function buildChatCommand(body: J) {
       goalText: str(inner.goal_text),
       promptCommand: bool(inner.prompt_command),
       planCommand: bool(inner.plan_command),
+      imageEditInstruction: trimStr(inner.image_edit_instruction),
       mcpServers: inner.mcp_servers
         ? create(ChatMcpServerSelectionSchema, {
             serverIds: stringList(rec(inner.mcp_servers).server_ids),
@@ -1648,7 +1649,8 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
         mtimeMs: num(payload.value.mtimeMs),
         contentHash: payload.value.contentHash,
       };
-    case "chatFileOpenResp":
+    case "chatFileOpenResp": {
+      const attachment = payload.value.attachmentPreview;
       return {
         action: payload.value.action,
         kind: payload.value.kind,
@@ -1658,7 +1660,18 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
         endLine: payload.value.endLine,
         column: payload.value.column,
         outsideWorkspace: payload.value.outsideWorkspace,
+        ...(attachment && {
+          attachmentPreview: {
+            path: attachment.path,
+            mimeType: attachment.mimeType,
+            data: attachment.data,
+            sizeBytes: num(attachment.sizeBytes),
+            mtimeMs: num(attachment.mtimeMs),
+            contentHash: attachment.contentHash,
+          },
+        }),
       };
+    }
     case "fsWriteTextResp":
       return {
         path: payload.value.path,

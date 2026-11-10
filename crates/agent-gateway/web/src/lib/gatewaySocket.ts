@@ -157,7 +157,7 @@ export type GatewayWebSocketClientLike = {
     handlers: ConversationStreamHandlers,
   ): () => void;
   chatCommand(input: GatewayChatCommandInput): Promise<ChatCommandAccepted>;
-  cancelChat(conversationId: string, runId?: string): Promise<void>;
+  cancelChat(conversationId: string, runId?: string): Promise<boolean>;
   chatQueueGet(conversationId: string): Promise<ChatQueueResponse>;
   chatQueueSetPaused(
     conversationId: string,

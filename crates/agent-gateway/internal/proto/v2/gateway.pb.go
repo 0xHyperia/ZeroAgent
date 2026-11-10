@@ -7514,9 +7514,11 @@ type ChatRequest struct {
 	// The project's MCP server choice (Project settings, custom or off). Absent
 	// means the project inherits the global MCP settings; present with no ids
 	// means the run offers no MCP server.
-	McpServers    *ChatMcpServerSelection `protobuf:"bytes,17,opt,name=mcp_servers,json=mcpServers,proto3" json:"mcp_servers,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	McpServers *ChatMcpServerSelection `protobuf:"bytes,17,opt,name=mcp_servers,json=mcpServers,proto3" json:"mcp_servers,omitempty"`
+	// Model-only directions accompanying the visible image-edit message.
+	ImageEditInstruction string `protobuf:"bytes,18,opt,name=image_edit_instruction,json=imageEditInstruction,proto3" json:"image_edit_instruction,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ChatRequest) Reset() {
@@ -7659,6 +7661,13 @@ func (x *ChatRequest) GetMcpServers() *ChatMcpServerSelection {
 		return x.McpServers
 	}
 	return nil
+}
+
+func (x *ChatRequest) GetImageEditInstruction() string {
+	if x != nil {
+		return x.ImageEditInstruction
+	}
+	return ""
 }
 
 type ChatMcpServerSelection struct {
@@ -14075,8 +14084,10 @@ type ChatFileOpenResponse struct {
 	EndLine          *uint32                `protobuf:"varint,6,opt,name=end_line,json=endLine,proto3,oneof" json:"end_line,omitempty"`
 	Column           *uint32                `protobuf:"varint,7,opt,name=column,proto3,oneof" json:"column,omitempty"`
 	OutsideWorkspace bool                   `protobuf:"varint,8,opt,name=outside_workspace,json=outsideWorkspace,proto3" json:"outside_workspace,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Returned only for the read-only attachment-preview source.
+	AttachmentPreview *FsReadWorkspaceImageResponse `protobuf:"bytes,9,opt,name=attachment_preview,json=attachmentPreview,proto3" json:"attachment_preview,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ChatFileOpenResponse) Reset() {
@@ -14163,6 +14174,13 @@ func (x *ChatFileOpenResponse) GetOutsideWorkspace() bool {
 		return x.OutsideWorkspace
 	}
 	return false
+}
+
+func (x *ChatFileOpenResponse) GetAttachmentPreview() *FsReadWorkspaceImageResponse {
+	if x != nil {
+		return x.AttachmentPreview
+	}
+	return nil
 }
 
 type FsWriteTextRequest struct {
@@ -17515,7 +17533,7 @@ const file_proto_v2_gateway_proto_rawDesc = "" +
 	"\vGitResponse\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1f\n" +
 	"\vresult_json\x18\x02 \x01(\tR\n" +
-	"resultJson\"\xe5\x06\n" +
+	"resultJson\"\x9b\a\n" +
 	"\vChatRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12N\n" +
@@ -17535,7 +17553,8 @@ const file_proto_v2_gateway_proto_rawDesc = "" +
 	"\x0eprompt_command\x18\x0f \x01(\bR\rpromptCommand\x12!\n" +
 	"\fplan_command\x18\x10 \x01(\bR\vplanCommand\x12M\n" +
 	"\vmcp_servers\x18\x11 \x01(\v2,.liveagent.gateway.v2.ChatMcpServerSelectionR\n" +
-	"mcpServersJ\x04\b\x06\x10\aR\x15selected_system_tools\"7\n" +
+	"mcpServers\x124\n" +
+	"\x16image_edit_instruction\x18\x12 \x01(\tR\x14imageEditInstructionJ\x04\b\x06\x10\aR\x15selected_system_tools\"7\n" +
 	"\x16ChatMcpServerSelection\x12\x1d\n" +
 	"\n" +
 	"server_ids\x18\x01 \x03(\tR\tserverIds\"\xcf\x01\n" +
@@ -18034,7 +18053,7 @@ const file_proto_v2_gateway_proto_rawDesc = "" +
 	"\x14open_in_file_manager\x18\b \x01(\bR\x11openInFileManagerB\a\n" +
 	"\x05_lineB\v\n" +
 	"\t_end_lineB\t\n" +
-	"\a_column\"\x94\x02\n" +
+	"\a_column\"\xf7\x02\n" +
 	"\x14ChatFileOpenResponse\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +
@@ -18043,7 +18062,8 @@ const file_proto_v2_gateway_proto_rawDesc = "" +
 	"\x04line\x18\x05 \x01(\rH\x00R\x04line\x88\x01\x01\x12\x1e\n" +
 	"\bend_line\x18\x06 \x01(\rH\x01R\aendLine\x88\x01\x01\x12\x1b\n" +
 	"\x06column\x18\a \x01(\rH\x02R\x06column\x88\x01\x01\x12+\n" +
-	"\x11outside_workspace\x18\b \x01(\bR\x10outsideWorkspaceB\a\n" +
+	"\x11outside_workspace\x18\b \x01(\bR\x10outsideWorkspace\x12a\n" +
+	"\x12attachment_preview\x18\t \x01(\v22.liveagent.gateway.v2.FsReadWorkspaceImageResponseR\x11attachmentPreviewB\a\n" +
 	"\x05_lineB\v\n" +
 	"\t_end_lineB\t\n" +
 	"\a_column\"\xbe\x02\n" +
@@ -18746,24 +18766,25 @@ var file_proto_v2_gateway_proto_depIdxs = []int32{
 	151, // 218: liveagent.gateway.v2.FsRootsResponse.roots:type_name -> liveagent.gateway.v2.FsRoot
 	155, // 219: liveagent.gateway.v2.FsListDirsResponse.entries:type_name -> liveagent.gateway.v2.FsDirEntry
 	160, // 220: liveagent.gateway.v2.FsListResponse.entries:type_name -> liveagent.gateway.v2.FsListEntry
-	179, // 221: liveagent.gateway.v2.ProviderCustomHeaders.headers:type_name -> liveagent.gateway.v2.ProviderCustomHeader
-	180, // 222: liveagent.gateway.v2.ProviderModelsRequest.custom_headers:type_name -> liveagent.gateway.v2.ProviderCustomHeaders
-	186, // 223: liveagent.gateway.v2.ChatIngressBatch.records:type_name -> liveagent.gateway.v2.ChatIngressRecord
-	187, // 224: liveagent.gateway.v2.ChatIngressRecord.delta:type_name -> liveagent.gateway.v2.ChatIngressDelta
-	189, // 225: liveagent.gateway.v2.ChatIngressRecord.checkpoint:type_name -> liveagent.gateway.v2.ChatIngressCheckpoint
-	190, // 226: liveagent.gateway.v2.ChatIngressRecord.terminal:type_name -> liveagent.gateway.v2.ChatIngressTerminal
-	188, // 227: liveagent.gateway.v2.ChatIngressRecord.heartbeat:type_name -> liveagent.gateway.v2.ChatIngressHeartbeat
-	192, // 228: liveagent.gateway.v2.ChatIngressResume.runs:type_name -> liveagent.gateway.v2.ChatIngressRunResume
-	4,   // 229: liveagent.gateway.v2.ChatIngressAck.action:type_name -> liveagent.gateway.v2.ChatIngressAck.Action
-	79,  // 230: liveagent.gateway.v2.HistorySetCwdResponse.conversation:type_name -> liveagent.gateway.v2.ConversationSummary
-	197, // 231: liveagent.gateway.v2.WorkspaceRootGrantsRequest.grants:type_name -> liveagent.gateway.v2.WorkspaceRootGrantDraft
-	198, // 232: liveagent.gateway.v2.WorkspaceRootGrantsResponse.grants:type_name -> liveagent.gateway.v2.WorkspaceRootGrant
-	201, // 233: liveagent.gateway.v2.CheckpointRequest.expected:type_name -> liveagent.gateway.v2.CheckpointExpectedEntry
-	234, // [234:234] is the sub-list for method output_type
-	234, // [234:234] is the sub-list for method input_type
-	234, // [234:234] is the sub-list for extension type_name
-	234, // [234:234] is the sub-list for extension extendee
-	0,   // [0:234] is the sub-list for field type_name
+	165, // 221: liveagent.gateway.v2.ChatFileOpenResponse.attachment_preview:type_name -> liveagent.gateway.v2.FsReadWorkspaceImageResponse
+	179, // 222: liveagent.gateway.v2.ProviderCustomHeaders.headers:type_name -> liveagent.gateway.v2.ProviderCustomHeader
+	180, // 223: liveagent.gateway.v2.ProviderModelsRequest.custom_headers:type_name -> liveagent.gateway.v2.ProviderCustomHeaders
+	186, // 224: liveagent.gateway.v2.ChatIngressBatch.records:type_name -> liveagent.gateway.v2.ChatIngressRecord
+	187, // 225: liveagent.gateway.v2.ChatIngressRecord.delta:type_name -> liveagent.gateway.v2.ChatIngressDelta
+	189, // 226: liveagent.gateway.v2.ChatIngressRecord.checkpoint:type_name -> liveagent.gateway.v2.ChatIngressCheckpoint
+	190, // 227: liveagent.gateway.v2.ChatIngressRecord.terminal:type_name -> liveagent.gateway.v2.ChatIngressTerminal
+	188, // 228: liveagent.gateway.v2.ChatIngressRecord.heartbeat:type_name -> liveagent.gateway.v2.ChatIngressHeartbeat
+	192, // 229: liveagent.gateway.v2.ChatIngressResume.runs:type_name -> liveagent.gateway.v2.ChatIngressRunResume
+	4,   // 230: liveagent.gateway.v2.ChatIngressAck.action:type_name -> liveagent.gateway.v2.ChatIngressAck.Action
+	79,  // 231: liveagent.gateway.v2.HistorySetCwdResponse.conversation:type_name -> liveagent.gateway.v2.ConversationSummary
+	197, // 232: liveagent.gateway.v2.WorkspaceRootGrantsRequest.grants:type_name -> liveagent.gateway.v2.WorkspaceRootGrantDraft
+	198, // 233: liveagent.gateway.v2.WorkspaceRootGrantsResponse.grants:type_name -> liveagent.gateway.v2.WorkspaceRootGrant
+	201, // 234: liveagent.gateway.v2.CheckpointRequest.expected:type_name -> liveagent.gateway.v2.CheckpointExpectedEntry
+	235, // [235:235] is the sub-list for method output_type
+	235, // [235:235] is the sub-list for method input_type
+	235, // [235:235] is the sub-list for extension type_name
+	235, // [235:235] is the sub-list for extension extendee
+	0,   // [0:235] is the sub-list for field type_name
 }
 
 func init() { file_proto_v2_gateway_proto_init() }

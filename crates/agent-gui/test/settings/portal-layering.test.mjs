@@ -180,6 +180,22 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
         assert.doesNotMatch(source.slice(content.start, content.end), /aria-modal|\b(?:fixed|absolute)\b|layer-(?:popover|modal|toast|critical)/);
         continue;
       }
+      if (source.includes("fileToolbar?: { navigation: HTMLElement | null; actions: HTMLElement | null }") &&
+          ["fileToolbar.navigation", "fileToolbar.actions"].includes(targetSource)) {
+        const layout = readShared("components/project-tools/WorkspaceTabPresentation.tsx");
+        assert.match(layout, /fileToolbar=\{\{ navigation: diffNavigation, actions: diffActions \}\}/);
+        assert.match(layout, /ref=\{setDiffNavigation\} className="empty:hidden"/);
+        assert.match(layout, /ref=\{setDiffActions\} className="empty:hidden"/);
+        assert.match(source.slice(content.start, content.end), /^(?:<WorkspaceDiffNavigation root=\{reviewRef\} \/>|toolbar)$/);
+        continue;
+      }
+      if (targetSource === "chrome.headerTarget" && content?.name === "fileHeader") {
+        const dock = readShared("components/project-tools/RightDockPanel.tsx");
+        assert.match(source, /const fileHeader = active \? \(\s*<WorkspaceFileHeader/);
+        assert.match(dock, /ref=\{setFileHeaderTarget\} className="z-10 shrink-0 empty:hidden"/);
+        assert.match(dock, /headerTarget: fileHeaderTarget/);
+        continue;
+      }
       if (content?.type === "Identifier" && content.name === "review" && targetSource === "selectionEdit.inlineHost" && source.includes("useWorkspaceMarkdownSelectionEdit(")) {
         const host = readShared("components/workspace-editor/useWorkspaceMarkdownSelectionEdit.ts");
         assert.match(host, /host\.className = "za-markdown-review-widget"/);

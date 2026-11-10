@@ -134,13 +134,13 @@ function isWithinDirectory(path: string, directory: string) {
 function BreadcrumbDirectory({
   workdir,
   directory,
-  currentFile,
+  selectedPath,
   depth = 0,
   onOpenFile,
 }: {
   workdir: string;
   directory: string;
-  currentFile: string;
+  selectedPath?: string;
   depth?: number;
   onOpenFile: (path: string) => void;
 }) {
@@ -220,9 +220,8 @@ function BreadcrumbDirectory({
     <>
       {snapshot?.entries.map((entry) => {
         const folder = entry.kind === "dir";
-        const open =
-          folder && (expanded.get(entry.path) ?? currentFile.startsWith(`${entry.path}/`));
-        const active = entry.path === currentFile;
+        const active = entry.path === selectedPath;
+        const open = folder && (expanded.get(entry.path) ?? active);
         const Icon = folder ? ChevronRight : getFileTypeIcon(entry.path, "file");
         return (
           <div key={entry.path}>
@@ -231,7 +230,7 @@ function BreadcrumbDirectory({
               type="button"
               className="za-breadcrumb-entry"
               style={{ paddingInlineStart: 5 + depth * 12 }}
-              aria-current={active ? "page" : undefined}
+              aria-current={active ? (folder ? "location" : "page") : undefined}
               aria-expanded={folder ? open : undefined}
               onClick={() => {
                 if (!folder) {
@@ -251,7 +250,6 @@ function BreadcrumbDirectory({
               <BreadcrumbDirectory
                 workdir={workdir}
                 directory={entry.path}
-                currentFile={currentFile}
                 depth={depth + 1}
                 onOpenFile={onOpenFile}
               />
@@ -285,11 +283,9 @@ function WorkspaceBreadcrumbs({
   const pathRef = useRef<HTMLElement>(null);
   const [firstVisible, setFirstVisible] = useState(0);
   const breadcrumbId = useId();
-  const [picker, setPicker] = useState<{ id: string; index: number; directory: string } | null>(
-    null,
-  );
+  const [picker, setPicker] = useState<{ id: string; index: number } | null>(null);
   const pickerIndex = picker?.index ?? -1;
-  const pickerOpen = active && picker !== null && pickerIndex >= firstVisible;
+  const pickerOpen = active && pickerIndex >= firstVisible && pickerIndex <= parts.length;
   // biome-ignore lint/correctness/useExhaustiveDependencies: Path changes can replace observed DOM nodes.
   useLayoutEffect(() => {
     const nav = pathRef.current;
@@ -343,19 +339,17 @@ function WorkspaceBreadcrumbs({
   return (
     <Popover
       open={pickerOpen}
-      triggerId={picker?.id}
+      triggerId={picker?.id ?? null}
       onOpenChange={(open, details) => {
         if (!open) {
           setPicker(null);
           return;
         }
         const trigger = details.trigger;
-        const directory = trigger?.getAttribute("data-directory");
-        if (trigger && directory != null) {
+        if (trigger) {
           setPicker({
             id: trigger.id,
             index: Number(trigger.getAttribute("data-breadcrumb-index")),
-            directory,
           });
         }
       }}
@@ -369,7 +363,6 @@ function WorkspaceBreadcrumbs({
           {[workspaceFileName(request.workdir), ...parts].map((part, index) => {
             const last = index === parts.length;
             const segment = parts.slice(0, index).join("/");
-            const path = last ? parts.slice(0, -1).join("/") : segment;
             const label = zh ? `浏览 ${part}` : `Browse ${part}`;
             return (
               <li
@@ -387,7 +380,6 @@ function WorkspaceBreadcrumbs({
                       type="button"
                       id={`${breadcrumbId}-${index}`}
                       data-breadcrumb-index={index}
-                      data-directory={path}
                       className="za-workspace-file-path-label"
                       aria-label={label}
                       aria-current={last ? "page" : undefined}
@@ -434,10 +426,10 @@ function WorkspaceBreadcrumbs({
       >
         {picker && (
           <BreadcrumbDirectory
-            key={picker.directory}
+            key={JSON.stringify([request.workdir, relative, pickerIndex])}
             workdir={request.workdir}
-            directory={picker.directory}
-            currentFile={relative}
+            directory={parts.slice(0, Math.max(0, pickerIndex - 1)).join("/")}
+            selectedPath={pickerIndex > 0 ? parts.slice(0, pickerIndex).join("/") : undefined}
             onOpenFile={(path) => {
               setPicker(null);
               onOpenFile(path);

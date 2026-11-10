@@ -432,6 +432,11 @@ func vetChatFileOpen(req *gatewayv2.ChatFileOpenRequest) error {
 	}
 	switch strings.TrimSpace(req.GetSource()) {
 	case "absolute", "relative", "file-url":
+	case "attachment-preview":
+		if req.GetSource() != "attachment-preview" || req.GetWorkdir() != "" || req.GetOpenInFileManager() ||
+			req.Line != nil || req.EndLine != nil || req.Column != nil {
+			return errors.New("invalid conversation attachment preview request")
+		}
 	default:
 		return errors.New("linked file source is invalid")
 	}

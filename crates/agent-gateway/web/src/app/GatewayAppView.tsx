@@ -36,10 +36,13 @@ import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/
 import { MIN_DOCKED_WORKSPACE_WITH_CAPTIONS } from "@liveagent/ui/components/project-tools/rightDockModel";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import { useWorkspaceTabPresentation } from "@liveagent/ui/components/project-tools/WorkspaceTabPresentation";
+import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
+import { formatWorkspaceFileExcerpt, requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
+import type { ProjectToolTextGenerationClient } from "@liveagent/ui/lib/ai/projectToolTextGeneration";
+import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
+import { useGatewayDeviceImages } from "@/components/GatewayDeviceImages";
 import {
-  WorkspaceMainPanel,
-  WorkspacePanelGroup,
-  WorkspaceToolsPanel,
+  DeviceWorkbenchLayout,
 } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { Button } from "@liveagent/ui/components/ui/button";
@@ -364,6 +367,7 @@ export function GatewayAppView({
     historyDetailLoadingTitle,
     historyShareToken,
     importFilesForConversation,
+    importDeviceConversationFiles,
     isAgentDevExecutionMode,
     isAgentMode,
     isConversationBusy,
@@ -860,6 +864,29 @@ export function GatewayAppView({
   // 背景会话 Pane 的共享上下文(复刻桌面端 buildBackgroundPaneBinding):所有
   // 会话级动作按 Pane 自己的 conversationId 显式路由;页面级机制(选模型、
   // 编辑队列项等)由宿主内部先聚焦本 Pane(focusGuard 口径)。
+  const fileReaderOpen = workspaceFilePreviewOpen || (
+    rightDockOpen && workspaceTabs.view.tabs.some(
+      (tab) => tab.id === workspaceTabs.view.activeId && tab.kind === "file" && tab.mode === "preview",
+    )
+  );
+  const closeFileReader = useCallback(() => {
+    if (workspaceFilePreviewOpen) requestWorkspaceFilePreviewClose();
+    if (fileReaderOpen && rightDockOpen) handleRightDockClose();
+  }, [workspaceFilePreviewOpen, requestWorkspaceFilePreviewClose, fileReaderOpen, rightDockOpen, handleRightDockClose]);
+  const fallbackImages = useGatewayDeviceImages({
+    api,
+    conversationId: displayedConversationId,
+    workdir: terminalProjectPath,
+    enabled: !sessionWorkbench.enabled && renderedConversationView === "conversation" && isAgentMode,
+    offline: transportInputDisabled,
+    zh: settings.locale === "zh-CN",
+    store: transcriptStoreRegistry.get(displayedConversationId),
+    importFiles: importDeviceConversationFiles,
+    send: sendChat,
+    isRunning: () => isConversationBusy(displayedConversationId),
+    fileReaderOpen,
+    closeFileReader,
+  });
   const conversationPaneHostContext: GatewayConversationPaneHostContext = {
     api,
     registry: transcriptStoreRegistry,
@@ -904,6 +931,9 @@ export function GatewayAppView({
     handleConversationStreamEvent,
     handleConversationStreamSync,
     sendChat,
+    importDeviceConversationFiles,
+    fileReaderOpen,
+    closeFileReader,
     cancelChat,
     materializeComposerDraftForSend,
     getPendingUploads: getPendingUploadsForConversation,
@@ -1167,6 +1197,77 @@ export function GatewayAppView({
   // 口径):焦点只换 primary 绑定,绝不把页面舞台注入聚焦 Pane,也不按
   // conversationId 做 key(会在焦点切换时拆掉宿主)。终端 / unsupported 走
   // 各自的自包含表面。
+  const canReviseDocument = Boolean(
+    api && isAgentMode && displayedConversationId && terminalProjectPath &&
+    !accountDestination && activeView === "chat" && !transportInputDisabled,
+  );
+  const revisionScope = canReviseDocument
+    ? JSON.stringify([workspaceOwner, workspaceViewScope, displayedConversationId])
+    : "";
+  const revisionScopeRef = useRef(revisionScope);
+  revisionScopeRef.current = revisionScope;
+  const requestDocumentRevision = (revision: WorkspaceDocumentRevision) => {
+    if (!api || !revisionScope) return Promise.resolve(false);
+    const isCurrentAgent = api.captureActiveAgentScope();
+    const canSend = () => (
+      revisionScopeRef.current === revisionScope &&
+      isCurrentAgent() && !isConversationBusy(displayedConversationId)
+    );
+    return requestWorkspaceRevision(revision, {
+      canSend,
+      importSource: (source) => importDeviceConversationFiles(
+        terminalProjectPath, [source], AbortSignal.timeout(60_000),
+      ),
+      send: async (text, uploadedFiles) => {
+        const outcome = await sendChat(text, {
+          conversationId: displayedConversationId,
+          workdir: terminalProjectPath,
+          uploadedFiles,
+          isCurrentAgent,
+          preserveComposerOnStart: true,
+        });
+        return Boolean(outcome && outcome.kind !== "failed");
+      },
+    });
+  };
+  const insertWorkspaceMarkdownSelection = (text: string, path: string, comment?: string) => {
+    const zh = settings.locale === "zh-CN";
+    const excerpt = formatWorkspaceFileExcerpt(text, path, comment, zh);
+    if (!excerpt || !rightDockOpen) return false;
+    const composer = composerRef.current;
+    const accepted = composer?.appendSegments([{ type: "text", text: excerpt }]);
+    if (accepted) composer?.focus();
+    else addNotify("error", zh ? "当前输入框不可用" : "The composer is unavailable");
+    return Boolean(accepted);
+  };
+  const markdownTextGeneration: ProjectToolTextGenerationClient | undefined = api && !transportInputDisabled ? {
+    status: () => currentChatProvider && activeSelectedModel?.model ? "ready" : "unconfigured",
+    generate: async ({ systemPrompt, userPrompt, signal }) => {
+      const isCurrentAgent = api.captureActiveAgentScope();
+      signal?.throwIfAborted();
+      const model = activeSelectedModel?.model;
+      if (!currentChatProvider || !model || !isCurrentAgent()) throw new Error("No active model selected.");
+      const result = await api.clarifyPromptTurn({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        providerId: currentChatProvider.id,
+        model,
+        runtimeControls: {
+          ...chatRuntimeControlsForCurrentProvider,
+          reasoning: "off",
+          thinkingEnabled: false,
+          nativeWebSearchEnabled: false,
+          planModeEnabled: false,
+        },
+      });
+      signal?.throwIfAborted();
+      if (!isCurrentAgent()) throw new DOMException("Device changed", "AbortError");
+      if (result.error_code) throw new Error(result.error_message || result.error_code);
+      return result.final_text;
+    },
+  } : undefined;
   const workspacePresentation = useWorkspaceTabPresentation({
     resources: workspaceTabs,
     open: tabbedWorkspace && !accountDestination && activeView === "chat" && rightDockOpen,
@@ -1179,6 +1280,9 @@ export function GatewayAppView({
     activityClient: workspaceActivityClient,
     nativeFileActions: false,
     onInsertCodeMention: handleInsertCodeMention,
+    onInsertMarkdownSelection: insertWorkspaceMarkdownSelection,
+    markdownTextGeneration,
+    onDocumentRevision: canReviseDocument ? requestDocumentRevision : undefined,
     onError: (message) => addNotify("error", message),
   });
   const deviceWorkspace = tabbedWorkspace
@@ -1947,23 +2051,20 @@ export function GatewayAppView({
 
               {confirmDialog}
 
-              <WorkspacePanelGroup
+              <DeviceWorkbenchLayout
                 expanded={deviceWorkspace?.expanded}
-                open={
-                  !accountDestination &&
-                  Boolean(terminalClient) &&
-                  activeView === "chat" &&
-                  rightDockOpen
-                }
+                conversationVisible={!accountDestination && activeView === "chat"}
+                toolsOpen={Boolean(terminalClient) && rightDockOpen}
+                tabbed={tabbedWorkspace}
+                chrome={workbenchChrome}
                 width={settings.customSettings.rightDock.width}
                 onWidthChange={handleRightDockWidthChange}
                 onClose={handleRightDockClose}
-                immediate={!!accountDestination || activeView !== "chat"}
                 minDockedWidth={
                   desktopHost?.onWindowControlsTarget ? MIN_DOCKED_WORKSPACE_WITH_CAPTIONS : undefined
                 }
-              >
-                <WorkspaceMainPanel chrome={workbenchChrome}>
+                main={
+                  <>
                   {accountNavigation && (
                     <div
                       ref={accountSurface.setTarget}
@@ -2090,6 +2191,10 @@ export function GatewayAppView({
                             {sessionWorkbench.enabled ? (
                               renderConversationWorkbench()
                             ) : (
+                              <DeviceConversationImageSurface
+                                host={fallbackImages}
+                                includeAttachments={Boolean(displayedConversationWorkdir)}
+                              >
                               <section
                                 ref={transcriptStageRef}
                                 data-conversation-scope=""
@@ -2228,6 +2333,7 @@ export function GatewayAppView({
                                   />
                                 ) : null}
                                 <ChatComposerBar
+                                  focusImagePlacement
                                   presentation="column"
                                   capabilities={DEVICE_COMPOSER_CAPABILITIES}
                                   overlayHeightOwnerRef={chatFrameRef}
@@ -2492,6 +2598,7 @@ export function GatewayAppView({
                                   }
                                 />
                               </section>
+                              </DeviceConversationImageSurface>
                             )}
                           </>
                         ),
@@ -2536,9 +2643,9 @@ export function GatewayAppView({
                       }
                     />
                   </main>
-                </WorkspaceMainPanel>
-                <WorkspaceToolsPanel retainContent={tabbedWorkspace}>
-                  {terminalClient ? (
+                  </>
+                }
+                tools={terminalClient ? (
                     <RightDockPanel
                       workspace={deviceWorkspace}
                       workspaceViewScope={workspaceViewScope}
@@ -2616,9 +2723,8 @@ export function GatewayAppView({
                       onInsertGitFileMention={handleRightDockInsertGitFileMention}
                       onClose={handleRightDockClose}
                     />
-                  ) : null}
-                </WorkspaceToolsPanel>
-              </WorkspacePanelGroup>
+                ) : null}
+              />
             </WorkbenchBody>
           </WorkbenchShell>
 
