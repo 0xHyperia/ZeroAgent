@@ -79,6 +79,7 @@ import {
   loadReviewImportParser,
   type ReviewFileContents,
   type ReviewImportParser,
+  reviewHunkAnchors,
 } from "./workspaceReviewDiff";
 
 const RAW_DIFF_PREVIEW_CHAR_LIMIT = 60 * 1024;
@@ -441,6 +442,7 @@ function resolveDiffLineCommentLine(
 type WorkspaceReview = {
   presentation: WorkspaceGitPresentation;
   rows: PatchChunk[];
+  fileNavigation?: boolean;
   allowAutoSplit: boolean;
   isExpanded: (key: string) => boolean;
   onToggleFile: (key: string) => void;
@@ -856,6 +858,11 @@ const DiffChunkView = memo(function DiffChunkView(props: {
         id={bodyId}
         hidden={!expanded}
         data-review-word-diffs={workspaceReview?.presentation.wordDiffs}
+        data-review-hunk-anchors={
+          workspaceReview?.fileNavigation && expanded && diffFile && visiblePatch
+            ? reviewHunkAnchors(visiblePatch)
+            : undefined
+        }
       >
         {binaryKind && loadBinaryPreview
           ? expanded && (
@@ -1490,6 +1497,7 @@ export function DiffContent(props: {
       {!error && !showLoadingState && patchChunks.length > 0 ? (
         <div
           id={diffScrollViewportId}
+          data-review-scroll-viewport=""
           ref={(node) => {
             scrollViewportRef.current = node;
           }}

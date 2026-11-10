@@ -1,13 +1,9 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
-import {
-  Columns2,
-  Eye,
-  FilePenLine,
-  FileText,
-  Globe,
-  Loader2,
-} from "@liveagent/ui/components/IconSet";
-import type { WorkspaceBrowserTools } from "@liveagent/ui/components/project-tools/RightDockPanel";
+import { DiffSquare, Eye, FileText, Globe, Loader2, X } from "@liveagent/ui/components/IconSet";
+import type {
+  WorkspaceBrowserTools,
+  WorkspaceFileChrome,
+} from "@liveagent/ui/components/project-tools/RightDockPanel";
 import type { RightDockWorkspaceTab } from "@liveagent/ui/components/project-tools/RightDockTabStrip";
 import {
   WorkspaceFileDiff,
@@ -56,6 +52,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+import CodeIcon from "~icons/lucide/code-xml";
 import { DesktopWorkspaceFileHeader, workspaceFileName } from "./DesktopWorkspaceFileHeader";
 import type {
   DesktopWorkspaceTab,
@@ -189,7 +187,7 @@ export function useDesktopWorkspaceTabPresentation(options: TabOptions) {
     };
   });
 
-  const renderContent = (browserTools: WorkspaceBrowserTools) => (
+  const renderContent = (browserTools: WorkspaceBrowserTools, fileChrome: WorkspaceFileChrome) => (
     <>
       {[...resources.views].flatMap(([tabScope, view]) =>
         view.tabs.map((tab) => {
@@ -245,6 +243,7 @@ export function useDesktopWorkspaceTabPresentation(options: TabOptions) {
                   tab={tab}
                   scope={tabScope}
                   active={active}
+                  chrome={fileChrome}
                 />
               )}
             </div>
@@ -304,11 +303,13 @@ function WorkspaceFileTabPane({
   tab,
   scope,
   active,
+  chrome,
 }: {
   options: TabOptions;
   tab: Extract<DesktopWorkspaceTab, { kind: "file" }>;
   scope: string;
   active: boolean;
+  chrome: WorkspaceFileChrome;
 }) {
   const { locale } = useLocale();
   const { request, mode, openedModes } = tab;
@@ -346,6 +347,8 @@ function WorkspaceFileTabPane({
   }, [active, mode]);
   const editorHandle = useRef<WorkspaceFileEditorHandle>(null);
   const [formatTools, setFormatTools] = useState<HTMLDivElement | null>(null);
+  const [diffNavigation, setDiffNavigation] = useState<HTMLDivElement | null>(null);
+  const [diffActions, setDiffActions] = useState<HTMLDivElement | null>(null);
   const [switching, setSwitching] = useState(false);
   const [previewRevision, setPreviewRevision] = useState(0);
   const previewRequest = useMemo(
@@ -426,6 +429,7 @@ function WorkspaceFileTabPane({
           comparison={comparison}
           conversationId={comparisonConversationId}
           onComparisonChange={resources.setComparison}
+          capsule
         />
       )}
       {(canDiff || mode === "diff") && (
@@ -439,48 +443,71 @@ function WorkspaceFileTabPane({
           disabled={switching}
           onClick={() => void openMode(mode === "diff" ? returnMode.current : "diff")}
         >
-          <Columns2 className="size-3.5" />
+          {mode === "diff" ? (
+            <X aria-hidden="true" className="size-3.5" />
+          ) : (
+            <DiffSquare aria-hidden="true" className="size-3.5" />
+          )}
           {mode !== "diff" && <span className="za-workspace-file-action-label">{showChanges}</span>}
         </TooltipButton>
       )}
-      {canPreview && canEdit && mode !== "diff" && (
-        <TooltipButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 text-xs"
-          aria-label={mode === "preview" ? viewSource : viewPreview}
-          tooltip={mode === "preview" ? viewSource : viewPreview}
-          disabled={switching}
-          onClick={() => void openMode(mode === "preview" ? "source" : "preview")}
-        >
-          {switching ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : mode === "preview" ? (
-            <FilePenLine className="size-3.5" />
-          ) : (
-            <Eye className="size-3.5" />
-          )}
-          <span className="za-workspace-file-action-label">
-            {mode === "preview" ? viewSource : viewPreview}
-          </span>
-        </TooltipButton>
-      )}
+      {mode === "diff" && <div ref={setDiffNavigation} className="empty:hidden" />}
     </>
   );
+  const viewAction =
+    canPreview && canEdit ? (
+      <TooltipButton
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs"
+        aria-label={mode === "source" ? viewPreview : viewSource}
+        aria-busy={switching}
+        tooltip={mode === "source" ? viewPreview : viewSource}
+        disabled={switching}
+        onClick={() => void openMode(mode === "source" ? "preview" : "source")}
+      >
+        {switching ? (
+          <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+        ) : mode !== "source" ? (
+          <CodeIcon aria-hidden="true" className="size-3.5" />
+        ) : (
+          <Eye aria-hidden="true" className="size-3.5" />
+        )}
+        <span className="za-workspace-file-action-label">
+          {mode === "source" ? viewPreview : viewSource}
+        </span>
+      </TooltipButton>
+    ) : null;
+
+  const fileHeader = active ? (
+    <DesktopWorkspaceFileHeader
+      gitClient={canDiff ? gitClient : undefined}
+      active={active}
+      request={request}
+      modeActions={modeActions}
+      viewAction={viewAction}
+      comparisonActions={mode === "diff" && <div ref={setDiffActions} className="empty:hidden" />}
+      fileTree={chrome.tree}
+      editorTools={showEditor}
+      setFormatTools={setFormatTools}
+      onOpenFile={openRelatedFile}
+      onError={options.onError}
+      readDraft={() => editorHandle.current?.readDraft()}
+      beforeOpen={async () => {
+        if (switching || currentMode.current !== mode) return false;
+        if (showEditor && editorHandle.current) {
+          if (!(await editorHandle.current.saveForModeChange())) return false;
+        }
+        return currentMode.current === mode;
+      }}
+    />
+  ) : null;
 
   return (
     <>
-      <DesktopWorkspaceFileHeader
-        gitClient={canDiff ? gitClient : undefined}
-        active={active}
-        request={request}
-        modeActions={modeActions}
-        setFormatTools={setFormatTools}
-        onOpenFile={openRelatedFile}
-        onError={options.onError}
-        readDraft={() => editorHandle.current?.readDraft()}
-      />
+      {fileHeader &&
+        (chrome.headerTarget ? createPortal(fileHeader, chrome.headerTarget) : fileHeader)}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {openedModes.includes("preview") && !liveMarkdown && (
           <div
@@ -568,7 +595,7 @@ function WorkspaceFileTabPane({
               active={active && mode === "diff"}
               comparison={comparison}
               conversationId={comparisonConversationId}
-              hideComparisonMenu
+              fileToolbar={{ navigation: diffNavigation, actions: diffActions }}
               onComparisonChange={resources.setComparison}
               workdir={request.workdir}
               path={request.path}

@@ -22,6 +22,7 @@ const env = await createDomTestEnv({
 const { React, createRoot, act } = env;
 const { WorkbenchBrowserPane, submitDetachedBrowserAnnotations } = env.loadModule("src/components/workbench-browser/WorkbenchBrowserPane.tsx");
 const { resolveBrowserAddress, formatBrowserAddress } = env.loadModule("src/components/workbench-browser/browserAddress.ts");
+const { BrowserNewTab } = env.loadModule("src/components/workbench-browser/BrowserNewTab.tsx");
 
 test("browser addresses preserve valid HTTP URLs, search text, and reject executable schemes", () => {
   assert.equal(resolveBrowserAddress("example.com/a"), "https://example.com/a");
@@ -34,6 +35,33 @@ test("browser addresses preserve valid HTTP URLs, search text, and reject execut
   for (const input of ["file:///C:/private.txt", "javascript:alert(1)", "tauri://localhost/", "https://test:secret@example.com/"]) {
     assert.equal(resolveBrowserAddress(input), null);
   }
+});
+
+test("the new browser tab opens an address and offers no shared page creation", async (t) => {
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  t.after(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+  let opened = 0;
+  const noop = () => {};
+  await act(async () => root.render(React.createElement(BrowserNewTab, {
+    active: true,
+    tools: { newPage: () => assert.fail("shared page creation must not be exposed") },
+    visits: [],
+    onNavigate: noop,
+    onOpenTab: noop,
+    onOpenAddress: () => { opened++; },
+    onOpenOptions: noop,
+    onVisitStore: noop,
+  })));
+  const actions = Array.from(container.querySelectorAll("button"));
+  assert.ok(!actions.some((button) => button.textContent === "New page"));
+  const openAddress = actions.find((button) => button.textContent === "Open webpage");
+  assert.ok(openAddress);
+  await act(async () => openAddress.click());
+  assert.equal(opened, 1);
 });
 
 test("browser tab preserves its native session when hidden and yields to a DOM overlay", async () => {

@@ -1,8 +1,17 @@
 import type { RightDockTabKind } from "@liveagent/app/lib/settings";
-import { Check, Columns2, Cpu, GripVertical, Terminal, X } from "@liveagent/ui/components/IconSet";
+import {
+  Check,
+  Columns2,
+  Cpu,
+  DiffSquare,
+  GripVertical,
+  Terminal,
+  X,
+} from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
 import type { CSSProperties, ReactNode } from "react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/shared/utils";
 import type { TerminalSession } from "../../lib/terminal/types";
 import { Button } from "../ui/button";
@@ -12,6 +21,10 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../ui/context-menu";
+import {
+  desktopWorkspaceTabWidths,
+  useDesktopWorkspaceTabMeasurements,
+} from "./desktopWorkspaceTabLayout";
 import {
   formatTerminalSessionTitle,
   type RightDockLeasedToolKind,
@@ -126,6 +139,86 @@ const TAB_BASE_CLASS =
 const CLOSE_BUTTON_CLASS =
   "relative z-10 ml-0.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-background hover:text-foreground focus-visible:bg-background focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
+const TAB_EASE = [1 / 3, 2 / 3, 2 / 3, 1] as const;
+const TAB_OPEN = { duration: 0.2, ease: TAB_EASE };
+const TAB_CLOSE = { duration: 0.1, ease: TAB_EASE };
+
+type PointerCloseLayout = {
+  availableWidth: number | null;
+  tabIds: readonly string[];
+  sharedWidth: number;
+  closingId: string;
+  closingWidth: number;
+  scrollLeft: number;
+};
+
+function revealWorkspaceTab(frame: HTMLDivElement, behavior: ScrollBehavior) {
+  const strip = frame.closest<HTMLElement>(".project-tools-panel-tabs");
+  if (!strip) return;
+  const tabBounds = frame.getBoundingClientRect();
+  const stripBounds = strip.getBoundingClientRect();
+  const delta =
+    tabBounds.left < stripBounds.left
+      ? tabBounds.left - stripBounds.left
+      : Math.max(0, tabBounds.right - stripBounds.right);
+  if (delta) strip.scrollBy?.({ left: delta, behavior });
+}
+
+function WorkspaceTabFrame({
+  width,
+  animate,
+  animateWidth,
+  closing,
+  dragStyle,
+  active,
+  order,
+  children,
+}: {
+  width: number;
+  animate: boolean;
+  animateWidth: boolean;
+  closing: boolean;
+  dragStyle: CSSProperties | undefined;
+  active: boolean;
+  order: string;
+  children: (present: boolean) => ReactNode;
+}) {
+  const present = useIsPresent();
+  const frame = useRef<HTMLDivElement>(null);
+  const revealed = useRef(false);
+  const transition = closing ? TAB_CLOSE : TAB_OPEN;
+
+  useLayoutEffect(() => {
+    if (!animate && active && present && frame.current)
+      revealWorkspaceTab(frame.current, "instant");
+  }, [active, animate, present]);
+
+  return (
+    <motion.div
+      ref={frame}
+      className="za-workspace-tab-frame"
+      data-workspace-tab-exiting={present ? undefined : ""}
+      data-workspace-tab-dragging={dragStyle ? "" : undefined}
+      inert={!present}
+      aria-hidden={present ? undefined : true}
+      initial={animate ? { width: 0 } : false}
+      animate={{ width }}
+      exit={animate ? { width: 0, transition: TAB_CLOSE } : undefined}
+      layout={animate && !dragStyle ? "position" : false}
+      layoutDependency={order}
+      transition={{ width: animateWidth ? transition : { duration: 0 }, layout: transition }}
+      style={dragStyle}
+      onAnimationComplete={() => {
+        if (revealed.current || !present || !frame.current) return;
+        revealed.current = true;
+        if (active) revealWorkspaceTab(frame.current, animate ? "smooth" : "instant");
+      }}
+    >
+      {children(present)}
+    </motion.div>
+  );
+}
+
 export function RightDockTabStrip(props: RightDockTabStripProps) {
   const {
     tabs,
@@ -154,6 +247,10 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
   } = props;
   const { t } = useLocale();
   const desktopWorkspace = workspaceTabs !== undefined;
+  const prefersReducedMotion = useReducedMotion();
+  const [track, setTrack] = useState<HTMLDivElement | null>(null);
+  const { availableWidth, actionWidths } = useDesktopWorkspaceTabMeasurements(track);
+  const [pointerClose, setPointerClose] = useState<PointerCloseLayout | null>(null);
   // One open menu at a time, keyed by tab id — the strip is a single row, so a
   // per-tab open flag would only add bookkeeping.
   const [menuTabId, setMenuTabId] = useState("");
@@ -161,9 +258,18 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
   const closeFocus = useRef<{ id: string; strip: Element } | null>(null);
   useLayoutEffect(() => {
     const pending = closeFocus.current;
-    if (!pending || workspaceTabs?.some((tab) => tab.id === pending.id)) return;
+    if (
+      !pending ||
+      workspaceTabs?.some((tab) => tab.id === pending.id) ||
+      tabs.some((tab) => tab.id === pending.id)
+    )
+      return;
     closeFocus.current = null;
-    if (document.activeElement !== document.body) return;
+    if (
+      document.activeElement !== document.body &&
+      !document.activeElement?.closest("[data-workspace-tab-exiting]")
+    )
+      return;
     const next = pending.strip.querySelector<HTMLButtonElement>(
       '[data-workspace-tab-trigger][aria-selected="true"]',
     );
@@ -173,7 +279,56 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
         .closest("[data-app-frame-column]")
         ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
     )?.focus({ preventScroll: true });
-  }, [workspaceTabs]);
+  }, [tabs, workspaceTabs]);
+
+  useEffect(() => {
+    if (!pointerClose || !track) return;
+    const chrome = track.closest("[data-right-workspace-chrome]");
+    if (!chrome) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const clearTimer = () => {
+      clearTimeout(timer);
+      timer = undefined;
+    };
+    const unlock = () => {
+      clearTimer();
+      setPointerClose(null);
+    };
+    const onMove = (event: PointerEvent) => {
+      const bounds = chrome.getBoundingClientRect();
+      const rtl = getComputedStyle(chrome).direction === "rtl";
+      const inside =
+        event.clientX >= bounds.left - (rtl ? 60 : 0) &&
+        event.clientX < bounds.right + (rtl ? 0 : 60) &&
+        event.clientY >= bounds.top &&
+        event.clientY < bounds.bottom + 40;
+      if (inside) clearTimer();
+      else timer ??= setTimeout(unlock, 300);
+    };
+    const onDown = (event: PointerEvent) => {
+      if (
+        !(event.target instanceof Element) ||
+        !track.contains(event.target) ||
+        (event.button !== 1 && !event.target.closest('[data-project-tools-tab-action="close"]'))
+      )
+        unlock();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", unlock);
+    window.addEventListener("wheel", unlock, { passive: true });
+    window.addEventListener("pointercancel", unlock);
+    window.addEventListener("blur", unlock);
+    return () => {
+      clearTimer();
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("wheel", unlock);
+      window.removeEventListener("pointercancel", unlock);
+      window.removeEventListener("blur", unlock);
+    };
+  }, [pointerClose, track]);
 
   // Shared drag-out / menu wiring for every project tool tab; terminal tabs
   // carry a session and keep their own descriptor.
@@ -201,13 +356,13 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
       : undefined,
   });
 
-  const renderDockTab = (tab: DockTabDescriptor) => {
+  const renderDockTab = (tab: DockTabDescriptor, present = true, onPointerClose?: () => void) => {
     const tabBody = (
       // biome-ignore lint/a11y/noStaticElementInteractions: The named tab button handles focus and activation. The surrounding row handles drag geometry only.
       <div
         key={tab.id}
-        data-project-tools-tab-id={tab.id}
-        data-workspace-tab-active={tab.workspaceTab && tab.isActive ? "true" : undefined}
+        data-project-tools-tab-id={present ? tab.id : undefined}
+        data-workspace-tab-active={desktopWorkspace && tab.isActive && present ? "true" : undefined}
         data-desktop-workspace-tab={desktopWorkspace ? "" : undefined}
         data-desktop-workspace-tab-selected={desktopWorkspace && tab.isActive ? "" : undefined}
         data-desktop-workspace-tab-preview={desktopWorkspace && tab.temporary ? "" : undefined}
@@ -227,7 +382,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
         )}
         title={tab.label}
         onDoubleClick={tab.onKeepOpen}
-        style={getTabDragStyle(tab.id)}
+        style={desktopWorkspace ? undefined : getTabDragStyle(tab.id)}
         {...(tab.workspaceTab ? undefined : (tab.dragProps ?? getTabDragProps(tab.id)))}
         onDragStart={
           tab.workspaceTab
@@ -271,11 +426,11 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
           variant="ghost"
           type="button"
           aria-label={tab.label}
-          role={desktopWorkspace ? "tab" : undefined}
+          role={desktopWorkspace && present ? "tab" : undefined}
           aria-pressed={desktopWorkspace ? undefined : tab.isActive}
-          aria-selected={desktopWorkspace ? tab.isActive : undefined}
-          tabIndex={desktopWorkspace && !tab.isActive ? -1 : undefined}
-          data-workspace-tab-trigger=""
+          aria-selected={desktopWorkspace && present ? tab.isActive : undefined}
+          tabIndex={desktopWorkspace && (!present || !tab.isActive) ? -1 : undefined}
+          data-workspace-tab-trigger={present ? "" : undefined}
           aria-haspopup={tab.menuItems ? "menu" : undefined}
           className={cn(
             "absolute inset-0 z-0 h-full w-full rounded-md bg-transparent p-0 hover:bg-transparent",
@@ -286,13 +441,16 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             tab.onActivate();
           }}
           onMouseDown={(event) => {
-            if (desktopWorkspace && event.button === 1) event.preventDefault();
+            if (desktopWorkspace && event.button === 1) {
+              event.preventDefault();
+              if (!tab.closeDisabled) onPointerClose?.();
+            }
           }}
           onAuxClick={(event) => {
             if (!desktopWorkspace || event.button !== 1 || tab.closeDisabled) return;
             event.preventDefault();
             const strip = event.currentTarget.closest(".project-tools-panel-tabs");
-            if (strip && tab.workspaceTab) closeFocus.current = { id: tab.id, strip };
+            if (strip) closeFocus.current = { id: tab.id, strip };
             tab.onClose();
           }}
           onKeyDown={(event) => {
@@ -307,7 +465,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             const strip = event.currentTarget.closest(".project-tools-panel-tabs");
             if (event.key === "Delete" && !tab.closeDisabled) {
               event.preventDefault();
-              if (strip && tab.workspaceTab) closeFocus.current = { id: tab.id, strip };
+              if (strip) closeFocus.current = { id: tab.id, strip };
               tab.onClose();
               return;
             }
@@ -332,7 +490,10 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
           }}
         />
         {!tab.workspaceTab && (
-          <span className="absolute left-0.5 top-1/2 z-10 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+          <span
+            data-desktop-workspace-tab-extra-action={desktopWorkspace && present ? "" : undefined}
+            className="absolute left-0.5 top-1/2 z-10 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+          >
             {tab.dragProps ? (
               <Button
                 variant="ghost"
@@ -393,12 +554,14 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             CLOSE_BUTTON_CLASS,
             tab.isPendingClose
               ? "bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground md:opacity-100"
-              : tab.workspaceTab && tab.isActive
+              : desktopWorkspace && tab.isActive
                 ? "opacity-100"
                 : "md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100",
           )}
           onPointerDown={(event) => {
             event.stopPropagation();
+            if (event.button === 0 && event.pointerType !== "touch" && !tab.closeDisabled)
+              onPointerClose?.();
           }}
           onMouseDown={(event) => {
             event.stopPropagation();
@@ -406,7 +569,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
           onClick={(event) => {
             event.stopPropagation();
             const strip =
-              tab.workspaceTab && event.currentTarget.closest(".project-tools-panel-tabs");
+              desktopWorkspace && event.currentTarget.closest(".project-tools-panel-tabs");
             if (strip) closeFocus.current = { id: tab.id, strip };
             consumeSuppressedTabClick(tab.id);
             tab.onClose();
@@ -417,7 +580,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
       </div>
     );
 
-    if (!tab.menuItems) return tabBody;
+    if (!tab.menuItems || !present) return tabBody;
     return (
       <ContextMenu
         key={tab.id}
@@ -435,30 +598,28 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
     );
   };
 
-  return (
-    <>
-      {workspaceTabs?.map((tab) =>
-        renderDockTab({
-          ...tab,
-          workspaceTab: true,
-          isActive: activeWorkspaceTabId === tab.id,
-          closeLabel: `${t("projectTools.close")} ${tab.label}`,
-          closeTitle: `${t("projectTools.close")} ${tab.label}`,
-          closeIcon: tab.dirty ? (
-            <>
-              <span className="size-1.5 rounded-full bg-current group-hover:hidden group-focus-within:hidden" />
-              <X className="hidden size-3 group-hover:block group-focus-within:block" />
-            </>
-          ) : undefined,
-        }),
-      )}
-      {tabs.map((tab) => {
-        if (tab.kind === "backgroundTasks") {
-          // Derived tab; closing only hides it (a newly started task or the
-          // create menu brings it back).
-          const label = t("projectTools.backgroundTasksTitle");
-          const closeLabel = t("projectTools.bgTaskClosePanel");
-          return renderDockTab({
+  const descriptors: DockTabDescriptor[] = [
+    ...(workspaceTabs?.map((tab) => ({
+      ...tab,
+      workspaceTab: true,
+      isActive: activeWorkspaceTabId === tab.id,
+      closeLabel: `${t("projectTools.close")} ${tab.label}`,
+      closeTitle: `${t("projectTools.close")} ${tab.label}`,
+      closeIcon: tab.dirty ? (
+        <>
+          <span className="size-1.5 rounded-full bg-current group-hover:hidden group-focus-within:hidden" />
+          <X className="hidden size-3 group-hover:block group-focus-within:block" />
+        </>
+      ) : undefined,
+    })) ?? []),
+    ...tabs.flatMap((tab): DockTabDescriptor[] => {
+      if (tab.kind === "backgroundTasks") {
+        // Derived tab; closing only hides it (a newly started task or the
+        // create menu brings it back).
+        const label = t("projectTools.backgroundTasksTitle");
+        const closeLabel = t("projectTools.bgTaskClosePanel");
+        return [
+          {
             id: tab.id,
             label,
             icon: <Cpu className="size-3.5 shrink-0" />,
@@ -469,40 +630,56 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             ...toolTabWorkbenchProps("backgroundTasks"),
             onActivate: () => onActivateTab(tab.id),
             onClose: onCloseBackgroundTasks,
-          });
-        }
-        if (tab.kind !== "terminal") {
-          const definition = getRightDockToolDefinition(tab.kind);
-          if (!definition) return null;
-          const closeLabel = t(definition.closeKey);
-          return renderDockTab({
+          },
+        ];
+      }
+      if (tab.kind !== "terminal") {
+        const definition = getRightDockToolDefinition(tab.kind);
+        if (!definition) return [];
+        const changesTab = desktopWorkspace && tab.kind === "gitReview";
+        const label = t(changesTab ? "projectTools.workspaceChangesTitle" : definition.titleKey);
+        const closeLabel = changesTab
+          ? `${t("projectTools.close")} ${label}`
+          : t(definition.closeKey);
+        return [
+          {
             id: tab.id,
-            label: t(definition.titleKey),
-            icon: definition.icon("size-3.5 shrink-0"),
+            label,
+            icon: changesTab ? (
+              <DiffSquare className="size-4 shrink-0" />
+            ) : (
+              definition.icon("size-3.5 shrink-0")
+            ),
             isActive: !activeWorkspaceTabId && currentActiveTab === tab.kind,
             closeLabel,
             closeTitle: closeLabel,
             ...toolTabWorkbenchProps(tab.kind),
             onActivate: () => onActivateTab(tab.id),
             onClose: () => onCloseToolTab(tab.kind),
-          });
-        }
+          },
+        ];
+      }
 
-        const session = tab.session;
-        const isPendingClose = pendingCloseSessionId === session.id;
-        const sessionTitle = formatTerminalSessionTitle(
-          session.title,
-          t("projectTools.terminalTitle"),
-        );
-        // 拖入画板(租约)的会话不在 dock 列表里,这里的 tab 都可自由进入
-        // 工作台;菜单是拖拽之外的键盘/指针等价入口。
-        const menuItems = onOpenTerminalInWorkbench ? (
-          <ContextMenuItem onSelect={() => onOpenTerminalInWorkbench(session)} className="gap-2">
-            <Columns2 className="size-3.5" />
-            {t("workbench.openInSplit")}
-          </ContextMenuItem>
-        ) : null;
-        return renderDockTab({
+      const session = tab.session;
+      const isPendingClose = pendingCloseSessionId === session.id;
+      const sessionTitle = formatTerminalSessionTitle(
+        session.title,
+        t("projectTools.terminalTitle"),
+      );
+      // 拖入画板(租约)的会话不在 dock 列表里,这里的 tab 都可自由进入
+      // 工作台;菜单是拖拽之外的键盘/指针等价入口。
+      const menuItems = onOpenTerminalInWorkbench ? (
+        <ContextMenuItem
+          key="open-in-split"
+          onSelect={() => onOpenTerminalInWorkbench(session)}
+          className="gap-2"
+        >
+          <Columns2 className="size-3.5" />
+          {t("workbench.openInSplit")}
+        </ContextMenuItem>
+      ) : null;
+      return [
+        {
           id: session.id,
           label: sessionTitle,
           icon: <Terminal className="size-3.5 shrink-0" />,
@@ -535,8 +712,88 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             : undefined,
           onActivate: () => onActivateTerminalSession(session),
           onClose: () => onCloseTerminalRequest(session),
-        });
-      })}
-    </>
+        },
+      ];
+    }),
+  ];
+
+  const count = descriptors.length;
+  const [previousLayout, setPreviousLayout] = useState({
+    availableWidth,
+    count,
+    transition: "initial",
+  });
+  if (previousLayout.availableWidth !== availableWidth || previousLayout.count !== count) {
+    setPreviousLayout({
+      availableWidth,
+      count,
+      transition:
+        previousLayout.availableWidth !== availableWidth
+          ? "resize"
+          : previousLayout.count > count
+            ? "close"
+            : "open",
+    });
+  }
+
+  if (!desktopWorkspace) return <>{descriptors.map((tab) => renderDockTab(tab))}</>;
+
+  const tabIds = descriptors.map((tab) => tab.id);
+  const lock =
+    pointerClose &&
+    count > 0 &&
+    pointerClose.availableWidth === availableWidth &&
+    tabIds.every((id) => pointerClose.tabIds.includes(id))
+      ? pointerClose
+      : null;
+  const removedLast =
+    lock && !tabIds.includes(lock.closingId) && lock.closingId === lock.tabIds.at(-1);
+  const lockedWidth =
+    removedLast && lock.closingWidth >= lock.scrollLeft
+      ? Math.min(240, lock.sharedWidth + (lock.closingWidth - lock.scrollLeft) / count)
+      : lock?.sharedWidth;
+  const widths = desktopWorkspaceTabWidths(
+    availableWidth,
+    tabIds.map((id) => actionWidths[id] ?? 0),
+    lockedWidth,
+  );
+  const animate = !prefersReducedMotion && Boolean(track);
+  const animateWidth = animate && !draggingTabId && previousLayout.transition !== "resize";
+  const order = tabIds.join("\0");
+  const items = descriptors.map((tab, index) => (
+    <WorkspaceTabFrame
+      key={tab.id}
+      width={widths[index]}
+      animate={animate}
+      animateWidth={animateWidth}
+      closing={previousLayout.transition === "close"}
+      dragStyle={getTabDragStyle(tab.id)}
+      active={tab.isActive}
+      order={order}
+    >
+      {(present) =>
+        renderDockTab(tab, present, () => {
+          if (!track) return;
+          setPointerClose({
+            availableWidth,
+            tabIds,
+            sharedWidth: Math.min(...widths),
+            closingId: tab.id,
+            closingWidth: widths[index],
+            scrollLeft: Math.abs(track.parentElement?.scrollLeft ?? 0),
+          });
+        })
+      }
+    </WorkspaceTabFrame>
+  ));
+
+  return (
+    <div
+      ref={setTrack}
+      className="za-workspace-tab-track"
+      data-workspace-tab-width-locked={lock ? "" : undefined}
+    >
+      <AnimatePresence initial={false}>{items}</AnimatePresence>
+    </div>
   );
 }

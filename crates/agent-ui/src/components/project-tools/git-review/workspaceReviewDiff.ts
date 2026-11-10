@@ -263,3 +263,25 @@ export function buildReviewApplyCommand(patch: string) {
   const body = patch.endsWith("\n") ? patch : `${patch}\n`;
   return `(cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'${marker}'\n${body}${marker}\n)`;
 }
+
+export function reviewHunkAnchors(patch: string) {
+  const anchors: string[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let pending = false;
+  for (const line of patch.split("\n")) {
+    const header = HUNK_START.exec(line);
+    if (header) {
+      oldLine = Number(header[1]);
+      newLine = Number(header[3]);
+      pending = true;
+    } else if (pending && (line.startsWith("-") || line.startsWith("+"))) {
+      anchors.push(line.startsWith("-") ? `old:${oldLine}` : `new:${newLine}`);
+      pending = false;
+    } else if (pending && line.startsWith(" ")) {
+      oldLine++;
+      newLine++;
+    }
+  }
+  return anchors.join(",");
+}

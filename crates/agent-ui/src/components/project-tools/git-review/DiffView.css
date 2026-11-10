@@ -27,6 +27,7 @@
 }
 
 .za-review-comparison,
+.za-review-change-navigation,
 .za-review-controls {
   display: inline-flex;
   flex: none;
@@ -52,6 +53,29 @@
 
 .za-review-controls {
   padding: 2px;
+}
+
+.za-review-change-navigation {
+  gap: 0;
+  padding: 2px;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.za-review-change-navigation > span {
+  min-width: 1ch;
+  text-align: center;
+}
+
+.za-review-controls[data-single-file-toolbar] {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  gap: 0;
 }
 
 .za-review-icon {

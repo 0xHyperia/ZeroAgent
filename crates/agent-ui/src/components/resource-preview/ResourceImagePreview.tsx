@@ -4,6 +4,7 @@ import {
   type PointerEvent,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -15,6 +16,7 @@ import RotateCw from "~icons/lucide/rotate-cw";
 import Scan from "~icons/lucide/scan";
 import { useLocale } from "../../i18n";
 import { TooltipButton as Button } from "../ui/tooltip-button";
+import { PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewDock } from "./PreviewDock";
 import { PreviewLoading } from "./PreviewFeedback";
 import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
@@ -54,15 +56,18 @@ export default function ResourceImagePreview(props: Props) {
 function ImageCanvas(props: Props) {
   const { locale } = useLocale();
   const zh = locale === "zh-CN";
+  const chrome = useContext(PreviewToolbarMount);
+  const workspaceTab = Boolean(chrome?.workspaceTab && !props.conversation);
+  const workspaceInset = props.document ? 24 : 12;
   const { container, viewport, sideInset } = usePreviewViewport();
   const [view, setView] = useState<ImageView>(initialImageView);
   const [ready, setReady] = useState(Boolean(props.decodedDimensions));
   const [moving, setMoving] = useState(false);
   const [size, setSize] = useState(props.decodedDimensions ?? props.dimensions);
   const focusArea = props.conversation?.focusArea;
-  const left = focusArea ? 0 : 16;
-  const top = focusArea ? 0 : props.conversation ? 12 : 64;
-  const bottom = focusArea ? 0 : props.conversation ? 12 : 68;
+  const left = focusArea ? 0 : workspaceTab ? workspaceInset : 16;
+  const top = focusArea ? 0 : workspaceTab ? workspaceInset : props.conversation ? 12 : 64;
+  const bottom = focusArea ? 0 : workspaceTab ? workspaceInset : props.conversation ? 12 : 68;
   const geometry = imageViewGeometry(
     size,
     {
@@ -295,6 +300,59 @@ function ImageCanvas(props: Props) {
   };
   const transform = `translate(-50%, -50%) translate(${bounded.x}px, ${bounded.y}px) rotate(${bounded.rotation}deg)`;
   const imageStyle = { width: size.width * scale, height: size.height * scale, transform };
+  const imageTools = (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        tooltip="缩小"
+        tooltipShortcut="−"
+        aria-label="缩小图像"
+        disabled={!ready || scale <= 0.01001}
+        onClick={() => zoom((scale / 1.25) * 100)}
+      >
+        <Minus />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        tooltip="放大"
+        tooltipShortcut="+"
+        aria-label="放大图像"
+        disabled={!ready || scale >= 8}
+        onClick={() => zoom(scale * 1.25 * 100)}
+      >
+        <Plus />
+      </Button>
+      <span className="za-image-tool-divider" aria-hidden="true" />
+      <Button
+        variant="ghost"
+        size="icon"
+        tooltip="顺时针旋转"
+        aria-label="旋转图像"
+        disabled={!ready}
+        onClick={() => commit({ ...bounded, rotation: (bounded.rotation + 90) % 360, x: 0, y: 0 })}
+      >
+        <RotateCw />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        tooltip="重置视图"
+        tooltipShortcut="0"
+        aria-label="重置图像视图"
+        disabled={!ready}
+        onClick={() => commit(initialImageView)}
+      >
+        <Scan />
+      </Button>
+      {props.onViewSource ? (
+        <Button variant="ghost" size="sm" onClick={props.onViewSource}>
+          查看源码
+        </Button>
+      ) : null}
+    </>
+  );
   return (
     <>
       <PreviewToolbar label={zh ? "图像" : "Image"} detail={`${size.width} × ${size.height}`}>
@@ -310,15 +368,22 @@ function ImageCanvas(props: Props) {
           gestures={false}
           onChange={(next) => zoom(typeof next === "number" ? next : "fit-page")}
         />
+        {workspaceTab ? <div className="za-workspace-image-tools">{imageTools}</div> : null}
       </PreviewToolbar>
       <div
         ref={container}
         className="za-image-workspace"
-        style={{ "--za-image-side-inset": `${sideInset}px` } as CSSProperties}
+        style={
+          {
+            "--za-image-side-inset": `${sideInset}px`,
+            "--za-workspace-image-inset": `${workspaceInset}px`,
+          } as CSSProperties
+        }
         data-moving={moving}
         data-ready={ready && (!props.decodedDimensions || viewport.width > 0)}
         data-can-pan={scale > geometry.fit + 0.001}
         data-conversation-image={props.conversation ? "" : undefined}
+        data-workspace-image={workspaceTab ? (props.document ? "svg" : "raster") : undefined}
       >
         <div
           className="za-image-canvas"
@@ -378,60 +443,10 @@ function ImageCanvas(props: Props) {
             <PreviewLoading message="正在解码图像…" onCancel={props.onCancel} />
           </div>
         ) : null}
-        {!props.conversation && (
+        {!props.conversation && !workspaceTab && (
           <div className="za-image-dock-position">
             <PreviewDock label="图像查看工具" className="za-image-tools">
-              <Button
-                variant="ghost"
-                size="icon"
-                tooltip="缩小"
-                tooltipShortcut="−"
-                aria-label="缩小图像"
-                disabled={!ready || scale <= 0.01001}
-                onClick={() => zoom((scale / 1.25) * 100)}
-              >
-                <Minus />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                tooltip="放大"
-                tooltipShortcut="+"
-                aria-label="放大图像"
-                disabled={!ready || scale >= 8}
-                onClick={() => zoom(scale * 1.25 * 100)}
-              >
-                <Plus />
-              </Button>
-              <span className="za-image-tool-divider" aria-hidden="true" />
-              <Button
-                variant="ghost"
-                size="icon"
-                tooltip="顺时针旋转"
-                aria-label="旋转图像"
-                disabled={!ready}
-                onClick={() =>
-                  commit({ ...bounded, rotation: (bounded.rotation + 90) % 360, x: 0, y: 0 })
-                }
-              >
-                <RotateCw />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                tooltip="重置视图"
-                tooltipShortcut="0"
-                aria-label="重置图像视图"
-                disabled={!ready}
-                onClick={() => commit(initialImageView)}
-              >
-                <Scan />
-              </Button>
-              {props.onViewSource ? (
-                <Button variant="ghost" size="sm" onClick={props.onViewSource}>
-                  查看源码
-                </Button>
-              ) : null}
+              {imageTools}
             </PreviewDock>
           </div>
         )}

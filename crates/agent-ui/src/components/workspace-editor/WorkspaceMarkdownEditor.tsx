@@ -63,14 +63,7 @@ export type WorkspaceMarkdownEditorHandle = {
   redo: () => void;
 };
 
-const syntaxMarker = new Set([
-  "HeaderMark",
-  "EmphasisMark",
-  "CodeMark",
-  "QuoteMark",
-  "StrikethroughMark",
-  "HardBreak",
-]);
+const inlineMarker = new Set(["EmphasisMark", "StrikethroughMark"]);
 const styledNodes: Record<string, string> = {
   Emphasis: "za-md-emphasis",
   StrongEmphasis: "za-md-strong",
@@ -90,21 +83,31 @@ class ListBullet extends WidgetType {
   }
 }
 
+class EmptyTableCell extends WidgetType {
+  toDOM(view: EditorView) {
+    const cell = view.dom.ownerDocument.createElement("span");
+    cell.className = "za-md-table-cell";
+    cell.setAttribute("aria-hidden", "true");
+    return cell;
+  }
+}
+
+const emptyTableCell = new EmptyTableCell();
+
 function liveDecorations(view: EditorView) {
   const { state } = view;
   const decorations: Range<Decoration>[] = [];
   const concealed: Range<Decoration>[] = [];
   const styledLines = new Set<string>();
-  const activeLines = view.hasFocus
-    ? state.selection.ranges.map(({ from, to }) => ({
-        from: state.doc.lineAt(from).from,
-        to: state.doc.lineAt(to).to,
-      }))
-    : [];
+  const selections = view.hasFocus ? state.selection.ranges : [];
   const showSource = (from: number, to: number) =>
-    activeLines.some((line) => from <= line.to && to >= line.from);
+    selections.some((selection) =>
+      selection.empty
+        ? from <= selection.head && selection.head <= to
+        : selection.from < to && from < selection.to,
+    );
   const hide = (from: number, to: number, widget?: WidgetType) => {
-    if (from >= to || showSource(from, to)) return;
+    if (from >= to) return;
     const item = Decoration.replace({ widget }).range(from, to);
     decorations.push(item);
     concealed.push(item);
@@ -134,46 +137,114 @@ function liveDecorations(view: EditorView) {
         const heading = /^(?:ATX|Setext)Heading([1-6])$/.exec(name)?.[1];
         if (heading) styleLines(from, to, `za-md-heading za-md-h${heading}`, visible);
         if (name === "Blockquote") styleLines(from, to, "za-md-quote", visible);
-        if (name === "FencedCode" || name === "CodeBlock")
-          styleLines(from, to, "za-md-code-line", visible);
-        if (name === "TableHeader" || name === "TableRow")
-          styleLines(
-            from,
-            to,
-            name === "TableHeader" ? "za-md-table-row za-md-table-head" : "za-md-table-row",
-            visible,
-          );
+        if (name === "BulletList" || name === "OrderedList")
+          styleLines(from, to, "za-md-list-line", visible);
+        if (name === "FencedCode" || name === "CodeBlock") {
+          const marks = node.getChildren("CodeMark");
+          const first = state.doc.lineAt(from);
+          const last = state.doc.lineAt(to);
+          const completeFence = name === "FencedCode" && marks.length === 2;
+          const info = completeFence ? node.getChild("CodeInfo") : null;
+          const language = info ? state.sliceDoc(info.from, info.to).trim().split(/\s+/, 1)[0] : "";
+          const start = state.doc.lineAt(Math.max(from, visible.from)).number;
+          const end = state.doc.lineAt(Math.min(to, visible.to)).number;
+          for (let index = start; index <= end; index++) {
+            const line = state.doc.line(index);
+            const edge = index === first.number || index === last.number;
+            const key = `code:${index}`;
+            if (styledLines.has(key)) continue;
+            styledLines.add(key);
+            const hideFence = completeFence && edge && !showSource(line.from, line.to);
+            if (hideFence) {
+              const fence = index === first.number ? marks[0] : marks[1];
+              hide(fence.from, line.to);
+            }
+            const classes = [
+              "za-md-code-line",
+              index === first.number && "za-md-code-first",
+              index === last.number && "za-md-code-last",
+            ];
+            decorations.push(
+              Decoration.line({
+                class: classes.filter(Boolean).join(" "),
+                attributes:
+                  hideFence && index === first.number && language
+                    ? { "data-language": language }
+                    : undefined,
+              }).range(line.from),
+            );
+          }
+          return false;
+        }
         const identity = `${name}:${from}:${to}`;
         if (traversed.has(identity)) return;
         traversed.add(identity);
+        if (name === "TableHeader" || name === "TableRow") {
+          const delimiters = node.getChildren("TableDelimiter");
+          // Keep the rendered cells while editing text. Reveal the row when editing its pipes.
+          if (delimiters.some((pipe) => showSource(pipe.from, pipe.to))) return;
+          const className =
+            name === "TableHeader" ? "za-md-table-row za-md-table-head" : "za-md-table-row";
+          decorations.push(
+            Decoration.line({ class: className }).range(state.doc.lineAt(from).from),
+          );
+          for (const { from, to } of node.getChildren("TableCell"))
+            decorations.push(Decoration.mark({ class: "za-md-table-cell" }).range(from, to));
+          let cellStart = from;
+          for (const pipe of delimiters) {
+            if (pipe.from > from && !state.sliceDoc(cellStart, pipe.from).trim()) {
+              decorations.push(
+                Decoration.widget({ widget: emptyTableCell, side: -1 }).range(pipe.from),
+              );
+            }
+            hide(pipe.from, pipe.to);
+            cellStart = pipe.to;
+          }
+        }
+        if (name === "TableDelimiter" && node.parent?.name === "Table" && !showSource(from, to)) {
+          decorations.push(
+            Decoration.line({ class: "za-md-table-separator" }).range(state.doc.lineAt(from).from),
+          );
+          hide(from, to);
+        }
         if (name === "HorizontalRule" && !showSource(from, to)) {
           styleLines(from, to, "za-md-rule", visible);
           hide(from, to);
         }
         const mark = styledNodes[name];
         const destination = name === "Link" || name === "Autolink" ? node.getChild("URL") : null;
-        if (mark && !showSource(from, to) && from < to) {
+        if (mark && from < to) {
           const attributes = destination
             ? { "data-workspace-markdown-href": state.sliceDoc(destination.from, destination.to) }
             : undefined;
           decorations.push(Decoration.mark({ class: mark, attributes }).range(from, to));
         }
-        if (syntaxMarker.has(name)) {
-          const after =
-            name === "HeaderMark" || name === "QuoteMark" ? state.sliceDoc(to, to + 1) : "";
-          hide(from, to + (/^[ \t]$/.test(after) ? 1 : 0));
+        if (name === "HeaderMark" || name === "QuoteMark") {
+          const end = to + (/^[ \t]$/.test(state.sliceDoc(to, to + 1)) ? 1 : 0);
+          if (!showSource(from, end)) hide(from, end);
         }
-        if (name === "ListMark" && /^[*+-]$/.test(state.sliceDoc(from, to)))
+        const parent = node.parent;
+        if (
+          parent &&
+          (inlineMarker.has(name) || (name === "CodeMark" && parent.name === "InlineCode")) &&
+          !showSource(parent.from, parent.to)
+        )
+          hide(from, to);
+        if (name === "HardBreak" && !showSource(from, to)) hide(from, to);
+        if (
+          name === "ListMark" &&
+          !showSource(from, to) &&
+          /^[*+-]$/.test(state.sliceDoc(from, to))
+        )
           hide(from, to, new ListBullet());
-        // A link destination stays editable on its active line.
-        if (name === "Link") {
+        if ((name === "Link" || name === "Autolink") && destination && !showSource(from, to)) {
           const marks = node.getChildren("LinkMark");
-          const url = node.getChild("URL");
-          if (marks.length >= 4 && url) {
+          if (name === "Link" && marks.length >= 4) {
             hide(marks[0].from, marks[0].to);
             hide(marks[1].from, to);
+          } else if (name === "Autolink") {
+            for (const mark of marks) hide(mark.from, mark.to);
           }
-          if (url && !showSource(from, to)) return false;
         }
       },
     });
@@ -211,7 +282,26 @@ const liveMode = [
   renderedMarkdown,
   EditorView.atomicRanges.of((view) => view.plugin(renderedMarkdown)?.concealed ?? Decoration.none),
 ];
-const sourceMode = [lineNumbers()];
+const sourceMode = [lineNumbers(), syntaxHighlighting(defaultHighlightStyle, { fallback: true })];
+
+function markdownLinkAtClick(event: MouseEvent, view: EditorView) {
+  const target = event.target instanceof Element ? event.target : null;
+  const href = target
+    ?.closest("[data-workspace-markdown-href]")
+    ?.getAttribute("data-workspace-markdown-href");
+  if (href) return href;
+  if (!target || !view.contentDOM.contains(target)) return null;
+  const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+  if (position === null) return null;
+  for (let node = syntaxTree(view.state).resolveInner(position, -1); ; ) {
+    if (node.name === "Link" || node.name === "Autolink") {
+      const url = node.getChild("URL");
+      return url ? view.state.sliceDoc(url.from, url.to) : null;
+    }
+    if (!node.parent) return null;
+    node = node.parent;
+  }
+}
 
 type Props = {
   handle: Ref<WorkspaceMarkdownEditorHandle>;
@@ -262,7 +352,6 @@ export default function WorkspaceMarkdownEditor(props: Props) {
         doc: workspaceMarkdownEditorText(content.current),
         extensions: [
           markdown({ base: markdownLanguage }),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           markdownSelectionEditField,
           undoHistory.current.of(history()),
           search(),
@@ -285,19 +374,16 @@ export default function WorkspaceMarkdownEditor(props: Props) {
             ...searchKeymap,
           ]),
           EditorView.domEventHandlers({
-            mousedown: (event, view) => {
+            click: (event, view) => {
               if (
                 current.current.mode !== "preview" ||
                 event.button !== 0 ||
-                !(event.ctrlKey || event.metaKey)
+                event.detail > 1 ||
+                (event.shiftKey && !(event.ctrlKey || event.metaKey)) ||
+                !view.state.selection.main.empty
               )
                 return false;
-              const href =
-                event.target instanceof Element
-                  ? event.target
-                      .closest("[data-workspace-markdown-href]")
-                      ?.getAttribute("data-workspace-markdown-href")
-                  : null;
+              const href = markdownLinkAtClick(event, view);
               if (!href) return false;
               if (!href.startsWith("#")) return current.current.onOpenLink?.(href) ?? false;
               let match: number | null = null;

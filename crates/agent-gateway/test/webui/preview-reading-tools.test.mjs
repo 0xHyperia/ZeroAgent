@@ -139,6 +139,43 @@ test("page entry validates Enter, restores an unfinished edit on blur and keeps 
   await app.input("页码","7");await app.env.act(async()=>{input.focus();input.blur();});assert.equal(input.value,"2");
 });
 
+test("workspace PDF uses a compact pager and changes only the visible paper", async (t) => {
+  const paper = {
+    getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }),
+    render: () => ({ promise: Promise.resolve(), cancel() {} }),
+  };
+  const pdf = { numPages: 4, getPage: async () => paper };
+  const app = await setup(t, {
+    "pdfjs-dist": {
+      GlobalWorkerOptions: {},
+      version: "test",
+      getDocument: () => ({ promise: Promise.resolve(pdf), destroy: async () => {} }),
+    },
+    "pdfjs-dist/build/pdf.worker.min.mjs?url": "worker",
+    "./pdfPreviewAssets": { pdfPreviewAssetsURL: () => "http://localhost/resource-preview/pdf/test/" },
+  });
+  const { PreviewToolbarMount } = app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");
+  const Reader = app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
+  const h = app.env.React.createElement;
+  await app.render(h(
+    PreviewToolbarMount.Provider,
+    { value: { workspaceTab: true, target: app.host } },
+    h(Reader, { bytes: new Uint8Array([1]), assertCurrent() {} }),
+  ));
+  const paperSelector = ".za-preview-pdf .za-preview-pdf-page";
+  await app.wait(() => app.host.querySelector(paperSelector));
+  const pager = app.host.querySelector(".za-pdf-floating-pages nav[data-compact]");
+  assert.ok(pager);
+  assert.equal(pager.querySelector("input").value, "1");
+  assert.equal(pager.querySelector("input").style.width, "1ch");
+  await app.env.act(async () => pager.querySelector('[aria-label="下一页"]').click());
+  assert.equal(pager.querySelector("input").value, "2");
+  await app.key(await app.input("页码", "4"), "Enter");
+  assert.equal(pager.querySelector('[aria-label="下一页"]').disabled, true);
+  assert.equal(app.host.querySelectorAll(paperSelector).length, 1);
+  assert.equal(app.host.querySelector(paperSelector).getAttribute("aria-label"), "第 4 页");
+});
+
 test("PDF page rendering ignores an older page resolution after a newer jump and uses actual percent",async t=>{
   const pending=new Map(),renders=[],cancelled=[];
   let firstPaint;

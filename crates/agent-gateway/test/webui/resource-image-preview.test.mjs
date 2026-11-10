@@ -13,7 +13,7 @@ async function setup(t, options = {}) {
   const host = document.body.appendChild(document.createElement("div")), root = env.createRoot(host);
   const errors=[]; let mounted=true;
   const props = {name:"图像.png",url:"blob:image-one",dimensions:{width:1200,height:800},assertCurrent(){},onError(value){errors.push(value);},...options};
-  const render = async(extra={},inspector=false) => env.act(async()=>root.render(env.React.createElement(env.React.StrictMode,null,env.React.createElement(PreviewToolbarMount.Provider,{value:inspector?{target:null,inspectorOpen:true}:null},env.React.createElement(Player,{...props,...extra})))));
+  const render = async(extra={},inspector=false,workspace=false) => env.act(async()=>root.render(env.React.createElement(env.React.StrictMode,null,env.React.createElement(PreviewToolbarMount.Provider,{value:workspace?{target:host,workspaceTab:true}:inspector?{target:null,inspectorOpen:true}:null},env.React.createElement(Player,{...props,...extra})))));
   const click = async(label)=>env.act(async()=>host.querySelector(`button[aria-label="${label}"]`).click());
   const decode = async()=>env.act(async()=>host.querySelector("img,iframe").dispatchEvent(new Event("load")));
   const pointer = async(type,id,x,y,pointerType="mouse")=>env.act(async()=>{
@@ -45,6 +45,18 @@ test("image decoder loading is stable, native-pixel zoom and rotation share a ce
   await app.click("重置图像视图");
   assert.match(app.host.querySelector("img").style.transform,/rotate\(0deg\)/);
   assert.ok(Math.abs(parseFloat(app.host.querySelector("img").style.width)-552)<.001);
+});
+
+test("workspace image uses the full reading canvas and keeps actions in the shared file toolbar", async (t) => {
+  const app = await setup(t);
+  await app.render({}, false, true);
+  await app.decode();
+  assert.equal(app.host.querySelector(".za-image-workspace").dataset.workspaceImage, "raster");
+  assert.equal(app.host.querySelector(".za-image-dock-position"), null);
+  assert.equal(app.host.querySelector("img").style.width, "576px");
+  assert.ok(app.host.querySelector('.za-workspace-image-tools button[aria-label="旋转图像"]'));
+  await app.click("旋转图像");
+  assert.match(app.host.querySelector("img").style.transform, /rotate\(90deg\)/);
 });
 
 test("pan bounds, anchored wheel and two-finger pinch do not steal browser or composer gestures",async t=>{

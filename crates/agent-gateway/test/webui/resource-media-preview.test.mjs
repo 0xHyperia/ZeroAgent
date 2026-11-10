@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createWebDomTestEnv } from "../helpers/dom-test-env.mjs";
 
-async function mount(t, kind = "video", authority = () => {}) {
+async function mount(t, kind = "video", authority = () => {}, workspace = false) {
   const env = await createWebDomTestEnv();
   const states = new WeakMap();
   const state = (element) => {
@@ -21,10 +21,11 @@ async function mount(t, kind = "video", authority = () => {}) {
   prototype.pause = function () { const value = state(this); value.pauses++; if (!value.paused) { value.paused = true; this.dispatchEvent(new Event("pause")); } };
   prototype.load = function () { state(this).loads++; };
   const Player = env.loadModule("@liveagent/ui/components/resource-preview/ResourceMediaPreview.tsx").default;
+  const { PreviewToolbarMount } = env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");
   const host = document.body.appendChild(document.createElement("div"));
   const root = env.createRoot(host);
   let downloads = 0, retries = 0, disposed = false;
-  const render = async (nextKind = kind, key = "one") => env.act(async () => root.render(env.React.createElement(env.React.StrictMode, null, env.React.createElement(Player, { key, kind: nextKind, url: `blob:${key}`, name: "合成媒体.mp4", assertCurrent: () => authority(), onDownload() { downloads++; }, onRetry() { retries++; } }))));
+  const render = async (nextKind = kind, key = "one", active = true) => env.act(async () => root.render(env.React.createElement(env.React.StrictMode, null, env.React.createElement(PreviewToolbarMount.Provider, { value: workspace ? { workspaceTab: true, target: active ? host : null } : null }, env.React.createElement(Player, { key, kind: nextKind, url: `blob:${key}`, name: nextKind === "audio" && workspace ? "合成媒体.mp3" : "合成媒体.mp4", assertCurrent: () => authority(), onDownload() { downloads++; }, onRetry() { retries++; } })))));
   const click = async (label) => {
     const button = host.querySelector(`button[aria-label="${label}"]`);
     assert.ok(button, `missing ${label}`);
@@ -99,6 +100,29 @@ test("audio shares volume and speed controls; keyboard shortcuts stay inside the
   await app.env.act(async () => speed.click());
   assert.equal(audio.playbackRate, 1.5);
   assert.equal(app.host.querySelector('button[aria-label="播放速度"]').textContent, "1.5×");
+});
+
+test("workspace media keeps audio metadata, controls and playback scoped to the active tab", async (t) => {
+  const app = await mount(t, "audio", () => {}, true);
+  const audio = app.host.querySelector("audio");
+  assert.match(app.host.querySelector(".za-workspace-audio-identity").textContent, /合成媒体\.mp3.*MP3 音频/);
+  assert.ok(app.host.querySelector('.za-workspace-audio-actions button[aria-label="播放"]'));
+  assert.ok(app.host.querySelector('.za-workspace-audio-actions button[aria-label="音频选项"]'));
+  assert.equal(app.host.querySelector(".za-media-transport button"), null);
+  await app.click("播放");
+  assert.equal(app.state(audio).paused, false);
+  await app.env.act(async () => changeRange(app, "播放进度", 24.5));
+  assert.equal(audio.currentTime, 24.5);
+  await app.render("audio", "one", false);
+  assert.equal(app.state(audio).paused, true);
+  assert.equal(app.host.querySelector("audio"), audio);
+  assert.equal(audio.currentTime, 24.5);
+  await app.render("video", "two");
+  const video = app.host.querySelector("video");
+  await app.env.act(async () => video.click());
+  assert.equal(app.state(video).plays, 1);
+  await app.env.act(async () => video.click());
+  assert.equal(app.state(video).paused, true);
 });
 
 test("source retirement pauses and unloads the decoder; late playback completion cannot touch a replacement", async (t) => {

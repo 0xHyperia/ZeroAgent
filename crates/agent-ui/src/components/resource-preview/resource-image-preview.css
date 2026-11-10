@@ -102,6 +102,46 @@
   margin-inline: 5px;
   background: var(--za-border);
 }
+.za-image-workspace[data-workspace-image] {
+  background: var(--za-surface);
+}
+.za-image-workspace[data-workspace-image] .za-image-canvas,
+.za-image-workspace[data-workspace-image] .za-image-loading {
+  inset: var(--za-workspace-image-inset)
+    calc(var(--za-image-side-inset, 0px) + var(--za-workspace-image-inset))
+    var(--za-workspace-image-inset) var(--za-workspace-image-inset);
+}
+.za-image-workspace[data-workspace-image] .za-image-content {
+  background: transparent;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+}
+.za-image-workspace[data-workspace-image="svg"] .za-image-canvas {
+  overflow: visible;
+}
+.za-image-workspace[data-workspace-image="svg"] .za-image-content {
+  background: white;
+  box-shadow:
+    0 0 0 12px white,
+    0 1px 4px 12px rgb(0 0 0 / 0.08);
+}
+.za-workspace-image-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.za-workspace-image-tools button {
+  width: auto;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+}
+.za-workspace-image-tools svg {
+  width: 15px;
+  height: 15px;
+}
+.za-workspace-image-tools .za-image-tool-divider {
+  margin-inline: 2px;
+}
 .za-image-cover {
   position: relative;
   display: grid;

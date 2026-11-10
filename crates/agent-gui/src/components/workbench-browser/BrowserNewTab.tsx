@@ -1,6 +1,5 @@
 import {
   ChevronDown,
-  FilePenLine,
   Folder,
   GitBranch,
   Globe,
@@ -32,7 +31,6 @@ export type BrowserNewTabTools = {
   bottomTerminal?: () => void;
   files?: () => void;
   sideChat?: () => void;
-  newPage?: () => void;
   more?: readonly { label: string; run: () => void }[];
 };
 
@@ -126,10 +124,10 @@ export function BrowserNewTab({
       run: tools?.sideChat,
     },
     {
-      id: "newPage",
-      label: tools?.newPage ? copy("New page", "新建页面") : copy("Open webpage", "打开网页"),
-      icon: tools?.newPage ? FilePenLine : Globe,
-      run: tools?.newPage ?? onOpenAddress,
+      id: "address",
+      label: copy("Open webpage", "打开网页"),
+      icon: Globe,
+      run: onOpenAddress,
     },
   ] as const;
   const recommendations = browserRecommendations(visits);
@@ -145,12 +143,12 @@ export function BrowserNewTab({
                   <button
                     type="button"
                     onClick={run}
-                    aria-keyshortcuts={id === "newPage" ? undefined : toolShortcuts[id][2]}
+                    aria-keyshortcuts={id === "address" ? undefined : toolShortcuts[id][2]}
                     className="za-browser-new-tab-tool"
                   >
                     <Icon />
                     <span>{label}</span>
-                    {id !== "newPage" && <kbd>{toolShortcuts[id][1]}</kbd>}
+                    {id !== "address" && <kbd>{toolShortcuts[id][1]}</kbd>}
                   </button>
                   {id === "terminal" && tools?.bottomTerminal && (
                     <DropdownMenu>

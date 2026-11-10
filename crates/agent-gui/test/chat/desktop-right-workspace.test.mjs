@@ -2,14 +2,80 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 
-const env = await createDomTestEnv();
+const env = await createDomTestEnv({
+  mocks: {
+    "./rightDockRegistry": {
+      getRightDockToolDefinition: () => ({
+        titleKey: "projectTools.gitReviewTitle",
+        closeKey: "projectTools.closeGitReview",
+        icon: () => null,
+      }),
+    },
+  },
+});
 const { React, act, createRoot, loadModule } = env;
 const { useDesktopWorkspaceTabs, workspaceFileTabId } = loadModule(
   "src/pages/chat/workbench/useDesktopWorkspaceTabs.ts",
 );
 const { workbenchBrowserLinkUrl } = loadModule("@liveagent/ui/lib/chat/workbenchBrowserLink.ts");
+const { RightDockTabStrip } = loadModule("@liveagent/ui/components/project-tools/RightDockTabStrip.tsx");
+const { desktopWorkspaceTabWidths } = loadModule(
+  "@liveagent/ui/components/project-tools/desktopWorkspaceTabLayout.ts",
+);
 
 const file = (path) => ({ projectPathKey: "d:/repo", workdir: "D:\\repo", path });
+
+test("desktop tabs share a fixed pane while reserving additional tab actions", () => {
+  const sameTabs = [0, 0, 30, 0];
+  assert.deepEqual(desktopWorkspaceTabWidths(300, sameTabs), [90, 90, 120, 90]);
+  assert.deepEqual(desktopWorkspaceTabWidths(420, sameTabs), [100, 100, 120, 100]);
+  assert.deepEqual(desktopWorkspaceTabWidths(760, sameTabs), [190, 190, 190, 190]);
+  assert.deepEqual(desktopWorkspaceTabWidths(1180, sameTabs), [240, 240, 240, 240]);
+  assert.deepEqual(desktopWorkspaceTabWidths(420, [0, 30, 0], 100), [100, 120, 100]);
+  assert.deepEqual(desktopWorkspaceTabWidths(420, [0, 30, 0]), [140, 140, 140]);
+});
+
+test("the desktop Changes tab exposes its close action and restores focus to the remaining file", async (t) => {
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  t.after(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+  const noop = () => {};
+  function Harness() {
+    const [changesOpen, setChangesOpen] = React.useState(true);
+    return React.createElement("div", { className: "project-tools-panel-tabs", role: "tablist" },
+      React.createElement(RightDockTabStrip, {
+        tabs: changesOpen ? [{ id: "gitReview", kind: "gitReview" }] : [],
+        currentActiveTab: changesOpen ? "gitReview" : "fileTree",
+        workspaceTabs: [{ id: "readme", label: "README.md", onActivate: noop, onClose: noop }],
+        activeWorkspaceTabId: changesOpen ? null : "readme",
+        backgroundTasksRunning: 0,
+        pendingCloseSessionId: "",
+        closingSessionIds: new Set(),
+        draggingTabId: "",
+        renderTabDragHandle: noop,
+        getTabDragProps: noop,
+        getTabDragStyle: noop,
+        consumeSuppressedTabClick: () => false,
+        onCloseToolTab: () => setChangesOpen(false),
+      }),
+    );
+  }
+  await act(async () => root.render(React.createElement(Harness)));
+  const changes = container.querySelector('[role="tab"][aria-selected="true"]');
+  assert.match(changes.getAttribute("aria-label"), /^(Changes|变更)$/);
+  const close = changes.parentElement.querySelector('[data-project-tools-tab-action="close"]');
+  assert.ok(close.classList.contains("opacity-100"));
+  changes.focus();
+  await act(async () => changes.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Delete",
+    bubbles: true,
+  })));
+  assert.equal(container.querySelectorAll('[role="tab"]').length, 1);
+  assert.equal(document.activeElement.getAttribute("aria-label"), "README.md");
+});
 
 test("file identity is shared by transcript, Git and file-tree links on Windows", () => {
   assert.equal(workspaceFileTabId(file("docs/README.md")), workspaceFileTabId(file("d:\\repo\\DOCS\\readme.md")));

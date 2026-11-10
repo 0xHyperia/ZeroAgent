@@ -1,4 +1,11 @@
-import { ChevronRight, Columns2, Cpu, Plus, Terminal } from "@liveagent/ui/components/IconSet";
+import {
+  ChevronRight,
+  Columns2,
+  Cpu,
+  DiffSquare,
+  Plus,
+  Terminal,
+} from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "../../lib/shared/utils";
@@ -36,6 +43,7 @@ type RightDockLauncherActions = {
 
 type RightDockCreateMenuProps = RightDockLauncherActions & {
   compact?: boolean;
+  desktopWorkspace?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   shellOptions: TerminalShellOption[];
@@ -72,6 +80,7 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
   const {
     leasedTools = NO_LEASED_RIGHT_DOCK_TOOLS,
     compact,
+    desktopWorkspace,
     open,
     onOpenChange,
     shellOptions,
@@ -150,17 +159,20 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
           </DropdownMenuItem>
         ) : null}
         {RIGHT_DOCK_TOOL_DEFINITIONS.filter((definition) => !leasedTools.has(definition.kind)).map(
-          (definition) => (
-            <DropdownMenuItem
-              key={definition.kind}
-              onSelect={() => onStartTool(definition.kind)}
-              disabled={definition.projectRequired ? !projectReady : !tunnelAvailable}
-              className="gap-2"
-            >
-              {definition.icon("size-3.5")}
-              {t(definition.createTitleKey)}
-            </DropdownMenuItem>
-          ),
+          (definition) => {
+            const changesTab = desktopWorkspace && definition.kind === "gitReview";
+            return (
+              <DropdownMenuItem
+                key={definition.kind}
+                onSelect={() => onStartTool(definition.kind)}
+                disabled={definition.projectRequired ? !projectReady : !tunnelAvailable}
+                className="gap-2"
+              >
+                {changesTab ? <DiffSquare className="size-4" /> : definition.icon("size-3.5")}
+                {t(changesTab ? "projectTools.workspaceChangesTitle" : definition.createTitleKey)}
+              </DropdownMenuItem>
+            );
+          },
         )}
         {leasedTools.has("backgroundTasks") ? null : (
           <DropdownMenuItem onSelect={onOpenBackgroundTasks} className="gap-2">

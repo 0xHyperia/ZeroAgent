@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useLocale } from "../../i18n";
 import type {
   GitBranchesResponse,
@@ -35,6 +36,7 @@ import {
 import { DiffContent } from "./git-review/DiffView";
 import "./git-review/DiffView.css";
 import { buildWorkspaceReviewRows, type PatchChunk } from "./git-review/model";
+import { WorkspaceDiffNavigation } from "./git-review/WorkspaceDiffNavigation";
 import { WorkspaceReviewToolbar } from "./git-review/WorkspaceReviewToolbar";
 import {
   buildReviewApplyCommand,
@@ -99,6 +101,7 @@ type ComparisonMenuProps = {
   conversationId?: string;
   onComparisonChange: (comparison: WorkspaceGitComparison) => void;
   summary?: ReactNode;
+  capsule?: boolean;
 };
 
 function WorkspaceGitBranchOptions({
@@ -185,6 +188,7 @@ export function WorkspaceGitComparisonMenu({
   conversationId,
   onComparisonChange,
   summary,
+  capsule,
 }: ComparisonMenuProps) {
   const { locale, t } = useLocale();
   const zh = locale === "zh-CN";
@@ -224,22 +228,26 @@ export function WorkspaceGitComparisonMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         type="button"
-        title={sha ?? baseBranch ?? undefined}
+        title={sha ?? baseBranch ?? (capsule ? comparisonName(locale, comparison) : undefined)}
         aria-label={zh ? "比较范围" : "Comparison source"}
         className={
-          summary
+          capsule || summary
             ? "za-review-comparison"
             : "flex h-7 min-w-0 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium hover:bg-muted focus-visible:outline-ring"
         }
       >
-        {comparisonName(locale, comparison)}
+        <span className="min-w-0 truncate">{comparisonName(locale, comparison)}</span>
         {sha && (
-          <span className="font-mono font-normal text-muted-foreground">{sha.slice(0, 7)}</span>
+          <span className="za-review-comparison-detail font-mono font-normal text-muted-foreground">
+            {sha.slice(0, 7)}
+          </span>
         )}
         {baseBranch && (
-          <span className="max-w-24 truncate font-normal text-muted-foreground">{baseBranch}</span>
+          <span className="za-review-comparison-detail max-w-24 truncate font-normal text-muted-foreground">
+            {baseBranch}
+          </span>
         )}
-        <ChevronDown className="size-3.5 text-muted-foreground" />
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
         {summary}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-44">
@@ -316,7 +324,7 @@ type Props = {
   comparison?: WorkspaceGitComparison;
   conversationId?: string;
   onComparisonChange?: (comparison: WorkspaceGitComparison) => void;
-  hideComparisonMenu?: boolean;
+  fileToolbar?: { navigation: HTMLElement | null; actions: HTMLElement | null };
   onOpenGitActions?: () => void;
   onOpenFile?: (path: string) => void;
   workspaceActivityClient?: WorkspaceActivityClient;
@@ -333,7 +341,7 @@ export function WorkspaceFileDiff({
   comparison,
   conversationId,
   onComparisonChange,
-  hideComparisonMenu,
+  fileToolbar,
   onOpenGitActions,
   onOpenFile,
   workspaceActivityClient,
@@ -632,14 +640,39 @@ export function WorkspaceFileDiff({
       </span>
     ) : null;
 
+  const toolbar = (
+    <WorkspaceReviewToolbar
+      presentation={presentation}
+      onPresentationChange={setPresentation}
+      supportsFullContext={supportsFullContext}
+      supportsWhitespace={Boolean(client.supportsWhitespaceDiff)}
+      rows={rows}
+      onJump={jumpToFile}
+      expanded={allExpanded}
+      onToggleExpanded={() => setFileExpansion({ scope, defaultOpen: !allExpanded, overrides: {} })}
+      refreshing={loading}
+      onRefresh={refresh}
+      applyCommand={applyCommand}
+      onOpenGitActions={onOpenGitActions}
+      wide={viewport !== "compact"}
+      singleFile={Boolean(fileToolbar)}
+    />
+  );
+
   return (
     <section
       ref={reviewRef}
       aria-label={t("projectTools.workspaceChangesTitle")}
       className="za-workspace-review flex h-full min-h-0 min-w-0 flex-col"
     >
-      <div className="za-review-header">
-        {!hideComparisonMenu && (
+      {fileToolbar ? (
+        <>
+          {fileToolbar.navigation &&
+            createPortal(<WorkspaceDiffNavigation root={reviewRef} />, fileToolbar.navigation)}
+          {fileToolbar.actions && createPortal(toolbar, fileToolbar.actions)}
+        </>
+      ) : (
+        <div className="za-review-header">
           <WorkspaceGitComparisonMenu
             client={client}
             workdir={workdir}
@@ -648,28 +681,11 @@ export function WorkspaceFileDiff({
             onComparisonChange={onComparisonChange ?? setLocalComparison}
             summary={summary}
           />
-        )}
-        {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-        {hideComparisonMenu && summary}
-        <span className="flex-1" />
-        <WorkspaceReviewToolbar
-          presentation={presentation}
-          onPresentationChange={setPresentation}
-          supportsFullContext={supportsFullContext}
-          supportsWhitespace={Boolean(client.supportsWhitespaceDiff)}
-          rows={rows}
-          onJump={jumpToFile}
-          expanded={allExpanded}
-          onToggleExpanded={() =>
-            setFileExpansion({ scope, defaultOpen: !allExpanded, overrides: {} })
-          }
-          refreshing={loading}
-          onRefresh={refresh}
-          applyCommand={applyCommand}
-          onOpenGitActions={onOpenGitActions}
-          wide={viewport !== "compact"}
-        />
-      </div>
+          {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          <span className="flex-1" />
+          {toolbar}
+        </div>
+      )}
       {filtered && !filtered.diff && (
         <p role="status" className="za-review-file-status">
           {zh
@@ -701,6 +717,7 @@ export function WorkspaceFileDiff({
           workspaceReview={{
             presentation,
             rows,
+            fileNavigation: Boolean(fileToolbar),
             allowAutoSplit: viewport === "split",
             isExpanded,
             onToggleFile: (key) => setExpanded(key, !isExpanded(key)),

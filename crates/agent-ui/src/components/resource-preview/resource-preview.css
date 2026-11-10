@@ -890,15 +890,47 @@
   position: absolute;
   z-index: 2;
   top: calc(var(--za-reader-top-inset, 0px) + 8px);
-  inset-inline-end: calc(var(--za-reader-side-inset, 0px) + 12px);
-  padding: 3px 5px;
+  inset-inline-end: calc(var(--za-reader-side-inset, 0px) + 8px);
+  padding: 2px;
   border: 1px solid var(--za-border);
   border-radius: 999px;
-  background: var(--za-surface);
-  box-shadow: 0 2px 12px rgb(0 0 0 / 0.08);
+  background: color-mix(in srgb, var(--za-surface) 92%, transparent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms ease;
+}
+.za-pdf-floating-pages .za-preview-pages[data-compact] button {
+  min-width: 26px;
+  width: 26px;
+  min-height: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+.za-pdf-floating-pages .za-preview-page-number {
+  gap: 0;
+  padding-inline: 2px;
+  font-size: 13px;
+  line-height: 1;
+}
+.za-pdf-floating-pages .za-preview-page-number input {
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+.za-document-workspace[data-workspace-pdf] .za-preview-pdf > .za-preview-scroll-content {
+  padding-bottom: 12px;
+}
+.za-document-workspace[data-workspace-pdf] .za-preview-pdf .za-preview-pdf-page {
+  margin-bottom: 0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.za-document-workspace[data-workspace-pdf] .za-preview-pdf .za-preview-paper-number {
+  display: none;
 }
 .za-document-workspace:is(:hover, :focus-within) > .za-pdf-floating-pages {
   opacity: 1;
@@ -908,6 +940,13 @@
   .za-document-workspace > .za-pdf-floating-pages {
     opacity: 1;
     pointer-events: auto;
+  }
+}
+@media (pointer: coarse) {
+  .za-pdf-floating-pages .za-preview-pages[data-compact] button,
+  .za-pdf-floating-pages .za-preview-page-number input {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 .za-document-navigation {

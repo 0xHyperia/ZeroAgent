@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "../../i18n";
 import type { GitCommitFile, GitRepositoryState, GitStatusEntry } from "../../lib/git/types";
 import { hostAwareErrorMessage } from "../../lib/shared/hostErrors";
 import { cn } from "../../lib/shared/utils";
 import { useWorkspaceInvalidation } from "../../lib/workspace-activity/useWorkspaceInvalidation";
-import { getFileTypeIcon } from "../chat/fileTypeIcons";
 import { ChevronRight, List, Loader2, Search, X } from "../IconSet";
 import { Input } from "../ui/input";
-import { FileTreePanel } from "./file-tree";
+import { FileTreePanel, type FileTreeSectionRow } from "./file-tree";
+import { FILE_TREE_ROW_HEIGHT } from "./file-tree/model";
+import { FileTreeRow } from "./file-tree/Row";
 import { statusLabel } from "./git-review/model";
 import { useRightDockToolContext } from "./RightDockContext";
 import {
@@ -33,6 +34,33 @@ type ChangeNode = {
   children: Map<string, ChangeNode>;
   file?: { status: string; absolutePath: string; relativePath: string };
 };
+
+function GitChangeIndicator({ status }: { status: string }) {
+  const deleted = status === "D";
+  const added = status === "A" || status === "U" || status === "C";
+  return (
+    <svg
+      aria-hidden="true"
+      data-workspace-file-decoration={status}
+      className={cn(
+        "size-5 shrink-0",
+        deleted ? "text-rose-500" : added ? "text-emerald-500" : "text-sky-500",
+      )}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    >
+      <rect x="3.35" y="3.35" width="13.3" height="13.3" rx="3.2" />
+      {deleted || added ? (
+        <path d={added ? "M10 7v6M7 10h6" : "M7 10h6"} />
+      ) : (
+        <circle cx="10" cy="10" r="1.65" fill="currentColor" stroke="none" />
+      )}
+    </svg>
+  );
+}
 
 function changedFilesTree(
   state: GitRepositoryState | null,
@@ -65,68 +93,51 @@ function changedFilesTree(
   return tree;
 }
 
-function ChangeRows({
-  nodes,
-  selectedPath,
-  onSelect,
-}: {
-  nodes: Map<string, ChangeNode>;
-  selectedPath: string;
-  onSelect: (file: NonNullable<ChangeNode["file"]>, temporary: boolean) => void;
-}) {
-  const sorted = [...nodes.values()].sort(
-    (a, b) => Number(Boolean(a.file)) - Number(Boolean(b.file)) || a.name.localeCompare(b.name),
-  );
-  return sorted.map((node) => {
-    const file = node.file;
-    const Icon = getFileTypeIcon(node.name, file ? "file" : "dir");
-    if (file) {
-      const selected = selectedPath === file.relativePath;
-      return (
-        <button
-          key={node.name}
-          type="button"
-          aria-current={selected || undefined}
-          title={file.relativePath}
-          className={cn(
-            "flex h-6 w-full min-w-0 items-center gap-1.5 rounded px-2 pl-5 text-left hover:bg-muted focus-visible:outline-ring",
-            selected && "bg-muted text-foreground",
-          )}
-          onClick={(event) => {
-            if (event.detail < 2) onSelect(file, event.detail === 1);
-          }}
-          onDoubleClick={() => onSelect(file, false)}
-        >
-          <Icon className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{node.name}</span>
-          <span
-            aria-hidden="true"
-            data-workspace-file-decoration={file.status}
-            className={cn(
-              "mr-0.5 size-2 shrink-0 rounded-sm border border-current",
-              file.status === "D"
-                ? "text-rose-500"
-                : file.status === "A" || file.status === "U" || file.status === "C"
-                  ? "text-emerald-500"
-                  : "text-sky-500",
-            )}
-          />
-        </button>
-      );
-    }
-    return (
-      <details key={node.name} className="group/change-dir" open>
-        <summary className="flex h-6 cursor-pointer list-none items-center gap-1.5 rounded-md px-1.5 hover:bg-muted [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-3 shrink-0 group-open/change-dir:rotate-90" />
-          <Icon className="size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">{node.name}</span>
-        </summary>
-        <div className="ml-3 border-l border-border/60">
-          <ChangeRows nodes={node.children} selectedPath={selectedPath} onSelect={onSelect} />
-        </div>
-      </details>
+function changeRows(
+  changes: Map<string, ChangeNode>,
+  selectedPath: string | null,
+  collapsedDirectories: ReadonlySet<string>,
+  onToggle: (path: string, expanded: boolean) => void,
+  onOpen: (file: NonNullable<ChangeNode["file"]>, temporary?: boolean) => void,
+) {
+  const rows: FileTreeSectionRow[] = [];
+  const visit = (nodes: Map<string, ChangeNode>, parent: string, depth: number) => {
+    const sorted = [...nodes.values()].sort(
+      (a, b) => Number(Boolean(a.file)) - Number(Boolean(b.file)) || a.name.localeCompare(b.name),
     );
-  });
+    for (const node of sorted) {
+      const file = node.file;
+      const relativePath = parent ? `${parent}/${node.name}` : node.name;
+      const expanded = !collapsedDirectories.has(relativePath);
+      rows.push({
+        type: "section",
+        key: `\0changed:${relativePath}`,
+        level: depth + 1,
+        content: (
+          <FileTreeRow
+            path={relativePath}
+            name={node.name}
+            kind={file ? "file" : "dir"}
+            hidden={false}
+            depth={depth}
+            expanded={expanded}
+            selected={selectedPath === relativePath}
+            loading={false}
+            title={relativePath}
+            onToggle={onToggle}
+            onSelect={() => {}}
+            onOpen={(_, temporary) => file && onOpen(file, temporary)}
+            transientFiles
+            sectioned
+            decoration={file && <GitChangeIndicator status={file.status} />}
+          />
+        ),
+      });
+      if (!file && expanded) visit(node.children, relativePath, depth + 1);
+    }
+  };
+  visit(changes, "", 1);
+  return rows;
 }
 
 export function RightWorkspaceFileTree({
@@ -146,6 +157,11 @@ export function RightWorkspaceFileTree({
   );
   const { changes: changesOpen, files: filesOpen } = groups;
   const [version, setVersion] = useState(0);
+  const [selectedSection, setSelectedSection] = useState<"changes" | "files">("changes");
+  const [collapsedDirectories, setCollapsedDirectories] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const selectFileSection = useCallback(() => setSelectedSection("files"), []);
   const turnRevision = useWorkspaceGitTurnRevision(
     comparison === "last-turn" ? conversationId : undefined,
   );
@@ -254,15 +270,101 @@ export function RightWorkspaceFileTree({
           changed: "Changed files",
           all: "All files",
         };
-  const disclosureClass =
-    "flex h-7 w-full shrink-0 items-center gap-1.5 rounded-md px-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground";
+  const showChanges = canReadGit && currentStatus?.state?.status !== "not_repo";
+  const sectionRow = (section: "changes" | "files", expanded: boolean): FileTreeSectionRow => ({
+    type: "section",
+    key: `\0section:${section}`,
+    level: 1,
+    content: (
+      <button
+        type="button"
+        role="treeitem"
+        aria-level={1}
+        aria-expanded={expanded}
+        data-workspace-tree-section={section}
+        className={cn(
+          "flex w-full items-center gap-[5px] rounded-md px-[3px] text-left text-foreground hover:bg-muted",
+          section === "files" && showChanges && "border-t border-border",
+        )}
+        style={{ height: FILE_TREE_ROW_HEIGHT }}
+        onClick={() => onToggleGroup(section)}
+      >
+        <ChevronRight
+          className={cn("size-4 shrink-0 text-muted-foreground", expanded && "rotate-90")}
+        />
+        <span className="min-w-0 flex-1 truncate">
+          {section === "changes" ? labels.changed : labels.all}
+        </span>
+        {section === "changes" && !expanded && changes.size > 0 && (
+          <span aria-hidden="true" className="mr-1 size-1.5 shrink-0 rounded-full bg-sky-500/65" />
+        )}
+      </button>
+    ),
+  });
+  const changeSectionRows: FileTreeSectionRow[] = [];
+  if (showChanges) {
+    changeSectionRows.push(sectionRow("changes", changesOpen));
+    if (changesOpen && currentStatus && !currentStatus.error && changes.size > 0) {
+      changeSectionRows.push(
+        ...changeRows(
+          changes,
+          selectedSection === "changes" ? fileTree.state.selectedPath : null,
+          collapsedDirectories,
+          (path, expanded) =>
+            setCollapsedDirectories((current) => {
+              const next = new Set(current);
+              if (expanded) next.add(path);
+              else next.delete(path);
+              return next;
+            }),
+          (file, temporary = false) => {
+            setSelectedSection("changes");
+            fileTree.onStateChange({ selectedPath: file.relativePath });
+            onOpenDiff(file.absolutePath, temporary);
+          },
+        ),
+      );
+    } else if (changesOpen) {
+      changeSectionRows.push({
+        type: "section",
+        key: "\0changed-notice",
+        level: currentStatus?.error ? 2 : undefined,
+        content: !currentStatus ? (
+          <div role="status" className="px-5 py-1 text-muted-foreground">
+            <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+            <span className="sr-only">{t("projectTools.loading")}</span>
+          </div>
+        ) : currentStatus.error ? (
+          <button
+            type="button"
+            role="treeitem"
+            aria-level={2}
+            className="px-5 py-1 text-left text-destructive hover:underline"
+            title={t("projectTools.fileTree.refresh")}
+            onClick={refresh}
+          >
+            {currentStatus.error}
+          </button>
+        ) : (
+          <div className="px-5 py-1 text-muted-foreground">
+            {t(
+              query.trim()
+                ? "projectTools.fileTree.noMatches"
+                : "projectTools.gitReview.noLocalChanges",
+            )}
+          </div>
+        ),
+      });
+    }
+  }
+  changeSectionRows.push(sectionRow("files", filesOpen));
 
   return (
     <aside
       aria-label={t("projectTools.fileTreeTitle")}
-      className="flex h-full min-h-0 min-w-0 flex-col bg-background px-1.5 text-xs"
+      className="flex h-full min-h-0 min-w-0 flex-col bg-background text-[13px]"
     >
-      <div className="relative my-1.5 shrink-0">
+      <div className="relative m-1.5 shrink-0">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           aria-label={labels.filter}
@@ -288,75 +390,26 @@ export function RightWorkspaceFileTree({
           </button>
         )}
       </div>
-      {canReadGit && currentStatus?.state?.status !== "not_repo" && (
-        <>
-          <button
-            type="button"
-            className="flex h-7 shrink-0 items-center gap-2 rounded-md px-1.5 text-left hover:bg-muted"
-            onClick={onOpenReview}
-          >
-            <List className="size-3.5 shrink-0" />
-            {labels.review}
-          </button>
-          <button
-            type="button"
-            aria-expanded={changesOpen}
-            className={disclosureClass}
-            onClick={() => onToggleGroup("changes")}
-          >
-            <ChevronRight className={cn("size-3 shrink-0", changesOpen && "rotate-90")} />
-            {labels.changed}
-          </button>
-          <div
-            hidden={!changesOpen}
-            className={cn("min-h-0 overflow-auto", filesOpen ? "max-h-[44%] shrink-0" : "flex-1")}
-          >
-            {!currentStatus ? (
-              <div role="status" className="px-5 py-1 text-muted-foreground">
-                <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
-                <span className="sr-only">{t("projectTools.loading")}</span>
-              </div>
-            ) : currentStatus.error ? (
-              <button
-                type="button"
-                className="px-5 py-1 text-left text-destructive hover:underline"
-                title={t("projectTools.fileTree.refresh")}
-                onClick={refresh}
-              >
-                {currentStatus.error}
-              </button>
-            ) : changes.size ? (
-              <ChangeRows
-                nodes={changes}
-                selectedPath={fileTree.state.selectedPath}
-                onSelect={(file, temporary) => {
-                  fileTree.onStateChange({ selectedPath: file.relativePath });
-                  onOpenDiff(file.absolutePath, temporary);
-                }}
-              />
-            ) : (
-              <div className="px-5 py-1 text-muted-foreground">
-                {t(
-                  query.trim()
-                    ? "projectTools.fileTree.noMatches"
-                    : "projectTools.gitReview.noLocalChanges",
-                )}
-              </div>
-            )}
-          </div>
-        </>
+      {showChanges && (
+        <button
+          type="button"
+          className="mx-1 flex h-7 shrink-0 items-center gap-[5px] rounded-md px-[3px] text-left hover:bg-muted"
+          onClick={onOpenReview}
+        >
+          <List className="size-4 shrink-0" />
+          {labels.review}
+        </button>
       )}
-      <button
-        type="button"
-        aria-expanded={filesOpen}
-        className={disclosureClass}
-        onClick={() => onToggleGroup("files")}
-      >
-        <ChevronRight className={cn("size-3 shrink-0", filesOpen && "rotate-90")} />
-        {labels.all}
-      </button>
-      <div hidden={!filesOpen} className="min-h-0 flex-1">
-        <FileTreePanel active={active && filesOpen} integratedSearch />
+      <div className="min-h-0 flex-1">
+        <FileTreePanel
+          active={active && filesOpen}
+          workspaceSections={{
+            rows: changeSectionRows,
+            filesExpanded: filesOpen,
+            filesSelected: selectedSection === "files",
+            onSelectFile: selectFileSection,
+          }}
+        />
       </div>
     </aside>
   );

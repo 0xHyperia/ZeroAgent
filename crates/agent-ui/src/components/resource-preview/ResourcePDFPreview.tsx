@@ -403,6 +403,7 @@ export default function ResourcePDFPreview({
       <div
         className="za-document-workspace"
         ref={workspace}
+        data-workspace-pdf={singlePage || undefined}
         data-navigation-pinned={navigation}
         data-annotating={annotating}
         style={
@@ -494,6 +495,7 @@ export default function ResourcePDFPreview({
               count={document.numPages}
               onPage={navigatePage}
               inline
+              compact
             />
           </div>
         ) : null}

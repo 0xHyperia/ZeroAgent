@@ -8,7 +8,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  MoreHorizontal,
+  Github,
 } from "@liveagent/ui/components/IconSet";
 import type { FileTreeEntry } from "@liveagent/ui/components/project-tools/file-tree/model";
 import {
@@ -28,9 +28,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
 import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import { localEditorFileIo } from "@liveagent/ui/components/workspace-editor/workspaceEditorFileIo";
-import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
+import {
+  isWorkspaceEditablePreviewPath,
+  isWorkspacePreviewPath,
+} from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import {
   workspaceImageAbsolutePathForCopy,
   workspaceImageRelativePathForCopy,
@@ -39,7 +43,18 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import type { GitClient, GitRepositoryState } from "@liveagent/ui/lib/git/types";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import VSCodeIcon from "~icons/logos/visual-studio-code";
+import FileSearchIcon from "~icons/lucide/file-search-2";
+import FoldersIcon from "~icons/lucide/folders";
 import type { WorkspaceFileRequest } from "./useDesktopWorkspaceTabs";
 import "./desktop-workspace-file-header.css";
 
@@ -82,10 +97,12 @@ type DirectorySnapshot = {
 };
 
 const WINDOWS_EDITORS = [
-  { id: "vscode", label: "VS Code" },
-  { id: "vscode-insiders", label: "VS Code Insiders" },
-  { id: "cursor", label: "Cursor" },
+  { id: "vscode", label: "VS Code", Icon: VSCodeIcon },
+  { id: "vscode-insiders", label: "VS Code Insiders", Icon: FilePenLine },
+  { id: "cursor", label: "Cursor", Icon: FilePenLine },
 ] as const;
+
+const FILE_TOOLBAR_COMPACT_WIDTH = 625;
 
 function isWithinDirectory(path: string, directory: string) {
   const expectedPrefix = directory ? `${directory}/` : "";
@@ -188,29 +205,40 @@ function WorkspaceBreadcrumbs({
         }
       }}
     >
-      <nav className="za-workspace-file-path" aria-label={zh ? "文件路径" : "File path"}>
-        {[workspaceFileName(request.workdir), ...parts].map((part, index) => {
-          const last = index === parts.length;
-          const segment = parts.slice(0, index).join("/");
-          const path = last ? segment.slice(0, Math.max(0, segment.lastIndexOf("/"))) : segment;
-          const label = zh ? `浏览 ${part}` : `Browse ${part}`;
-          return (
-            <div className="za-workspace-file-path-segment" key={segment}>
-              {index !== 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
-              <DropdownMenuTrigger
-                type="button"
-                id={`${breadcrumbId}-${index}`}
-                data-directory={path}
-                className="za-workspace-file-path-label"
-                aria-label={label}
-                title={part}
-                aria-current={last ? "page" : undefined}
-              >
-                {part}
-              </DropdownMenuTrigger>
-            </div>
-          );
-        })}
+      <nav
+        className="za-workspace-file-path"
+        aria-label={zh ? "文件路径" : "File path"}
+        title={relative}
+      >
+        <ol>
+          {[workspaceFileName(request.workdir), ...parts].map((part, index) => {
+            const last = index === parts.length;
+            const segment = parts.slice(0, index).join("/");
+            const path = last ? parts.slice(0, -1).join("/") : segment;
+            const label = zh ? `浏览 ${part}` : `Browse ${part}`;
+            return (
+              <li className="za-workspace-file-path-segment" key={segment}>
+                <DropdownMenuTrigger
+                  type="button"
+                  id={`${breadcrumbId}-${index}`}
+                  data-directory={path}
+                  className="za-workspace-file-path-label"
+                  aria-label={label}
+                  title={part}
+                  aria-current={last ? "page" : undefined}
+                >
+                  {part}
+                </DropdownMenuTrigger>
+                {!last && (
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-2.5 shrink-0 text-muted-foreground"
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ol>
       </nav>
       <DropdownMenuContent align="start" className="max-w-80">
         <DropdownMenuLabel className="truncate font-medium text-muted-foreground">
@@ -263,32 +291,90 @@ export function DesktopWorkspaceFileHeader({
   active,
   request,
   modeActions,
+  viewAction,
+  comparisonActions,
+  fileTree,
+  editorTools,
   setFormatTools,
   onOpenFile,
   onError,
   readDraft,
+  beforeOpen,
   gitClient,
 }: {
   active: boolean;
   request: WorkspaceFileRequest;
   modeActions: ReactNode;
+  viewAction?: ReactNode;
+  comparisonActions?: ReactNode;
+  fileTree?: { open: boolean; toggle: () => void };
+  editorTools?: boolean;
   setFormatTools: (element: HTMLDivElement | null) => void;
   onOpenFile: (path: string) => void;
   onError: (message: string) => void;
   readDraft: () => string | undefined;
+  beforeOpen: () => Promise<boolean>;
   gitClient?: GitClient;
 }) {
   const { locale } = useLocale();
   const copy = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
   const absolutePath = workspaceImageAbsolutePathForCopy(request.workdir, request.path);
   const relativePath = workspaceImageRelativePathForCopy(request.workdir, request.path);
-  const [fileOptionsOpen, setFileOptionsOpen] = useState(false);
+  const header = useRef<HTMLElement | null>(null);
+  const activeRequest = useRef<WorkspaceFileRequest | null>(null);
+  const [compact, setCompact] = useState(false);
+  const [formatTools, setFormatToolsNode] = useState<HTMLDivElement | null>(null);
+  const [hasFormatTools, setHasFormatTools] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
   const [openWith, setOpenWith] = useState(false);
   const [editorTargets, setEditorTargets] = useState<string[]>([]);
   const [repository, setRepository] = useState<GitRepositoryState | null>(null);
   const details = repository && fileRepositoryDetails(request, repository);
+  const availableEditors = WINDOWS_EDITORS.filter(({ id }) => editorTargets.includes(id));
+  const editable =
+    !isWorkspacePreviewPath(request.path) || isWorkspaceEditablePreviewPath(request.path);
+  const primaryEditor = editable ? availableEditors[0] : undefined;
+  const comparing = Boolean(comparisonActions);
+  const relative = details?.relative ?? relativePath;
+  const canCopyRelative = Boolean(relative && !/^(?:[/\\]|[a-z]:)/i.test(relative));
+  const formatToolsRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      setFormatToolsNode(element);
+      setFormatTools(element);
+    },
+    [setFormatTools],
+  );
+  useLayoutEffect(() => {
+    activeRequest.current = active ? request : null;
+    return () => {
+      activeRequest.current = null;
+    };
+  }, [active, request]);
+  useLayoutEffect(() => {
+    const node = header.current;
+    if (!active || !node) return;
+    const apply = (width: number) => setCompact(width > 0 && width < FILE_TOOLBAR_COMPACT_WIDTH);
+    apply(node.clientWidth);
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) apply(entry.contentRect.width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [active]);
+  useLayoutEffect(() => {
+    if (!formatTools) return;
+    const update = () => {
+      const present = formatTools.childElementCount > 0;
+      setHasFormatTools(present);
+      if (!present) setFormatOpen(false);
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(formatTools, { childList: true });
+    return () => observer.disconnect();
+  }, [formatTools]);
   useEffect(() => {
-    if (!active || !fileOptionsOpen || !gitClient || request.remote) return;
+    if (!active || !openWith || !gitClient || request.remote) return;
     let listening = true;
     void gitClient.status(request.workdir).then(
       (next) => {
@@ -301,9 +387,9 @@ export function DesktopWorkspaceFileHeader({
     return () => {
       listening = false;
     };
-  }, [active, fileOptionsOpen, gitClient, request.remote, request.workdir]);
+  }, [active, gitClient, openWith, request.remote, request.workdir]);
   useEffect(() => {
-    if (!active || !openWith || request.remote) return;
+    if (!active || request.remote) return;
     let listening = true;
     void invokeFs<string[]>("fs_workspace_editor_targets", {}).then(
       (targets) => {
@@ -316,22 +402,34 @@ export function DesktopWorkspaceFileHeader({
     return () => {
       listening = false;
     };
-  }, [active, openWith, request.remote]);
+  }, [active, request.remote]);
   useEffect(() => {
     if (!active) {
-      setFileOptionsOpen(false);
+      setFormatOpen(false);
       setOpenWith(false);
       setRepository(null);
       setEditorTargets([]);
     }
   }, [active]);
+  useEffect(() => {
+    if (!compact) setFormatOpen(false);
+  }, [compact]);
+  useEffect(() => setFormatOpen(false), [comparing]);
   const openFileLabel = copy("在默认应用中打开", "Open in default application");
-  const open = (mode: "open" | "reveal") => {
-    void invokeFs("fs_open_workspace_path", {
-      workdir: request.workdir,
-      path: request.path,
-      mode,
-    }).catch(() => onError(copy("无法打开文件", "Could not open the file")));
+  const openPrimaryLabel = primaryEditor
+    ? copy(`在 ${primaryEditor.label} 中打开`, `Open in ${primaryEditor.label}`)
+    : openFileLabel;
+  const open = async (mode: "open" | "reveal") => {
+    try {
+      if (mode === "open" && !(await beforeOpen())) return;
+      await invokeFs("fs_open_workspace_path", {
+        workdir: request.workdir,
+        path: request.path,
+        mode,
+      });
+    } catch {
+      onError(copy("无法打开文件", "Could not open the file"));
+    }
   };
   const copyContents = async () => {
     try {
@@ -342,100 +440,149 @@ export function DesktopWorkspaceFileHeader({
     }
     onError(copy("无法复制文件内容", "Could not copy file contents"));
   };
-  const openEditor = (id: string) => {
-    void invokeFs("fs_open_workspace_editor", {
-      workdir: request.workdir,
-      path: request.path,
-      editor: id,
-      line: request.line,
-      column: request.column,
-    }).catch(() =>
-      onError(copy("无法在此编辑器中打开文件", "Could not open the file in this editor")),
-    );
+  const openEditor = async (id: string) => {
+    try {
+      if (!(await beforeOpen())) return;
+      await invokeFs("fs_open_workspace_editor", {
+        workdir: request.workdir,
+        path: request.path,
+        editor: id,
+        line: request.line,
+        column: request.column,
+      });
+    } catch {
+      onError(copy("无法在此编辑器中打开文件", "Could not open the file in this editor"));
+    }
   };
+  const copyPath = (path: string) => {
+    void copyTextToClipboard(path).then((copied) => {
+      if (!copied) onError(copy("无法复制文件路径", "Could not copy the file path"));
+    });
+  };
+  const copyRelativePath = async () => {
+    const state = repository ?? (await gitClient?.status(request.workdir).catch(() => null));
+    if (activeRequest.current !== request) return;
+    const repositoryPath = state && fileRepositoryDetails(request, state)?.relative;
+    copyPath(repositoryPath || relativePath);
+  };
+  const formatLabel = copy("文件控件", "File controls");
+  const fileOptionsLabel = copy("文件选项", "File options");
+  const treeLabel = copy("切换文件树", "Toggle file tree");
+  const overflowTools = compact || editorTools;
+  const runFileOption = (action: () => void | Promise<void>) => {
+    setFormatOpen(false);
+    void action();
+  };
+  const fileOptionClass =
+    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted focus-visible:bg-muted";
   return (
-    <header className="za-workspace-file-header" data-desktop-workspace-file-header="">
+    <header
+      ref={header}
+      className="za-workspace-file-header"
+      data-desktop-workspace-file-header=""
+      data-comparison={comparing || undefined}
+    >
       <WorkspaceBreadcrumbs request={request} active={active} onOpenFile={onOpenFile} />
       <div className="za-workspace-file-actions">
-        {modeActions}
-        <div ref={setFormatTools} className="za-workspace-file-format-tools" />
-        {!request.remote && (
-          <>
-            <DropdownMenu
-              open={active && fileOptionsOpen}
-              onOpenChange={(open) => {
-                setRepository(null);
-                setFileOptionsOpen(open);
-              }}
+        {modeActions && <div className="za-workspace-file-mode-actions">{modeActions}</div>}
+        <div className="za-workspace-file-tool-group" role="group" aria-label={formatLabel}>
+          <Popover open={active && formatOpen} onOpenChange={setFormatOpen}>
+            <PopoverTrigger
+              hidden={Boolean(
+                request.remote && (!overflowTools || !hasFormatTools) && !(comparing && viewAction),
+              )}
+              aria-label={overflowTools && hasFormatTools ? formatLabel : fileOptionsLabel}
+              title={overflowTools && hasFormatTools ? formatLabel : fileOptionsLabel}
+              render={<Button type="button" size="icon-xs" variant="ghost" />}
             >
-              <DropdownMenuTrigger
-                render={
-                  <Button type="button" size="icon-sm" variant="ghost" className="rounded-full" />
-                }
-                aria-label={copy("文件选项", "File options")}
-              >
-                <MoreHorizontal className="size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => void copyTextToClipboard(absolutePath)}>
-                  <Copy className="size-4" />
-                  {copy("复制文件路径", "Copy file path")}
-                </DropdownMenuItem>
-                {!/^(?:[/\\]|[a-z]:)/i.test(relativePath) && (
-                  <DropdownMenuItem onClick={() => void copyTextToClipboard(relativePath)}>
-                    <Copy className="size-4" />
-                    {copy("复制项目相对路径", "Copy project-relative path")}
-                  </DropdownMenuItem>
-                )}
-                {details?.relative && (
-                  <DropdownMenuItem onClick={() => void copyTextToClipboard(details.relative)}>
-                    <Copy className="size-4" />
-                    {copy("复制仓库相对路径", "Copy repository-relative path")}
-                  </DropdownMenuItem>
-                )}
-                {details?.github && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      void openUrl(details.github).catch(() =>
-                        onError(
-                          copy("无法在 GitHub 打开此文件", "Could not open this file on GitHub"),
-                        ),
-                      );
-                    }}
+              <FileSearchIcon aria-hidden="true" className="size-4" />
+            </PopoverTrigger>
+            <PopoverContent
+              keepMounted
+              align="end"
+              className="w-fit min-w-44 max-w-[calc(100vw-16px)] p-1.5"
+              aria-label={formatLabel}
+            >
+              {!request.remote && (
+                <div>
+                  <button
+                    type="button"
+                    className={fileOptionClass}
+                    onClick={() => runFileOption(() => copyPath(absolutePath))}
                   >
-                    <ExternalLink className="size-4" />
-                    {copy("在 GitHub 上打开", "Open in GitHub")}
-                  </DropdownMenuItem>
-                )}
-                {(!isWorkspacePreviewPath(request.path) ||
-                  /\.(?:md|markdown|mdx|html?|txt|csv|tsv|json|xml)$/i.test(request.path)) && (
-                  <DropdownMenuItem onClick={() => void copyContents()}>
-                    <Copy className="size-4" />
-                    {copy("复制文件内容", "Copy file contents")}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    <Copy className="size-4" /> {copy("复制路径", "Copy path")}
+                  </button>
+                  {canCopyRelative && (
+                    <button
+                      type="button"
+                      className={fileOptionClass}
+                      onClick={() => runFileOption(copyRelativePath)}
+                    >
+                      <Copy className="size-4" /> {copy("复制相对路径", "Copy relative path")}
+                    </button>
+                  )}
+                  {editable && (
+                    <button
+                      type="button"
+                      className={fileOptionClass}
+                      onClick={() => runFileOption(copyContents)}
+                    >
+                      <Copy className="size-4" /> {copy("复制文件内容", "Copy file contents")}
+                    </button>
+                  )}
+                </div>
+              )}
+              {comparing && viewAction && (
+                <div className="za-workspace-file-diff-view-action">{viewAction}</div>
+              )}
+              {overflowTools && (
+                <div
+                  ref={formatToolsRef}
+                  className="za-workspace-file-format-tools za-workspace-file-format-popover"
+                />
+              )}
+            </PopoverContent>
+          </Popover>
+          {!comparing && viewAction}
+          {comparisonActions}
+          {!overflowTools && (
+            <div ref={formatToolsRef} className="za-workspace-file-format-tools" />
+          )}
+          {fileTree && (
+            <TooltipButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={treeLabel}
+              tooltip={treeLabel}
+              aria-pressed={fileTree.open}
+              onClick={fileTree.toggle}
+            >
+              <FoldersIcon aria-hidden="true" className="size-4" />
+            </TooltipButton>
+          )}
+          {!request.remote && (
             <div className="za-workspace-file-open">
               <TooltipButton
                 type="button"
                 size="sm"
                 variant="ghost"
                 className="h-7 px-2"
-                aria-label={openFileLabel}
-                tooltip={openFileLabel}
-                onClick={() => open("open")}
+                aria-label={openPrimaryLabel}
+                tooltip={openPrimaryLabel}
+                onClick={() => void (primaryEditor ? openEditor(primaryEditor.id) : open("open"))}
               >
-                <ExternalLink className="size-3.5" />
+                {primaryEditor ? (
+                  <primaryEditor.Icon className="size-3.5" />
+                ) : (
+                  <ExternalLink
+                    aria-hidden="true"
+                    className="za-workspace-file-compact-icon size-3.5"
+                  />
+                )}
                 <span className="za-workspace-file-action-label">{copy("打开", "Open")}</span>
               </TooltipButton>
-              <DropdownMenu
-                open={active && openWith}
-                onOpenChange={(open) => {
-                  setEditorTargets([]);
-                  setOpenWith(open);
-                }}
-              >
+              <DropdownMenu open={active && openWith} onOpenChange={setOpenWith}>
                 <DropdownMenuTrigger
                   render={
                     <Button type="button" size="icon-sm" variant="ghost" className="h-7 w-6" />
@@ -445,26 +592,38 @@ export function DesktopWorkspaceFileHeader({
                   <ChevronDown className="size-3" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => open("open")}>
+                  <DropdownMenuItem onClick={() => void open("open")}>
                     <ExternalLink className="size-4" /> {openFileLabel}
                   </DropdownMenuItem>
-                  {WINDOWS_EDITORS.filter(({ id }) => editorTargets.includes(id)).map(
-                    ({ id, label }) => (
-                      <DropdownMenuItem key={id} onClick={() => openEditor(id)}>
-                        <FilePenLine className="size-4" /> {label}
-                      </DropdownMenuItem>
-                    ),
-                  )}
+                  {availableEditors.map(({ id, label, Icon }) => (
+                    <DropdownMenuItem key={id} onClick={() => void openEditor(id)}>
+                      <Icon className="size-4" /> {label}
+                    </DropdownMenuItem>
+                  ))}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => open("reveal")}>
+                  <DropdownMenuItem onClick={() => void open("reveal")}>
                     <FolderOpen className="size-4" />{" "}
                     {copy("在文件管理器中显示", "Reveal in file manager")}
                   </DropdownMenuItem>
+                  {details?.github && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        void openUrl(details.github).catch(() =>
+                          onError(
+                            copy("无法在 GitHub 打开此文件", "Could not open this file on GitHub"),
+                          ),
+                        );
+                      }}
+                    >
+                      <Github className="size-4" />
+                      {copy("在 GitHub 上打开", "Open in GitHub")}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </header>
   );

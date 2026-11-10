@@ -33,6 +33,32 @@ import type { PatchChunk } from "./model";
 const toolbarIcon = "za-review-icon";
 const nextLayout = { unified: "split", split: "auto", auto: "unified" } as const;
 
+function ReviewLayoutIcon({ layout }: { layout: WorkspaceGitPresentation["layout"] }) {
+  return (
+    <svg aria-hidden="true" className="size-4" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="2.65" width="12" height="10.7" rx="1.85" stroke="currentColor" />
+      <g opacity=".5">
+        {layout === "auto" ? (
+          <>
+            <path d="M4.25 4.54H11.65L3.64 10.76V5.14a.6.6 0 0 1 .61-.6Z" fill="#f84e63" />
+            <path d="M12.36 5.24V10.86a.6.6 0 0 1-.6.6H4.34Z" fill="#36d958" />
+          </>
+        ) : layout === "split" ? (
+          <>
+            <rect x="3.64" y="4.54" width="3.8" height="6.92" rx=".6" fill="#f84e63" />
+            <rect x="8.55" y="4.54" width="3.81" height="6.92" rx=".6" fill="#36d958" />
+          </>
+        ) : (
+          <>
+            <rect x="3.64" y="4.54" width="8.72" height="3.02" rx=".6" fill="#f84e63" />
+            <rect x="3.64" y="8.44" width="8.72" height="3.02" rx=".6" fill="#36d958" />
+          </>
+        )}
+      </g>
+    </svg>
+  );
+}
+
 function ReviewFileJump({ rows, onJump }: { rows: PatchChunk[]; onJump: (key: string) => void }) {
   const { locale } = useLocale();
   const zh = locale === "zh-CN";
@@ -123,6 +149,7 @@ export function WorkspaceReviewToolbar({
   applyCommand,
   onOpenGitActions,
   wide,
+  singleFile,
 }: {
   presentation: WorkspaceGitPresentation;
   onPresentationChange: (patch: Partial<WorkspaceGitPresentation>) => void;
@@ -137,6 +164,7 @@ export function WorkspaceReviewToolbar({
   applyCommand: string | null;
   onOpenGitActions?: () => void;
   wide: boolean;
+  singleFile?: boolean;
 }) {
   const { locale, t } = useLocale();
   const zh = locale === "zh-CN";
@@ -150,7 +178,8 @@ export function WorkspaceReviewToolbar({
     : zh
       ? "展开所有差异"
       : "Expand all diffs";
-  const layout = nextLayout[presentation.layout];
+  const layout =
+    singleFile && presentation.layout === "split" ? "unified" : nextLayout[presentation.layout];
   const layoutLabel = {
     auto: zh ? "切换为自动布局" : "Switch to Auto diff",
     split: zh ? "切换为并排视图" : "Switch to split diff",
@@ -168,7 +197,18 @@ export function WorkspaceReviewToolbar({
   ] as const;
   const options = zh ? "变更选项" : "Changes options";
   return (
-    <div className="za-review-controls">
+    <div className="za-review-controls" data-single-file-toolbar={singleFile || undefined}>
+      {singleFile && (
+        <button
+          type="button"
+          className={toolbarIcon}
+          aria-label={layoutLabel}
+          title={layoutLabel}
+          onClick={() => onPresentationChange({ layout })}
+        >
+          <ReviewLayoutIcon layout={presentation.layout} />
+        </button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger
           type="button"
@@ -179,7 +219,7 @@ export function WorkspaceReviewToolbar({
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-52">
-          {!wide && (
+          {(!wide || singleFile) && (
             <>
               <DropdownMenuItem onSelect={onRefresh} disabled={refreshing}>
                 <RefreshCw className="size-4" />
@@ -197,10 +237,12 @@ export function WorkspaceReviewToolbar({
                 <ExpandIcon className="size-4" />
                 {expand}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onPresentationChange({ layout })}>
-                <LayoutIcon className="size-4" />
-                {layoutLabel}
-              </DropdownMenuItem>
+              {!singleFile && (
+                <DropdownMenuItem onSelect={() => onPresentationChange({ layout })}>
+                  <LayoutIcon className="size-4" />
+                  {layoutLabel}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
             </>
           )}
@@ -243,47 +285,49 @@ export function WorkspaceReviewToolbar({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <ReviewFileJump rows={rows} onJump={onJump} />
-      <div className="za-review-wide-actions">
-        <button
-          type="button"
-          className={toolbarIcon}
-          aria-label={refresh}
-          title={refresh}
-          disabled={refreshing}
-          onClick={onRefresh}
-        >
-          <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
-        </button>
-        <button
-          type="button"
-          className={toolbarIcon}
-          aria-label={wrap}
-          title={wrap}
-          aria-pressed={presentation.wrapLines}
-          onClick={() => onPresentationChange({ wrapLines: !presentation.wrapLines })}
-        >
-          <WrapText className="size-4" />
-        </button>
-        <button
-          type="button"
-          className={toolbarIcon}
-          aria-label={expand}
-          title={expand}
-          onClick={onToggleExpanded}
-        >
-          <ExpandIcon className="size-4" />
-        </button>
-        <button
-          type="button"
-          className={toolbarIcon}
-          aria-label={layoutLabel}
-          title={layoutLabel}
-          onClick={() => onPresentationChange({ layout })}
-        >
-          <LayoutIcon className="size-4" />
-        </button>
-      </div>
+      {!singleFile && <ReviewFileJump rows={rows} onJump={onJump} />}
+      {!singleFile && (
+        <div className="za-review-wide-actions">
+          <button
+            type="button"
+            className={toolbarIcon}
+            aria-label={refresh}
+            title={refresh}
+            disabled={refreshing}
+            onClick={onRefresh}
+          >
+            <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
+          </button>
+          <button
+            type="button"
+            className={toolbarIcon}
+            aria-label={wrap}
+            title={wrap}
+            aria-pressed={presentation.wrapLines}
+            onClick={() => onPresentationChange({ wrapLines: !presentation.wrapLines })}
+          >
+            <WrapText className="size-4" />
+          </button>
+          <button
+            type="button"
+            className={toolbarIcon}
+            aria-label={expand}
+            title={expand}
+            onClick={onToggleExpanded}
+          >
+            <ExpandIcon className="size-4" />
+          </button>
+          <button
+            type="button"
+            className={toolbarIcon}
+            aria-label={layoutLabel}
+            title={layoutLabel}
+            onClick={() => onPresentationChange({ layout })}
+          >
+            <LayoutIcon className="size-4" />
+          </button>
+        </div>
+      )}
       <span className="sr-only" role="status">
         {copyState === "ok"
           ? zh

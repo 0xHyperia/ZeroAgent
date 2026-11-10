@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
+import AudioLines from "~icons/lucide/audio-lines";
+import Ellipsis from "~icons/lucide/ellipsis";
 import Headphones from "~icons/lucide/headphones";
 import Maximize from "~icons/lucide/maximize";
 import Minimize from "~icons/lucide/minimize";
@@ -17,10 +19,13 @@ import Play from "~icons/lucide/play";
 import RotateCcw from "~icons/lucide/rotate-ccw";
 import Volume2 from "~icons/lucide/volume-2";
 import VolumeX from "~icons/lucide/volume-x";
+import { useLocale } from "../../i18n";
+import { copyTextToClipboard } from "../../lib/shared/clipboard";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -29,7 +34,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { TooltipPortalContainer } from "../ui/tooltip";
 import { TooltipButton as Button } from "../ui/tooltip-button";
-import { PreviewToolbarMount } from "./PreviewChrome";
+import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewDock } from "./PreviewDock";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { usePreviewViewport } from "./usePreviewViewport";
@@ -60,10 +65,14 @@ export default function ResourceMediaPreview({
   assertCurrent: () => void;
   onCancel?: () => void;
 }) {
+  const { locale } = useLocale();
+  const zh = locale === "zh-CN";
   const media = useRef<HTMLMediaElement | null>(null);
   const chrome = useContext(PreviewToolbarMount);
+  const { sourcePaths } = useContext(PreviewIdentityContext);
   const workspaceTab = Boolean(chrome?.workspaceTab);
   const workspaceAudio = workspaceTab && kind === "audio";
+  const workspaceVideo = workspaceTab && kind === "video";
   const inactive = workspaceTab && !chrome?.target;
   useEffect(() => {
     if (inactive) media.current?.pause();
@@ -290,6 +299,16 @@ export default function ResourceMediaPreview({
     kind === "video" && typeof document !== "undefined" && document.fullscreenEnabled;
   const hasPip =
     kind === "video" && typeof document !== "undefined" && document.pictureInPictureEnabled;
+  const pathToCopy = workspaceAudio ? (sourcePaths?.path ?? sourcePaths?.relativePath) : undefined;
+  const optionsLabel = workspaceAudio
+    ? zh
+      ? "音频选项"
+      : "Audio options"
+    : workspaceVideo
+      ? zh
+        ? "视频选项"
+        : "Video options"
+      : "播放速度";
   if (error)
     return <PreviewUnavailable message={error} onDownload={onDownload} onRetry={onRetry} />;
   const play = (
@@ -305,13 +324,177 @@ export default function ResourceMediaPreview({
       <PlayIcon />
     </Button>
   );
+  const volumeControl = (
+    <Popover open={volumeOpen} onOpenChange={setVolumeOpen}>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="za-media-control"
+            tooltip="音量"
+            aria-label="音量"
+          />
+        }
+      >
+        {muted || !volume ? <VolumeX /> : <Volume2 />}
+      </PopoverTrigger>
+      <PopoverContent
+        portalContainer={fullscreen ? container.current : undefined}
+        side="top"
+        className="za-media-volume-popup"
+        aria-label="调节音量"
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="za-media-control"
+          tooltip={muted || !volume ? "取消静音" : "静音"}
+          aria-label={muted || !volume ? "取消静音" : "静音"}
+          onClick={toggleMute}
+        >
+          {muted || !volume ? <VolumeX /> : <Volume2 />}
+        </Button>
+        <input
+          className="za-media-volume-range"
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={muted ? 0 : volume}
+          aria-label="音量大小"
+          aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`}
+          style={{ "--za-media-volume": `${(muted ? 0 : volume) * 100}%` } as CSSProperties}
+          onChange={(event) => {
+            const element = current();
+            if (!element) return;
+            element.volume = Number(event.target.value);
+            element.muted = element.volume === 0;
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+  const playbackOptions = (
+    <DropdownMenu open={speedOpen} onOpenChange={setSpeedOpen}>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="za-media-speed"
+            tooltip={optionsLabel}
+            aria-label={optionsLabel}
+          />
+        }
+      >
+        {workspaceTab ? <Ellipsis /> : `${rate}×`}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        portalContainer={fullscreen ? container.current : undefined}
+        side={workspaceAudio ? "bottom" : "top"}
+        align="end"
+        className="za-media-speed-menu"
+      >
+        {workspaceTab && (onDownload || pathToCopy) ? (
+          <>
+            {pathToCopy ? (
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (!current()) return;
+                  void copyTextToClipboard(pathToCopy).then((copied) => {
+                    if (!copied && !inactive)
+                      setNotice(zh ? "无法复制文件路径。" : "Could not copy the file path.");
+                  });
+                }}
+              >
+                {zh ? "复制文件路径" : "Copy file path"}
+              </DropdownMenuItem>
+            ) : null}
+            {onDownload ? (
+              <DropdownMenuItem onSelect={onDownload}>
+                {zh ? "保存原件" : "Save original"}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        {workspaceTab ? (
+          <DropdownMenuLabel>{zh ? "播放速度" : "Playback speed"}</DropdownMenuLabel>
+        ) : null}
+        <DropdownMenuRadioGroup
+          value={String(rate)}
+          onValueChange={(value) => {
+            const element = current();
+            if (element) element.playbackRate = Number(value);
+            setSpeedOpen(false);
+          }}
+        >
+          {(workspaceVideo ? [0.25, ...rates] : rates).map((value) => (
+            <DropdownMenuRadioItem key={value} value={String(value)}>
+              {value === 1 ? "正常" : `${value}×`}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        {hasPip && (compact || workspaceVideo) ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={!ready} onSelect={() => void togglePip()}>
+              <PictureInPicture />
+              {pip ? "退出画中画" : "画中画"}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  const format = name.match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toUpperCase();
+  const audioType = zh
+    ? format
+      ? `${format} 音频`
+      : "音频"
+    : format
+      ? `${format} audio`
+      : "Audio";
   const audioTitle = (
     <div className="za-media-audio-cover">
       <span className="za-media-audio-icon" aria-hidden="true">
-        <Headphones />
+        {workspaceAudio ? <AudioLines /> : <Headphones />}
       </span>
-      <h3 title={name}>{name}</h3>
-      {workspaceAudio ? play : <span>{playing ? "正在播放" : ended ? "播放完毕" : "音频"}</span>}
+      {workspaceAudio ? (
+        <>
+          <div className="za-workspace-audio-identity">
+            <h3 title={name}>{name}</h3>
+            <span>
+              {!ready
+                ? zh
+                  ? "正在加载音频…"
+                  : "Loading audio…"
+                : waiting
+                  ? zh
+                    ? "正在缓冲…"
+                    : "Buffering…"
+                  : audioType}
+            </span>
+          </div>
+          <div className="za-workspace-audio-actions">
+            {ready ? (
+              play
+            ) : onCancel ? (
+              <Button variant="ghost" size="sm" onClick={onCancel}>
+                {zh ? "取消" : "Cancel"}
+              </Button>
+            ) : null}
+            {ready ? volumeControl : null}
+            {playbackOptions}
+          </div>
+        </>
+      ) : (
+        <>
+          <h3 title={name}>{name}</h3>
+          <span>{playing ? "正在播放" : ended ? "播放完毕" : "音频"}</span>
+        </>
+      )}
     </div>
   );
 
@@ -336,9 +519,12 @@ export default function ResourceMediaPreview({
               ref={mediaRef}
               className="za-media-video"
               src={url}
+              aria-label={workspaceVideo ? name : undefined}
               playsInline
               preload="auto"
-              tabIndex={-1}
+              tabIndex={workspaceVideo ? 0 : -1}
+              onClick={workspaceVideo ? () => void togglePlayback() : undefined}
+              onKeyDown={workspaceVideo ? keyboard : undefined}
             />
           ) : (
             <>
@@ -347,12 +533,12 @@ export default function ResourceMediaPreview({
               {workspaceAudio ? null : audioTitle}
             </>
           )}
-          {!ready ? (
+          {!ready && !workspaceAudio ? (
             <div className="za-media-loading">
               <PreviewLoading message="正在加载媒体…" onCancel={onCancel} />
             </div>
           ) : null}
-          {ready && waiting ? (
+          {ready && waiting && !workspaceAudio ? (
             <span className="za-media-buffering" role="status">
               <span />
               正在缓冲
@@ -366,160 +552,70 @@ export default function ResourceMediaPreview({
               {notice}
             </p>
           ) : null}
-          <PreviewDock className="za-media-transport" label="播放控制">
-            {workspaceAudio ? null : play}
-            <div className="za-media-seek">
-              <div className="za-media-track" aria-hidden="true">
-                {buffered.map((range) => (
-                  <span
-                    key={`${range.start}:${range.end}`}
-                    className="za-media-buffer"
-                    style={{
-                      left: `${duration ? (range.start / duration) * 100 : 0}%`,
-                      width: `${duration ? ((range.end - range.start) / duration) * 100 : 0}%`,
-                    }}
-                  />
-                ))}
-                <span className="za-media-progress" style={{ width: `${progress}%` }} />
+          {(!workspaceAudio || ready) && (
+            <PreviewDock className="za-media-transport" label="播放控制">
+              {workspaceAudio ? null : play}
+              <div className="za-media-seek">
+                <div className="za-media-track" aria-hidden="true">
+                  {buffered.map((range) => (
+                    <span
+                      key={`${range.start}:${range.end}`}
+                      className="za-media-buffer"
+                      style={{
+                        left: `${duration ? (range.start / duration) * 100 : 0}%`,
+                        width: `${duration ? ((range.end - range.start) / duration) * 100 : 0}%`,
+                      }}
+                    />
+                  ))}
+                  <span className="za-media-progress" style={{ width: `${progress}%` }} />
+                </div>
+                <input
+                  className="za-media-range"
+                  type="range"
+                  min={0}
+                  max={duration || 1}
+                  step={workspaceAudio ? 0.1 : "any"}
+                  value={time}
+                  disabled={!duration}
+                  aria-label="播放进度"
+                  aria-valuetext={`${mediaTime(time)} / ${mediaTime(duration)}`}
+                  onChange={(event) => seek(Number(event.target.value))}
+                />
               </div>
-              <input
-                className="za-media-range"
-                type="range"
-                min={0}
-                max={duration || 1}
-                step="any"
-                value={time}
-                disabled={!duration}
-                aria-label="播放进度"
-                aria-valuetext={`${mediaTime(time)} / ${mediaTime(duration)}`}
-                onChange={(event) => seek(Number(event.target.value))}
-              />
-            </div>
-            <span className="za-media-time" aria-live="off">
-              {mediaTime(time)}
-              <span> / {mediaTime(duration)}</span>
-            </span>
-            <Popover open={volumeOpen} onOpenChange={setVolumeOpen}>
-              <PopoverTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="za-media-control"
-                    tooltip="音量"
-                    aria-label="音量"
-                  />
-                }
-              >
-                {muted || !volume ? <VolumeX /> : <Volume2 />}
-              </PopoverTrigger>
-              <PopoverContent
-                portalContainer={fullscreen ? container.current : undefined}
-                side="top"
-                className="za-media-volume-popup"
-                aria-label="调节音量"
-              >
+              <span className="za-media-time" aria-live="off">
+                {mediaTime(time)}
+                <span> / {mediaTime(duration)}</span>
+              </span>
+              {workspaceAudio ? null : volumeControl}
+              {workspaceAudio ? null : playbackOptions}
+              {hasPip && !compact && !workspaceVideo ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="za-media-control za-media-pip"
+                  tooltip={pip ? "退出画中画" : "画中画"}
+                  aria-label={pip ? "退出画中画" : "画中画"}
+                  disabled={!ready}
+                  onClick={() => void togglePip()}
+                >
+                  <PictureInPicture />
+                </Button>
+              ) : null}
+              {hasFullscreen ? (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="za-media-control"
-                  tooltip={muted || !volume ? "取消静音" : "静音"}
-                  aria-label={muted || !volume ? "取消静音" : "静音"}
-                  onClick={toggleMute}
+                  tooltip={fullscreen ? "退出全屏" : "全屏播放"}
+                  tooltipShortcut="F"
+                  aria-label={fullscreen ? "退出全屏" : "全屏播放"}
+                  onClick={() => void toggleFullscreen()}
                 >
-                  {muted || !volume ? <VolumeX /> : <Volume2 />}
+                  {fullscreen ? <Minimize /> : <Maximize />}
                 </Button>
-                <input
-                  className="za-media-volume-range"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={muted ? 0 : volume}
-                  aria-label="音量大小"
-                  aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`}
-                  style={{ "--za-media-volume": `${(muted ? 0 : volume) * 100}%` } as CSSProperties}
-                  onChange={(event) => {
-                    const element = current();
-                    if (!element) return;
-                    element.volume = Number(event.target.value);
-                    element.muted = element.volume === 0;
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <DropdownMenu open={speedOpen} onOpenChange={setSpeedOpen}>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="za-media-speed"
-                    tooltip="播放速度"
-                    aria-label="播放速度"
-                  />
-                }
-              >
-                {rate}×
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                portalContainer={fullscreen ? container.current : undefined}
-                side="top"
-                align="end"
-                className="za-media-speed-menu"
-              >
-                <DropdownMenuRadioGroup
-                  value={String(rate)}
-                  onValueChange={(value) => {
-                    const element = current();
-                    if (element) element.playbackRate = Number(value);
-                    setSpeedOpen(false);
-                  }}
-                >
-                  {rates.map((value) => (
-                    <DropdownMenuRadioItem key={value} value={String(value)}>
-                      {value === 1 ? "正常" : `${value}×`}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-                {hasPip && compact ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem disabled={!ready} onSelect={() => void togglePip()}>
-                      <PictureInPicture />
-                      {pip ? "退出画中画" : "画中画"}
-                    </DropdownMenuItem>
-                  </>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {hasPip && !compact ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="za-media-control za-media-pip"
-                tooltip={pip ? "退出画中画" : "画中画"}
-                aria-label={pip ? "退出画中画" : "画中画"}
-                disabled={!ready}
-                onClick={() => void togglePip()}
-              >
-                <PictureInPicture />
-              </Button>
-            ) : null}
-            {hasFullscreen ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="za-media-control"
-                tooltip={fullscreen ? "退出全屏" : "全屏播放"}
-                tooltipShortcut="F"
-                aria-label={fullscreen ? "退出全屏" : "全屏播放"}
-                onClick={() => void toggleFullscreen()}
-              >
-                {fullscreen ? <Minimize /> : <Maximize />}
-              </Button>
-            ) : null}
-          </PreviewDock>
+              ) : null}
+            </PreviewDock>
+          )}
         </div>
       </section>
     </TooltipPortalContainer.Provider>

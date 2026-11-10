@@ -420,6 +420,7 @@ export function remapExpandedPathsForRename(
 export function flattenFileTreeRows(
   nodes: FileTreeNodes,
   expanded: ReadonlySet<string>,
+  showRoot = true,
 ): FileTreeRowModel[] {
   const rows: FileTreeRowModel[] = [];
   const visited = new Set<string>();
@@ -427,16 +428,48 @@ export function flattenFileTreeRows(
     const node = nodes[path];
     if (!node || visited.has(path)) return;
     visited.add(path);
-    rows.push({ type: "node", key: path === ROOT_PATH ? "__root__" : path, path, depth });
+    const isHiddenRoot = !showRoot && path === ROOT_PATH;
+    if (!isHiddenRoot)
+      rows.push({ type: "node", key: path === ROOT_PATH ? "__root__" : path, path, depth });
     if (node.error) {
       rows.push({ type: "error", key: `${path}\u0000error`, path, depth, message: node.error });
     }
-    if (node.kind !== "dir" || !expanded.has(path)) return;
+    if (node.kind !== "dir" || (!isHiddenRoot && !expanded.has(path))) return;
     for (const childPath of node.children) {
       visit(childPath, depth + 1);
     }
   };
   visit(ROOT_PATH, 0);
+  return rows;
+}
+
+export function flattenFileTreeSearchRows(
+  matches: readonly FileTreeEntry[],
+  collapsed: ReadonlySet<string>,
+) {
+  const entries = new Map<string, FileTreeEntry>();
+  for (const match of matches) {
+    entries.set(match.path, match);
+    for (const path of ancestorDirsOfPath(match.path).slice(1)) {
+      if (!entries.has(path)) entries.set(path, { path, kind: "dir", hidden: false });
+    }
+  }
+  const children = new Map<string, FileTreeEntry[]>();
+  for (const entry of entries.values()) {
+    const parent = dirname(entry.path);
+    const siblings = children.get(parent);
+    if (siblings) siblings.push(entry);
+    else children.set(parent, [entry]);
+  }
+  const rows: { entry: FileTreeEntry; depth: number; expanded: boolean }[] = [];
+  const visit = (path: string, depth: number) => {
+    for (const entry of sortFileTreeEntries(children.get(path) ?? [])) {
+      const expanded = entry.kind === "dir" && !collapsed.has(entry.path);
+      rows.push({ entry, depth, expanded });
+      if (expanded) visit(entry.path, depth + 1);
+    }
+  };
+  visit(ROOT_PATH, 1);
   return rows;
 }
 

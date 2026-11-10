@@ -23,7 +23,9 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -51,9 +53,12 @@ import {
   dirname,
   FILE_TREE_HAS_OS_INTEGRATION,
   FILE_TREE_ROW_HEIGHT,
+  type FileTreeEntry,
   type FileTreeExternalRoot,
   type FileTreeKind,
+  type FileTreeRowModel,
   flattenFileTreeRows,
+  flattenFileTreeSearchRows,
   ROOT_PATH,
   remapExpandedPathsForRename,
   removeExpandedPath,
@@ -74,17 +79,46 @@ type ContextMenuState = {
   path: string;
 };
 
-export function FileTreePanel(props: { active: boolean; integratedSearch?: boolean }) {
+export type FileTreeSectionRow = {
+  type: "section";
+  key: string;
+  content: ReactNode;
+  level?: number;
+};
+
+type VisibleFileTreeRow =
+  | FileTreeRowModel
+  | FileTreeSectionRow
+  | { type: "search"; key: string; entry: FileTreeEntry; depth: number; expanded: boolean };
+
+function treeRowLevel(row: VisibleFileTreeRow) {
+  if (row.type === "section") return row.level;
+  return row.type === "error" ? undefined : row.depth + 1;
+}
+
+const NO_COLLAPSED_SEARCH_DIRECTORIES: ReadonlySet<string> = new Set();
+
+type WorkspaceFileTreeSections = {
+  rows: readonly FileTreeSectionRow[];
+  filesExpanded: boolean;
+  filesSelected: boolean;
+  onSelectFile: () => void;
+};
+
+export function FileTreePanel(props: {
+  active: boolean;
+  workspaceSections?: WorkspaceFileTreeSections;
+}) {
   const context = useRightDockToolContext();
   return (
     <FileTreeSurface
       active={props.active}
-      integratedSearch={props.integratedSearch}
+      workspaceSections={props.workspaceSections}
       projectPathKey={context.projectPathKey}
       cwd={context.cwd}
       state={context.fileTree.state}
       initialized={
-        props.integratedSearch ? context.capabilities.projectReady : context.fileTree.initialized
+        props.workspaceSections ? context.capabilities.projectReady : context.fileTree.initialized
       }
       externalRoots={context.fileTree.externalRoots}
       workspaceActivityClient={context.clients.workspaceActivity ?? null}
@@ -99,7 +133,7 @@ export function FileTreePanel(props: { active: boolean; integratedSearch?: boole
 
 export type FileTreeSurfaceProps = {
   active: boolean;
-  integratedSearch?: boolean;
+  workspaceSections?: WorkspaceFileTreeSections;
   projectPathKey: string;
   cwd: string;
   state: RightDockFileTreeState;
@@ -148,7 +182,7 @@ export function FileTreePaneSurface(props: FileTreePaneSurfaceProps) {
 export function FileTreeSurface(props: FileTreeSurfaceProps) {
   const {
     active,
-    integratedSearch = false,
+    workspaceSections,
     projectPathKey,
     cwd,
     state: syncState,
@@ -163,8 +197,19 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
   } = props;
   const { t } = useLocale();
 
+  const integratedSearch = workspaceSections !== undefined;
+  const onSelectWorkspaceFile = workspaceSections?.onSelectFile;
   const [localQuery, setQuery] = useState(syncState.query);
   const query = integratedSearch ? syncState.query : localQuery;
+  const searchScope = `${projectPathKey}\0${query}`;
+  const [searchExpansion, setSearchExpansion] = useState<{
+    scope: string;
+    collapsed: ReadonlySet<string>;
+  }>();
+  const collapsedSearchDirectories =
+    searchExpansion?.scope === searchScope
+      ? searchExpansion.collapsed
+      : NO_COLLAPSED_SEARCH_DIRECTORIES;
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [pendingTargetPath, setPendingTargetPath] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -172,6 +217,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
   const [busyAction, setBusyAction] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [revealTarget, setRevealTarget] = useState<string | null>(null);
+  const [keyboardTarget, setKeyboardTarget] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const { confirm: requestConfirmDialog, dialog: confirmDialog } = useConfirmDialog();
@@ -239,9 +285,10 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
 
   const selectPath = useCallback(
     (path: string) => {
+      onSelectWorkspaceFile?.();
       emitState({ selectedPath: path });
     },
-    [emitState],
+    [emitState, onSelectWorkspaceFile],
   );
 
   const toggleDirectory = useCallback(
@@ -308,14 +355,121 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     void revealPath(target, kind);
   }, [initialized, projectPathKey, revealPath, syncState.revision, syncState.selectedPath]);
 
-  const rows = useMemo(() => flattenFileTreeRows(nodes, expandedSet), [expandedSet, nodes]);
+  const fileRows = useMemo(
+    () => flattenFileTreeRows(nodes, expandedSet, !integratedSearch),
+    [expandedSet, integratedSearch, nodes],
+  );
+  const searchRows = useMemo(
+    () => flattenFileTreeSearchRows(search.results, collapsedSearchDirectories),
+    [collapsedSearchDirectories, search.results],
+  );
+  const searchNotice = search.loading ? (
+    <span className="flex items-center gap-2 text-muted-foreground" role="status">
+      <Loader2 className="size-3.5 animate-spin" />
+      {t("projectTools.fileTree.searching")}
+    </span>
+  ) : search.error ? (
+    <span className="text-destructive" role="alert">
+      {search.error}
+    </span>
+  ) : search.results.length === 0 ? (
+    <span className="text-muted-foreground">{t("projectTools.fileTree.noMatches")}</span>
+  ) : null;
+  const searchTruncated = search.truncated && !searchNotice && (
+    <span className="text-muted-foreground">{t("projectTools.fileTree.resultsTruncated")}</span>
+  );
+  let rows: readonly VisibleFileTreeRow[] = fileRows;
+  if (workspaceSections) {
+    const sectionRows: VisibleFileTreeRow[] = [...workspaceSections.rows];
+    if (workspaceSections.filesExpanded) {
+      if (!query.trim()) {
+        sectionRows.push(...fileRows);
+      } else if (searchNotice) {
+        sectionRows.push({
+          type: "section",
+          key: "\0search-notice",
+          content: <div className="px-5 py-1">{searchNotice}</div>,
+        });
+      } else {
+        sectionRows.push(
+          ...searchRows.map((row) => ({
+            ...row,
+            type: "search" as const,
+            key: `\0search:${row.entry.path}`,
+          })),
+        );
+        if (searchTruncated)
+          sectionRows.push({
+            type: "section",
+            key: "\0search-truncated",
+            content: <div className="px-5 py-1">{searchTruncated}</div>,
+          });
+      }
+    }
+    rows = sectionRows;
+  }
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
+    getItemKey: (index) => rows[index]?.key ?? index,
     estimateSize: () => FILE_TREE_ROW_HEIGHT,
     overscan: 12,
   });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+
+  useEffect(() => {
+    if (!keyboardTarget) return;
+    const index = rows.findIndex((row) => row.key === keyboardTarget);
+    if (index < 0) {
+      setKeyboardTarget(null);
+      return;
+    }
+    const item = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-index="${index}"] [role="treeitem"]`,
+    );
+    if (!item) return;
+    item.focus({ preventScroll: true });
+    setKeyboardTarget(null);
+  }, [keyboardTarget, rows]);
+
+  const onWorkspaceTreeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (!target || target.getAttribute("role") !== "treeitem") return;
+    const expanded = target.getAttribute("aria-expanded");
+    if (
+      (event.key === "ArrowRight" && expanded === "false") ||
+      (event.key === "ArrowLeft" && expanded === "true")
+    ) {
+      event.preventDefault();
+      target.click();
+      return;
+    }
+    const index = Number(target.closest<HTMLElement>("[data-index]")?.dataset.index);
+    const current = rows[index];
+    if (
+      !current ||
+      !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+    )
+      return;
+    event.preventDefault();
+    if (event.key === "ArrowRight" && expanded !== "true") return;
+    const step =
+      event.key === "ArrowDown" || event.key === "Home" || event.key === "ArrowRight" ? 1 : -1;
+    const currentLevel = treeRowLevel(current) ?? 1;
+    let next = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1 : index + step;
+    while (next >= 0 && next < rows.length) {
+      const row = rows[next];
+      const level = treeRowLevel(row);
+      if (event.key === "ArrowRight" && level !== undefined && level <= currentLevel) return;
+      if (level !== undefined && (event.key !== "ArrowLeft" || level < currentLevel)) {
+        rowVirtualizer.scrollToIndex(next, { align: "auto" });
+        setKeyboardTarget(row.key);
+        return;
+      }
+      next += step;
+    }
+  };
 
   useEffect(() => {
     if (!revealTarget) return;
@@ -586,6 +740,29 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
   }
 
   const contextNode = contextMenu ? (nodes[contextMenu.path] ?? nodes[ROOT_PATH]) : null;
+  const renderSearchEntry = (entry: FileTreeEntry) => {
+    const TypeIcon = getFileTypeIcon(entry.path, entry.kind);
+    return (
+      <button
+        key={`${entry.kind}:${entry.path}`}
+        type="button"
+        draggable
+        className={cn(
+          "flex w-full select-none items-center gap-1.5 rounded-md px-2",
+          "text-left text-xs leading-5 text-muted-foreground hover:bg-muted hover:text-foreground",
+          entry.hidden && "opacity-60 hover:opacity-80",
+        )}
+        style={{ minHeight: FILE_TREE_ROW_HEIGHT }}
+        title={entry.path}
+        onClick={() => void revealPath(entry.path, entry.kind)}
+        onDragStart={(event) => handleWorkspacePathDragStart(event, entry.path, entry.kind)}
+        onDragEnd={finishWorkspacePathDrag}
+      >
+        <TypeIcon className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{entry.path}</span>
+      </button>
+    );
+  };
 
   return (
     <div ref={panelRef} className="relative flex h-full min-h-0 select-none flex-col">
@@ -670,107 +847,108 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         </div>
       ) : null}
 
-      {query.trim() ? (
-        <div
-          className={cn(
-            "project-file-tree-panel-scroll max-h-40 shrink-0 overflow-auto border-b border-border/60 p-2",
-            "web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
-            integratedSearch && "max-h-none min-h-0 flex-1 shrink border-0 px-1",
-          )}
-        >
-          {search.loading ? (
-            <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              {t("projectTools.fileTree.searching")}
-            </div>
-          ) : search.error ? (
-            <div className="px-2 py-1 text-xs text-destructive">{search.error}</div>
-          ) : search.results.length === 0 ? (
-            <div className="px-2 py-1 text-xs text-muted-foreground">
-              {t("projectTools.fileTree.noMatches")}
-            </div>
+      {!integratedSearch && query.trim() ? (
+        <div className="project-file-tree-panel-scroll max-h-40 shrink-0 overflow-auto border-b border-border/60 p-2 web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]">
+          {searchNotice ? (
+            <div className="px-2 py-1 text-xs">{searchNotice}</div>
           ) : (
-            search.results.map((entry) => {
-              const TypeIcon = getFileTypeIcon(entry.path, entry.kind);
-              return (
-                <button
-                  key={`${entry.kind}:${entry.path}`}
-                  type="button"
-                  draggable
-                  className={cn(
-                    "flex w-full select-none items-center gap-1.5 rounded-md px-2",
-                    "text-left text-xs leading-5 text-muted-foreground hover:bg-muted hover:text-foreground",
-                    entry.hidden && "opacity-60 hover:opacity-80",
-                  )}
-                  style={{ minHeight: FILE_TREE_ROW_HEIGHT }}
-                  title={entry.path}
-                  onClick={() => {
-                    if (integratedSearch && entry.kind === "file") {
-                      selectPath(entry.path);
-                      handleOpenFile(entry.path, true);
-                      return;
-                    }
-                    if (integratedSearch) emitState({ query: "" });
-                    void revealPath(entry.path, entry.kind);
-                  }}
-                  onDoubleClick={() => {
-                    if (integratedSearch && entry.kind === "file")
-                      handleOpenFile(entry.path, false);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" || !integratedSearch || entry.kind !== "file") return;
-                    event.preventDefault();
-                    selectPath(entry.path);
-                    handleOpenFile(entry.path, false);
-                  }}
-                  onDragStart={(event) =>
-                    handleWorkspacePathDragStart(event, entry.path, entry.kind)
-                  }
-                  onDragEnd={finishWorkspacePathDrag}
-                >
-                  <TypeIcon className="size-3.5 shrink-0" />
-                  <span className="min-w-0 truncate">{entry.path}</span>
-                </button>
-              );
-            })
+            search.results.map(renderSearchEntry)
           )}
-          {search.truncated ? (
-            <div className="px-2 pt-1 text-xs text-muted-foreground">
-              {t("projectTools.fileTree.resultsTruncated")}
-            </div>
-          ) : null}
+          {searchTruncated && <div className="px-2 pt-1 text-xs">{searchTruncated}</div>}
         </div>
       ) : null}
 
       <div
         role="tree"
+        aria-label={integratedSearch ? t("projectTools.fileTreeTitle") : undefined}
+        data-workspace-tree-scroll={integratedSearch ? "" : undefined}
         ref={scrollRef}
         className={cn(
           "project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto p-2 web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
           integratedSearch && "p-1",
-          integratedSearch && query.trim() && "hidden",
         )}
-        onContextMenu={(event) => openContextMenu(event, selectedPath || ROOT_PATH)}
+        onKeyDown={integratedSearch ? onWorkspaceTreeKeyDown : undefined}
+        onContextMenu={(event) => {
+          if (integratedSearch && event.target instanceof Element) {
+            const row = event.target.closest<HTMLElement>('[role="treeitem"]');
+            if (row) {
+              if (row.dataset.workspaceTreeSection === "files") openContextMenu(event, ROOT_PATH);
+              return;
+            }
+          }
+          openContextMenu(event, selectedPath || ROOT_PATH);
+        }}
       >
         <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          {virtualRows.map((virtualRow) => {
             const row = rows[virtualRow.index];
             if (!row) return null;
+            let content: ReactNode;
             if (row.type === "error") {
-              return (
-                <div
-                  key={row.key}
-                  ref={rowVirtualizer.measureElement}
-                  data-index={virtualRow.index}
-                  className="absolute left-0 top-0 w-full"
-                  style={{ transform: `translateY(${virtualRow.start}px)` }}
-                >
-                  <FileTreeErrorRow depth={row.depth} message={row.message} />
-                </div>
+              content = <FileTreeErrorRow depth={row.depth} message={row.message} />;
+            } else if (row.type === "section") {
+              content = row.content;
+            } else if (row.type === "search") {
+              const { entry } = row;
+              content = (
+                <FileTreeRow
+                  path={entry.path}
+                  name={basename(entry.path)}
+                  kind={entry.kind}
+                  hidden={entry.hidden}
+                  depth={row.depth}
+                  expanded={row.expanded}
+                  selected={Boolean(
+                    workspaceSections?.filesSelected && syncState.selectedPath === entry.path,
+                  )}
+                  loading={false}
+                  title={entry.path}
+                  onToggle={(path, expanded) =>
+                    setSearchExpansion((current) => {
+                      const collapsed = new Set(
+                        current?.scope === searchScope ? current.collapsed : undefined,
+                      );
+                      if (expanded) collapsed.add(path);
+                      else collapsed.delete(path);
+                      return { scope: searchScope, collapsed };
+                    })
+                  }
+                  onSelect={entry.kind === "file" ? selectPath : () => {}}
+                  onOpen={handleOpenFile}
+                  transientFiles
+                  sectioned
+                  onDragStart={handleWorkspacePathDragStart}
+                  onDragEnd={finishWorkspacePathDrag}
+                />
+              );
+            } else {
+              const node = nodes[row.path];
+              if (!node) return null;
+              content = (
+                <FileTreeRow
+                  path={node.path}
+                  name={node.name}
+                  kind={node.kind}
+                  hidden={node.hidden}
+                  depth={row.depth}
+                  expanded={expandedSet.has(row.path)}
+                  selected={
+                    (!workspaceSections || workspaceSections.filesSelected) &&
+                    selectedPath === row.path
+                  }
+                  loading={node.loading}
+                  title={getDisplayPath(row.path)}
+                  onToggle={toggleDirectory}
+                  onSelect={selectPath}
+                  onOpen={handleOpenFile}
+                  transientFiles={integratedSearch}
+                  sectioned={integratedSearch}
+                  onContextMenu={openContextMenu}
+                  onDragStart={handleWorkspacePathDragStart}
+                  onDragEnd={finishWorkspacePathDrag}
+                />
               );
             }
-            const node = nodes[row.path];
-            if (!node) return null;
             return (
               <div
                 key={row.key}
@@ -779,24 +957,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
                 className="absolute left-0 top-0 w-full"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
-                <FileTreeRow
-                  path={node.path}
-                  name={node.name}
-                  kind={node.kind}
-                  hidden={node.hidden}
-                  depth={row.depth}
-                  expanded={expandedSet.has(row.path)}
-                  selected={selectedPath === row.path}
-                  loading={node.loading}
-                  title={getDisplayPath(row.path)}
-                  onToggle={toggleDirectory}
-                  onSelect={selectPath}
-                  onOpen={handleOpenFile}
-                  transientFiles={integratedSearch}
-                  onContextMenu={openContextMenu}
-                  onDragStart={handleWorkspacePathDragStart}
-                  onDragEnd={finishWorkspacePathDrag}
-                />
+                {content}
               </div>
             );
           })}

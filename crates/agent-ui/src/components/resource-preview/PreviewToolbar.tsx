@@ -63,12 +63,14 @@ export function PreviewPageControls({
   count,
   busy,
   inline,
+  compact,
   onPage,
 }: {
   page: number;
   count: number;
   busy?: boolean;
   inline?: boolean;
+  compact?: boolean;
   onPage: (page: number) => void;
 }) {
   const mount = useContext(PreviewToolbarMount);
@@ -82,7 +84,12 @@ export function PreviewPageControls({
     } else setInput(String(page));
   };
   const controls = (
-    <nav className="za-preview-pages" aria-label="页面导航" aria-busy={busy}>
+    <nav
+      className="za-preview-pages"
+      data-compact={compact || undefined}
+      aria-label="页面导航"
+      aria-busy={busy}
+    >
       <Button
         variant="ghost"
         size="sm"
@@ -97,6 +104,11 @@ export function PreviewPageControls({
         <input
           aria-label="页码"
           inputMode="numeric"
+          style={
+            compact
+              ? { width: `${Math.max(1, Math.min(input.length, String(count).length))}ch` }
+              : undefined
+          }
           value={input}
           disabled={!count}
           onChange={(event) => setInput(event.target.value)}
@@ -112,7 +124,10 @@ export function PreviewPageControls({
             }
           }}
         />
-        <span aria-hidden="true"> / {count || "…"}</span>
+        <span aria-hidden="true">
+          {compact ? "/" : " / "}
+          {count || "…"}
+        </span>
         <span className="sr-only" aria-live="polite">
           第 {page} 页，共 {count || "…"} 页
         </span>

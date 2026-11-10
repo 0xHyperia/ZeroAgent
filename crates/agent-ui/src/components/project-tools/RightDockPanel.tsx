@@ -79,11 +79,19 @@ export type WorkspaceBrowserTools = {
   more?: readonly { label: string; run: () => void }[];
 };
 
+export type WorkspaceFileChrome = {
+  headerTarget: HTMLElement | null;
+  tree?: { open: boolean; toggle: () => void };
+};
+
 export type RightWorkspaceDock = {
   tabs: readonly RightDockWorkspaceTab[];
   activeTabId: string | null;
   browserActive: boolean;
-  renderContent: (browserTools: WorkspaceBrowserTools) => ReactNode;
+  renderContent: (
+    browserTools: WorkspaceBrowserTools,
+    fileChrome: WorkspaceFileChrome,
+  ) => ReactNode;
   expanded: boolean;
   onToggleExpanded: () => void;
   treeOpen: boolean;
@@ -509,6 +517,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     [tabbed, leasedTools],
   );
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [fileHeaderTarget, setFileHeaderTarget] = useState<HTMLDivElement | null>(null);
   const previousViewScopeRef = useRef(workspaceViewScope);
   useLayoutEffect(() => {
     if (previousViewScopeRef.current === workspaceViewScope) return;
@@ -1010,16 +1019,6 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
 
           <div
             data-right-workspace-chrome={workspace ? "" : undefined}
-            style={
-              workspace
-                ? ({
-                    "--za-right-workspace-tab-count": Math.max(
-                      1,
-                      workspace.tabs.length + orderedProjectTabs.length,
-                    ),
-                  } as CSSProperties)
-                : undefined
-            }
             className={cn(
               "flex shrink-0 items-center border-b border-border/60",
               workspace ? "h-12 gap-1 pl-2 pr-2" : "h-10 gap-2 pl-1 pr-2",
@@ -1027,6 +1026,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             )}
           >
             <div
+              data-right-workspace-tab-slot={workspace ? "" : undefined}
               className={cn("flex h-full min-w-0 flex-col justify-center", !workspace && "flex-1")}
               onWheel={handleTabsWheel}
             >
@@ -1091,6 +1091,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             <RightDockCreateMenu
               leasedTools={visibleLeasedTools}
               compact={Boolean(workspace?.onNewBrowser)}
+              desktopWorkspace={Boolean(workspace)}
               open={createMenuOpen}
               onOpenChange={setCreateMenuOpen}
               shellOptions={shellOptions}
@@ -1106,7 +1107,11 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             />
             {workspace && (
               <>
-                <span className="min-w-0 flex-1" aria-hidden="true" />
+                <span
+                  className="min-w-0 flex-1"
+                  data-right-workspace-tab-spacer=""
+                  aria-hidden="true"
+                />
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1122,24 +1127,26 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                     <Maximize2 className="size-4" />
                   )}
                 </Button>
-                {projectReady && !leasedTools.has("fileTree") && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-pressed={workspace.treeOpen && !browserActive}
-                    aria-label={t("projectTools.fileTreeTitle")}
-                    title={t("projectTools.fileTreeTitle")}
-                    onClick={
-                      browserActive ? () => startToolTab("fileTree") : workspace.onToggleTree
-                    }
-                  >
-                    {workspace.treeOpen && !browserActive ? (
-                      <PanelRightClose className="size-4" />
-                    ) : (
-                      <PanelRightOpen className="size-4" />
-                    )}
-                  </Button>
-                )}
+                {projectReady &&
+                  !leasedTools.has("fileTree") &&
+                  (!workspace.activeTabId || browserActive) && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-pressed={workspace.treeOpen && !browserActive}
+                      aria-label={t("projectTools.fileTreeTitle")}
+                      title={t("projectTools.fileTreeTitle")}
+                      onClick={
+                        browserActive ? () => startToolTab("fileTree") : workspace.onToggleTree
+                      }
+                    >
+                      {workspace.treeOpen && !browserActive ? (
+                        <PanelRightClose className="size-4" />
+                      ) : (
+                        <PanelRightOpen className="size-4" />
+                      )}
+                    </Button>
+                  )}
               </>
             )}
             {onClose ? (
@@ -1193,20 +1200,32 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             </div>
           ) : null}
 
+          {workspace && <div ref={setFileHeaderTarget} className="z-10 shrink-0 empty:hidden" />}
           <div className="relative flex min-h-0 flex-1 overflow-hidden @container">
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-              {workspace?.renderContent({
-                changes:
-                  projectReady && !leasedTools.has("gitReview")
-                    ? () => startToolTab("gitReview")
-                    : undefined,
-                terminal: terminalReady ? () => handleCreate() : undefined,
-                files:
-                  projectReady && !leasedTools.has("fileTree")
-                    ? () => startToolTab("fileTree")
-                    : undefined,
-                more: [{ label: t("projectTools.backgroundTasksTitle"), run: openBackgroundTasks }],
-              })}
+              {workspace?.renderContent(
+                {
+                  changes:
+                    projectReady && !leasedTools.has("gitReview")
+                      ? () => startToolTab("gitReview")
+                      : undefined,
+                  terminal: terminalReady ? () => handleCreate() : undefined,
+                  files:
+                    projectReady && !leasedTools.has("fileTree")
+                      ? () => startToolTab("fileTree")
+                      : undefined,
+                  more: [
+                    { label: t("projectTools.backgroundTasksTitle"), run: openBackgroundTasks },
+                  ],
+                },
+                {
+                  headerTarget: fileHeaderTarget,
+                  tree:
+                    projectReady && !leasedTools.has("fileTree")
+                      ? { open: workspace.treeOpen, toggle: workspace.onToggleTree }
+                      : undefined,
+                },
+              )}
               <div
                 className={workspace?.activeTabId ? "hidden" : "flex min-h-0 flex-1 flex-col"}
                 inert={Boolean(workspace?.activeTabId)}
