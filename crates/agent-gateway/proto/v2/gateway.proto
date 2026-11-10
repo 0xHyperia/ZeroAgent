@@ -301,6 +301,7 @@ message ImportDirectoryResponse {
 message UploadedImagePreviewRequest {
   string workdir = 1;
   string absolute_path = 2;
+  ConversationImagePreviewTarget generated_image = 3;
 }
 
 message UploadedImagePreviewResponse {
@@ -1786,4 +1787,10 @@ message PlanningResponse {
 }
 message PlanningChanged {
   uint64 seq = 1;
+}
+
+message ConversationImagePreviewTarget {
+  string conversation_id = 1;
+  string asset_id = 2;
+  string variant = 3;
 }

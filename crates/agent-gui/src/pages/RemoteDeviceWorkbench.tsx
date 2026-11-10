@@ -8,7 +8,7 @@ import {
 import { Button } from "@liveagent/ui/components/ui/button";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
-import { lazy, Suspense, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { WindowsTitleBar } from "../components/WindowsTitleBar";
 import { canOpenWorkbenchBrowser } from "../components/workbench-browser/WorkbenchBrowserPane";
@@ -208,7 +208,6 @@ export function RemoteDeviceWorkbench(props: Props) {
           width={browserWidth}
           onWidthChange={setBrowserWidth}
           onClose={() => setBrowser(null)}
-          preferBalanced
         >
           <WorkspaceMainPanel>
             <div ref={container} className="h-full min-h-0 w-full" />

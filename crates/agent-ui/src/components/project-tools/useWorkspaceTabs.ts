@@ -3,15 +3,15 @@ import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/wo
 import type { WorkspaceFilePreviewOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { BrowserHistorySnapshot } from "../../../components/workbench-browser/browserHistory";
+import type { BrowserHistorySnapshot } from "./workspaceBrowserHistory";
 import {
   type DesktopWorkspaceCheckpointScope,
   readDesktopWorkspaceCheckpoint,
   saveDesktopWorkspaceCheckpoint,
   workspaceFileTabId,
-} from "./desktopWorkspaceCheckpoint";
+} from "./workspaceTabsCheckpoint";
 
-export { workspaceFileTabId } from "./desktopWorkspaceCheckpoint";
+export { workspaceFileTabId } from "./workspaceTabsCheckpoint";
 
 export type WorkspaceFileMode = "preview" | "source" | "diff";
 export type WorkspaceFileRequest = Omit<
@@ -74,7 +74,7 @@ type WorkspacePersistence = {
   setOpen(open: boolean): void;
 };
 
-export function useDesktopWorkspaceTabs(
+export function useWorkspaceTabs(
   owner: string,
   scope: string,
   reveal: () => void,

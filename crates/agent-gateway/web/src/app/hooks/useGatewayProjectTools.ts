@@ -1,5 +1,12 @@
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
+import { expandedPathsForFileTreePath } from "@liveagent/ui/components/project-tools/rightDockModel";
+import {
+  useWorkspaceTabs,
+  type WorkspaceFileRequest,
+} from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
 import type { ToastTone } from "@liveagent/ui/components/ui/toast-manager";
+import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
+import { workspaceImageRelativePathForCopy } from "@liveagent/ui/components/workspace-editor/workspaceImageViewer";
 import { t as translate } from "@liveagent/ui/i18n/index";
 import { useChangedFilesActions } from "@liveagent/ui/lib/chat/useChangedFilesActions";
 import { useChatFileLinkNavigation } from "@liveagent/ui/lib/chat/useChatFileLinkNavigation";
@@ -62,7 +69,9 @@ export function useGatewayProjectTools({
   terminalClient,
 }: UseGatewayProjectToolsOptions) {
   const { setRightDockOpen } = dock;
-  const terminalProjectPath = isAgentMode ? activeWorkspaceProjectPath.trim() : "";
+  const terminalProjectPath = isAgentMode
+    ? displayedConversationWorkdir.trim() || activeWorkspaceProjectPath.trim()
+    : "";
   const terminalProjectPathKey = terminalProjectPath
     ? workspaceProjectPathKey(terminalProjectPath)
     : "";
@@ -108,12 +117,68 @@ export function useGatewayProjectTools({
     rightDockSshTunnelOpen,
   });
   resetProjectToolsRuntimeRef.current = runtime.resetTerminalSessions;
+  const tabbedWorkspace = isAgentMode && Boolean(terminalClient);
+  const revealWorkspace = useCallback(() => setRightDockOpen(true), [setRightDockOpen]);
+  const workspaceTabs = useWorkspaceTabs(
+    workspaceOwner,
+    runtime.workspaceViewScope,
+    revealWorkspace,
+  );
+  const { openFile, openTree, activate } = workspaceTabs;
+  const { hideWorkspaceSshTerminalOverlay } = runtime;
+  const openFileTab = useCallback(
+    (request: WorkspaceFileRequest, mode: "preview" | "source" | "diff", temporary = false) => {
+      if (
+        !tabbedWorkspace ||
+        projectToolsDisabledMessage ||
+        request.remote ||
+        request.projectPathKey !== terminalProjectPathKey
+      )
+        return false;
+      hideWorkspaceSshTerminalOverlay();
+      openFile(request, mode, temporary);
+      return true;
+    },
+    [
+      hideWorkspaceSshTerminalOverlay,
+      openFile,
+      projectToolsDisabledMessage,
+      tabbedWorkspace,
+      terminalProjectPathKey,
+    ],
+  );
+  const openWorkspaceEditorFile = useCallback(
+    (request: WorkspaceFileRequest) => {
+      if (!openFileTab(request, "source")) runtime.openWorkspaceEditorFile(request);
+    },
+    [openFileTab, runtime.openWorkspaceEditorFile],
+  );
+  const openWorkspaceFilePreview = useCallback(
+    (request: WorkspaceFileRequest) => {
+      if (!openFileTab(request, "preview")) runtime.openWorkspaceFilePreview(request);
+    },
+    [openFileTab, runtime.openWorkspaceFilePreview],
+  );
   const handleOpenWorkspaceFile = useCallback(
-    (...args: Parameters<typeof runtime.handleOpenWorkspaceFile>) => {
-      runtime.handleOpenWorkspaceFile(...args);
+    (path: string, imagePaths?: string[], temporary = false) => {
+      const request = {
+        projectPathKey: terminalProjectPathKey,
+        workdir: terminalProjectPath,
+        path,
+        imagePaths,
+      };
+      if (openFileTab(request, isWorkspacePreviewPath(path) ? "preview" : "source", temporary))
+        return;
+      runtime.handleOpenWorkspaceFile(path, imagePaths);
       if (isMobileSidebarLayout()) setRightDockOpen(false);
     },
-    [runtime.handleOpenWorkspaceFile, setRightDockOpen],
+    [
+      openFileTab,
+      runtime.handleOpenWorkspaceFile,
+      setRightDockOpen,
+      terminalProjectPath,
+      terminalProjectPathKey,
+    ],
   );
 
   const gitDisabledMessage = !settings.remote.enableWebGit
@@ -132,8 +197,8 @@ export function useGatewayProjectTools({
   const {
     gitReviewFocusRequest,
     handleGitReviewFocusRequestHandled,
-    handleChangedFileReveal,
-    changedFilesActions,
+    handleChangedFileReveal: revealLegacyTree,
+    changedFilesActions: legacyChangedFilesActions,
   } = useChangedFilesActions({
     terminalProjectPathKey,
     workspaceViewScope: runtime.workspaceViewScope,
@@ -141,6 +206,83 @@ export function useGatewayProjectTools({
     onDockToolStateChange: handleRightDockProjectStateChange,
     onOpenFile: handleOpenWorkspaceFile,
   });
+  const selectWorkspacePath = useCallback(
+    (path: string) => {
+      const relative = workspaceImageRelativePathForCopy(terminalProjectPath, path);
+      if (
+        !relative ||
+        /^(?:[a-z]:[/\\]|[/\\])/i.test(relative) ||
+        relative.split("/").includes("..")
+      )
+        return;
+      handleRightDockFileTreeStateChange({
+        selectedPath: relative,
+        expandedPaths: [
+          ...new Set([
+            ...rightDockFileTreeState.expandedPaths,
+            ...expandedPathsForFileTreePath(relative),
+          ]),
+        ],
+        bumpRevision: true,
+      });
+    },
+    [handleRightDockFileTreeStateChange, rightDockFileTreeState.expandedPaths, terminalProjectPath],
+  );
+  const handleChangedFileReveal = useCallback(
+    (path: string) => {
+      if (!tabbedWorkspace) return revealLegacyTree(path);
+      selectWorkspacePath(path);
+      openTree();
+      revealWorkspace();
+    },
+    [openTree, revealLegacyTree, revealWorkspace, selectWorkspacePath, tabbedWorkspace],
+  );
+  const handleOpenWorkspaceDiff = useCallback(
+    (path: string, temporary = false) => {
+      if (
+        !gitDisabledMessage &&
+        openFileTab(
+          { projectPathKey: terminalProjectPathKey, workdir: terminalProjectPath, path },
+          "diff",
+          temporary,
+        )
+      ) {
+        selectWorkspacePath(path);
+      }
+    },
+    [
+      gitDisabledMessage,
+      openFileTab,
+      selectWorkspacePath,
+      terminalProjectPath,
+      terminalProjectPathKey,
+    ],
+  );
+  const changedFilesActions = useMemo(
+    () =>
+      tabbedWorkspace
+        ? {
+            onOpenFile: handleOpenWorkspaceFile,
+            onRevealInFileTree: handleChangedFileReveal,
+            onOpenDiff: (path: string | null) => {
+              if (path && !gitDisabledMessage) handleOpenWorkspaceDiff(path);
+              else {
+                activate(null);
+                legacyChangedFilesActions.onOpenDiff?.(path);
+              }
+            },
+          }
+        : legacyChangedFilesActions,
+    [
+      activate,
+      gitDisabledMessage,
+      handleChangedFileReveal,
+      handleOpenWorkspaceDiff,
+      handleOpenWorkspaceFile,
+      legacyChangedFilesActions,
+      tabbedWorkspace,
+    ],
+  );
   const notifyChatFileLinkError = useCallback(
     (message: string) => addNotify("error", message),
     [addNotify],
@@ -152,11 +294,14 @@ export function useGatewayProjectTools({
   const handleOpenChatFileLink = useChatFileLinkNavigation({
     conversationId: displayedConversationId,
     conversationWorkdir: displayedConversationWorkdir,
+    resolveWorkdirOnHost: true,
+    workspaceOwner,
     terminalProjectPathKey,
     notifyError: notifyChatFileLinkError,
     onRevealInFileTree: handleChangedFileReveal,
-    openWorkspaceEditorFile: runtime.openWorkspaceEditorFile,
-    openWorkspaceFilePreview: runtime.openWorkspaceFilePreview,
+    onSelectInFileTree: tabbedWorkspace ? selectWorkspacePath : undefined,
+    openWorkspaceEditorFile,
+    openWorkspaceFilePreview,
     getErrorMessage: readChatFileLinkError,
   });
   const composerActions = useComposerActions(composerRef);
@@ -171,6 +316,11 @@ export function useGatewayProjectTools({
 
   return {
     ...runtime,
+    openWorkspaceEditorFile,
+    openWorkspaceFilePreview,
+    tabbedWorkspace,
+    workspaceTabs,
+    handleOpenWorkspaceDiff,
     handleOpenWorkspaceFile,
     ...composerActions,
     associatedSshHostIds,

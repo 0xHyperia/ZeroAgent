@@ -71,13 +71,13 @@ import {
   browserLoopbackAddress,
   displaySshLoopbackAddress,
 } from "./BrowserSshLoopbackMenu";
-import { formatBrowserAddress, resolveBrowserAddress, safeBrowserUrl } from "./browserAddress";
+import { formatBrowserAddress, resolveBrowserAddress, safeBrowserUrl } from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
 import {
   clampDeviceDimension,
   DEFAULT_DEVICE_VIEWPORT,
   fitDeviceViewport,
 } from "./browserDeviceViewport";
-import type { BrowserHistorySnapshot } from "./browserHistory";
+import type { BrowserHistorySnapshot } from "@liveagent/ui/components/project-tools/workspaceBrowserHistory";
 import "./workbench-browser.css";
 import "./browser-chrome.css";
 import "./browser-annotation.css";

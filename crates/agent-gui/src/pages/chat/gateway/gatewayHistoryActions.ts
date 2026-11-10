@@ -17,7 +17,9 @@ import {
 } from "../../../lib/chat/history/chatHistory";
 import { kBrainCheckpointClient } from "../../../lib/kbrain/checkpoints";
 import { resolveKBrainHistoryShare } from "../../../lib/kbrain/history";
+import { createKBrainImageClient } from "../../../lib/kbrain/images";
 import { getKBrainConversationId, getKBrainSessionId } from "../../../lib/kbrain/mapping";
+import { getKBrainRuntimeConnection } from "../../../lib/kbrain/runtimeConnection";
 import { kBrainSidebarSync } from "../../../lib/kbrain/sidebarSync";
 import { createKBrainTrajectoryHost } from "../../../lib/kbrain/trajectory";
 import type { GatewayComposerActionEvent } from "./gatewayBridgeTypes";
@@ -31,6 +33,8 @@ export async function runGatewayHistoryAction(event: GatewayComposerActionEvent)
   // minted alias would shadow that local id and misroute every later turn.
   const id = (target && !getKBrainSessionId(target) && getKBrainConversationId(target)) || target;
   switch (event.action) {
+    case "image_read":
+      return readGatewayConversationImage(id, data);
     case "list": {
       if (kBrainSidebarSync.isHealthy()) {
         return kBrainSidebarSync.list(
@@ -156,6 +160,60 @@ export async function runGatewayHistoryAction(event: GatewayComposerActionEvent)
     default:
       throw new Error(`Unsupported gateway history action: ${event.action}`);
   }
+}
+
+async function readGatewayConversationImage(conversationId: string, data: Record<string, unknown>) {
+  const sessionId = getKBrainSessionId(conversationId);
+  const connection = getKBrainRuntimeConnection();
+  const { assetId, variant } = data;
+  const unavailable = () => new Error("The conversation image is unavailable.");
+  if (!sessionId || !connection || typeof assetId !== "string" ||
+    !/^ia_[\w-]{1,96}$/.test(assetId) || (variant !== "original" && variant !== "thumbnail")) {
+    throw unavailable();
+  }
+
+  const signal = AbortSignal.timeout(15000);
+  const client = createKBrainImageClient(connection, signal);
+  // K-brain assigns the results of a conversation to its own image project.
+  // Look up that exact project and a completed job before reading any bytes.
+  const project = await findImageRecord(
+    (cursor) => client.listProjects(cursor),
+    (entry) => entry.workspaceRef === `zeroagent:conversation:${sessionId}`,
+  );
+  if (!project) throw unavailable();
+  const job = await findImageRecord(
+    (cursor) => client.listJobs(project.id, cursor),
+    (entry) => entry.projectId === project.id && entry.assetIds.includes(assetId) &&
+      (entry.status === "succeeded" || entry.status === "partial_succeeded"),
+  );
+  if (!job || getKBrainRuntimeConnection() !== connection) throw unavailable();
+  const blob = await client.readAsset(assetId, variant, signal);
+  if (!blob.size || blob.size > 8 * 1024 * 1024) throw unavailable();
+  const encoded = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
+    reader.onerror = () => reject(unavailable());
+    reader.readAsDataURL(blob);
+  });
+  if (getKBrainRuntimeConnection() !== connection) throw unavailable();
+  signal.throwIfAborted();
+  return { mimeType: blob.type, data: encoded };
+}
+
+async function findImageRecord<T>(
+  list: (cursor?: string) => Promise<{ items: T[]; nextCursor?: string }>,
+  matches: (item: T) => boolean,
+) {
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await list(cursor);
+    const item = page.items.find(matches);
+    if (item) return item;
+    cursor = page.nextCursor;
+    if (!cursor || seen.has(cursor)) return undefined;
+    seen.add(cursor);
+  } while (true);
 }
 
 function stringList(value: unknown): string[] {

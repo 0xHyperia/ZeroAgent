@@ -753,13 +753,21 @@ impl GatewayController {
     }
 
     pub(crate) fn spawn_uploaded_image_preview_response(
-        &self,
+        self: &Arc<Self>,
         request_id: String,
         request: proto::UploadedImagePreviewRequest,
     ) -> Result<(), String> {
         let sender = self.current_outbound_sender()?;
+        let controller = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
-            let envelope = match gateway_bridge::handle_uploaded_image_preview(request).await {
+            let result = if let Some(target) = request.generated_image {
+                controller
+                    .read_conversation_image(format!("{request_id}:image-read"), target)
+                    .await
+            } else {
+                gateway_bridge::handle_uploaded_image_preview(request).await
+            };
+            let envelope = match result {
                 Ok(response) => proto::AgentEnvelope {
                     request_id,
                     timestamp: now_unix_seconds(),

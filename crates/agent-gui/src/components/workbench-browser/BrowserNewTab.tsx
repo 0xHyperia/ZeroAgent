@@ -22,8 +22,8 @@ import {
   matchesAccelerator,
 } from "@liveagent/ui/lib/shortcuts/shortcutKeys";
 import { useEffect, useRef } from "react";
-import { formatBrowserAddress, safeBrowserUrl } from "./browserAddress";
-import type { BrowserHistorySnapshot } from "./browserHistory";
+import { formatBrowserAddress, safeBrowserUrl } from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
+import type { BrowserHistorySnapshot } from "@liveagent/ui/components/project-tools/workspaceBrowserHistory";
 
 export type BrowserNewTabTools = {
   changes?: () => void;

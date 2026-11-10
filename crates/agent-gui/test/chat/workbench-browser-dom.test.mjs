@@ -21,7 +21,7 @@ const env = await createDomTestEnv({
 });
 const { React, createRoot, act } = env;
 const { WorkbenchBrowserPane, submitDetachedBrowserAnnotations } = env.loadModule("src/components/workbench-browser/WorkbenchBrowserPane.tsx");
-const { resolveBrowserAddress, formatBrowserAddress } = env.loadModule("src/components/workbench-browser/browserAddress.ts");
+const { resolveBrowserAddress, formatBrowserAddress } = env.loadModule("../agent-ui/src/components/project-tools/workspaceBrowserAddress.ts");
 const { BrowserNewTab } = env.loadModule("src/components/workbench-browser/BrowserNewTab.tsx");
 
 test("browser addresses preserve valid HTTP URLs, search text, and reject executable schemes", () => {

@@ -334,9 +334,9 @@ import {
   terminalPaneLease,
 } from "./chat/workbench/terminalPaneRuntime";
 import {
-  useDesktopWorkspaceTabs,
+  useWorkspaceTabs,
   type WorkspaceFileRequest,
-} from "./chat/workbench/useDesktopWorkspaceTabs";
+} from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
 import { useWindowWorkbench } from "./chat/workbench/useWindowWorkbench";
 import {
   canSplitRectAtEdge,
@@ -1008,7 +1008,7 @@ function ChatPageContent(props: ChatPageProps) {
   const canOpenWorkspaceBrowser = tabbedWorkspace && /Windows/i.test(navigator.userAgent);
   const revealDesktopWorkspace = useCallback(() => setRightDockOpen(true), [setRightDockOpen]);
   const workspaceScope = workspaceOverlays.workspaceViewScope;
-  const desktopTabs = useDesktopWorkspaceTabs(
+  const desktopTabs = useWorkspaceTabs(
     workspaceOwner,
     workspaceScope,
     revealDesktopWorkspace,
@@ -5406,7 +5406,6 @@ function ChatPageContent(props: ChatPageProps) {
           onClose={() => setRightDockOpen(false)}
           immediate={!!accountDestination || activeView !== "chat"}
           expanded={tabbedWorkspace && desktopTabs.view.expanded}
-          preferBalanced={tabbedWorkspace && Boolean(activeWorkspaceTab)}
           minDockedWidth={isWindowsTauriRuntime() ? MIN_DOCKED_WORKSPACE_WITH_CAPTIONS : undefined}
         >
           <WorkspaceMainPanel chrome={stackedWorkbench ? undefined : workbenchChrome}>
@@ -5606,26 +5605,10 @@ function ChatPageContent(props: ChatPageProps) {
                 tabbedWorkspace
                   ? {
                       ...desktopWorkspace,
-                      activeTabId: desktopTabs.view.activeId,
-                      expanded: desktopTabs.view.expanded,
-                      onToggleExpanded: desktopTabs.toggleExpanded,
-                      treeOpen: desktopTabs.view.treeOpen,
-                      treeGroups: desktopTabs.view.treeGroups,
-                      treeWidth: desktopTabs.view.treeWidth,
-                      onTreeWidthChange: desktopTabs.setTreeWidth,
-                      comparison: desktopTabs.view.comparison,
-                      comparisonConversationId: currentConversationId ?? undefined,
-                      onComparisonChange: desktopTabs.setComparison,
-                      onToggleTreeGroup: desktopTabs.toggleTreeGroup,
-                      onToggleTree: desktopTabs.toggleTree,
-                      onOpenTree: desktopTabs.openTree,
                       onOpenDiff: handleOpenWorkspaceFileDiff,
-                      onActivateTool: () => desktopTabs.activate(null),
                       onNewBrowser: canOpenWorkspaceBrowser
                         ? () => desktopTabs.openBrowser()
                         : undefined,
-                      onReopenTab: desktopTabs.reopen,
-                      onMoveTab: desktopTabs.move,
                     }
                   : undefined
               }

@@ -148,6 +148,39 @@ fn archived_list_json(value: &Value) -> Value {
 }
 
 impl GatewayController {
+    pub(crate) async fn read_conversation_image(
+        self: &std::sync::Arc<Self>,
+        request_id: String,
+        target: proto::ConversationImagePreviewTarget,
+    ) -> Result<proto::UploadedImagePreviewResponse, String> {
+        let result = self
+            .run_composer_action(GatewayComposerActionEvent {
+                request_id,
+                kind: "history".into(),
+                conversation_id: target.conversation_id,
+                action: "image_read".into(),
+                cron: String::new(),
+                interval: String::new(),
+                prompt: String::new(),
+                reasoning: String::new(),
+                loop_id: String::new(),
+                data: Some(json!({"assetId": target.asset_id, "variant": target.variant})),
+            })
+            .await?;
+        let mime_type = result["mimeType"].as_str().unwrap_or_default();
+        let data = result["data"].as_str().unwrap_or_default();
+        if !matches!(mime_type, "image/png" | "image/jpeg" | "image/webp")
+            || data.is_empty()
+            || data.len() > (8usize * 1024 * 1024).div_ceil(3) * 4
+        {
+            return Err("The conversation image is unavailable.".into());
+        }
+        Ok(proto::UploadedImagePreviewResponse {
+            mime_type: mime_type.into(),
+            data: data.into(),
+        })
+    }
+
     /// Working directory of a conversation as the desktop frontend's history
     /// (K-brain sessions or the local database) records it; `None` when the
     /// frontend cannot find it.

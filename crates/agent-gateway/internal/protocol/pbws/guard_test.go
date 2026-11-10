@@ -167,7 +167,6 @@ func TestVetAgentRequestAllowsValidChatFileOpen(t *testing.T) {
 		Payload: &gatewayv2.GatewayEnvelope_ChatFileOpen{
 			ChatFileOpen: &gatewayv2.ChatFileOpenRequest{
 				ConversationId: "conversation-1",
-				Workdir:        `C:\work`,
 				Path:           `src\a.ts`,
 				Source:         "relative",
 				Line:           &line,
@@ -178,6 +177,27 @@ func TestVetAgentRequestAllowsValidChatFileOpen(t *testing.T) {
 
 	if err := vetAgentRequest(session.AgentView{}, env); err != nil {
 		t.Fatalf("vetAgentRequest() error = %v", err)
+	}
+}
+
+func TestVetImagePreviewChecksGeneratedImageTarget(t *testing.T) {
+	target := &gatewayv2.ConversationImagePreviewTarget{
+		ConversationId: "conversation",
+		AssetId:        "ia_fixture",
+		Variant:        "original",
+	}
+	if err := vetImagePreview(&gatewayv2.UploadedImagePreviewRequest{GeneratedImage: target}); err != nil {
+		t.Fatal(err)
+	}
+	if err := vetImagePreview(&gatewayv2.UploadedImagePreviewRequest{AbsolutePath: `C:\uploads\photo.png`}); err != nil {
+		t.Fatal(err)
+	}
+	if err := vetImagePreview(&gatewayv2.UploadedImagePreviewRequest{AbsolutePath: "/tmp/a.png", GeneratedImage: target}); err == nil {
+		t.Fatal("mixed targets were accepted")
+	}
+	target.AssetId = "ia_../escape"
+	if err := vetImagePreview(&gatewayv2.UploadedImagePreviewRequest{GeneratedImage: target}); err == nil {
+		t.Fatal("unsafe asset identifier was accepted")
 	}
 }
 

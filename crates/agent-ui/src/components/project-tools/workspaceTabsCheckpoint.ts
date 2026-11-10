@@ -5,15 +5,12 @@ import {
 } from "@liveagent/ui/components/project-tools/workspaceGitPaths";
 import { workspaceImageRelativePathForCopy } from "@liveagent/ui/components/workspace-editor/workspaceImageViewer";
 import { resolveWorkbenchLayoutStorage } from "@liveagent/ui/lib/workbench/layoutStorage";
-import {
-  type BrowserHistorySnapshot,
-  parseBrowserHistory,
-} from "../../../components/workbench-browser/browserHistory";
 import type {
   DesktopWorkspaceTab,
   DesktopWorkspaceView,
   WorkspaceFileRequest,
-} from "./useDesktopWorkspaceTabs";
+} from "./useWorkspaceTabs";
+import { type BrowserHistorySnapshot, parseBrowserHistory } from "./workspaceBrowserHistory";
 
 const STORAGE_PREFIX = "zeroagent.desktopWorkspace.routes:";
 const MAX_RECORDS = 40;

@@ -14,8 +14,8 @@ const env = await createDomTestEnv({
   },
 });
 const { React, act, createRoot, loadModule } = env;
-const { useDesktopWorkspaceTabs, workspaceFileTabId } = loadModule(
-  "src/pages/chat/workbench/useDesktopWorkspaceTabs.ts",
+const { useWorkspaceTabs, workspaceFileTabId } = loadModule(
+  "../agent-ui/src/components/project-tools/useWorkspaceTabs.ts",
 );
 const { workbenchBrowserLinkUrl } = loadModule("@liveagent/ui/lib/chat/workbenchBrowserLink.ts");
 const { RightDockTabStrip } = loadModule("@liveagent/ui/components/project-tools/RightDockTabStrip.tsx");
@@ -94,7 +94,7 @@ test("desktop workspace restores scoped tabs, modes, tree and dirty state", asyn
   let workspace;
   const opened = [];
   function Harness({ owner, conversation }) {
-    workspace = useDesktopWorkspaceTabs(owner, conversation, () => opened.push(conversation));
+    workspace = useWorkspaceTabs(owner, conversation, () => opened.push(conversation));
     return null;
   }
   const render = (conversation, owner = "account-a") => act(async () => {
@@ -181,7 +181,7 @@ test("single preview is replaced in place and double-click or editing keeps a ta
   });
   let workspace;
   function Harness() {
-    workspace = useDesktopWorkspaceTabs("account", "conversation", () => {});
+    workspace = useWorkspaceTabs("account", "conversation", () => {});
     return null;
   }
   await act(async () => root.render(React.createElement(Harness)));
@@ -215,7 +215,7 @@ test("desktop restart restores only permitted routes under their account and con
   let visible;
   function Harness({ owner, scope }) {
     const [open, setOpen] = React.useState(false);
-    workspace = useDesktopWorkspaceTabs(owner, scope, () => setOpen(true), {
+    workspace = useWorkspaceTabs(owner, scope, () => setOpen(true), {
       projectPathKey: "d:/repo", workdir: "D:\\repo", open, setOpen,
     });
     visible = open;

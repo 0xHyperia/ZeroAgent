@@ -98,6 +98,22 @@ test("provider model requests carry the stored provider identity to the desktop"
   );
 });
 
+test("generated image requests use a typed conversation target on the selected device", () => {
+  const frame = decodeClientFrame(encodeRequestFrame("preview", "files.preview", {
+    conversation_id: "conversation",
+    asset_id: "ia_fixture",
+    variant: "thumbnail",
+  }, "device"));
+  assert.equal(frame.agentId, "device");
+  const request = frame.payload.value.payload;
+  assert.equal(request.case, "uploadedImagePreview");
+  assert.equal(request.value.absolutePath, "");
+  const { conversationId, assetId, variant } = request.value.generatedImage;
+  assert.deepEqual({ conversationId, assetId, variant }, {
+    conversationId: "conversation", assetId: "ia_fixture", variant: "thumbnail",
+  });
+});
+
 test("chat file open requests remain agent-scoped and preserve source locations", () => {
   const encoded = encodeRequestFrame(
     "file-open-1",

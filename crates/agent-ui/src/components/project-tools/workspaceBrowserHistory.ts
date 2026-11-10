@@ -1,4 +1,4 @@
-import { safeBrowserUrl } from "./browserAddress";
+import { safeBrowserUrl } from "./workspaceBrowserAddress";
 
 export type BrowserHistorySnapshot = {
   entries: string[];

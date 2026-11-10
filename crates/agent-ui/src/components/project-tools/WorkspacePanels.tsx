@@ -57,7 +57,6 @@ export function WorkspacePanelGroup({
   onWidthChange,
   immediate = false,
   expanded = false,
-  preferBalanced = false,
   minDockedWidth = 0,
   children,
 }: {
@@ -67,7 +66,6 @@ export function WorkspacePanelGroup({
   onWidthChange: (width: number) => void;
   immediate?: boolean;
   expanded?: boolean;
-  preferBalanced?: boolean;
   minDockedWidth?: number;
   children: ReactNode;
 }) {
@@ -108,10 +106,8 @@ export function WorkspacePanelGroup({
     };
   }, [resizing]);
   const fullWidth = open && expanded && !mobile;
-  const requestedWidth =
-    preferBalanced && width === DEFAULT_TOOLS_PANEL_WIDTH
-      ? Math.max(width, Math.round(availableWidth * 0.54))
-      : width;
+  const defaultWidth = Math.max(DEFAULT_TOOLS_PANEL_WIDTH, Math.round(availableWidth * 0.54));
+  const requestedWidth = width === DEFAULT_TOOLS_PANEL_WIDTH ? defaultWidth : width;
   const mainMinimum = Math.min(MIN_RIGHT_DOCK_MAIN_CONTENT_WIDTH, availableWidth * 0.55);
   const toolsMinimum = Math.min(MIN_RIGHT_DOCK_PANEL_WIDTH, availableWidth * 0.4);
   const toolsMaximum = Math.min(ABSOLUTE_RIGHT_DOCK_MAX_PANEL_WIDTH, availableWidth - mainMinimum);
@@ -131,13 +127,15 @@ export function WorkspacePanelGroup({
       startResize: () => setResizing(true),
       resetWidth: () => {
         if (!open || mobile) return;
-        const next = Math.max(toolsMinimum, Math.min(toolsMaximum, DEFAULT_TOOLS_PANEL_WIDTH));
+        const next = Math.max(toolsMinimum, Math.min(toolsMaximum, defaultWidth));
         panelRef.current?.resize(next);
-        onWidthChange(next);
+        // Keep the settings default so the next window size can choose its own split.
+        onWidthChange(DEFAULT_TOOLS_PANEL_WIDTH);
       },
     }),
     [
       open,
+      defaultWidth,
       requestedWidth,
       fullWidth,
       onClose,
@@ -276,11 +274,19 @@ export function WorkspaceToolsPanel({
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
+    let current = true;
     if (mobile || !open) panel.collapse();
-    else if (!wasOpen.current || lastWidth.current !== width || panel.isCollapsed())
-      panel.resize(savedWidth);
+    else if (!wasOpen.current || lastWidth.current !== width || panel.isCollapsed()) {
+      // Apply the width after the split group has registered any new min/max constraints.
+      queueMicrotask(() => {
+        if (current) panelRef.current?.resize(savedWidth);
+      });
+    }
     wasOpen.current = open && !mobile;
     lastWidth.current = width;
+    return () => {
+      current = false;
+    };
   }, [open, mobile, width, savedWidth, panelRef]);
   return (
     <>

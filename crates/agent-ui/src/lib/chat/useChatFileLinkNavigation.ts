@@ -16,6 +16,7 @@ type WorkspacePreviewRequest = Omit<WorkspaceFilePreviewOpenRequest, "id">;
 type UseChatFileLinkNavigationParams = {
   conversationId: string;
   conversationWorkdir: string;
+  resolveWorkdirOnHost?: boolean;
   workspaceOwner?: string;
   terminalProjectPathKey: string;
   notifyError: (message: string) => void;
@@ -40,6 +41,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
   const {
     conversationId,
     conversationWorkdir,
+    resolveWorkdirOnHost,
     workspaceOwner,
     terminalProjectPathKey,
     notifyError,
@@ -60,7 +62,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
   return useCallback(
     (link: ChatFileLink) => {
       const workdir = conversationWorkdir.trim();
-      if (!conversationId || !workdir) {
+      if (!conversationId || (!workdir && !resolveWorkdirOnHost)) {
         notifyError("The conversation working directory is unavailable.");
         return;
       }
@@ -137,6 +139,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
       openLink,
       openWorkspaceEditorFile,
       openWorkspaceFilePreview,
+      resolveWorkdirOnHost,
       scope,
       terminalProjectPathKey,
     ],

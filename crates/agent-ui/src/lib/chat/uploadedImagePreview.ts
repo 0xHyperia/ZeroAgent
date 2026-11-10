@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { PendingUploadedFile } from "./uploadTypes";
 
 export type UploadedImagePreviewResult = {
@@ -20,6 +20,7 @@ const UPLOADED_IMAGE_PREVIEW_CACHE_LIMIT = 64;
 const uploadedImagePreviewCache = new Map<string, UploadedImagePreviewCacheEntry>();
 const uploadedImagePreviewRequests = new Map<string, Promise<string | null>>();
 const uploadedImagePreviewRevisions = new Map<string, object>();
+export const UploadedImagePreviewScope = createContext("");
 
 function normalizeCachePart(value: string | undefined) {
   return typeof value === "string" ? value.trim() : "";
@@ -30,10 +31,11 @@ function normalizeCachePart(value: string | undefined) {
 export function getUploadedImagePreviewCacheKey(
   workspaceRoot: string | undefined,
   file: Pick<PendingUploadedFile, "absolutePath">,
+  scope = "",
 ) {
   const root = normalizeCachePart(workspaceRoot);
   const path = normalizeCachePart(file.absolutePath);
-  return root && path ? `${root}\0${path}` : "";
+  return path ? `${scope}\0${root}\0${path}` : "";
 }
 
 function readUploadedImagePreviewCacheByKey(cacheKey: string) {
@@ -68,8 +70,9 @@ function invalidateUploadedImagePreviewCacheByKey(cacheKey: string) {
 export function readUploadedImagePreviewCache(
   workspaceRoot: string | undefined,
   file: Pick<PendingUploadedFile, "absolutePath">,
+  scope = "",
 ) {
-  const cacheKey = getUploadedImagePreviewCacheKey(workspaceRoot, file);
+  const cacheKey = getUploadedImagePreviewCacheKey(workspaceRoot, file, scope);
   return cacheKey ? readUploadedImagePreviewCacheByKey(cacheKey) : undefined;
 }
 
@@ -158,13 +161,14 @@ export function registerLocalUploadedImagePreviews(params: {
   workspaceRoot: string | undefined;
   uploadedFiles: PendingUploadedFile[];
   sourceFiles: File[];
+  scope?: string;
 }) {
-  const { workspaceRoot, uploadedFiles, sourceFiles } = params;
+  const { workspaceRoot, uploadedFiles, sourceFiles, scope } = params;
   const usedSourceIndexes = new Set<number>();
 
   for (const uploadedFile of uploadedFiles) {
     if (uploadedFile.kind !== "image") continue;
-    const cacheKey = getUploadedImagePreviewCacheKey(workspaceRoot, uploadedFile);
+    const cacheKey = getUploadedImagePreviewCacheKey(workspaceRoot, uploadedFile, scope);
     if (!cacheKey) continue;
     const sourceFile = takeMatchingSourceFile(uploadedFile, sourceFiles, usedSourceIndexes);
     if (!sourceFile) continue;
@@ -179,9 +183,10 @@ export async function loadUploadedImagePreview(params: {
   workspaceRoot: string;
   file: PendingUploadedFile;
   loader: UploadedImagePreviewLoader;
+  scope?: string;
 }) {
-  const { workspaceRoot, file, loader } = params;
-  const cacheKey = getUploadedImagePreviewCacheKey(workspaceRoot, file);
+  const { workspaceRoot, file, loader, scope } = params;
+  const cacheKey = getUploadedImagePreviewCacheKey(workspaceRoot, file, scope);
   if (!cacheKey) return null;
 
   const cached = readUploadedImagePreviewCacheByKey(cacheKey);
@@ -210,9 +215,8 @@ export async function loadUploadedImagePreview(params: {
           : "application/octet-stream";
       const data = typeof result?.data === "string" ? result.data.trim() : "";
       const next = data ? `data:${mimeType};base64,${data}` : null;
-      if (next && uploadedImagePreviewRevisions.get(cacheKey) === revision) {
-        writeUploadedImagePreviewCache(cacheKey, { src: next });
-      }
+      if (uploadedImagePreviewRevisions.get(cacheKey) !== revision) return null;
+      if (next) writeUploadedImagePreviewCache(cacheKey, { src: next });
       return next;
     })
     .catch(() => null)
@@ -234,45 +238,41 @@ export function useUploadedImagePreview(
   workspaceRoot?: string,
   loader?: UploadedImagePreviewLoader,
 ) {
+  const scope = useContext(UploadedImagePreviewScope);
   const normalizedWorkspaceRoot = normalizeCachePart(workspaceRoot);
   const absolutePath = normalizeCachePart(file?.absolutePath);
-  const cacheKey = file ? getUploadedImagePreviewCacheKey(normalizedWorkspaceRoot, file) : "";
-  const [imageSrc, setImageSrc] = useState<string | null | undefined>(() => {
-    if (!file || !normalizedWorkspaceRoot) return null;
-    return readUploadedImagePreviewCache(normalizedWorkspaceRoot, file);
+  const cacheKey = file ? getUploadedImagePreviewCacheKey(normalizedWorkspaceRoot, file, scope) : "";
+  const [result, setResult] = useState<{ key: string; src: string | null } | undefined>(() => {
+    const src = uploadedImagePreviewCache.get(cacheKey)?.src;
+    return src === undefined ? undefined : { key: cacheKey, src };
   });
+  const imageSrc = result?.key === cacheKey ? result.src : undefined;
 
   useEffect(() => {
-    if (!file || !cacheKey || !normalizedWorkspaceRoot) {
-      setImageSrc(null);
-      return;
-    }
+    if (!file || !cacheKey) return;
 
-    const cached = readUploadedImagePreviewCache(normalizedWorkspaceRoot, file);
+    const cached = readUploadedImagePreviewCacheByKey(cacheKey);
     if (cached !== undefined) {
-      setImageSrc(cached);
+      setResult({ key: cacheKey, src: cached });
       return;
     }
-    if (!absolutePath || !loader) {
-      setImageSrc(null);
-      return;
-    }
+    if (!absolutePath || !loader) return;
 
     let cancelled = false;
-    setImageSrc(undefined);
     void loadUploadedImagePreview({
       workspaceRoot: normalizedWorkspaceRoot,
       file,
       loader,
+      scope,
     }).then((value) => {
       if (!cancelled) {
-        setImageSrc(value);
+        setResult({ key: cacheKey, src: value });
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [absolutePath, cacheKey, file, loader, normalizedWorkspaceRoot]);
+  }, [absolutePath, cacheKey, file, loader, normalizedWorkspaceRoot, scope]);
 
   return {
     imageSrc: imageSrc ?? null,

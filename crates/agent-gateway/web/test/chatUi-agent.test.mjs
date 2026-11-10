@@ -175,6 +175,22 @@ test("uploaded image preview invalidation reloads the same path and blocks stale
   );
 });
 
+test("historical absolute image paths work without a project and do not share previews across devices", async () => {
+  const file = { absolutePath: "C:/uploads/photo.png" };
+  const load = (scope, data) => uploadedImagePreview.loadUploadedImagePreview({
+    workspaceRoot: "",
+    file,
+    scope,
+    loader: async (root, path) => {
+      assert.equal(root, "");
+      assert.equal(path, file.absolutePath);
+      return { mimeType: "image/png", data };
+    },
+  });
+  assert.equal(await load("device-a", "YQ=="), "data:image/png;base64,YQ==");
+  assert.equal(await load("device-b", "Yg=="), "data:image/png;base64,Yg==");
+});
+
 function createSubagentReport(id, prompt, summary, extra = {}) {
   return {
     id,

@@ -1059,13 +1059,16 @@ fn resolve_uploaded_image_target(
     workdir: &str,
     absolute_path: &str,
 ) -> Result<(PathBuf, &'static str), String> {
-    let workdir = canonicalize_upload_workdir(workdir)?;
     let target = canonicalize_uploaded_file_path(absolute_path)?;
-    if !is_allowed_attachment_target(&workdir, &target) {
-        return Err(format!(
-            "Image path is outside the current workspace and upload staging area: {}",
-            target.display()
-        ));
+    let is_staged = canonical_upload_staging_base().is_some_and(|base| target.starts_with(base));
+    if !is_staged {
+        let workdir = canonicalize_upload_workdir(workdir)?;
+        if !target.starts_with(workdir) {
+            return Err(format!(
+                "Image path is outside the current workspace and upload staging area: {}",
+                target.display()
+            ));
+        }
     }
     let mime_type = infer_image_upload_mime(&target)
         .ok_or_else(|| format!("{} is not a supported image file", target.display()))?;
@@ -3940,6 +3943,33 @@ mod tests {
             error.contains("附件路径超出当前工作目录与上传暂存区"),
             "error = {error}"
         );
+    }
+
+    #[test]
+    fn staged_image_preview_survives_an_unavailable_workdir() {
+        let staging = upload_staging_base().expect("staging base");
+        let staged = staging.join("historical-image-preview.png");
+        fs::write(&staged, b"fixture preview bytes").expect("write staged fixture");
+        let absolute_path = staged.to_string_lossy().into_owned();
+        for workdir in [
+            "".to_string(),
+            staging.join("missing-project").display().to_string(),
+        ] {
+            let preview = system_read_uploaded_image_preview_sync(workdir, absolute_path.clone())
+                .expect("staged image does not require a valid workdir");
+            assert_eq!(preview.mime_type, "image/png");
+            assert_eq!(
+                preview.data,
+                BASE64_STANDARD.encode(b"fixture preview bytes")
+            );
+        }
+        let outside = staging.parent().unwrap().join("unscoped-image-preview.png");
+        fs::write(&outside, b"outside").expect("write unscoped fixture");
+        assert!(system_read_uploaded_image_preview_sync(
+            "".into(),
+            outside.to_string_lossy().into_owned()
+        )
+        .is_err());
     }
 
     #[test]

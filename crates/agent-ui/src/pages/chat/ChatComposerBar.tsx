@@ -123,58 +123,11 @@ import {
 } from "../../contracts/composerPresentation";
 import { useEscapeToStopRun } from "../../lib/chat/escapeStopRun";
 import {
-  getUploadedImagePreviewCacheKey,
-  loadUploadedImagePreview,
-  readUploadedImagePreviewCache,
   type UploadedImagePreviewLoader,
+  useUploadedImagePreview,
 } from "../../lib/chat/uploadedImagePreview";
 import type { PendingUploadedFile } from "../../lib/chat/uploadTypes";
 import { useComposerStt } from "./useComposerStt";
-
-function useComposerUploadedImagePreview(
-  file: PendingUploadedFile,
-  workdir: string,
-  loader?: UploadedImagePreviewLoader,
-) {
-  const shouldPreviewImage =
-    file.kind === "image" && typeof file.absolutePath === "string" && file.absolutePath.trim();
-  const cacheKey = shouldPreviewImage ? getUploadedImagePreviewCacheKey(workdir, file) : "";
-  const [imageSrc, setImageSrc] = useState<string | null | undefined>(() => {
-    if (!cacheKey) return null;
-    return readUploadedImagePreviewCache(workdir, file);
-  });
-
-  useEffect(() => {
-    if (!cacheKey) {
-      setImageSrc(null);
-      return;
-    }
-
-    const cached = readUploadedImagePreviewCache(workdir, file);
-    if (cached !== undefined) {
-      setImageSrc(cached);
-      return;
-    }
-    if (!loader) {
-      setImageSrc(null);
-      return;
-    }
-
-    let cancelled = false;
-    setImageSrc(undefined);
-    void loadUploadedImagePreview({ workspaceRoot: workdir, file, loader }).then((value) => {
-      if (!cancelled) setImageSrc(value);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [cacheKey, file, loader, workdir]);
-
-  return {
-    imageSrc: imageSrc ?? null,
-    isLoading: Boolean(cacheKey && loader) && imageSrc === undefined,
-  };
-}
 
 function PendingComposerAttachment(props: {
   file: PendingUploadedFile;
@@ -199,8 +152,8 @@ function PendingComposerAttachment(props: {
     onRemove,
     onOpen,
   } = props;
-  const { imageSrc, isLoading } = useComposerUploadedImagePreview(
-    file,
+  const { imageSrc, isLoading } = useUploadedImagePreview(
+    file.kind === "image" ? file : undefined,
     workdir,
     imagePreviewLoader,
   );

@@ -59,8 +59,8 @@ import VSCodeIcon from "~icons/logos/visual-studio-code";
 import FileSearchIcon from "~icons/lucide/file-search-2";
 import FoldersIcon from "~icons/lucide/folders";
 import CursorIcon from "~icons/material-icon-theme/cursor";
-import type { WorkspaceFileRequest } from "./useDesktopWorkspaceTabs";
-import "./desktop-workspace-file-header.css";
+import type { WorkspaceFileRequest } from "./useWorkspaceTabs";
+import "./workspace-file-header.css";
 
 export function workspaceFileName(path: string) {
   return (
@@ -220,7 +220,8 @@ function BreadcrumbDirectory({
     <>
       {snapshot?.entries.map((entry) => {
         const folder = entry.kind === "dir";
-        const open = folder && (expanded.get(entry.path) ?? currentFile.startsWith(`${entry.path}/`));
+        const open =
+          folder && (expanded.get(entry.path) ?? currentFile.startsWith(`${entry.path}/`));
         const active = entry.path === currentFile;
         const Icon = folder ? ChevronRight : getFileTypeIcon(entry.path, "file");
         return (
@@ -448,8 +449,9 @@ function WorkspaceBreadcrumbs({
   );
 }
 
-export function DesktopWorkspaceFileHeader({
+export function WorkspaceFileHeader({
   active,
+  nativeFileActions = true,
   request,
   modeActions,
   viewAction,
@@ -464,6 +466,7 @@ export function DesktopWorkspaceFileHeader({
   gitClient,
 }: {
   active: boolean;
+  nativeFileActions?: boolean;
   request: WorkspaceFileRequest;
   modeActions: ReactNode;
   viewAction?: ReactNode;
@@ -558,7 +561,7 @@ export function DesktopWorkspaceFileHeader({
     };
   }, [active, gitClient, openWith, request.remote, request.workdir]);
   useEffect(() => {
-    if (!active || request.remote) return;
+    if (!active || !nativeFileActions || request.remote) return;
     setPreferredTarget(preferredOpenTarget());
     let listening = true;
     void invokeFs<string[]>("fs_workspace_editor_targets", {}).then(
@@ -572,7 +575,7 @@ export function DesktopWorkspaceFileHeader({
     return () => {
       listening = false;
     };
-  }, [active, request.remote]);
+  }, [active, nativeFileActions, request.remote]);
   useEffect(() => {
     if (!active) {
       setFormatOpen(false);
@@ -761,7 +764,7 @@ export function DesktopWorkspaceFileHeader({
               <FoldersIcon aria-hidden="true" className="size-4" />
             </TooltipButton>
           )}
-          {!request.remote && (
+          {nativeFileActions && !request.remote && (
             <div className="za-workspace-file-open">
               <TooltipButton
                 type="button"

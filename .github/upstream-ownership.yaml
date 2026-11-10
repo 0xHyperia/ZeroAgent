@@ -11,7 +11,7 @@
       ]
     },
     {
-      "glob": "{crates/agent-gui/src-tauri/src/commands/integration/workbench_browser*.{rs,js},crates/agent-gui/src-tauri/src/commands/workspace/git_turn_review.rs,crates/agent-gui/src/components/workbench-browser/**,crates/agent-gui/src/pages/chat/workbench/{DesktopWorkspaceResources,DesktopWorkspaceFileHeader,desktopWorkspaceCheckpoint,useDesktopWorkspaceTabs}.*,crates/agent-ui/src/components/project-tools/{RightWorkspaceFileTree,WorkspaceFileDiff,WorkspaceNavigationSplit,workspaceGitPaths,workspaceGitReviewState}.*,crates/agent-ui/src/components/workspace-editor/{WorkspaceHTMLPreview,workspaceHtmlDocument,WorkspaceMarkdownSelectionReview,useWorkspaceMarkdownSelectionEdit,workspaceMarkdownSelectionEdit}.*}",
+      "glob": "{crates/agent-gui/src-tauri/src/commands/integration/workbench_browser*.{rs,js},crates/agent-gui/src-tauri/src/commands/workspace/git_turn_review.rs,crates/agent-gui/src/components/workbench-browser/**,crates/agent-gui/src/pages/chat/workbench/DesktopWorkspaceResources.*,crates/agent-ui/src/components/project-tools/{RightWorkspaceFileTree,WorkspaceFileDiff,WorkspaceNavigationSplit,workspaceGitPaths,workspaceGitReviewState,WorkspaceTabPresentation,WorkspaceFileHeader,workspace-file-header,useWorkspaceTabs,workspaceTabsCheckpoint,workspaceBrowserAddress,workspaceBrowserHistory}.*,crates/agent-ui/src/components/workspace-editor/{WorkspaceHTMLPreview,workspaceHtmlDocument,WorkspaceMarkdownSelectionReview,useWorkspaceMarkdownSelectionEdit,workspaceMarkdownSelectionEdit}.*}",
       "ownership": "zeroagent_owned",
       "risk": "critical",
       "checks": [

@@ -85,7 +85,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
   }
 
   const imageStrip = visibleFiles.filter(
-    (file) => file.kind === "image" && file.absolutePath && workspaceRoot,
+    (file) => file.kind === "image" && file.absolutePath,
   );
   const bubbleFiles = visibleFiles.filter((file) => !imageStrip.includes(file));
 

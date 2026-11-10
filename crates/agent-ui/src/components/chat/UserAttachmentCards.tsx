@@ -300,9 +300,8 @@ function UserAttachmentCard(props: {
     typeof file.absolutePath === "string" && Boolean(file.absolutePath.trim());
   const shouldPreviewImage =
     file.kind === "image" &&
-    hasWorkspaceRoot &&
     Boolean(onLoadUploadedImagePreview) &&
-    (imagePreviewMode === "imageKind" || hasAbsolutePath);
+    (hasAbsolutePath || (hasWorkspaceRoot && imagePreviewMode === "imageKind"));
   const { imageSrc, isLoading } = useUploadedImagePreview(
     useMemo(
       () =>

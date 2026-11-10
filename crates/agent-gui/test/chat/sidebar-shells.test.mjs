@@ -181,9 +181,10 @@ test("standard resizable panels restore width, preserve main content, and save k
   let setOpen;
   function Harness() {
     const [open, updateOpen] = React.useState(false); setOpen = updateOpen;
+    const [width, setWidth] = React.useState(420);
     const chrome = React.createElement("header", { "data-app-workbench-chrome": "" },
       React.createElement(ProjectToolsPanelToggle, {isOpen: open, sessionCount: 0, onToggle: () => updateOpen(value => !value)}));
-    return React.createElement(WorkspacePanelGroup, { open, width: 400, onClose: () => updateOpen(false), onWidthChange: width => widths.push(width) },
+    return React.createElement(WorkspacePanelGroup, { open, width, onClose: () => updateOpen(false), onWidthChange: next => { widths.push(next); setWidth(next); } },
       React.createElement(WorkspaceMainPanel, { chrome }, React.createElement("input", { id: "main-draft", defaultValue: "draft" })),
       React.createElement(WorkspaceToolsPanel, null, React.createElement("div", { id: "tools-content" }, "Tools")));
   }
@@ -201,12 +202,13 @@ test("standard resizable panels restore width, preserve main content, and save k
     assert.equal(toggle.getAttribute("aria-expanded"), "true");
     assert.ok(tools.parentElement.hasAttribute("data-workspace-tools-docked"));
     assert.equal(tools.getAttribute("aria-hidden"), "false");
-    assert.ok(Number(tools.style.flexGrow) > 0, "opening a panel mounted collapsed allocates width");
+    assert.equal(Math.round(tools.offsetWidth), 540, "first open uses 54% of the available group");
+    assert.deepEqual(widths, [], "opening leaves the default responsive");
     await act(async () => setOpen(false));
     assert.equal(tools.getAttribute("aria-hidden"), "true");
     assert.ok(tools.hasAttribute("inert"));
     await act(async () => setOpen(true));
-    assert.ok(Number(tools.style.flexGrow) > 0, "reopening restores panel width");
+    assert.equal(Math.round(tools.offsetWidth), 540, "reopening restores the default split");
     assert.equal(document.getElementById("main-draft"), draft);
     assert.equal(draft.value, "draft");
     const separator = container.querySelector('[role="separator"]');
@@ -214,12 +216,18 @@ test("standard resizable panels restore width, preserve main content, and save k
     await act(async () => separator.focus());
     await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
     assert.ok(widths.length > 0, "keyboard resizing saves the new width");
-    assert.ok(widths.at(-1) > 400);
+    const savedWidth = widths.at(-1);
+    assert.ok(savedWidth > 540);
+    await act(async () => setOpen(false));
+    await act(async () => setOpen(true));
+    assert.equal(Math.round(tools.offsetWidth), savedWidth, "reopening restores the custom width");
     await act(async () => separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-    assert.equal(widths.at(-1), 420, "double click restores the configured default instead of the collapsed initial size");
+    assert.equal(widths.at(-1), 420, "double click saves the responsive default rather than the measured width");
+    assert.equal(Math.round(tools.offsetWidth), 540);
     assert.equal(tools.getAttribute("aria-hidden"), "false", "reset leaves the tools open");
     await act(async () => separator.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
     assert.equal(widths.at(-1), 420);
+    assert.equal(Math.round(tools.offsetWidth), 540);
     assert.equal(document.getElementById("main-draft"), draft);
     assert.equal(draft.value, "draft");
     await act(async () => { mobile = true; mediaListeners.forEach(listener => listener()); });

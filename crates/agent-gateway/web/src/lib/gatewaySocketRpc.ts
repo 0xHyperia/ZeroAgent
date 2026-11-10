@@ -1550,6 +1550,18 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     });
   }
 
+  async readConversationImage(
+    conversationId: string,
+    assetId: string,
+    variant: "original" | "thumbnail",
+  ): Promise<UploadedImagePreviewResponse> {
+    return this.request<UploadedImagePreviewResponse>("files.preview", {
+      conversation_id: conversationId,
+      asset_id: assetId,
+      variant,
+    });
+  }
+
   async readSkillMetadata(path: string): Promise<SkillMetadataResponse> {
     return this.requestWithRecovery<SkillMetadataResponse>("skills.read-metadata", { path });
   }

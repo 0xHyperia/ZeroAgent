@@ -35,6 +35,7 @@ import { createPendingUploadsRegistry } from "./pendingUploadsRegistry";
 
 type UsePendingUploadsParams = {
   token: string;
+  workspaceOwner: string;
   resolveAgentID: () => Promise<string>;
   historyShareToken: string | null;
   settingsSyncReady: boolean;
@@ -64,6 +65,7 @@ type UsePendingUploadsParams = {
 export function usePendingUploads(params: UsePendingUploadsParams) {
   const {
     token,
+    workspaceOwner,
     resolveAgentID,
     historyShareToken,
     settingsSyncReady,
@@ -280,6 +282,7 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
           return;
         }
         registerLocalUploadedImagePreviews({
+          scope: workspaceOwner,
           workspaceRoot: workdir,
           uploadedFiles: result.files,
           sourceFiles: importBatch,
@@ -350,6 +353,7 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
       setUploadingFiles,
       token,
       updatePendingUploadsForConversation,
+      workspaceOwner,
     ],
   );
 

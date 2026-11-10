@@ -17,8 +17,8 @@ const env = await createDomTestEnv({
 });
 const { React, act, createRoot, loadModule } = env;
 const { createPortal } = loadModule("react-dom");
-const { DesktopWorkspaceFileHeader } = loadModule(
-  "src/pages/chat/workbench/DesktopWorkspaceFileHeader.tsx",
+const { WorkspaceFileHeader } = loadModule(
+  "../agent-ui/src/components/project-tools/WorkspaceFileHeader.tsx",
 );
 const { WorkspaceDiffNavigation } = loadModule(
   "../agent-ui/src/components/project-tools/git-review/WorkspaceDiffNavigation.tsx",
@@ -72,7 +72,7 @@ test("file tools remain available in the compact header and keep their reader st
     return React.createElement(
       React.Fragment,
       null,
-      React.createElement(DesktopWorkspaceFileHeader, {
+      React.createElement(WorkspaceFileHeader, {
         active: true,
         request: file,
         modeActions: null,
@@ -115,7 +115,7 @@ test("preview and comparison actions share one file tool group and tree toggle",
   function Harness() {
     const [diff, setDiff] = React.useState(false);
     const [tree, setTree] = React.useState(true);
-    return React.createElement(DesktopWorkspaceFileHeader, {
+    return React.createElement(WorkspaceFileHeader, {
       active: true,
       request: file,
       modeActions: React.createElement("button", { onClick: () => setDiff(!diff) }, diff ? "Hide changes" : "Show changes"),
@@ -144,6 +144,28 @@ test("preview and comparison actions share one file tool group and tree toggle",
   assert.equal(mode.textContent, "Hide changes");
   assert.equal(tree.getAttribute("aria-pressed"), "false");
   assert.ok([...group.querySelectorAll("button")].some((button) => button.textContent === "Diff layout"));
+});
+
+test("the device file header retains file tools without looking up host applications", async (t) => {
+  const { container, root } = mount(t);
+  const callsBefore = nativeCalls.length;
+  await act(async () =>
+    root.render(React.createElement(WorkspaceFileHeader, {
+      active: true,
+      request: file,
+      nativeFileActions: false,
+      modeActions: null,
+      fileTree: { open: false, toggle() {} },
+      setFormatTools() {},
+      onOpenFile() {},
+      onError() {},
+      readDraft() {},
+      beforeOpen: async () => true,
+    })),
+  );
+  assert.ok(findButton(container, /Toggle file tree|切换文件树/));
+  assert.equal(findButton(container, /Open with|打开方式/), undefined);
+  assert.equal(nativeCalls.length, callsBefore);
 });
 
 test("change navigation uses the side of split diff rows", async (t) => {
@@ -187,7 +209,7 @@ test("the installed editor opens the original path only after the current editor
   const { container, root } = mount(t);
   let canOpen = false;
   const checks = [];
-  await act(async () => root.render(React.createElement(DesktopWorkspaceFileHeader, {
+  await act(async () => root.render(React.createElement(WorkspaceFileHeader, {
     active: true,
     request: file,
     modeActions: null,

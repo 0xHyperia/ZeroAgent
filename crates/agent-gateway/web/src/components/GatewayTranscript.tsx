@@ -4,7 +4,10 @@ import {
   LiveAssistantStatus,
 } from "@liveagent/ui/components/chat/AssistantBubble";
 import { AssistantDeliverables } from "@liveagent/ui/components/chat/AssistantDeliverables";
-import { AssistantVisualActivity } from "@liveagent/ui/components/chat/AssistantVisuals";
+import {
+  AssistantVisualActivity,
+  AssistantVisualContext,
+} from "@liveagent/ui/components/chat/AssistantVisuals";
 import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/BackgroundNoticeMessage";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
@@ -20,7 +23,7 @@ import { UserAttachmentCards } from "@liveagent/ui/components/chat/UserAttachmen
 import { Loader2 } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/LocaleContext";
 import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
-import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import { type ChatFileLink, chatAttachmentFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { ReplyShareSource } from "@liveagent/ui/lib/chat/replyShare";
 import {
@@ -70,6 +73,7 @@ import type { HistoryMessageRef } from "@/lib/chat/conversationState";
 import { getRoundText } from "@/lib/chat/uiMessages";
 import { DEFAULT_CHAT_TRANSCRIPT_WIDTH } from "@/lib/settings";
 import { extractLiveRange } from "@/lib/transcript-virtual/liveRangeExtractor";
+import { useGatewayDeviceImages } from "./GatewayDeviceImages";
 import { findLiveTurnStartTimestamp } from "../lib/chat/transcript/rows";
 import type { RetryAttemptRecord, TranscriptRow } from "../lib/chat/transcript/types";
 import {
@@ -267,8 +271,8 @@ function GatewayUserMessageBubbleBody(props: {
   const { visibleFiles, pastedTextFiles } = splitUserAttachmentsForDisplay(attachments, text);
 
   const imageStrip =
-    onLoadUploadedImagePreview && workspaceRoot
-      ? visibleFiles.filter((file) => file.kind === "image")
+    onLoadUploadedImagePreview
+      ? visibleFiles.filter((file) => file.kind === "image" && (file.absolutePath || workspaceRoot))
       : [];
   const bubbleFiles = visibleFiles.filter((file) => !imageStrip.includes(file));
 
@@ -1224,12 +1228,11 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                 onOpenAttachment={
                   onOpenFileLink
                     ? (file) =>
-                        onOpenFileLink({
-                          path: /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(file.relativePath)
-                            ? `cloud-files/${file.relativePath}`
-                            : file.relativePath,
-                          source: "relative",
-                        })
+                        onOpenFileLink(
+                          imagePreviewScope && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(file.relativePath)
+                            ? { path: `cloud-files/${file.relativePath}`, source: "relative" }
+                            : chatAttachmentFileLink(file),
+                        )
                     : undefined
                 }
                 onLoadContent={
@@ -1397,6 +1400,7 @@ export function GatewayTranscript({
   readOnly = false,
   redactToolContent = false,
 }: GatewayTranscriptProps) {
+  const deviceImages = useGatewayDeviceImages(conversationId, readOnly);
   const transcriptListRef = useRef<HTMLDivElement | null>(null);
   const [transcriptScrollViewport, setTranscriptScrollViewport] = useState<HTMLDivElement | null>(
     null,
@@ -1461,43 +1465,45 @@ export function GatewayTranscript({
           expandByDefault={expandProcessByDefault}
           isViewportFollowing={isViewportFollowing}
         >
-          <GatewayTranscriptListRegion
-            key={conversationId ?? "shared"}
-            conversationId={conversationId}
-            editRequest={editRequest}
-            onEditRequestHandled={onEditRequestHandled}
-            rows={rows}
-            scheduledTurn={scheduledTurn}
-            liveStartIndex={liveStartIndex}
-            activeTurnKey={activeTurnKey}
-            contentWidth={contentWidth}
-            scrollViewport={transcriptScrollViewport}
-            isViewportFollowing={isViewportFollowing}
-            viewportFollowing={viewportFollowing}
-            navRef={navRef}
-            onAnchorUserRowChange={onAnchorUserRowChange}
-            hasMoreHistory={hasMoreHistory}
-            isLoadingMoreHistory={isLoadingMoreHistory}
-            onLoadEarlierHistory={onLoadEarlierHistory}
-            isStreaming={isStreaming}
-            assistantLiveMode={assistantLiveMode}
-            showUsage={showUsage}
-            usageContextWindow={usageContextWindow}
-            workspaceRoot={workspaceRoot}
-            imagePreviewScope={imagePreviewScope}
-            gitClient={gitClient}
-            onOpenFileLink={onOpenFileLink}
-            onLoadUploadedImagePreview={onLoadUploadedImagePreview}
-            onResendFromEdit={onResendFromEdit}
-            onBranchConversation={onBranchConversation}
-            branchPendingMessageId={branchPendingMessageId}
-            resendCreatesBranch={resendCreatesBranch}
-            toolStatus={toolStatus}
-            toolStatusIsCompaction={toolStatusIsCompaction}
-            retryAttempts={retryAttempts}
-            readOnly={readOnly}
-            redactToolContent={redactToolContent}
-          />
+          <AssistantVisualContext.Provider value={deviceImages.visuals}>
+            <GatewayTranscriptListRegion
+              key={conversationId ?? "shared"}
+              conversationId={conversationId}
+              editRequest={editRequest}
+              onEditRequestHandled={onEditRequestHandled}
+              rows={rows}
+              scheduledTurn={scheduledTurn}
+              liveStartIndex={liveStartIndex}
+              activeTurnKey={activeTurnKey}
+              contentWidth={contentWidth}
+              scrollViewport={transcriptScrollViewport}
+              isViewportFollowing={isViewportFollowing}
+              viewportFollowing={viewportFollowing}
+              navRef={navRef}
+              onAnchorUserRowChange={onAnchorUserRowChange}
+              hasMoreHistory={hasMoreHistory}
+              isLoadingMoreHistory={isLoadingMoreHistory}
+              onLoadEarlierHistory={onLoadEarlierHistory}
+              isStreaming={isStreaming}
+              assistantLiveMode={assistantLiveMode}
+              showUsage={showUsage}
+              usageContextWindow={usageContextWindow}
+              workspaceRoot={workspaceRoot}
+              imagePreviewScope={imagePreviewScope}
+              gitClient={gitClient}
+              onOpenFileLink={onOpenFileLink}
+              onLoadUploadedImagePreview={onLoadUploadedImagePreview}
+              onResendFromEdit={onResendFromEdit}
+              onBranchConversation={onBranchConversation}
+              branchPendingMessageId={branchPendingMessageId}
+              resendCreatesBranch={resendCreatesBranch}
+              toolStatus={toolStatus}
+              toolStatusIsCompaction={toolStatusIsCompaction}
+              retryAttempts={retryAttempts}
+              readOnly={readOnly}
+              redactToolContent={redactToolContent}
+            />
+          </AssistantVisualContext.Provider>
         </ProcessDisclosureProvider>
         {shouldShowInlineError ? (
           <div
@@ -1513,6 +1519,7 @@ export function GatewayTranscript({
       </div>
       <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
       <ChatFileLinkContextMenuHost />
+      {deviceImages.preview}
     </div>
   );
 }

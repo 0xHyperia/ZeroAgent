@@ -882,6 +882,14 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
         value: create(UploadedImagePreviewRequestSchema, {
           workdir: trimStr(body.workdir),
           absolutePath: trimStr(body.absolute_path),
+          generatedImage:
+            typeof body.asset_id === "string"
+              ? {
+                  conversationId: trimStr(body.conversation_id),
+                  assetId: trimStr(body.asset_id),
+                  variant: trimStr(body.variant),
+                }
+              : undefined,
         }),
       };
     case "memory.manage":

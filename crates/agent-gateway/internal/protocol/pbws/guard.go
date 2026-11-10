@@ -77,7 +77,6 @@ func vetAgentRequest(sm session.AgentView, env *gatewayv2.GatewayEnvelope) error
 		// 已安装应用清单（@ 应用提及）：只读宿主能力，桌面端返回什么由
 		// 桌面自己裁决（枚举实现见 services/cua_driver/installed_apps.rs）。
 		*gatewayv2.GatewayEnvelope_InstalledAppsList,
-		*gatewayv2.GatewayEnvelope_UploadedImagePreview,
 		*gatewayv2.GatewayEnvelope_MemoryManage,
 		*gatewayv2.GatewayEnvelope_CronManage,
 		*gatewayv2.GatewayEnvelope_FsRoots,
@@ -98,6 +97,8 @@ func vetAgentRequest(sm session.AgentView, env *gatewayv2.GatewayEnvelope) error
 		return nil
 	case *gatewayv2.GatewayEnvelope_ChatFileOpen:
 		return vetChatFileOpen(payload.ChatFileOpen)
+	case *gatewayv2.GatewayEnvelope_UploadedImagePreview:
+		return vetImagePreview(payload.UploadedImagePreview)
 	case *gatewayv2.GatewayEnvelope_WorkspaceRootGrants:
 		return vetWorkspaceRootGrants(payload.WorkspaceRootGrants)
 	case *gatewayv2.GatewayEnvelope_Checkpoint:
@@ -422,7 +423,8 @@ func vetChatFileOpen(req *gatewayv2.ChatFileOpenRequest) error {
 	if req == nil || strings.TrimSpace(req.GetConversationId()) == "" || len(req.GetConversationId()) > 256 {
 		return errors.New("conversation is unavailable")
 	}
-	if strings.TrimSpace(req.GetWorkdir()) == "" || strings.TrimSpace(req.GetPath()) == "" {
+	// The device looks up the working directory from the owned conversation.
+	if strings.TrimSpace(req.GetPath()) == "" {
 		return errors.New("linked file request is incomplete")
 	}
 	if len(req.GetWorkdir()) > 32768 || len(req.GetPath()) > 32768 {
@@ -443,6 +445,27 @@ func vetChatFileOpen(req *gatewayv2.ChatFileOpenRequest) error {
 	}
 	if req.Line != nil && req.EndLine != nil && req.GetEndLine() < req.GetLine() {
 		return errors.New("linked file location is invalid")
+	}
+	return nil
+}
+
+func vetImagePreview(req *gatewayv2.UploadedImagePreviewRequest) error {
+	if req == nil {
+		return errors.New("image preview request is incomplete")
+	}
+	if target := req.GetGeneratedImage(); target != nil {
+		asset := target.GetAssetId()
+		if req.GetAbsolutePath() != "" || req.GetWorkdir() != "" ||
+			strings.TrimSpace(target.GetConversationId()) == "" || len(target.GetConversationId()) > 256 ||
+			!strings.HasPrefix(asset, "ia_") || len(asset) < 4 || len(asset) > 99 ||
+			strings.ContainsFunc(asset, func(r rune) bool {
+				return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-')
+			}) || target.GetVariant() != "original" && target.GetVariant() != "thumbnail" {
+			return errors.New("invalid conversation image preview request")
+		}
+	} else if strings.TrimSpace(req.GetAbsolutePath()) == "" ||
+		len(req.GetAbsolutePath()) > 32768 || len(req.GetWorkdir()) > 32768 {
+		return errors.New("invalid uploaded image preview request")
 	}
 	return nil
 }

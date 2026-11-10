@@ -35,6 +35,7 @@ import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/Wor
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { MIN_DOCKED_WORKSPACE_WITH_CAPTIONS } from "@liveagent/ui/components/project-tools/rightDockModel";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
+import { useWorkspaceTabPresentation } from "@liveagent/ui/components/project-tools/WorkspaceTabPresentation";
 import {
   WorkspaceMainPanel,
   WorkspacePanelGroup,
@@ -320,6 +321,7 @@ export function GatewayAppView({
     handleOpenSftpFile,
     handleOpenSshTerminal,
     handleOpenWorkspaceFile,
+    handleOpenWorkspaceDiff,
     handleOpenWorkspaceFolder,
     handleOpenWorktree,
     handleProjectTerminalSessionsChange,
@@ -457,6 +459,7 @@ export function GatewayAppView({
     terminalClient,
     terminalDisabledMessage,
     terminalProjectPath,
+    tabbedWorkspace,
     terminalProjectPathKey,
     terminalSessions,
     terminalSessionsLoaded,
@@ -487,6 +490,8 @@ export function GatewayAppView({
     workspaceCloneTasks,
     workspaceCreateModalOpen,
     workspaceViewScope,
+    workspaceOwner,
+    workspaceTabs,
     workspaceEditors,
     workspaceFilePreviewMounted,
     workspaceFilePreviewOpen,
@@ -1162,6 +1167,26 @@ export function GatewayAppView({
   // 口径):焦点只换 primary 绑定,绝不把页面舞台注入聚焦 Pane,也不按
   // conversationId 做 key(会在焦点切换时拆掉宿主)。终端 / unsupported 走
   // 各自的自包含表面。
+  const workspacePresentation = useWorkspaceTabPresentation({
+    resources: workspaceTabs,
+    open: tabbedWorkspace && !accountDestination && activeView === "chat" && rightDockOpen,
+    scope: workspaceViewScope,
+    owner: workspaceOwner,
+    projectPathKey: terminalProjectPathKey,
+    comparisonConversationId: displayedConversationId || undefined,
+    theme: effectiveTheme,
+    gitClient: gitDisabledMessage ? undefined : gitClient ?? undefined,
+    activityClient: workspaceActivityClient,
+    nativeFileActions: false,
+    onInsertCodeMention: handleInsertCodeMention,
+    onError: (message) => addNotify("error", message),
+  });
+  const deviceWorkspace = tabbedWorkspace
+    ? { ...workspacePresentation, onOpenDiff: handleOpenWorkspaceDiff }
+    : undefined;
+  const terminalWorkspaceProject = workspaceProjects.find(
+    (project) => workspaceProjectPathKey(project.path) === terminalProjectPathKey,
+  );
   // 项目工具 Pane 的运行环境:与 RightDockPanel 同一批网关 client/回调,按
   // Pane 自己的 ProjectRef 解析项目(见 ProjectToolPaneHost)。终端 client 未
   // 连接时(网关离线)工具 Pane 与终端 Pane 一样不渲染。
@@ -1659,7 +1684,7 @@ export function GatewayAppView({
             <ProjectToolsPanelToggle
               isOpen={rightDockOpen}
               sessionCount={projectTerminalSessions.length}
-              disabledMessage={projectToolsDisabledMessage}
+              disabledMessage={terminalClient ? undefined : projectToolsDisabledMessage}
               className="mr-6px max-520:mr-8px"
               onToggle={() => setRightDockOpen((open) => !open)}
             />
@@ -1923,6 +1948,7 @@ export function GatewayAppView({
               {confirmDialog}
 
               <WorkspacePanelGroup
+                expanded={deviceWorkspace?.expanded}
                 open={
                   !accountDestination &&
                   Boolean(terminalClient) &&
@@ -2511,15 +2537,16 @@ export function GatewayAppView({
                     />
                   </main>
                 </WorkspaceMainPanel>
-                <WorkspaceToolsPanel>
+                <WorkspaceToolsPanel retainContent={tabbedWorkspace}>
                   {terminalClient ? (
                     <RightDockPanel
+                      workspace={deviceWorkspace}
                       workspaceViewScope={workspaceViewScope}
                       isOpen={!accountDestination && activeView === "chat" && rightDockOpen}
                       fontScale={settings.customSettings.fontScale.rightDock}
                       projectPathKey={terminalProjectPathKey}
                       cwd={terminalProjectPath}
-                      workspaceProject={activeWorkspaceProject}
+                      workspaceProject={terminalWorkspaceProject}
                       workspaceProjectRootClient={workspaceProjectRootClient}
                       workspaceRootRevision={workspaceRootRevision}
                       sessions={terminalSessions}

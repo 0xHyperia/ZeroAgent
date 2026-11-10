@@ -251,3 +251,75 @@ test("reads for a conversation without a K-brain session never mint a shadow ali
   await run({ kind: "history", conversationId: fresh, action: "checkpoint_list", data: {} });
   assert.deepEqual(calls, [["trajectory", fresh], ["checkpoint_list", fresh]]);
 });
+
+test("device image preview only reads completed results owned by the requested conversation", async (t) => {
+  const src = (file) => fileURLToPath(new URL(`../../src/${file}`, import.meta.url));
+  const connection = {};
+  const reads = [];
+  const projects = [
+    { id: "other", workspaceRef: "zeroagent:conversation:other-session" },
+    { id: "project", workspaceRef: "zeroagent:conversation:session" },
+  ];
+  const assetId = "ia_fixture";
+  const previousFileReader = globalThis.FileReader;
+  globalThis.FileReader = class {
+    async readAsDataURL(blob) {
+      this.result = `data:${blob.type};base64,${Buffer.from(await blob.arrayBuffer()).toString("base64")}`;
+      this.onload();
+    }
+  };
+  t.after(() => {
+    if (previousFileReader) globalThis.FileReader = previousFileReader;
+    else delete globalThis.FileReader;
+  });
+  const loader = createTsModuleLoader({
+    mocks: {
+      [src("lib/kbrain/mapping.ts")]: {
+        getKBrainSessionId: (id) => ({ chat: "session", other: "other-session" })[id],
+        getKBrainConversationId: () => undefined,
+      },
+      [src("lib/kbrain/runtimeConnection.ts")]: {
+        getKBrainRuntimeConnection: () => connection,
+      },
+      [src("lib/kbrain/images.ts")]: {
+        createKBrainImageClient: (actual) => {
+          assert.equal(actual, connection);
+          return {
+            listProjects: async (cursor) => cursor
+              ? { items: [projects[1]] }
+              : { items: [projects[0]], nextCursor: "more" },
+            listJobs: async (projectId) => ({
+              items: projectId === "project"
+                ? [{ projectId, status: "succeeded", assetIds: [assetId] }]
+                : [{ projectId, status: "failed", assetIds: [assetId] }],
+            }),
+            readAsset: async (id, variant) => {
+              reads.push([id, variant]);
+              return new Blob(["image bytes"], { type: "image/png" });
+            },
+          };
+        },
+      },
+    },
+  });
+  const { runGatewayHistoryAction: run } = loader.loadModule(
+    "src/pages/chat/gateway/gatewayHistoryActions.ts",
+  );
+  const read = (conversationId, id = assetId) => run({
+    kind: "history",
+    conversationId,
+    action: "image_read",
+    data: { assetId: id, variant: "thumbnail" },
+  });
+
+  await assert.rejects(read("unknown"), /unavailable/);
+  await assert.rejects(read("other"), /unavailable/);
+  await assert.rejects(read("chat", "ia_missing"), /unavailable/);
+  await assert.rejects(read("chat", "../private"), /unavailable/);
+  assert.deepEqual(reads, []);
+  assert.deepEqual(await read("chat"), {
+    mimeType: "image/png",
+    data: Buffer.from("image bytes").toString("base64"),
+  });
+  assert.deepEqual(reads, [[assetId, "thumbnail"]]);
+});

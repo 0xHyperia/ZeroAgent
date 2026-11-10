@@ -125,6 +125,8 @@ import {
 } from "./chatEventUtils";
 import { HISTORY_LIST_PAGE_SIZE, PROTECTED_DRAFT_CONVERSATION } from "./constants";
 import { GatewayAppView } from "./GatewayAppView";
+import { UploadedImagePreviewScope } from "@liveagent/ui/lib/chat/uploadedImagePreview";
+import { GatewayDeviceImageClient } from "../components/GatewayDeviceImages";
 import {
   createGatewayChatCommandActions,
   type QueuedEditSession,
@@ -865,6 +867,7 @@ function useGatewayAppController() {
     handleFileDrop: handlePendingFileDrop,
   } = usePendingUploads({
     token,
+    workspaceOwner,
     resolveAgentID: resolveActiveAgentID,
     historyShareToken,
     settingsSyncReady,
@@ -2832,6 +2835,7 @@ function useGatewayAppController() {
     handleOpenChatFileLink,
     handleOpenSftpFile,
     handleOpenSshTerminal,
+    handleOpenWorkspaceDiff,
     handleOpenWorkspaceFile,
     handleProjectTerminalSessionsChange,
     updateProjectTerminalSessions,
@@ -2856,6 +2860,7 @@ function useGatewayAppController() {
     rightDockFileTreeState,
     rightDockProjectState,
     terminalDisabledMessage,
+    tabbedWorkspace,
     terminalProjectPath,
     terminalProjectPathKey,
     terminalSessions,
@@ -2865,6 +2870,7 @@ function useGatewayAppController() {
     tunnelDisabledMessage,
     tunnelEnabled,
     workspaceActivityClient,
+    workspaceTabs,
     workspaceViewScope,
     workspaceEditors,
     workspaceFilePreviewMounted,
@@ -3557,6 +3563,7 @@ function useGatewayAppController() {
     handleOpenSharedHistoryManager,
     handleOpenSftpFile,
     handleOpenSshTerminal,
+    handleOpenWorkspaceDiff,
     handleOpenWorkspaceFile,
     handleOpenWorkspaceFolder,
     handleOpenWorktree,
@@ -3699,6 +3706,7 @@ function useGatewayAppController() {
     taskProgressSnapshot,
     terminalClient,
     terminalDisabledMessage,
+    tabbedWorkspace,
     terminalProjectPath,
     terminalProjectPathKey,
     terminalSessions,
@@ -3729,6 +3737,8 @@ function useGatewayAppController() {
     workspaceActivityClient,
     workspaceCloneTasks,
     workspaceCreateModalOpen,
+    workspaceOwner,
+    workspaceTabs,
     workspaceViewScope,
     workspaceEditors,
     workspaceFilePreviewMounted,
@@ -3765,5 +3775,11 @@ function GatewayAppContent({ imageStudioIdentity }: GatewayAppProps) {
   if (!result || !("activeFloorKey" in result)) {
     return result;
   }
-  return <GatewayAppView viewModel={result} imageStudioIdentity={imageStudioIdentity} />;
+  return (
+    <UploadedImagePreviewScope.Provider value={result.workspaceOwner}>
+      <GatewayDeviceImageClient.Provider value={result.api}>
+        <GatewayAppView viewModel={result} imageStudioIdentity={imageStudioIdentity} />
+      </GatewayDeviceImageClient.Provider>
+    </UploadedImagePreviewScope.Provider>
+  );
 }
