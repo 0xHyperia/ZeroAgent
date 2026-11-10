@@ -907,8 +907,8 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         data-workspace-tree-scroll={integratedSearch ? "" : undefined}
         ref={scrollRef}
         className={cn(
-          "project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto p-2 web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
-          integratedSearch && "isolate p-1",
+          "project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
+          integratedSearch ? "isolate px-1 pb-1" : "p-2",
         )}
         onKeyDown={integratedSearch ? onWorkspaceTreeKeyDown : undefined}
         onContextMenu={(event) => {

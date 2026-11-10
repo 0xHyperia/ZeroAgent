@@ -6,6 +6,7 @@
 import { ChevronRight, Loader2 } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
+  type CSSProperties,
   memo,
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
@@ -80,13 +81,16 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
       className={cn(
         "group flex w-full cursor-pointer select-none items-center rounded-md leading-5",
         "hover:bg-muted/70 hover:text-foreground",
-        sectioned ? "gap-[5px] pr-[3px] text-[13px]" : "gap-1 pr-2 text-xs text-muted-foreground",
+        sectioned
+          ? "za-workspace-tree-row gap-[5px] pr-[3px] text-[13px]"
+          : "gap-1 pr-2 text-xs text-muted-foreground",
         selected && "bg-muted text-foreground",
       )}
-      style={{
-        height: FILE_TREE_ROW_HEIGHT,
-        paddingLeft: sectioned ? 3 + depth * 9 : 6 + depth * 14,
-      }}
+      style={
+        sectioned
+          ? ({ height: FILE_TREE_ROW_HEIGHT, "--za-workspace-tree-depth": depth } as CSSProperties)
+          : { height: FILE_TREE_ROW_HEIGHT, paddingLeft: 6 + depth * 14 }
+      }
       title={title}
       draggable={Boolean(onDragStart)}
       onDragStart={(event) => onDragStart?.(event, path, kind)}
