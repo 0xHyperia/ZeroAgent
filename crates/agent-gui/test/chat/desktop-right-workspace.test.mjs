@@ -68,7 +68,7 @@ test("the desktop Changes tab exposes its close action and restores focus to the
   assert.match(changes.getAttribute("aria-label"), /^(Changes|变更)$/);
   const close = changes.parentElement.querySelector('[data-project-tools-tab-action="close"]');
   assert.ok(close.classList.contains("opacity-100"));
-  changes.focus();
+  await act(async () => changes.focus());
   await act(async () => changes.dispatchEvent(new window.KeyboardEvent("keydown", {
     key: "Delete",
     bubbles: true,

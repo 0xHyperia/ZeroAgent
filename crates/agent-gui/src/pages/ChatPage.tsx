@@ -5152,11 +5152,19 @@ function ChatPageContent(props: ChatPageProps) {
         }
       : null;
 
+  const stackedWorkbench = isMacOsTauri();
+  const navigationRail = !sidebar.isMobile ? (
+    <WorkbenchNavigationMount target={settingsNavigationTarget}>
+      {renderNavigationRail()}
+    </WorkbenchNavigationMount>
+  ) : null;
+
   return (
     <WorkbenchShell
       ref={navigationPreview.rootRef}
       data-app-frame="three-column"
-      layout={isMacOsTauri() ? "stacked-panels" : "panels"}
+      layout={stackedWorkbench ? "stacked-panels" : "panels"}
+      navigationRail={stackedWorkbench ? undefined : navigationRail}
     >
       {!accountDestination && activeView === "image-studio-hub" ? (
         <AppHeaderFrame sidebarOpen={sidebarOpen}>
@@ -5246,11 +5254,7 @@ function ChatPageContent(props: ChatPageProps) {
       )}
       <WorkbenchBody>
         {workbenchDragGhost}
-        {!sidebar.isMobile ? (
-          <WorkbenchNavigationMount target={settingsNavigationTarget}>
-            {renderNavigationRail()}
-          </WorkbenchNavigationMount>
-        ) : null}
+        {stackedWorkbench ? navigationRail : null}
         {!sidebar.isMobile && !sidebar.open ? (
           <div data-sidebar-hover-edge="" aria-hidden="true" />
         ) : null}

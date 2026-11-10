@@ -129,8 +129,8 @@ test("multi-pane conversation panes reveal trajectory and close controls togethe
   );
   // The toggle is a top-left dot styled exactly like the top-right close dot.
   assert.match(paneChromeSource, /data-workbench-pane-trajectory-toggle/);
-  assertJsxDimensions(paneChromeSource, "button", { width: "3.5", height: "3.5" }, ["left-1.5", "top-1/2", "flex", "-translate-y-1/2", "items-center", "justify-center", "rounded-full"]);
-  assertJsxDimensions(paneChromeSource, "button", { width: "3.5", height: "3.5" }, ["right-1.5", "top-1/2", "flex", "-translate-y-1/2", "items-center", "justify-center", "rounded-full"]);
+  assertJsxDimensions(paneChromeSource, "TooltipButton", { width: "3.5", height: "3.5" }, ["left-1.5", "top-1/2", "flex", "-translate-y-1/2", "items-center", "justify-center", "rounded-full"]);
+  assertJsxDimensions(paneChromeSource, "TooltipButton", { width: "3.5", height: "3.5" }, ["right-1.5", "top-1/2", "flex", "-translate-y-1/2", "items-center", "justify-center", "rounded-full"]);
   // Both dots share the hover-reveal treatment and palette.
   assert.equal(
     paneChromeSource.match(/bg-muted-foreground\/25 text-background/g)?.length,

@@ -139,10 +139,6 @@ button.za-workspace-file-path-label[aria-expanded="true"] {
   .za-workspace-file-compact-icon {
     display: block;
   }
-
-  .za-workspace-file-mode-actions > button[title] > span {
-    display: none;
-  }
 }
 
 @container workspace-file-header (width < 470px) {

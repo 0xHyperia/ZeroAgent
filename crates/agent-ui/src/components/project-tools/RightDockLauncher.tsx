@@ -10,7 +10,7 @@ import { useLocale } from "@liveagent/ui/i18n/index";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "../../lib/shared/utils";
 import type { TerminalShellOption } from "../../lib/terminal/types";
-import { Button, buttonVariants } from "../ui/button";
+import { buttonVariants } from "../ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { LabelTooltip } from "../ui/label-tooltip";
+import { TooltipButton } from "../ui/tooltip-button";
 import { NO_LEASED_RIGHT_DOCK_TOOLS, type RightDockLeasedToolKind } from "./rightDockModel";
 import { RIGHT_DOCK_TOOL_DEFINITIONS, type RightDockSingletonTabKind } from "./rightDockRegistry";
 
@@ -135,16 +137,27 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       {/* Native trigger button styled via buttonVariants: Base UI Trigger
           renders a plain <button>, so this stays identical on GUI and web. */}
-      <DropdownMenuTrigger
-        disabled={!(projectReady || tunnelAvailable) || creating}
-        title={t("projectTools.newProjectTool")}
-        className={cn(
-          buttonVariants({ variant: "ghost", size: "icon" }),
-          "size-8 rounded-lg text-muted-foreground hover:text-foreground",
-        )}
-      >
-        {compact ? <ChevronRight className="size-3.5 rotate-90" /> : <Plus className="size-4" />}
-      </DropdownMenuTrigger>
+      <LabelTooltip
+        label={t("projectTools.newProjectTool")}
+        side="bottom"
+        disabled={open || !(projectReady || tunnelAvailable) || creating}
+        render={
+          <DropdownMenuTrigger
+            disabled={!(projectReady || tunnelAvailable) || creating}
+            aria-label={t("projectTools.newProjectTool")}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon" }),
+              "size-8 rounded-lg text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {compact ? (
+              <ChevronRight className="size-3.5 rotate-90" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+          </DropdownMenuTrigger>
+        }
+      />
       <DropdownMenuContent variant="soft" align="end" sideOffset={6} className="min-w-40">
         {terminalItem}
         {onOpenNewTerminalInWorkbench ? (
@@ -282,7 +295,7 @@ export function RightDockChooser(props: RightDockChooserProps) {
       </div>
       <div className="flex w-full max-w-xs flex-col gap-2">
         {tools.map((tool) => (
-          <Button
+          <TooltipButton
             variant="outline"
             key={tool.key}
             type="button"
@@ -290,6 +303,7 @@ export function RightDockChooser(props: RightDockChooserProps) {
             onPointerDown={tool.onPointerDown}
             disabled={tool.disabled}
             title={tool.titleAttr}
+            tooltipSide="bottom"
             className={cn(
               "group flex h-auto w-full items-center justify-start gap-3 whitespace-normal",
               "rounded-lg border border-border/60 bg-background px-3.5 py-3",
@@ -311,7 +325,7 @@ export function RightDockChooser(props: RightDockChooserProps) {
                 {tool.description}
               </div>
             </div>
-          </Button>
+          </TooltipButton>
         ))}
       </div>
       {loading ? (

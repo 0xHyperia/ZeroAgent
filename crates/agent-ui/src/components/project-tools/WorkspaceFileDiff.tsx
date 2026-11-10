@@ -33,6 +33,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { LabelTooltip } from "../ui/label-tooltip";
 import { DiffContent } from "./git-review/DiffView";
 import "./git-review/DiffView.css";
 import { buildWorkspaceReviewRows, type PatchChunk } from "./git-review/model";
@@ -224,32 +225,39 @@ export function WorkspaceGitComparisonMenu({
   const baseBranch = isWorkspaceGitBaseBranch(comparison)
     ? comparison.slice("branch:".length).replace(/^refs\/(?:heads|remotes)\//, "")
     : null;
+  const comparisonLabel = comparisonName(locale, comparison);
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        type="button"
-        title={sha ?? baseBranch ?? (capsule ? comparisonName(locale, comparison) : undefined)}
-        aria-label={zh ? "比较范围" : "Comparison source"}
-        className={
-          capsule || summary
-            ? "za-review-comparison"
-            : "flex h-7 min-w-0 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium hover:bg-muted focus-visible:outline-ring"
+      <LabelTooltip
+        label={zh ? "比较范围" : "Comparison source"}
+        side="bottom"
+        description={sha ?? baseBranch ?? comparisonLabel}
+        render={
+          <DropdownMenuTrigger
+            type="button"
+            aria-label={zh ? "比较范围" : "Comparison source"}
+            className={
+              capsule || summary
+                ? "za-review-comparison"
+                : "flex h-7 min-w-0 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium hover:bg-muted focus-visible:outline-ring"
+            }
+          >
+            <span className="min-w-0 truncate">{comparisonLabel}</span>
+            {sha && (
+              <span className="za-review-comparison-detail font-mono font-normal text-muted-foreground">
+                {sha.slice(0, 7)}
+              </span>
+            )}
+            {baseBranch && (
+              <span className="za-review-comparison-detail max-w-24 truncate font-normal text-muted-foreground">
+                {baseBranch}
+              </span>
+            )}
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            {summary}
+          </DropdownMenuTrigger>
         }
-      >
-        <span className="min-w-0 truncate">{comparisonName(locale, comparison)}</span>
-        {sha && (
-          <span className="za-review-comparison-detail font-mono font-normal text-muted-foreground">
-            {sha.slice(0, 7)}
-          </span>
-        )}
-        {baseBranch && (
-          <span className="za-review-comparison-detail max-w-24 truncate font-normal text-muted-foreground">
-            {baseBranch}
-          </span>
-        )}
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-        {summary}
-      </DropdownMenuTrigger>
+      />
       <DropdownMenuContent align="start" className="min-w-44">
         <DropdownMenuRadioGroup value={baseBranch ? "branch" : comparison}>
           {conversationId && client.lastTurnDiff && (

@@ -237,6 +237,24 @@
   --app-rail-width: 56px;
   background: hsl(var(--settings-rail));
 }
+[data-workbench-frame] {
+  border-radius: var(--za-radius-workbench);
+  background: hsl(var(--background));
+}
+/* The rail (or its settings placeholder) marks the wide workspace layout. */
+:where(.application-rail, [data-navigation-rail-placeholder]) + [data-workbench-frame] {
+  margin: 4px;
+}
+/* Frame the workspace beside the navigation rail. The inner seams stay square. */
+[data-workbench-frame]::after {
+  content: "";
+  position: absolute;
+  z-index: 21;
+  inset: 0;
+  border: 1px solid var(--za-workbench-border);
+  border-radius: inherit;
+  pointer-events: none;
+}
 .app-workspace-shell .chat-history-sidebar {
   background: hsl(var(--background));
   border-right: 1px solid var(--za-workbench-border);
@@ -291,9 +309,12 @@
 }
 .app-workspace-shell [data-sidebar-hover-edge] {
   position: absolute;
-  inset: 2px auto 0 56px;
+  inset: 2px auto 0 var(--app-rail-width);
   z-index: 12;
   width: 10px;
+}
+[data-workbench-frame] [data-sidebar-hover-edge] {
+  left: 0;
 }
 [data-workbench-sidebar-slot] {
   position: relative;
@@ -311,100 +332,23 @@
   border-radius: 16px;
   box-shadow: var(--za-shadow-floating);
 }
-:where(
-  .app-workspace-shell.app-workbench-layout:has(
-    .application-rail,
-    [data-navigation-rail-placeholder]
-  )
-) {
-  --workbench-main-start-radius: var(--za-radius-workbench);
-  grid-template-columns: 56px auto minmax(0, 1fr);
-  padding: 2px 2px 2px 0;
-}
-/* One frame surrounds sidebar + canvas, just as in CloudChat. The border is
-   decorative: it never owns focus, pointer events or native window dragging. */
-.app-workspace-shell.app-workbench-layout:has(
-  .application-rail,
-  [data-navigation-rail-placeholder]
-)::after {
-  content: "";
-  position: absolute;
-  z-index: 21;
-  inset: 2px 2px 2px var(--app-rail-width);
-  border: 1px solid var(--za-workbench-border);
-  border-radius: var(--za-radius-workbench);
-  pointer-events: none;
-}
-.app-workspace-shell.app-workbench-layout:has(
-  > [data-app-workbench-body] > [data-slot="sidebar"][data-state="expanded"],
-  > [data-app-workbench-body] > [data-workbench-sidebar-slot] [data-slot="sidebar"][data-state="expanded"]
-) {
-  --workbench-main-start-radius: 0px;
-}
-:where(
-    .app-workspace-shell.app-workbench-layout:has(
-      .application-rail,
-      [data-navigation-rail-placeholder]
-    )
-  )
-  > [data-app-workbench-chrome] {
-  grid-column: 3;
-  border-radius: var(--workbench-main-start-radius) var(--za-radius-workbench) 0 0;
-}
-:where(
-    .app-workspace-shell.app-workbench-layout:has(
-      .application-rail,
-      [data-navigation-rail-placeholder]
-    )
-  )
-  > :where([data-app-workbench-body])
-  > :is(.application-rail, [data-navigation-rail-placeholder]) {
-  grid-column: 1;
-  grid-row: 1 / -1;
-}
-:where(
-    .app-workspace-shell.app-workbench-layout:has(
-      .application-rail,
-      [data-navigation-rail-placeholder]
-    )
-  )
-  > :where([data-app-workbench-body])
-  > :is([data-slot="sidebar"], [data-workbench-sidebar-slot]) {
-  grid-column: 2;
-}
-:where(.app-workspace-shell.app-workbench-layout)
+:where([data-workbench-frame])
   > [data-app-workbench-body]
   > [data-slot="sidebar"][data-state="expanded"]
   > [data-slot="sidebar-container"],
-:where(.app-workspace-shell.app-workbench-layout)
+:where([data-workbench-frame])
   > [data-app-workbench-body]
   > [data-workbench-sidebar-slot]
   [data-slot="sidebar"][data-state="expanded"]
   > [data-slot="sidebar-container"] {
-  border-radius: var(--za-radius-workbench) 0 0 var(--za-radius-workbench);
   overflow: hidden;
 }
-:where(
-    .app-workspace-shell.app-workbench-layout:has(
-      .application-rail,
-      [data-navigation-rail-placeholder]
-    )
-  )
-  > :where([data-app-workbench-body])
+:where(.app-workspace-shell, [data-workbench-frame])
+  > [data-app-workbench-body]
   > [data-slot="resizable-panel-group"] {
-  grid-column: 3;
-  border-radius: 0 0 var(--za-radius-workbench) var(--workbench-main-start-radius);
-}
-:where(.app-workspace-shell > [data-app-workbench-body]) > [data-slot="resizable-panel-group"] {
   background: hsl(var(--background));
   overflow: hidden;
 }
-@media (max-width: 767px) {
-  .app-workspace-shell.app-workbench-layout {
-    padding: 0;
-  }
-}
-
 /* Host-independent navigation geometry, including the mobile sheet portal. */
 .application-rail {
   z-index: 11;
@@ -785,7 +729,7 @@
   padding: 2px 2px 2px 0;
   background: hsl(var(--settings-rail));
 }
-[data-workbench-canvas] {
+[data-workbench-page-canvas] {
   overflow: hidden;
   border: 1px solid var(--za-workbench-border);
   border-radius: var(--za-radius-workbench);
@@ -841,7 +785,7 @@
   [data-workbench-layout="page"] {
     padding: 0;
   }
-  [data-workbench-canvas] {
+  [data-workbench-page-canvas] {
     border: 0;
     border-radius: 0;
   }

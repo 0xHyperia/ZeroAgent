@@ -26,7 +26,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../ui/dropdown-menu";
+import { LabelTooltip } from "../../ui/label-tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "../../ui/popover";
+import { TooltipButton } from "../../ui/tooltip-button";
 import type { WorkspaceGitPresentation } from "../workspaceGitReviewState";
 import type { PatchChunk } from "./model";
 
@@ -81,14 +83,16 @@ function ReviewFileJump({ rows, onJump }: { rows: PatchChunk[]; onJump: (key: st
         setOpen(next);
       }}
     >
-      <PopoverTrigger
-        className={toolbarIcon}
-        aria-label={title}
-        title={title}
-        disabled={!rows.length}
-      >
-        <Search className="size-4" />
-      </PopoverTrigger>
+      <LabelTooltip
+        label={title}
+        side="bottom"
+        disabled={open || !rows.length}
+        render={
+          <PopoverTrigger className={toolbarIcon} aria-label={title} disabled={!rows.length}>
+            <Search className="size-4" />
+          </PopoverTrigger>
+        }
+      />
       <PopoverContent
         align="end"
         initialFocus={inputRef}
@@ -199,25 +203,29 @@ export function WorkspaceReviewToolbar({
   return (
     <div className="za-review-controls" data-single-file-toolbar={singleFile || undefined}>
       {singleFile && (
-        <button
+        <TooltipButton
           type="button"
+          variant="ghost"
+          size="icon-xs"
           className={toolbarIcon}
           aria-label={layoutLabel}
           title={layoutLabel}
+          tooltipSide="bottom"
           onClick={() => onPresentationChange({ layout })}
         >
           <ReviewLayoutIcon layout={presentation.layout} />
-        </button>
+        </TooltipButton>
       )}
       <DropdownMenu>
-        <DropdownMenuTrigger
-          type="button"
-          className={toolbarIcon}
-          aria-label={options}
-          title={options}
-        >
-          <MoreHorizontal className="size-4" />
-        </DropdownMenuTrigger>
+        <LabelTooltip
+          label={options}
+          side="bottom"
+          render={
+            <DropdownMenuTrigger type="button" className={toolbarIcon} aria-label={options}>
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+          }
+        />
         <DropdownMenuContent align="end" className="min-w-52">
           {(!wide || singleFile) && (
             <>
@@ -288,44 +296,56 @@ export function WorkspaceReviewToolbar({
       {!singleFile && <ReviewFileJump rows={rows} onJump={onJump} />}
       {!singleFile && (
         <div className="za-review-wide-actions">
-          <button
+          <TooltipButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             className={toolbarIcon}
             aria-label={refresh}
             title={refresh}
+            tooltipSide="bottom"
             disabled={refreshing}
             onClick={onRefresh}
           >
             <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
-          </button>
-          <button
+          </TooltipButton>
+          <TooltipButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             className={toolbarIcon}
             aria-label={wrap}
             title={wrap}
+            tooltipSide="bottom"
             aria-pressed={presentation.wrapLines}
             onClick={() => onPresentationChange({ wrapLines: !presentation.wrapLines })}
           >
             <WrapText className="size-4" />
-          </button>
-          <button
+          </TooltipButton>
+          <TooltipButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             className={toolbarIcon}
             aria-label={expand}
             title={expand}
+            tooltipSide="bottom"
             onClick={onToggleExpanded}
           >
             <ExpandIcon className="size-4" />
-          </button>
-          <button
+          </TooltipButton>
+          <TooltipButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             className={toolbarIcon}
             aria-label={layoutLabel}
             title={layoutLabel}
+            tooltipSide="bottom"
             onClick={() => onPresentationChange({ layout })}
           >
             <LayoutIcon className="size-4" />
-          </button>
+          </TooltipButton>
         </div>
       )}
       <span className="sr-only" role="status">

@@ -89,6 +89,15 @@ test("workbench canvas separates preview geometry from committed geometry", () =
   assert.match(workbenchCanvasSource, /ResizeObserver/);
 });
 
+test("only the page canvas uses the standalone canvas border inside the application shell", () => {
+  const shellSource = readSource("../../../agent-ui/src/application/WorkbenchShell.tsx");
+  const designStyles = readSource("../../../agent-ui/src/styles/design-system.css");
+  assert.match(shellSource, /data-workbench-page-canvas=\{mode === "page"/);
+  assert.doesNotMatch(workbenchCanvasSource, /data-workbench-page-canvas/);
+  assert.match(designStyles, /\[data-workbench-page-canvas\]\s*\{[^}]*border-radius:/);
+  assert.doesNotMatch(designStyles, /\[data-workbench-canvas\][^{]*\{[^}]*\bborder(?:-radius)?:/);
+});
+
 test("workbench DOM access flows through the canvas ref", () => {
   const dragSessionSource = readSource(
     "../../../agent-ui/src/lib/workbench/useWorkbenchDragSession.ts",

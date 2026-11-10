@@ -14,13 +14,13 @@ import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/shared/utils";
 import type { TerminalSession } from "../../lib/terminal/types";
-import { Button } from "../ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../ui/context-menu";
+import { TooltipButton as Button } from "../ui/tooltip-button";
 import {
   desktopWorkspaceTabWidths,
   useDesktopWorkspaceTabMeasurements,
@@ -380,7 +380,6 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
           tab.isPendingClose && "bg-destructive/10 text-destructive hover:bg-destructive/15",
           draggingTabId === tab.id && "z-10 cursor-grabbing opacity-80 ring-1 ring-ring",
         )}
-        title={tab.label}
         onDoubleClick={tab.onKeepOpen}
         style={desktopWorkspace ? undefined : getTabDragStyle(tab.id)}
         {...(tab.workspaceTab ? undefined : (tab.dragProps ?? getTabDragProps(tab.id)))}
@@ -426,6 +425,8 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
           variant="ghost"
           type="button"
           aria-label={tab.label}
+          tooltip={present ? tab.label : undefined}
+          tooltipSide="bottom"
           role={desktopWorkspace && present ? "tab" : undefined}
           aria-pressed={desktopWorkspace ? undefined : tab.isActive}
           aria-selected={desktopWorkspace && present ? tab.isActive : undefined}
@@ -502,6 +503,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
                 data-project-tools-tab-action="drag"
                 aria-label={t("workbench.dragPane")}
                 title={t("workbench.dragPane")}
+                tooltipSide="bottom"
                 className={cn(
                   "relative z-10 flex h-6 w-5 shrink-0 items-center justify-center",
                   "rounded text-muted-foreground/45 opacity-70 transition-[background-color,color,opacity]",
@@ -549,6 +551,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
           data-project-tools-tab-action="close"
           aria-label={tab.closeLabel}
           title={tab.closeTitle}
+          tooltipSide="bottom"
           disabled={tab.closeDisabled}
           className={cn(
             CLOSE_BUTTON_CLASS,

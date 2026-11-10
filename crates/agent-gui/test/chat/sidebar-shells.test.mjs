@@ -182,7 +182,8 @@ test("standard resizable panels restore width, preserve main content, and save k
   function Harness() {
     const [open, updateOpen] = React.useState(false); setOpen = updateOpen;
     return React.createElement(React.Fragment, null,
-      React.createElement("header", null, React.createElement(ProjectToolsPanelToggle, {isOpen: open, sessionCount: 0, onToggle: () => updateOpen(value => !value)})),
+      React.createElement("header", { "data-app-workbench-chrome": "" },
+        React.createElement(ProjectToolsPanelToggle, {isOpen: open, sessionCount: 0, onToggle: () => updateOpen(value => !value)})),
       React.createElement(WorkspacePanelGroup, { open, width: 400, onClose: () => updateOpen(false), onWidthChange: width => widths.push(width) },
       React.createElement(WorkspaceMainPanel, null, React.createElement("input", { id: "main-draft", defaultValue: "draft" })),
       React.createElement(WorkspaceToolsPanel, null, React.createElement("div", { id: "tools-content" }, "Tools"))));
@@ -190,11 +191,16 @@ test("standard resizable panels restore width, preserve main content, and save k
   try {
     await act(async () => root.render(React.createElement(Harness)));
     const draft = document.getElementById("main-draft");
+    const header = container.querySelector("[data-app-workbench-chrome]");
+    const toggle = header.querySelector("button");
     const tools = container.querySelector('#workspace-tools');
     assert.ok(tools);
+    assert.equal(container.querySelector("#workspace-main").contains(toggle), false);
+    assert.equal(toggle.hasAttribute("title"), false);
     assert.equal(tools.getAttribute("aria-hidden"), "true");
-    await act(async () => container.querySelector("header button").click());
-    assert.equal(container.querySelector("header button").getAttribute("aria-expanded"), "true");
+    await act(async () => toggle.click());
+    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    assert.ok(tools.parentElement.hasAttribute("data-workspace-tools-docked"));
     assert.equal(tools.getAttribute("aria-hidden"), "false");
     assert.ok(Number(tools.style.flexGrow) > 0, "opening a panel mounted collapsed allocates width");
     await act(async () => setOpen(false));
@@ -218,6 +224,7 @@ test("standard resizable panels restore width, preserve main content, and save k
     assert.equal(document.getElementById("main-draft"), draft);
     assert.equal(draft.value, "draft");
     await act(async () => { mobile = true; mediaListeners.forEach(listener => listener()); });
+    assert.equal(tools.parentElement.hasAttribute("data-workspace-tools-docked"), false);
     assert.equal(document.querySelectorAll("#tools-content").length, 1);
     assert.ok(document.querySelector('[role="dialog"]')?.contains(document.getElementById("tools-content")));
     assert.equal(document.getElementById("main-draft"), draft);

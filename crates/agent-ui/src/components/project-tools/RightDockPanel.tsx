@@ -45,6 +45,7 @@ import { cn } from "../../lib/shared/utils";
 import type { TerminalClient, TerminalSession } from "../../lib/terminal/types";
 import type { WorkspaceActivityClient } from "../../lib/workspace-activity/types";
 import { Button } from "../ui/button";
+import { TooltipButton } from "../ui/tooltip-button";
 import { useFileTreeExternalRoots } from "./file-tree/useFileTreeExternalRoots";
 import type { LocalTunnelClient } from "./LocalTunnelPanel";
 import { RightDockContent } from "./RightDockContent";
@@ -1078,15 +1079,16 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
               {!workspace && <RightDockTabsScrollbar scrollRef={tabsScrollRef} />}
             </div>
             {workspace?.onNewBrowser && (
-              <Button
+              <TooltipButton
                 variant="ghost"
                 size="icon-sm"
                 onClick={workspace.onNewBrowser}
                 aria-label={locale === "zh-CN" ? "新建网页标签" : "New browser tab"}
                 title={locale === "zh-CN" ? "新建网页标签" : "New browser tab"}
+                tooltipSide="bottom"
               >
                 <Plus className="size-4" />
-              </Button>
+              </TooltipButton>
             )}
             <RightDockCreateMenu
               leasedTools={visibleLeasedTools}
@@ -1112,13 +1114,14 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   data-right-workspace-tab-spacer=""
                   aria-hidden="true"
                 />
-                <Button
+                <TooltipButton
                   variant="ghost"
                   size="icon-sm"
                   className="max-md:hidden"
                   aria-pressed={workspace.expanded}
                   aria-label={locale === "zh-CN" ? "切换全宽" : "Toggle full width"}
                   title={locale === "zh-CN" ? "切换全宽" : "Toggle full width"}
+                  tooltipSide="bottom"
                   onClick={workspace.onToggleExpanded}
                 >
                   {workspace.expanded ? (
@@ -1126,16 +1129,17 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   ) : (
                     <Maximize2 className="size-4" />
                   )}
-                </Button>
+                </TooltipButton>
                 {projectReady &&
                   !leasedTools.has("fileTree") &&
                   (!workspace.activeTabId || browserActive) && (
-                    <Button
+                    <TooltipButton
                       variant="ghost"
                       size="icon-sm"
                       aria-pressed={workspace.treeOpen && !browserActive}
                       aria-label={t("projectTools.fileTreeTitle")}
                       title={t("projectTools.fileTreeTitle")}
+                      tooltipSide="bottom"
                       onClick={
                         browserActive ? () => startToolTab("fileTree") : workspace.onToggleTree
                       }
@@ -1145,20 +1149,22 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                       ) : (
                         <PanelRightOpen className="size-4" />
                       )}
-                    </Button>
+                    </TooltipButton>
                   )}
               </>
             )}
             {onClose ? (
-              <Button
+              <TooltipButton
                 variant="ghost"
                 size="icon-sm"
                 onClick={onClose}
                 title={t("projectTools.closePanel")}
+                aria-label={t("projectTools.closePanel")}
+                tooltipSide="bottom"
                 className="rounded-lg text-muted-foreground hover:text-foreground md:hidden web:max-820:inline-flex"
               >
                 <X className="size-4" />
-              </Button>
+              </TooltipButton>
             ) : null}
           </div>
 

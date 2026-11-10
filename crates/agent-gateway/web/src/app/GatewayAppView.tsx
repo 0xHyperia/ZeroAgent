@@ -1664,6 +1664,13 @@ export function GatewayAppView({
             inert={settingsOpen}
             aria-hidden={settingsOpen || undefined}
             className="gateway-editor-host flex-1"
+            navigationRail={
+              !sidebar.isMobile ? (
+                <WorkbenchNavigationMount target={navigationTarget}>
+                  {renderNavigationRail()}
+                </WorkbenchNavigationMount>
+              ) : null
+            }
           >
             <AppWorkbenchChrome
               settings={settings}
@@ -1723,11 +1730,6 @@ export function GatewayAppView({
               }
             />
             <WorkbenchBody>
-              {!sidebar.isMobile ? (
-                <WorkbenchNavigationMount target={navigationTarget}>
-                  {renderNavigationRail()}
-                </WorkbenchNavigationMount>
-              ) : null}
               {!sidebar.isMobile && !sidebar.open ? (
                 <div data-sidebar-hover-edge="" aria-hidden="true" />
               ) : null}

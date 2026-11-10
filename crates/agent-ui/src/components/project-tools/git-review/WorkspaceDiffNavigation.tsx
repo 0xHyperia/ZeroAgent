@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useLocale } from "../../../i18n";
 import { ChevronDown, ChevronUp } from "../../IconSet";
+import { TooltipButton } from "../../ui/tooltip-button";
 
 function renderedHunks(viewport: HTMLElement) {
   const body = viewport.querySelector<HTMLElement>("[data-review-hunk-anchors]");
@@ -103,16 +104,19 @@ export function WorkspaceDiffNavigation({ root }: { root: RefObject<HTMLElement 
       role="group"
       aria-label={zh ? "变更定位" : "Change navigation"}
     >
-      <button
+      <TooltipButton
         type="button"
+        variant="ghost"
+        size="icon-xs"
         className="za-review-icon"
         aria-label={prev}
         title={prev}
+        tooltipSide="bottom"
         disabled={position.current <= 0}
         onClick={() => navigate(-1)}
       >
         <ChevronUp aria-hidden="true" className="size-3.5" />
-      </button>
+      </TooltipButton>
       <span
         role="status"
         aria-live="polite"
@@ -128,16 +132,19 @@ export function WorkspaceDiffNavigation({ root }: { root: RefObject<HTMLElement 
       >
         {position.focused ? `${position.current + 1}/${position.count}` : position.count}
       </span>
-      <button
+      <TooltipButton
         type="button"
+        variant="ghost"
+        size="icon-xs"
         className="za-review-icon"
         aria-label={next}
         title={next}
+        tooltipSide="bottom"
         disabled={position.current >= position.count - 1}
         onClick={() => navigate(1)}
       >
         <ChevronDown aria-hidden="true" className="size-3.5" />
-      </button>
+      </TooltipButton>
     </div>
   );
 }

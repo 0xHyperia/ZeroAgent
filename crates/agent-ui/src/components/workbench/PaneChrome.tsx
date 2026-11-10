@@ -1,5 +1,6 @@
 import { cn } from "../../lib/shared/utils";
 import { MessageSquareText, Waypoints, X } from "../IconSet";
+import { TooltipButton } from "../ui/tooltip-button";
 
 export type PaneChromeTrajectoryToggle = {
   /** Current view: true renders the "back to conversation" icon. */
@@ -64,17 +65,19 @@ export function PaneChrome(props: PaneChromeProps) {
         "justify-center",
       )}
     >
-      <button
+      <TooltipButton
         type="button"
+        variant="ghost"
         data-workbench-pane-drag-handle={paneId}
         aria-label={dragHandleLabel}
         title={title || dragHandleLabel}
+        tooltipSide="bottom"
         onPointerDown={onDragHandlePointerDown}
         className={cn(
           revealClass,
-          "group/pane-grip flex h-full cursor-grab items-center justify-center",
+          "group/pane-grip flex h-full cursor-grab items-center justify-center p-0 hover:bg-transparent",
           isCompact ? "w-12" : "w-24",
-          "focus-visible:outline-none",
+          "focus-visible:outline-none focus-visible:ring-0",
         )}
       >
         <span
@@ -93,19 +96,21 @@ export function PaneChrome(props: PaneChromeProps) {
             "forced-colors:bg-[CanvasText] group-focus-visible/pane-grip:forced-colors:bg-[Highlight]",
           )}
         />
-      </button>
+      </TooltipButton>
       {trajectoryToggle ? (
-        <button
+        <TooltipButton
           type="button"
+          variant="ghost"
           data-workbench-pane-trajectory-toggle={paneId}
           aria-label={trajectoryToggle.label}
           aria-pressed={trajectoryToggle.isTrajectory}
           title={trajectoryToggle.label}
+          tooltipSide="bottom"
           onClick={trajectoryToggle.onToggle}
           className={cn(
             revealClass,
             "absolute left-1.5 top-1/2 flex size-3.5 -translate-y-1/2 items-center justify-center",
-            "rounded-full",
+            "rounded-full p-0",
             "bg-muted-foreground/25 text-background",
             "hover:bg-muted-foreground/55 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
@@ -116,25 +121,27 @@ export function PaneChrome(props: PaneChromeProps) {
           ) : (
             <Waypoints className="size-2" />
           )}
-        </button>
+        </TooltipButton>
       ) : null}
       {onClose ? (
-        <button
+        <TooltipButton
           type="button"
+          variant="ghost"
           data-workbench-pane-close={paneId}
           aria-label={closeLabel}
           title={closeLabel}
+          tooltipSide="bottom"
           onClick={onClose}
           className={cn(
             revealClass,
             "absolute right-1.5 top-1/2 flex size-3.5 -translate-y-1/2 items-center justify-center",
-            "rounded-full",
+            "rounded-full p-0",
             "bg-muted-foreground/25 text-background",
             "hover:bg-muted-foreground/55 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
         >
           <X className="size-2" />
-        </button>
+        </TooltipButton>
       ) : null}
     </div>
   );

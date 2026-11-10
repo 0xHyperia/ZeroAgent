@@ -28,6 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
+import { LabelTooltip } from "@liveagent/ui/components/ui/label-tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
 import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import { localEditorFileIo } from "@liveagent/ui/components/workspace-editor/workspaceEditorFileIo";
@@ -184,9 +185,13 @@ function WorkspaceBreadcrumbs({
   };
   if (!isLocal || parts.includes("..")) {
     return (
-      <span className="za-workspace-file-path-label" title={request.path}>
-        {workspaceFileName(request.path)}
-      </span>
+      <LabelTooltip
+        label={request.path}
+        side="bottom"
+        render={
+          <span className="za-workspace-file-path-label">{workspaceFileName(request.path)}</span>
+        }
+      />
     );
   }
   return (
@@ -205,11 +210,7 @@ function WorkspaceBreadcrumbs({
         }
       }}
     >
-      <nav
-        className="za-workspace-file-path"
-        aria-label={zh ? "文件路径" : "File path"}
-        title={relative}
-      >
+      <nav className="za-workspace-file-path" aria-label={zh ? "文件路径" : "File path"}>
         <ol>
           {[workspaceFileName(request.workdir), ...parts].map((part, index) => {
             const last = index === parts.length;
@@ -218,17 +219,23 @@ function WorkspaceBreadcrumbs({
             const label = zh ? `浏览 ${part}` : `Browse ${part}`;
             return (
               <li className="za-workspace-file-path-segment" key={segment}>
-                <DropdownMenuTrigger
-                  type="button"
-                  id={`${breadcrumbId}-${index}`}
-                  data-directory={path}
-                  className="za-workspace-file-path-label"
-                  aria-label={label}
-                  title={part}
-                  aria-current={last ? "page" : undefined}
-                >
-                  {part}
-                </DropdownMenuTrigger>
+                <LabelTooltip
+                  label={last ? relative : part}
+                  side="bottom"
+                  disabled={active && directory !== null}
+                  render={
+                    <DropdownMenuTrigger
+                      type="button"
+                      id={`${breadcrumbId}-${index}`}
+                      data-directory={path}
+                      className="za-workspace-file-path-label"
+                      aria-label={label}
+                      aria-current={last ? "page" : undefined}
+                    >
+                      {part}
+                    </DropdownMenuTrigger>
+                  }
+                />
                 {!last && (
                   <ChevronRight
                     aria-hidden="true"
@@ -469,6 +476,8 @@ export function DesktopWorkspaceFileHeader({
   const fileOptionsLabel = copy("文件选项", "File options");
   const treeLabel = copy("切换文件树", "Toggle file tree");
   const overflowTools = compact || editorTools;
+  const fileControlLabel = overflowTools && hasFormatTools ? formatLabel : fileOptionsLabel;
+  const openWithLabel = copy("打开方式", "Open with");
   const runFileOption = (action: () => void | Promise<void>) => {
     setFormatOpen(false);
     void action();
@@ -487,16 +496,24 @@ export function DesktopWorkspaceFileHeader({
         {modeActions && <div className="za-workspace-file-mode-actions">{modeActions}</div>}
         <div className="za-workspace-file-tool-group" role="group" aria-label={formatLabel}>
           <Popover open={active && formatOpen} onOpenChange={setFormatOpen}>
-            <PopoverTrigger
-              hidden={Boolean(
-                request.remote && (!overflowTools || !hasFormatTools) && !(comparing && viewAction),
-              )}
-              aria-label={overflowTools && hasFormatTools ? formatLabel : fileOptionsLabel}
-              title={overflowTools && hasFormatTools ? formatLabel : fileOptionsLabel}
-              render={<Button type="button" size="icon-xs" variant="ghost" />}
-            >
-              <FileSearchIcon aria-hidden="true" className="size-4" />
-            </PopoverTrigger>
+            <LabelTooltip
+              label={fileControlLabel}
+              side="bottom"
+              disabled={formatOpen}
+              render={
+                <PopoverTrigger
+                  hidden={Boolean(
+                    request.remote &&
+                      (!overflowTools || !hasFormatTools) &&
+                      !(comparing && viewAction),
+                  )}
+                  aria-label={fileControlLabel}
+                  render={<Button type="button" size="icon-xs" variant="ghost" />}
+                >
+                  <FileSearchIcon aria-hidden="true" className="size-4" />
+                </PopoverTrigger>
+              }
+            />
             <PopoverContent
               keepMounted
               align="end"
@@ -555,6 +572,7 @@ export function DesktopWorkspaceFileHeader({
               size="icon-xs"
               aria-label={treeLabel}
               tooltip={treeLabel}
+              tooltipSide="bottom"
               aria-pressed={fileTree.open}
               onClick={fileTree.toggle}
             >
@@ -570,6 +588,7 @@ export function DesktopWorkspaceFileHeader({
                 className="h-7 px-2"
                 aria-label={openPrimaryLabel}
                 tooltip={openPrimaryLabel}
+                tooltipSide="bottom"
                 onClick={() => void (primaryEditor ? openEditor(primaryEditor.id) : open("open"))}
               >
                 {primaryEditor ? (
@@ -583,14 +602,21 @@ export function DesktopWorkspaceFileHeader({
                 <span className="za-workspace-file-action-label">{copy("打开", "Open")}</span>
               </TooltipButton>
               <DropdownMenu open={active && openWith} onOpenChange={setOpenWith}>
-                <DropdownMenuTrigger
+                <LabelTooltip
+                  label={openWithLabel}
+                  side="bottom"
+                  disabled={openWith}
                   render={
-                    <Button type="button" size="icon-sm" variant="ghost" className="h-7 w-6" />
+                    <DropdownMenuTrigger
+                      render={
+                        <Button type="button" size="icon-sm" variant="ghost" className="h-7 w-6" />
+                      }
+                      aria-label={openWithLabel}
+                    >
+                      <ChevronDown className="size-3" />
+                    </DropdownMenuTrigger>
                   }
-                  aria-label={copy("打开方式", "Open with")}
-                >
-                  <ChevronDown className="size-3" />
-                </DropdownMenuTrigger>
+                />
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => void open("open")}>
                     <ExternalLink className="size-4" /> {openFileLabel}

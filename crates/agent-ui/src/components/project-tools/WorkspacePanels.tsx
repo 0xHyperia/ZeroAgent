@@ -151,6 +151,7 @@ export function WorkspacePanelGroup({
   return (
     <Context.Provider value={value}>
       <ResizablePanelGroup
+        data-workspace-tools-docked={open && !mobile && !fullWidth ? "" : undefined}
         data-workspace-tools-expanded={fullWidth ? "" : undefined}
         data-project-tools-resizing={resizing ? "true" : undefined}
         elementRef={groupElement}

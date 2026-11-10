@@ -1,3 +1,7 @@
+[data-workspace-tools-docked] > [data-slot="resizable-handle"]:not(:hover, :focus-visible) {
+  background: var(--za-workbench-border);
+}
+
 /* Full width is temporary. Preserve the split group's measured sizes for return. */
 [data-workspace-tools-expanded] > [data-panel][id="workspace-main"] {
   flex: 0 0 0 !important;

@@ -440,6 +440,7 @@ function WorkspaceFileTabPane({
           className="h-7 gap-1.5 px-2 text-xs"
           aria-label={mode === "diff" ? hideChanges : showChanges}
           tooltip={mode === "diff" ? hideChanges : showChanges}
+          tooltipSide="bottom"
           disabled={switching}
           onClick={() => void openMode(mode === "diff" ? returnMode.current : "diff")}
         >
@@ -464,6 +465,7 @@ function WorkspaceFileTabPane({
         aria-label={mode === "source" ? viewPreview : viewSource}
         aria-busy={switching}
         tooltip={mode === "source" ? viewPreview : viewSource}
+        tooltipSide="bottom"
         disabled={switching}
         onClick={() => void openMode(mode === "source" ? "preview" : "source")}
       >
