@@ -52,12 +52,28 @@ const { React, act, createRoot, loadModule } = env;
 test.after(() => env.cleanup());
 
 const { RightWorkspaceFileTree } = loadModule("@liveagent/ui/components/project-tools/RightWorkspaceFileTree.tsx");
+const { indexStickyTreeRows } = loadModule("@liveagent/ui/components/project-tools/file-tree/model.ts");
 const { WorkspaceFileDiff } = loadModule("@liveagent/ui/components/project-tools/WorkspaceFileDiff.tsx");
 const { RightDockToolContext } = loadModule("@liveagent/ui/components/project-tools/RightDockContext.tsx");
 const { WORKSPACE_GIT_TURN_REVIEW_EVENT } = loadModule("@liveagent/ui/components/project-tools/workspaceGitPaths.ts");
 const { useWorkspaceGitPresentation } = loadModule("@liveagent/ui/components/project-tools/workspaceGitReviewState.ts");
 const { buildPatchChunks, getPatchFileNames } = loadModule("@liveagent/ui/components/project-tools/git-review/model.ts");
 const { buildReviewApplyCommand, filterReviewHunks, readReviewFileContents, sameReviewFileRevision } = loadModule("@liveagent/ui/components/project-tools/git-review/workspaceReviewDiff.ts");
+
+test("sticky file tree ancestry stops at the next branch or section", () => {
+  const { parents, ends } = indexStickyTreeRows([
+    { level: 1, sticky: true },
+    { level: 2, sticky: true },
+    { level: 3, sticky: true },
+    { level: 4 },
+    { level: 3 },
+    { level: 2 },
+    { level: 1, sticky: true },
+    { level: 2 },
+  ]);
+  assert.deepEqual([...parents], [undefined, 0, 1, 2, 1, 0, undefined, 6]);
+  assert.deepEqual([ends[0], ends[1], ends[2], ends[6]], [6, 5, 4, 8]);
+});
 
 function mount(t) {
   const container = document.body.appendChild(document.createElement("div"));

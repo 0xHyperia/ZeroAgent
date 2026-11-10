@@ -21,16 +21,17 @@ use uuid::Uuid;
 use webview2_com::{
     take_pwstr, CallDevToolsProtocolMethodCompletedHandler,
     DevToolsProtocolEventReceivedEventHandler, DocumentTitleChangedEventHandler,
-    DownloadStartingEventHandler, FindActiveMatchIndexChangedEventHandler,
-    FindMatchCountChangedEventHandler, FindStartCompletedHandler, HistoryChangedEventHandler,
+    DownloadStartingEventHandler, FaviconChangedEventHandler,
+    FindActiveMatchIndexChangedEventHandler, FindMatchCountChangedEventHandler,
+    FindStartCompletedHandler, GetFaviconCompletedHandler, HistoryChangedEventHandler,
     LaunchingExternalUriSchemeEventHandler,
     Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2Environment15, ICoreWebView2Settings3, ICoreWebView2Settings4,
-        ICoreWebView2_16, ICoreWebView2_18, ICoreWebView2_22, ICoreWebView2_28, ICoreWebView2_4,
-        ICoreWebView2_9, COREWEBVIEW2_PERMISSION_STATE_DENY,
-        COREWEBVIEW2_PRINT_DIALOG_KIND_BROWSER, COREWEBVIEW2_WEB_ERROR_STATUS,
-        COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
-        COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
+        ICoreWebView2_15, ICoreWebView2_16, ICoreWebView2_18, ICoreWebView2_22, ICoreWebView2_28,
+        ICoreWebView2_4, ICoreWebView2_9, COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
+        COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_PRINT_DIALOG_KIND_BROWSER,
+        COREWEBVIEW2_WEB_ERROR_STATUS, COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL, COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
     },
     NavigationCompletedEventHandler, NavigationStartingEventHandler,
     NewWindowRequestedEventHandler, PermissionRequestedEventHandler, SourceChangedEventHandler,
@@ -182,6 +183,7 @@ pub enum BrowserAction {
 pub struct BrowserState {
     url: String,
     title: String,
+    favicon_data_url: Option<String>,
     loading: bool,
     load_failed: bool,
     can_go_back: bool,
@@ -372,6 +374,9 @@ fn publish_state(
     next.ssh_loopback = loopback.active();
     next.gateway_display = url.as_ref().and_then(|url| loopback.gateway_display(url));
     next.ephemeral_address = url.as_ref().is_some_and(|url| loopback.ephemeral(url));
+    if url.as_ref().map(Url::origin) != page_url(&last.url).as_ref().map(Url::origin) {
+        next.favicon_data_url = None;
+    }
     next.url = url.map_or_else(String::new, |url| url.to_string());
     next.title = title.chars().take(512).collect();
     update(&mut next);
@@ -380,6 +385,74 @@ fn publish_state(
         let _ = events.send(BrowserEvent::State { state: next });
     }
     Ok(())
+}
+
+fn observe_favicon(tab: &Rc<Tab>, view: &ICoreWebView2) -> windows_core::Result<()> {
+    let Ok(favicon_view) = view.cast::<ICoreWebView2_15>() else {
+        return Ok(());
+    };
+    let tab = Rc::downgrade(tab);
+    let generation = Rc::new(Cell::new(0_u64));
+    let mut token = 0;
+    unsafe {
+        favicon_view.add_FaviconChanged(
+            &FaviconChangedEventHandler::create(Box::new(move |sender, _| {
+                let (Some(tab), Some(view)) = (tab.upgrade(), sender) else {
+                    return Ok(());
+                };
+                let favicon_view = view.cast::<ICoreWebView2_15>()?;
+                let mut source = PWSTR::null();
+                view.Source(&mut source)?;
+                let source = take_pwstr(source);
+                let Some(url) = page_url(&source) else {
+                    return Ok(());
+                };
+                if tab.loopback.borrow().ephemeral(&url) {
+                    return Ok(());
+                }
+                let request = generation.get().wrapping_add(1);
+                generation.set(request);
+                let generation = Rc::clone(&generation);
+                let tab = Rc::downgrade(&tab);
+                let handler =
+                    GetFaviconCompletedHandler::create(Box::new(move |result, stream| {
+                        let Some(tab) = tab.upgrade().filter(|_| generation.get() == request)
+                        else {
+                            return Ok(());
+                        };
+                        let mut current = PWSTR::null();
+                        view.Source(&mut current)?;
+                        if take_pwstr(current) != source {
+                            return Ok(());
+                        }
+                        let icon = result.ok().and_then(|_| stream).and_then(|stream| {
+                            const MAX_ICON_BYTES: usize = 64 * 1024;
+                            let mut png = vec![0_u8; MAX_ICON_BYTES + 1];
+                            let mut length = 0;
+                            stream
+                                .Read(png.as_mut_ptr().cast(), png.len() as u32, Some(&mut length))
+                                .ok()
+                                .ok()?;
+                            let length = length as usize;
+                            (length <= MAX_ICON_BYTES
+                                && png[..length].starts_with(b"\x89PNG\r\n\x1a\n"))
+                            .then(|| {
+                                format!(
+                                    "data:image/png;base64,{}",
+                                    base64::engine::general_purpose::STANDARD
+                                        .encode(&png[..length])
+                                )
+                            })
+                        });
+                        publish_state(&view, &tab.state, &tab.events, &tab.loopback, |state| {
+                            state.favicon_data_url = icon;
+                        })
+                    }));
+                favicon_view.GetFavicon(COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG, &handler)
+            })),
+            &mut token,
+        )
+    }
 }
 
 fn browser_cdp(
@@ -607,6 +680,8 @@ fn register_browser_events(tab: &Rc<Tab>) -> windows_core::Result<()> {
         observe!(add_SourceChanged, SourceChangedEventHandler);
         observe!(add_HistoryChanged, HistoryChangedEventHandler);
         observe!(add_DocumentTitleChanged, DocumentTitleChangedEventHandler);
+        // The guest supplies icon bytes. The application renderer never fetches a site URL for a tab icon.
+        let _ = observe_favicon(tab, &view);
         if let Ok(downloads) = view.cast::<ICoreWebView2_4>() {
             let state = Rc::clone(&tab.state);
             let loopback = Rc::clone(&tab.loopback);

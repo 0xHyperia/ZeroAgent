@@ -116,11 +116,17 @@ test("browser tab preserves its native session when hidden and yields to a DOM o
   await settleLayout();
   assert.equal(calls.at(-1).request.bounds.width, 300);
 
-  await act(async () => open.events.onmessage({ kind: "state", state: {
+  const pageState = {
     url: "https://example.com/a", title: "Fixture", loading: false, loadFailed: false,
     canGoBack: true, canGoForward: false, hasDownloads: false, findIndex: -1, findCount: 0,
-  } }));
+  };
+  await act(async () => open.events.onmessage({ kind: "state", state: pageState }));
   assert.deepEqual(navigated, [["https://example.com/a", "Fixture"]]);
+  const faviconDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP1sAAAAASUVORK5CYII=";
+  await act(async () => open.events.onmessage({ kind: "state", state: { ...pageState, faviconDataUrl } }));
+  assert.deepEqual(navigated.at(-1), [pageState.url, pageState.title, faviconDataUrl]);
+  await act(async () => open.events.onmessage({ kind: "state", state: { ...pageState, faviconDataUrl: null } }));
+  assert.deepEqual(navigated.at(-1), [pageState.url, pageState.title]);
   await act(async () => open.events.onmessage({ kind: "openTab", url: "https://example.org/", foreground: false }));
   assert.deepEqual(popups, [["https://example.org/", false]]);
 

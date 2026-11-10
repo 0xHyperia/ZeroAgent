@@ -128,7 +128,7 @@ type BrowserPaneProps = {
   newTabTools?: BrowserNewTabTools;
   visits?: readonly BrowserVisit[];
   openPrivateBrowserPort?: (id: string, url: string) => Promise<void>;
-  onNavigate(url: string, title?: string): void;
+  onNavigate(url: string, title?: string, faviconDataUrl?: string): void;
   onHistory?(history: BrowserHistorySnapshot): void;
   onOpenTab(url: string, foreground: boolean): void;
   onAnnotate?(annotations: readonly WorkbenchBrowserAnnotation[]): void | Promise<void>;
@@ -138,6 +138,7 @@ type BrowserPaneProps = {
 type BrowserState = {
   url: string;
   title: string;
+  faviconDataUrl?: string | null;
   loading: boolean;
   loadFailed: boolean;
   canGoBack: boolean;
@@ -614,14 +615,17 @@ export function WorkbenchBrowserPane(props: BrowserPaneProps) {
         setState(event.state);
         currentPage.current = event.state.url;
         if (event.state.loading) capturePage.current = null;
-        const fingerprint = `${event.state.url}\n${event.state.title}`;
+        const favicon = event.state.faviconDataUrl ?? undefined;
+        const fingerprint = `${event.state.url}\n${event.state.title}\n${favicon ?? ""}`;
         if (
           event.state.url &&
           !event.state.ephemeralAddress &&
           fingerprint !== lastReportedPage.current
         ) {
           lastReportedPage.current = fingerprint;
-          latest.current.onNavigate(event.state.url, event.state.title || undefined);
+          const title = event.state.title || undefined;
+          if (favicon) latest.current.onNavigate(event.state.url, title, favicon);
+          else latest.current.onNavigate(event.state.url, title);
         }
       } else if (event.kind === "windowState") {
         lastLayout.current = "";

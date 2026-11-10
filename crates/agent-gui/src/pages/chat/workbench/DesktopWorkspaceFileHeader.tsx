@@ -1,12 +1,9 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
+import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
 import {
   ChevronDown,
   ChevronRight,
   Copy,
-  ExternalLink,
-  FilePenLine,
-  FileText,
-  Folder,
   FolderOpen,
   Github,
 } from "@liveagent/ui/components/IconSet";
@@ -24,7 +21,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
@@ -53,9 +49,16 @@ import {
   useRef,
   useState,
 } from "react";
+import AndroidIcon from "~icons/logos/android-icon";
+import GitIcon from "~icons/logos/git-icon";
+import WslIcon from "~icons/logos/linux-tux";
+import PyCharmIcon from "~icons/logos/pycharm";
+import TerminalIcon from "~icons/logos/terminal";
+import VisualStudioIcon from "~icons/logos/visual-studio";
 import VSCodeIcon from "~icons/logos/visual-studio-code";
 import FileSearchIcon from "~icons/lucide/file-search-2";
 import FoldersIcon from "~icons/lucide/folders";
+import CursorIcon from "~icons/material-icon-theme/cursor";
 import type { WorkspaceFileRequest } from "./useDesktopWorkspaceTabs";
 import "./desktop-workspace-file-header.css";
 
@@ -91,17 +94,33 @@ function fileRepositoryDetails(request: WorkspaceFileRequest, repository: GitRep
 }
 
 type DirectorySnapshot = {
-  path: string;
   entries: FileTreeEntry[];
   error?: boolean;
   hasMore?: boolean;
 };
 
-const WINDOWS_EDITORS = [
+const DEFAULT_OPEN_TARGET = { id: "default", label: "Default app", Icon: FolderOpen } as const;
+const WORKSPACE_OPEN_TARGETS = [
   { id: "vscode", label: "VS Code", Icon: VSCodeIcon },
-  { id: "vscode-insiders", label: "VS Code Insiders", Icon: FilePenLine },
-  { id: "cursor", label: "Cursor", Icon: FilePenLine },
+  { id: "visual-studio", label: "Visual Studio", Icon: VisualStudioIcon },
+  { id: "vscode-insiders", label: "VS Code Insiders", Icon: VSCodeIcon },
+  { id: "cursor", label: "Cursor", Icon: CursorIcon },
+  DEFAULT_OPEN_TARGET,
+  { id: "terminal", label: "Terminal", Icon: TerminalIcon, directory: true },
+  { id: "git-bash", label: "Git Bash", Icon: GitIcon, directory: true },
+  { id: "wsl", label: "WSL", Icon: WslIcon, directory: true },
+  { id: "android-studio", label: "Android Studio", Icon: AndroidIcon },
+  { id: "pycharm", label: "PyCharm", Icon: PyCharmIcon },
 ] as const;
+const WORKSPACE_OPEN_TARGET_KEY = "zeroagent.workspace.openTarget";
+
+function preferredOpenTarget() {
+  try {
+    return window.localStorage.getItem(WORKSPACE_OPEN_TARGET_KEY);
+  } catch {
+    return null;
+  }
+}
 
 const FILE_TOOLBAR_COMPACT_WIDTH = 625;
 
@@ -110,6 +129,142 @@ function isWithinDirectory(path: string, directory: string) {
   if (!path.startsWith(expectedPrefix)) return false;
   const name = path.slice(expectedPrefix.length);
   return Boolean(name && name !== "." && name !== ".." && !/[/\\]/.test(name));
+}
+
+function BreadcrumbDirectory({
+  workdir,
+  directory,
+  currentFile,
+  depth = 0,
+  onOpenFile,
+}: {
+  workdir: string;
+  directory: string;
+  currentFile: string;
+  depth?: number;
+  onOpenFile: (path: string) => void;
+}) {
+  const { locale } = useLocale();
+  const zh = locale === "zh-CN";
+  const [snapshot, setSnapshot] = useState<DirectorySnapshot>();
+  const [expanded, setExpanded] = useState(() => new Map<string, boolean>());
+  const selected = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void invokeFs<{ entries: FileTreeEntry[]; hasMore?: boolean }>("fs_list", {
+      workdir,
+      path: directory || undefined,
+      depth: 1,
+      offset: 0,
+      max_results: 200,
+      show_hidden: true,
+    }).then(
+      ({ entries, hasMore }) => {
+        if (cancelled) return;
+        setSnapshot({
+          hasMore,
+          entries: entries
+            .map((entry) => ({ ...entry, path: entry.path.replace(/\\/g, "/") }))
+            .filter((entry) => isWithinDirectory(entry.path, directory))
+            .sort((left, right) =>
+              left.kind === right.kind
+                ? workspaceFileName(left.path).localeCompare(
+                    workspaceFileName(right.path),
+                    locale,
+                    {
+                      numeric: true,
+                    },
+                  )
+                : left.kind === "dir"
+                  ? -1
+                  : 1,
+            ),
+        });
+      },
+      () => {
+        if (!cancelled) setSnapshot({ entries: [], error: true });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [workdir, directory, locale]);
+
+  useLayoutEffect(() => {
+    const entry = selected.current;
+    const panel = entry?.closest<HTMLElement>("[data-workspace-breadcrumb-picker]");
+    if (!snapshot || !entry || !panel) return;
+    const { top, height } = entry.getBoundingClientRect();
+    panel.scrollTop += top - panel.getBoundingClientRect().top - (panel.clientHeight - height) / 2;
+  }, [snapshot]);
+
+  const notice = !snapshot
+    ? zh
+      ? "正在读取…"
+      : "Loading…"
+    : snapshot.error
+      ? zh
+        ? "无法读取文件夹"
+        : "Could not read folder"
+      : snapshot.hasMore
+        ? zh
+          ? "仅显示前 200 项"
+          : "Showing the first 200 items"
+        : snapshot.entries.length === 0
+          ? zh
+            ? "文件夹为空"
+            : "Folder is empty"
+          : null;
+  return (
+    <>
+      {snapshot?.entries.map((entry) => {
+        const folder = entry.kind === "dir";
+        const open = folder && (expanded.get(entry.path) ?? currentFile.startsWith(`${entry.path}/`));
+        const active = entry.path === currentFile;
+        const Icon = folder ? ChevronRight : getFileTypeIcon(entry.path, "file");
+        return (
+          <div key={entry.path}>
+            <button
+              ref={active ? selected : undefined}
+              type="button"
+              className="za-breadcrumb-entry"
+              style={{ paddingInlineStart: 5 + depth * 12 }}
+              aria-current={active ? "page" : undefined}
+              aria-expanded={folder ? open : undefined}
+              onClick={() => {
+                if (!folder) {
+                  onOpenFile(entry.path);
+                  return;
+                }
+                setExpanded((previous) => new Map(previous).set(entry.path, !open));
+              }}
+            >
+              <Icon
+                aria-hidden="true"
+                className={folder ? "za-breadcrumb-chevron size-3" : "size-4 shrink-0"}
+              />
+              <span className="min-w-0 truncate">{workspaceFileName(entry.path)}</span>
+            </button>
+            {open && (
+              <BreadcrumbDirectory
+                workdir={workdir}
+                directory={entry.path}
+                currentFile={currentFile}
+                depth={depth + 1}
+                onOpenFile={onOpenFile}
+              />
+            )}
+          </div>
+        );
+      })}
+      {notice && (
+        <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
+          {notice}
+        </p>
+      )}
+    </>
+  );
 }
 
 function WorkspaceBreadcrumbs({
@@ -126,63 +281,53 @@ function WorkspaceBreadcrumbs({
   const relative = workspaceImageRelativePathForCopy(request.workdir, request.path);
   const isLocal = !request.remote && !/^(?:[/\\]|[a-z]:)/i.test(relative);
   const parts = relative.split("/").filter((part) => part && part !== ".");
+  const pathRef = useRef<HTMLElement>(null);
+  const [firstVisible, setFirstVisible] = useState(0);
   const breadcrumbId = useId();
-  const [directory, setDirectory] = useState<string | null>(null);
-  const [triggerId, setTriggerId] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<DirectorySnapshot | null>(null);
-  const current = directory === snapshot?.path ? snapshot : null;
-  useEffect(() => {
-    if (!active || directory === null) return;
-    let current = true;
-    void invokeFs<{ entries: FileTreeEntry[]; hasMore?: boolean }>("fs_list", {
-      workdir: request.workdir,
-      path: directory || undefined,
-      depth: 1,
-      offset: 0,
-      max_results: 200,
-      show_hidden: false,
-    }).then(
-      ({ entries, hasMore }) => {
-        if (!current) return;
-        setSnapshot({
-          path: directory,
-          hasMore,
-          entries: entries
-            .map((entry) => ({ ...entry, path: entry.path.replace(/\\/g, "/") }))
-            .filter((entry) => isWithinDirectory(entry.path, directory))
-            .sort((left, right) =>
-              left.kind === right.kind
-                ? workspaceFileName(left.path).localeCompare(
-                    workspaceFileName(right.path),
-                    locale,
-                    { numeric: true },
-                  )
-                : left.kind === "dir"
-                  ? -1
-                  : 1,
-            ),
-        });
-      },
-      () => {
-        if (current) setSnapshot({ path: directory, entries: [], error: true });
-      },
-    );
-    return () => {
-      current = false;
+  const [picker, setPicker] = useState<{ id: string; index: number; directory: string } | null>(
+    null,
+  );
+  const pickerIndex = picker?.index ?? -1;
+  const pickerOpen = active && picker !== null && pickerIndex >= firstVisible;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Path changes can replace observed DOM nodes.
+  useLayoutEffect(() => {
+    const nav = pathRef.current;
+    const list = nav?.querySelector("ol");
+    if (!active || !nav || !list) return;
+    const segments = Array.from(list.children);
+    const measure = () => {
+      const width = nav.clientWidth;
+      if (!width) return;
+      const style = getComputedStyle(list);
+      const gap = parseFloat(style.columnGap) || 0;
+      let room =
+        width -
+        list.clientLeft * 2 -
+        (parseFloat(style.paddingInlineStart) || 0) -
+        (parseFloat(style.paddingInlineEnd) || 0);
+      const filename = segments.at(-1)?.firstElementChild;
+      room -=
+        filename instanceof HTMLElement
+          ? filename.scrollWidth
+          : (segments.at(-1)?.getBoundingClientRect().width ?? 0);
+      let start = segments.length - 1;
+      while (start > 0) {
+        const required = segments[start - 1].getBoundingClientRect().width + gap;
+        if (required > room) break;
+        room -= required;
+        start -= 1;
+      }
+      setFirstVisible(Math.max(0, start));
     };
-  }, [active, directory, locale, request.workdir]);
-  useEffect(() => {
-    if (!active) {
-      setDirectory(null);
-      setTriggerId(null);
-      setSnapshot(null);
-    }
-  }, [active]);
-  const directoryLabel = (path: string) => workspaceFileName(path || request.workdir);
-  const openPicker = (path: string) => {
-    setDirectory(path);
-    setSnapshot(null);
-  };
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    for (const segment of segments) observer.observe(segment);
+    measure();
+    return () => observer.disconnect();
+  }, [active, relative, request.workdir]);
+  useLayoutEffect(() => {
+    if (!active || (pickerIndex >= 0 && pickerIndex < firstVisible)) setPicker(null);
+  }, [active, firstVisible, pickerIndex]);
   if (!isLocal || parts.includes("..")) {
     return (
       <LabelTooltip
@@ -195,22 +340,30 @@ function WorkspaceBreadcrumbs({
     );
   }
   return (
-    <DropdownMenu
-      modal={false}
-      open={active && directory !== null}
-      triggerId={triggerId}
+    <Popover
+      open={pickerOpen}
+      triggerId={picker?.id}
       onOpenChange={(open, details) => {
-        const selected = details.trigger?.getAttribute("data-directory");
         if (!open) {
-          setDirectory(null);
-          setTriggerId(null);
-        } else if (details.trigger && selected != null) {
-          setTriggerId(details.trigger.id);
-          openPicker(selected);
+          setPicker(null);
+          return;
+        }
+        const trigger = details.trigger;
+        const directory = trigger?.getAttribute("data-directory");
+        if (trigger && directory != null) {
+          setPicker({
+            id: trigger.id,
+            index: Number(trigger.getAttribute("data-breadcrumb-index")),
+            directory,
+          });
         }
       }}
     >
-      <nav className="za-workspace-file-path" aria-label={zh ? "文件路径" : "File path"}>
+      <nav
+        ref={pathRef}
+        className="za-workspace-file-path"
+        aria-label={zh ? "文件路径" : "File path"}
+      >
         <ol>
           {[workspaceFileName(request.workdir), ...parts].map((part, index) => {
             const last = index === parts.length;
@@ -218,22 +371,28 @@ function WorkspaceBreadcrumbs({
             const path = last ? parts.slice(0, -1).join("/") : segment;
             const label = zh ? `浏览 ${part}` : `Browse ${part}`;
             return (
-              <li className="za-workspace-file-path-segment" key={segment}>
+              <li
+                className="za-workspace-file-path-segment"
+                data-collapsed={index < firstVisible ? "" : undefined}
+                inert={index < firstVisible || undefined}
+                key={segment}
+              >
                 <LabelTooltip
                   label={last ? relative : part}
                   side="bottom"
-                  disabled={active && directory !== null}
+                  disabled={pickerOpen}
                   render={
-                    <DropdownMenuTrigger
+                    <PopoverTrigger
                       type="button"
                       id={`${breadcrumbId}-${index}`}
+                      data-breadcrumb-index={index}
                       data-directory={path}
                       className="za-workspace-file-path-label"
                       aria-label={label}
                       aria-current={last ? "page" : undefined}
                     >
                       {part}
-                    </DropdownMenuTrigger>
+                    </PopoverTrigger>
                   }
                 />
                 {!last && (
@@ -247,50 +406,45 @@ function WorkspaceBreadcrumbs({
           })}
         </ol>
       </nav>
-      <DropdownMenuContent align="start" className="max-w-80">
-        <DropdownMenuLabel className="truncate font-medium text-muted-foreground">
-          {directoryLabel(directory ?? "")}
-        </DropdownMenuLabel>
-        {directory && (
-          <DropdownMenuItem
-            closeOnClick={false}
-            onClick={() => openPicker(directory.split("/").slice(0, -1).join("/"))}
-          >
-            <FolderOpen className="size-4" />
-            {zh ? "上一级" : "Parent folder"}
-          </DropdownMenuItem>
+      <PopoverContent
+        align="start"
+        className="za-breadcrumb-picker"
+        aria-label={zh ? "选择文件" : "Choose file"}
+        data-workspace-breadcrumb-picker=""
+        onKeyDown={(event) => {
+          const { key, currentTarget, target } = event;
+          if (key !== "ArrowDown" && key !== "ArrowUp" && key !== "Home" && key !== "End") return;
+          const rows = [
+            ...currentTarget.querySelectorAll<HTMLButtonElement>(".za-breadcrumb-entry"),
+          ];
+          const current = target instanceof HTMLButtonElement ? rows.indexOf(target) : -1;
+          const next =
+            key === "Home"
+              ? 0
+              : key === "End"
+                ? rows.length - 1
+                : key === "ArrowDown"
+                  ? Math.min(current + 1, rows.length - 1)
+                  : Math.max(current - 1, 0);
+          if (!rows[next]) return;
+          event.preventDefault();
+          rows[next].focus();
+        }}
+      >
+        {picker && (
+          <BreadcrumbDirectory
+            key={picker.directory}
+            workdir={request.workdir}
+            directory={picker.directory}
+            currentFile={relative}
+            onOpenFile={(path) => {
+              setPicker(null);
+              onOpenFile(path);
+            }}
+          />
         )}
-        {current?.entries.map((entry) => (
-          <DropdownMenuItem
-            key={entry.path}
-            closeOnClick={entry.kind !== "dir"}
-            onClick={() => (entry.kind === "dir" ? openPicker(entry.path) : onOpenFile(entry.path))}
-          >
-            {entry.kind === "dir" ? <Folder className="size-4" /> : <FileText className="size-4" />}
-            <span className="min-w-0 truncate">{workspaceFileName(entry.path)}</span>
-          </DropdownMenuItem>
-        ))}
-        {(!current?.entries.length || current.hasMore) && (
-          <DropdownMenuLabel className="font-normal text-muted-foreground">
-            {!current
-              ? zh
-                ? "正在读取…"
-                : "Loading…"
-              : current.error
-                ? zh
-                  ? "无法读取文件夹"
-                  : "Could not read folder"
-                : current.hasMore
-                  ? zh
-                    ? "仅显示前 200 项"
-                    : "Showing the first 200 items"
-                  : zh
-                    ? "文件夹为空"
-                    : "Folder is empty"}
-          </DropdownMenuLabel>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -335,12 +489,20 @@ export function DesktopWorkspaceFileHeader({
   const [formatOpen, setFormatOpen] = useState(false);
   const [openWith, setOpenWith] = useState(false);
   const [editorTargets, setEditorTargets] = useState<string[]>([]);
+  const [preferredTarget, setPreferredTarget] = useState(preferredOpenTarget);
   const [repository, setRepository] = useState<GitRepositoryState | null>(null);
   const details = repository && fileRepositoryDetails(request, repository);
-  const availableEditors = WINDOWS_EDITORS.filter(({ id }) => editorTargets.includes(id));
+  const openTargets = WORKSPACE_OPEN_TARGETS.filter(
+    ({ id }) => id === "default" || editorTargets.includes(id),
+  );
   const editable =
     !isWorkspacePreviewPath(request.path) || isWorkspaceEditablePreviewPath(request.path);
-  const primaryEditor = editable ? availableEditors[0] : undefined;
+  const primaryTarget =
+    openTargets.find(({ id }) => id === preferredTarget) ??
+    (editable
+      ? openTargets.find((target) => target.id !== "default" && !("directory" in target))
+      : undefined) ??
+    DEFAULT_OPEN_TARGET;
   const comparing = Boolean(comparisonActions);
   const relative = details?.relative ?? relativePath;
   const canCopyRelative = Boolean(relative && !/^(?:[/\\]|[a-z]:)/i.test(relative));
@@ -397,6 +559,7 @@ export function DesktopWorkspaceFileHeader({
   }, [active, gitClient, openWith, request.remote, request.workdir]);
   useEffect(() => {
     if (!active || request.remote) return;
+    setPreferredTarget(preferredOpenTarget());
     let listening = true;
     void invokeFs<string[]>("fs_workspace_editor_targets", {}).then(
       (targets) => {
@@ -423,10 +586,19 @@ export function DesktopWorkspaceFileHeader({
   }, [compact]);
   useEffect(() => setFormatOpen(false), [comparing]);
   const openFileLabel = copy("在默认应用中打开", "Open in default application");
-  const openPrimaryLabel = primaryEditor
-    ? copy(`在 ${primaryEditor.label} 中打开`, `Open in ${primaryEditor.label}`)
-    : openFileLabel;
-  const open = async (mode: "open" | "reveal") => {
+  const openPrimaryLabel =
+    primaryTarget.id === "default"
+      ? openFileLabel
+      : copy(`在 ${primaryTarget.label} 中打开`, `Open in ${primaryTarget.label}`);
+  const rememberTarget = (id: string) => {
+    setPreferredTarget(id);
+    try {
+      window.localStorage.setItem(WORKSPACE_OPEN_TARGET_KEY, id);
+    } catch {
+      // The selected target remains usable for this tab without storage.
+    }
+  };
+  const open = async (mode: "open" | "reveal", remember = false) => {
     try {
       if (mode === "open" && !(await beforeOpen())) return;
       await invokeFs("fs_open_workspace_path", {
@@ -434,8 +606,17 @@ export function DesktopWorkspaceFileHeader({
         path: request.path,
         mode,
       });
+      if (remember) rememberTarget("default");
     } catch {
       onError(copy("无法打开文件", "Could not open the file"));
+    }
+  };
+  const saveCopy = async () => {
+    try {
+      if (!(await beforeOpen()) || activeRequest.current !== request) return;
+      await invokeFs("fs_save_workspace_copy", { workdir: request.workdir, path: request.path });
+    } catch {
+      onError(copy("无法另存文件", "Could not save a copy of the file"));
     }
   };
   const copyContents = async () => {
@@ -447,7 +628,7 @@ export function DesktopWorkspaceFileHeader({
     }
     onError(copy("无法复制文件内容", "Could not copy file contents"));
   };
-  const openEditor = async (id: string) => {
+  const openEditor = async (id: string, remember = false) => {
     try {
       if (!(await beforeOpen())) return;
       await invokeFs("fs_open_workspace_editor", {
@@ -457,6 +638,7 @@ export function DesktopWorkspaceFileHeader({
         line: request.line,
         column: request.column,
       });
+      if (remember) rememberTarget(id);
     } catch {
       onError(copy("无法在此编辑器中打开文件", "Could not open the file in this editor"));
     }
@@ -589,16 +771,13 @@ export function DesktopWorkspaceFileHeader({
                 aria-label={openPrimaryLabel}
                 tooltip={openPrimaryLabel}
                 tooltipSide="bottom"
-                onClick={() => void (primaryEditor ? openEditor(primaryEditor.id) : open("open"))}
+                onClick={() =>
+                  void (primaryTarget.id === "default"
+                    ? open("open")
+                    : openEditor(primaryTarget.id))
+                }
               >
-                {primaryEditor ? (
-                  <primaryEditor.Icon className="size-3.5" />
-                ) : (
-                  <ExternalLink
-                    aria-hidden="true"
-                    className="za-workspace-file-compact-icon size-3.5"
-                  />
-                )}
+                <primaryTarget.Icon aria-hidden="true" className="size-3.5" />
                 <span className="za-workspace-file-action-label">{copy("打开", "Open")}</span>
               </TooltipButton>
               <DropdownMenu open={active && openWith} onOpenChange={setOpenWith}>
@@ -617,19 +796,24 @@ export function DesktopWorkspaceFileHeader({
                     </DropdownMenuTrigger>
                   }
                 />
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => void open("open")}>
-                    <ExternalLink className="size-4" /> {openFileLabel}
-                  </DropdownMenuItem>
-                  {availableEditors.map(({ id, label, Icon }) => (
-                    <DropdownMenuItem key={id} onClick={() => void openEditor(id)}>
-                      <Icon className="size-4" /> {label}
+                <DropdownMenuContent align="end" className="min-w-44">
+                  {openTargets.map(({ id, label, Icon }) => (
+                    <DropdownMenuItem
+                      key={id}
+                      onClick={() =>
+                        void (id === "default" ? open("open", true) : openEditor(id, true))
+                      }
+                    >
+                      <Icon aria-hidden="true" className="size-4" />
+                      {id === "default" ? copy("默认应用", label) : label}
                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void open("reveal")}>
-                    <FolderOpen className="size-4" />{" "}
-                    {copy("在文件管理器中显示", "Reveal in file manager")}
+                    {copy("打开所在文件夹", "Open containing folder")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void saveCopy()}>
+                    {copy("另存为…", "Save as…")}
                   </DropdownMenuItem>
                   {details?.github && (
                     <DropdownMenuItem

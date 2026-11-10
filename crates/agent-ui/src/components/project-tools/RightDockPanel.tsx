@@ -10,14 +10,7 @@ import {
 } from "@liveagent/app/lib/settings";
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import type { MentionComposerDraftSegment } from "@liveagent/ui/components/chat/MentionComposer";
-import {
-  Maximize2,
-  Minimize2,
-  PanelRightClose,
-  PanelRightOpen,
-  Plus,
-  X,
-} from "@liveagent/ui/components/IconSet";
+import { Maximize2, Minimize2, PanelRightClose, Plus, X } from "@liveagent/ui/components/IconSet";
 import type {
   GitCommitContextPayload,
   GitFileContextPayload,
@@ -28,6 +21,7 @@ import type { GitClient } from "@liveagent/ui/lib/git/types";
 import {
   type CSSProperties,
   memo,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
@@ -39,12 +33,14 @@ import {
   useRef,
   useState,
 } from "react";
+import FoldersIcon from "~icons/lucide/folders";
 import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTextGeneration";
 import { ensureManagedProcessInit, useManagedProcesses } from "../../lib/managed-process/store";
 import { cn } from "../../lib/shared/utils";
 import type { TerminalClient, TerminalSession } from "../../lib/terminal/types";
 import type { WorkspaceActivityClient } from "../../lib/workspace-activity/types";
 import { Button } from "../ui/button";
+import { LabelTooltip } from "../ui/label-tooltip";
 import { TooltipButton } from "../ui/tooltip-button";
 import { useFileTreeExternalRoots } from "./file-tree/useFileTreeExternalRoots";
 import type { LocalTunnelClient } from "./LocalTunnelPanel";
@@ -513,10 +509,6 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   const comparisonConversationId = workspace?.comparisonConversationId;
   const onComparisonChange = workspace?.onComparisonChange;
   const tabbed = Boolean(workspace);
-  const visibleLeasedTools = useMemo(
-    () => (tabbed ? new Set<RightDockLeasedToolKind>([...leasedTools, "fileTree"]) : leasedTools),
-    [tabbed, leasedTools],
-  );
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [fileHeaderTarget, setFileHeaderTarget] = useState<HTMLDivElement | null>(null);
   const previousViewScopeRef = useRef(workspaceViewScope);
@@ -670,7 +662,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     tunnelInitialized,
   } = useRightDockProjectTabs({
     backgroundTasksVisible,
-    leasedTools: visibleLeasedTools,
+    leasedTools,
     localSessions,
     onProjectStateChange,
     projectPathKey,
@@ -785,7 +777,8 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
         return;
       }
       if (kind === "fileTree" && onOpenWorkspaceTree) {
-        if (browserActive) onActivateWorkspaceTool?.();
+        onActivateWorkspaceTool?.();
+        openSingletonTab(kind);
         onOpenWorkspaceTree();
         return;
       }
@@ -793,7 +786,6 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       openSingletonTab(kind);
     },
     [
-      browserActive,
       leasedTools,
       onActivateWorkspaceTool,
       onOpenWorkspaceTree,
@@ -974,6 +966,23 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     }),
     [fileTreeInitialized, gitReviewInitialized, sshTunnelInitialized, tunnelInitialized],
   );
+  const filePicker = Boolean(
+    workspace && !workspace.activeTabId && currentActiveTab === "fileTree",
+  );
+  const treeToggleLabel = locale === "zh-CN" ? "切换文件树" : "Toggle file tree";
+  const fileTreeToggle =
+    workspace && projectReady && !leasedTools.has("fileTree")
+      ? { open: workspace.treeOpen, toggle: workspace.onToggleTree }
+      : undefined;
+  const closeDock = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    const group = event.currentTarget.closest('[data-slot="resizable-panel-group"]');
+    onClose?.();
+    if (group) {
+      requestAnimationFrame(() => {
+        group.querySelector<HTMLButtonElement>("[data-project-tools-toggle]")?.focus();
+      });
+    }
+  };
 
   return (
     <RightDockToolContext.Provider value={toolContextValue}>
@@ -1092,7 +1101,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
               </TooltipButton>
             )}
             <RightDockCreateMenu
-              leasedTools={visibleLeasedTools}
+              leasedTools={leasedTools}
               compact={Boolean(workspace?.onNewBrowser)}
               desktopWorkspace={Boolean(workspace)}
               open={createMenuOpen}
@@ -1132,44 +1141,24 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                     <Maximize2 className="size-4" />
                   )}
                 </TooltipButton>
-                {projectReady &&
-                  !leasedTools.has("fileTree") &&
-                  (!workspace.activeTabId || browserActive) && (
-                    <TooltipButton
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-pressed={workspace.treeOpen && !browserActive}
-                      aria-label={t("projectTools.fileTreeTitle")}
-                      title={t("projectTools.fileTreeTitle")}
-                      tooltipSide="bottom"
-                      onClick={
-                        browserActive ? () => startToolTab("fileTree") : workspace.onToggleTree
-                      }
-                    >
-                      {workspace.treeOpen && !browserActive ? (
-                        <PanelRightClose className="size-4" />
-                      ) : (
-                        <PanelRightOpen className="size-4" />
-                      )}
-                    </TooltipButton>
-                  )}
               </>
             )}
             {onClose ? (
               <TooltipButton
                 variant="ghost"
                 size="icon-sm"
-                onClick={onClose}
+                onClick={closeDock}
                 title={t("projectTools.closePanel")}
                 aria-label={t("projectTools.closePanel")}
                 data-project-tools-close=""
+                data-workspace-close-docked={workspace ? "" : undefined}
                 tooltipSide="bottom"
                 className={cn(
                   "rounded-lg text-muted-foreground hover:text-foreground",
-                  !workspace?.expanded && "md:hidden web:max-820:inline-flex",
+                  !workspace && "md:hidden web:max-820:inline-flex",
                 )}
               >
-                <X className="size-4" />
+                {workspace ? <PanelRightClose className="size-4" /> : <X className="size-4" />}
               </TooltipButton>
             ) : null}
           </div>
@@ -1213,6 +1202,35 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
           ) : null}
 
           {workspace && <div ref={setFileHeaderTarget} className="z-10 shrink-0 empty:hidden" />}
+          {filePicker && (
+            <div className="flex h-10 shrink-0 items-center justify-between px-2">
+              <LabelTooltip
+                label={cwd}
+                side="bottom"
+                render={
+                  <span className="truncate rounded-full border border-border/60 px-2 py-1 text-xs">
+                    {cwd
+                      .replace(/[\\/]+$/, "")
+                      .split(/[\\/]/)
+                      .at(-1) || cwd}
+                  </span>
+                }
+              />
+              {fileTreeToggle && (
+                <TooltipButton
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-pressed={fileTreeToggle.open}
+                  aria-label={treeToggleLabel}
+                  title={treeToggleLabel}
+                  tooltipSide="bottom"
+                  onClick={fileTreeToggle.toggle}
+                >
+                  <FoldersIcon className="size-4" />
+                </TooltipButton>
+              )}
+            </div>
+          )}
           <div className="relative flex min-h-0 flex-1 overflow-hidden @container">
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               {workspace?.renderContent(
@@ -1232,10 +1250,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                 },
                 {
                   headerTarget: fileHeaderTarget,
-                  tree:
-                    projectReady && !leasedTools.has("fileTree")
-                      ? { open: workspace.treeOpen, toggle: workspace.onToggleTree }
-                      : undefined,
+                  tree: fileTreeToggle,
                 },
               )}
               <div
@@ -1246,9 +1261,21 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
                     {disabledMessage}
                   </div>
+                ) : filePicker ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+                    <FoldersIcon className="size-7 text-muted-foreground" />
+                    <strong className="text-sm font-medium">
+                      {locale === "zh-CN" ? "打开文件" : "Open file"}
+                    </strong>
+                    <p className="text-xs text-muted-foreground">
+                      {locale === "zh-CN"
+                        ? "从工作区目录树中选择文件"
+                        : "Choose a file from the workspace tree"}
+                    </p>
+                  </div>
                 ) : showRightDockChooser ? (
                   <RightDockChooser
-                    leasedTools={visibleLeasedTools}
+                    leasedTools={leasedTools}
                     terminalReady={terminalReady}
                     terminalDisabledMessage={terminalDisabledMessage}
                     disabledMessage={disabledMessage}
@@ -1278,7 +1305,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                     onTerminalError={handleTerminalError}
                     onInitialTerminalSnapshotConsumed={handleInitialTerminalSnapshotConsumed}
                     onCreateTerminal={handleCreate}
-                    leasedTools={visibleLeasedTools}
+                    leasedTools={leasedTools}
                   />
                 )}
               </div>

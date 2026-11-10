@@ -1,5 +1,6 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
-import { DiffSquare, Eye, FileText, Globe, Loader2, X } from "@liveagent/ui/components/IconSet";
+import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
+import { DiffSquare, Eye, Globe, Loader2, X } from "@liveagent/ui/components/IconSet";
 import type {
   WorkspaceBrowserTools,
   WorkspaceFileChrome,
@@ -94,6 +95,21 @@ type TabOptions = {
   onError: (message: string) => void;
 };
 
+function BrowserTabIcon({ dataUrl }: { dataUrl?: string }) {
+  const [failed, setFailed] = useState<string>();
+  if (!dataUrl?.startsWith("data:image/png;base64,") || dataUrl === failed) {
+    return <Globe aria-hidden="true" className="size-3.5 shrink-0" />;
+  }
+  return (
+    <img
+      src={dataUrl}
+      alt=""
+      className="size-3.5 shrink-0 rounded-xs object-contain"
+      onError={() => setFailed(dataUrl)}
+    />
+  );
+}
+
 export function useDesktopWorkspaceTabPresentation(options: TabOptions) {
   const { resources, open, scope, owner, onBrowserAnnotation, onError } = options;
   const { locale, t } = useLocale();
@@ -109,10 +125,11 @@ export function useDesktopWorkspaceTabPresentation(options: TabOptions) {
   const tabs: RightDockWorkspaceTab[] = resources.view.tabs.map((tab) => {
     const onActivate = () => resources.activate(tab.id);
     if (tab.kind === "file") {
+      const FileIcon = getFileTypeIcon(tab.request.path, "file");
       return {
         id: tab.id,
         label: workspaceFileName(tab.request.path),
-        icon: <FileText className="size-3.5 shrink-0" />,
+        icon: <FileIcon className="size-3.5 shrink-0" />,
         dirty: tab.dirty,
         temporary: tab.temporary,
         onKeepOpen: () => resources.keepFileOpen(tab.id),
@@ -142,7 +159,7 @@ export function useDesktopWorkspaceTabPresentation(options: TabOptions) {
     return {
       id: tab.id,
       label,
-      icon: <Globe className="size-3.5 shrink-0" />,
+      icon: <BrowserTabIcon dataUrl={tab.faviconDataUrl} />,
       onActivate,
       onClose: () => resources.close(tab.id),
       menuItems: (
@@ -213,10 +230,10 @@ export function useDesktopWorkspaceTabPresentation(options: TabOptions) {
                     history={tab.history}
                     active={active}
                     reloadToken={tab.reloadToken}
-                    onNavigate={(url, title) =>
+                    onNavigate={(url, title, faviconDataUrl) =>
                       resources.updateBrowser(
                         tab.id,
-                        { url, ...(title === undefined ? {} : { title }) },
+                        { url, faviconDataUrl, ...(title === undefined ? {} : { title }) },
                         tabScope,
                       )
                     }

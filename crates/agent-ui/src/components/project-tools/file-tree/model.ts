@@ -41,6 +41,31 @@ export type FileTreeRowModel =
 
 export const ROOT_PATH = "";
 
+/** Index visible rows once so scrolling only visits the current ancestor chain. */
+export function indexStickyTreeRows(rows: readonly { level?: number; sticky?: boolean }[]) {
+  const parents: (number | undefined)[] = [];
+  const depths: number[] = [];
+  const ends: number[] = [];
+  const stack: number[] = [];
+  for (const [index, row] of rows.entries()) {
+    let ancestor = stack.at(-1);
+    while (
+      ancestor !== undefined &&
+      row.level !== undefined &&
+      (rows[ancestor].level ?? 0) >= row.level
+    ) {
+      ends[ancestor] = index;
+      stack.pop();
+      ancestor = stack.at(-1);
+    }
+    parents[index] = ancestor;
+    depths[index] = stack.length;
+    if (row.sticky) stack.push(index);
+  }
+  for (const index of stack) ends[index] = rows.length;
+  return { parents, ends, depths };
+}
+
 export function externalRootPath(rootId: string) {
   return `${EXTERNAL_ROOT_PATH_PREFIX}${encodeURIComponent(rootId)}`;
 }

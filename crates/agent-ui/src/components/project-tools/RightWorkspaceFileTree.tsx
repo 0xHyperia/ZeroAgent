@@ -113,6 +113,7 @@ function changeRows(
         type: "section",
         key: `\0changed:${relativePath}`,
         level: depth + 1,
+        stickyFolder: !file && expanded,
         content: (
           <FileTreeRow
             path={relativePath}
@@ -275,6 +276,7 @@ export function RightWorkspaceFileTree({
     type: "section",
     key: `\0section:${section}`,
     level: 1,
+    stickyFolder: expanded,
     content: (
       <button
         type="button"
@@ -284,7 +286,6 @@ export function RightWorkspaceFileTree({
         data-workspace-tree-section={section}
         className={cn(
           "flex w-full items-center gap-[5px] rounded-md px-[3px] text-left text-foreground hover:bg-muted",
-          section === "files" && showChanges && "border-t border-border",
         )}
         style={{ height: FILE_TREE_ROW_HEIGHT }}
         onClick={() => onToggleGroup(section)}

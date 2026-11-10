@@ -4,6 +4,7 @@ import {
   Columns2,
   Cpu,
   DiffSquare,
+  FileText,
   GripVertical,
   Terminal,
   X,
@@ -245,7 +246,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
     onToolTabDragStart,
     onOpenToolInWorkbench,
   } = props;
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const desktopWorkspace = workspaceTabs !== undefined;
   const prefersReducedMotion = useReducedMotion();
   const [track, setTrack] = useState<HTMLDivElement | null>(null);
@@ -528,13 +529,25 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
         )}
         <div
           aria-hidden="true"
+          data-workspace-tab-content={desktopWorkspace ? "" : undefined}
           className={cn(
             "pointer-events-none relative z-10 flex h-full min-w-0 flex-1 items-center",
             "gap-1.5 text-left text-inherit",
           )}
         >
-          {tab.icon}
-          <span className={cn("min-w-0 truncate", tab.temporary && "italic")}>{tab.label}</span>
+          <span
+            className="flex shrink-0 items-center"
+            data-workspace-tab-icon={desktopWorkspace ? "" : undefined}
+          >
+            {tab.icon}
+          </span>
+          <span
+            data-workspace-tab-label={desktopWorkspace ? "" : undefined}
+            dir="auto"
+            className={cn("min-w-0 truncate", tab.temporary && "italic")}
+          >
+            {tab.label}
+          </span>
           {tab.running !== undefined ? (
             <span
               className={cn(
@@ -559,7 +572,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
               ? "bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground md:opacity-100"
               : desktopWorkspace && tab.isActive
                 ? "opacity-100"
-                : "md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100",
+                : "md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100",
           )}
           onPointerDown={(event) => {
             event.stopPropagation();
@@ -640,7 +653,12 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
         const definition = getRightDockToolDefinition(tab.kind);
         if (!definition) return [];
         const changesTab = desktopWorkspace && tab.kind === "gitReview";
-        const label = t(changesTab ? "projectTools.workspaceChangesTitle" : definition.titleKey);
+        const filesTab = desktopWorkspace && tab.kind === "fileTree";
+        const label = filesTab
+          ? locale === "zh-CN"
+            ? "打开文件"
+            : "Open file"
+          : t(changesTab ? "projectTools.workspaceChangesTitle" : definition.titleKey);
         const closeLabel = changesTab
           ? `${t("projectTools.close")} ${label}`
           : t(definition.closeKey);
@@ -650,6 +668,8 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             label,
             icon: changesTab ? (
               <DiffSquare className="size-4 shrink-0" />
+            ) : filesTab ? (
+              <FileText className="size-3.5 shrink-0" />
             ) : (
               definition.icon("size-3.5 shrink-0")
             ),

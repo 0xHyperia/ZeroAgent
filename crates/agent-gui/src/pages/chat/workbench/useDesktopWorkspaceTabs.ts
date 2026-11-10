@@ -35,6 +35,7 @@ type BrowserTab = {
   id: string;
   url: string;
   title: string;
+  faviconDataUrl?: string;
   customTitle?: string;
   reloadToken?: number;
   history?: BrowserHistorySnapshot;
@@ -261,7 +262,12 @@ export function useDesktopWorkspaceTabs(
   return useMemo(() => {
     function updateBrowser(
       id: string,
-      patch: Partial<Pick<BrowserTab, "url" | "title" | "customTitle" | "reloadToken" | "history">>,
+      patch: Partial<
+        Pick<
+          BrowserTab,
+          "url" | "title" | "faviconDataUrl" | "customTitle" | "reloadToken" | "history"
+        >
+      >,
       targetScope: string,
     ) {
       updateView((state) => {

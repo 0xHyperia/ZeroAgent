@@ -58,6 +58,9 @@ export function useDesktopWorkspaceTabMeasurements(track: HTMLDivElement | null)
         Math.round(chrome.clientWidth - padding - gaps - fixedWidth),
       );
       const actionWidths: Record<string, number> = {};
+      for (const title of track.querySelectorAll<HTMLElement>("[data-workspace-tab-label]")) {
+        title.toggleAttribute("data-title-overflow", title.scrollWidth > title.clientWidth);
+      }
       for (const action of track.querySelectorAll<HTMLElement>(
         "[data-desktop-workspace-tab-extra-action]",
       )) {
@@ -81,13 +84,15 @@ export function useDesktopWorkspaceTabMeasurements(track: HTMLDivElement | null)
         if (item !== slot && !item.hasAttribute("data-right-workspace-tab-spacer"))
           resize?.observe(item);
       }
-      for (const action of track.querySelectorAll("[data-desktop-workspace-tab-extra-action]"))
+      for (const action of track.querySelectorAll(
+        "[data-desktop-workspace-tab-extra-action], [data-workspace-tab-label]",
+      ))
         resize?.observe(action);
       measure();
     };
     const children = new MutationObserver(observe);
     children.observe(chrome, { childList: true });
-    children.observe(track, { childList: true });
+    children.observe(track, { childList: true, subtree: true, characterData: true });
     observe();
     return () => {
       resize?.disconnect();

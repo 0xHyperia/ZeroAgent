@@ -264,6 +264,11 @@
 [data-workspace-tools-docked] > [data-workspace-main-has-chrome] [data-app-workbench-chrome] {
   box-shadow: inset 0 -1px var(--za-workbench-border);
 }
+[data-workspace-tools-docked]:has([data-workspace-close-docked])
+  > [data-workspace-main-has-chrome]
+  [data-project-tools-toggle] {
+  display: none;
+}
 :is([data-workspace-tools-docked], [data-workspace-tools-expanded]):has(
     > [data-workspace-main-has-chrome]
   )

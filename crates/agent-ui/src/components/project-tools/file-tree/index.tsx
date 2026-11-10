@@ -20,7 +20,7 @@ import {
 } from "@liveagent/ui/components/IconSet";
 import type { WorkspaceProjectRootClient } from "@liveagent/ui/contracts/workspaceProjectRoots";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -59,6 +59,7 @@ import {
   type FileTreeRowModel,
   flattenFileTreeRows,
   flattenFileTreeSearchRows,
+  indexStickyTreeRows,
   ROOT_PATH,
   remapExpandedPathsForRename,
   removeExpandedPath,
@@ -84,6 +85,7 @@ export type FileTreeSectionRow = {
   key: string;
   content: ReactNode;
   level?: number;
+  stickyFolder?: boolean;
 };
 
 type VisibleFileTreeRow =
@@ -363,23 +365,32 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     () => flattenFileTreeSearchRows(search.results, collapsedSearchDirectories),
     [collapsedSearchDirectories, search.results],
   );
-  const searchNotice = search.loading ? (
-    <span className="flex items-center gap-2 text-muted-foreground" role="status">
-      <Loader2 className="size-3.5 animate-spin" />
-      {t("projectTools.fileTree.searching")}
-    </span>
-  ) : search.error ? (
-    <span className="text-destructive" role="alert">
-      {search.error}
-    </span>
-  ) : search.results.length === 0 ? (
-    <span className="text-muted-foreground">{t("projectTools.fileTree.noMatches")}</span>
-  ) : null;
-  const searchTruncated = search.truncated && !searchNotice && (
-    <span className="text-muted-foreground">{t("projectTools.fileTree.resultsTruncated")}</span>
+  const searchNotice = useMemo(
+    () =>
+      search.loading ? (
+        <span className="flex items-center gap-2 text-muted-foreground" role="status">
+          <Loader2 className="size-3.5 animate-spin" />
+          {t("projectTools.fileTree.searching")}
+        </span>
+      ) : search.error ? (
+        <span className="text-destructive" role="alert">
+          {search.error}
+        </span>
+      ) : search.results.length === 0 ? (
+        <span className="text-muted-foreground">{t("projectTools.fileTree.noMatches")}</span>
+      ) : null,
+    [search.loading, search.error, search.results.length, t],
   );
-  let rows: readonly VisibleFileTreeRow[] = fileRows;
-  if (workspaceSections) {
+  const searchTruncated = useMemo(
+    () =>
+      search.truncated &&
+      !searchNotice && (
+        <span className="text-muted-foreground">{t("projectTools.fileTree.resultsTruncated")}</span>
+      ),
+    [search.truncated, searchNotice, t],
+  );
+  const rows = useMemo<readonly VisibleFileTreeRow[]>(() => {
+    if (!workspaceSections) return fileRows;
     const sectionRows: VisibleFileTreeRow[] = [...workspaceSections.rows];
     if (workspaceSections.filesExpanded) {
       if (!query.trim()) {
@@ -406,8 +417,28 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
           });
       }
     }
-    rows = sectionRows;
-  }
+    return sectionRows;
+  }, [workspaceSections, query, fileRows, searchNotice, searchRows, searchTruncated]);
+
+  const stickyIndex = useMemo(
+    () =>
+      workspaceSections
+        ? indexStickyTreeRows(
+            rows.map((row) => ({
+              level: treeRowLevel(row),
+              sticky:
+                row.type === "section"
+                  ? row.stickyFolder
+                  : row.type === "search"
+                    ? row.expanded
+                    : row.type === "node" &&
+                      nodes[row.path]?.kind === "dir" &&
+                      expandedSet.has(row.path),
+            })),
+          )
+        : null,
+    [workspaceSections, rows, nodes, expandedSet],
+  );
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -415,9 +446,21 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     getItemKey: (index) => rows[index]?.key ?? index,
     estimateSize: () => FILE_TREE_ROW_HEIGHT,
     overscan: 12,
+    rangeExtractor: (range) => {
+      const visible = defaultRangeExtractor(range);
+      if (!stickyIndex) return visible;
+      const extra: number[] = [];
+      for (
+        let index = stickyIndex.parents[range.startIndex];
+        index !== undefined;
+        index = stickyIndex.parents[index]
+      ) {
+        if (index < visible[0]) extra.push(index);
+      }
+      return [...extra.reverse(), ...visible];
+    },
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
-
   useEffect(() => {
     if (!keyboardTarget) return;
     const index = rows.findIndex((row) => row.key === keyboardTarget);
@@ -865,7 +908,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         ref={scrollRef}
         className={cn(
           "project-file-tree-panel-scroll min-h-0 flex-1 select-none overflow-auto p-2 web:pb-[max(var(--spacing-16px),env(safe-area-inset-bottom))] web:[scroll-padding-bottom:max(var(--spacing-16px),env(safe-area-inset-bottom))]",
-          integratedSearch && "p-1",
+          integratedSearch && "isolate p-1",
         )}
         onKeyDown={integratedSearch ? onWorkspaceTreeKeyDown : undefined}
         onContextMenu={(event) => {
@@ -949,15 +992,39 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
                 />
               );
             }
+            const endIndex = stickyIndex?.ends[virtualRow.index];
+            const inset = (stickyIndex?.depths[virtualRow.index] ?? 0) * FILE_TREE_ROW_HEIGHT;
+            const sticky =
+              endIndex !== undefined &&
+              endIndex > virtualRow.index + 1 &&
+              inset + 2 * FILE_TREE_ROW_HEIGHT <= (rowVirtualizer.scrollRect?.height ?? Infinity);
+            const subtreeEnd = sticky
+              ? (rowVirtualizer.measurementsCache?.[endIndex]?.start ??
+                rowVirtualizer.getTotalSize())
+              : undefined;
+            // Keep the original row inside its subtree's physical range. Sticky positioning
+            // follows the scroll container on the compositor, independently of React renders.
             return (
               <div
                 key={row.key}
-                ref={rowVirtualizer.measureElement}
-                data-index={virtualRow.index}
-                className="absolute left-0 top-0 w-full"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                className="pointer-events-none absolute left-0 w-full"
+                style={{
+                  top: virtualRow.start,
+                  height: subtreeEnd === undefined ? undefined : subtreeEnd - virtualRow.start,
+                  zIndex: sticky ? 100 - inset / FILE_TREE_ROW_HEIGHT : undefined,
+                }}
               >
-                {content}
+                <div
+                  ref={rowVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  data-workspace-tree-sticky-folder={sticky ? "" : undefined}
+                  className={
+                    sticky ? "pointer-events-auto sticky bg-background" : "pointer-events-auto"
+                  }
+                  style={sticky ? { top: inset } : undefined}
+                >
+                  {content}
+                </div>
               </div>
             );
           })}

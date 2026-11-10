@@ -24,9 +24,23 @@ export function ProjectToolsPanelToggle(props: {
         <Button
           variant="ghost"
           size="icon"
-          onClick={onToggle}
+          onClick={(event) => {
+            const group =
+              !isOpen && event.detail === 0
+                ? event.currentTarget.closest('[data-slot="resizable-panel-group"]')
+                : null;
+            onToggle();
+            if (group) {
+              requestAnimationFrame(() => {
+                if (group.hasAttribute("data-workspace-tools-docked")) {
+                  group.querySelector<HTMLButtonElement>("[data-workspace-close-docked]")?.focus();
+                }
+              });
+            }
+          }}
           disabled={Boolean(disabledMessage) && !isOpen}
           aria-expanded={isOpen}
+          data-project-tools-toggle=""
           aria-label={label}
           className={cn(
             className,

@@ -3642,15 +3642,59 @@ pub async fn fs_open_workspace_path(
     .await
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub async fn fs_save_workspace_copy(workdir: String, path: String) -> Result<bool, FsCommandError> {
+    run_blocking_fs("fs_save_workspace_copy", move || {
+        #[cfg(desktop)]
+        {
+            let scope = resolve_scoped_fs_path(&workdir, &path)?;
+            let source = resolve_target(&scope.root, &scope.relative_path)
+                .map_err(|error| remap_scoped_path_error(&scope, error))?;
+            if !source.is_file() {
+                return Err(FsError::Other("Only regular files can be copied".to_string()).into());
+            }
+            let mut input = fs::File::open(&source).map_err(FsError::from)?;
+            let file_name = source.file_name().unwrap_or_default().to_string_lossy();
+            let Some(destination) = rfd::FileDialog::new()
+                .set_file_name(file_name.as_ref())
+                .save_file()
+            else {
+                return Ok(false);
+            };
+            if destination.canonicalize().ok().as_ref() == Some(&source) {
+                return Err(
+                    FsError::Other("Choose a different file for the copy".to_string()).into(),
+                );
+            }
+            let parent = destination
+                .parent()
+                .ok_or_else(|| FsError::Other("Invalid copy destination".to_string()))?;
+            let mut copy = tempfile::NamedTempFile::new_in(parent).map_err(FsError::from)?;
+            io::copy(&mut input, &mut copy).map_err(FsError::from)?;
+            copy.persist(&destination)
+                .map_err(|error| FsError::from(error.error))?;
+            Ok(true)
+        }
+        #[cfg(not(desktop))]
+        {
+            let _ = (workdir, path);
+            Err(FsError::Other("Save as is unavailable on this platform".to_string()).into())
+        }
+    })
+    .await
+}
+
 #[cfg(target_os = "windows")]
-const WORKSPACE_EDITORS: [(&str, &str, &str); 3] = [
-    ("vscode", "Microsoft VS Code", "Code.exe"),
-    (
-        "vscode-insiders",
-        "Microsoft VS Code Insiders",
-        "Code - Insiders.exe",
-    ),
-    ("cursor", "Cursor", "Cursor.exe"),
+const WORKSPACE_EDITORS: &[&str] = &[
+    "vscode",
+    "visual-studio",
+    "vscode-insiders",
+    "cursor",
+    "terminal",
+    "git-bash",
+    "wsl",
+    "android-studio",
+    "pycharm",
 ];
 
 #[cfg(target_os = "windows")]
@@ -3673,16 +3717,225 @@ fn installed_workspace_editor(
     target: &str,
     roots: impl IntoIterator<Item = PathBuf>,
 ) -> Option<PathBuf> {
-    let (_, directory, binary) = WORKSPACE_EDITORS.iter().find(|(id, _, _)| *id == target)?;
-    roots.into_iter().find_map(|root| {
+    if matches!(target, "terminal" | "wsl") {
+        if target == "wsl" && installed_wsl().is_none() {
+            return None;
+        }
+        let alias = PathBuf::from(std::env::var_os("LOCALAPPDATA")?)
+            .canonicalize()
+            .ok()?
+            .join(r"Microsoft\WindowsApps\wt.exe");
+        // Windows' app execution alias is a reparse point. Launch the known alias
+        // in place instead of resolving it or searching the workspace's PATH.
+        return fs::symlink_metadata(&alias)
+            .ok()?
+            .is_file()
+            .then_some(alias);
+    }
+    let installed = roots.into_iter().find_map(|root| {
         let root = root.canonicalize().ok()?;
-        let expected = root.join(directory).join(binary);
-        let executable = expected.canonicalize().ok()?;
-        let matches_install_path = executable
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&expected.to_string_lossy());
-        (matches_install_path && executable.is_file()).then_some(executable)
+        let candidates = match target {
+            "vscode" => vec![root.join(r"Microsoft VS Code\Code.exe")],
+            "vscode-insiders" => vec![root.join(r"Microsoft VS Code Insiders\Code - Insiders.exe")],
+            "cursor" => vec![root.join(r"Cursor\Cursor.exe")],
+            "git-bash" => vec![root.join(r"Git\git-bash.exe")],
+            "android-studio" => vec![root.join(r"Android\Android Studio\bin\studio64.exe")],
+            "visual-studio" => ["2022", "2019", "2017"]
+                .into_iter()
+                .flat_map(|year| {
+                    ["Community", "Professional", "Enterprise", "Preview"].map(|edition| {
+                        root.join("Microsoft Visual Studio")
+                            .join(year)
+                            .join(edition)
+                            .join(r"Common7\IDE\devenv.exe")
+                    })
+                })
+                .collect(),
+            "pycharm" => fs::read_dir(root.join("JetBrains"))
+                .ok()?
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .to_ascii_lowercase()
+                        .starts_with("pycharm")
+                })
+                .map(|entry| entry.path().join(r"bin\pycharm64.exe"))
+                .collect(),
+            _ => return None,
+        };
+        candidates.into_iter().find_map(|expected| {
+            let executable = expected.canonicalize().ok()?;
+            let matches_install_path = executable
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&expected.to_string_lossy());
+            (matches_install_path && executable.is_file()).then_some(executable)
+        })
+    });
+    installed.or_else(|| {
+        (target == "visual-studio")
+            .then(visual_studio_from_installer)
+            .flatten()
     })
+}
+
+#[cfg(target_os = "windows")]
+fn workspace_editor_on_path(
+    target: &str,
+    paths: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
+    let (executables, bin_launcher): (&[&str], Option<(&str, &str)>) = match target {
+        "vscode" => (&["Code.exe"], Some(("code.cmd", r"..\Code.exe"))),
+        "vscode-insiders" => (
+            &["Code - Insiders.exe"],
+            Some(("code-insiders.cmd", r"..\Code - Insiders.exe")),
+        ),
+        "cursor" => (
+            &["Cursor.exe"],
+            Some(("cursor.cmd", r"..\..\..\Cursor.exe")),
+        ),
+        "android-studio" => (&["studio64.exe", "studio.exe"], None),
+        "pycharm" => (&["pycharm64.exe", "pycharm.exe"], None),
+        "git-bash" => (&["git-bash.exe"], None),
+        _ => return None,
+    };
+    paths
+        .into_iter()
+        .filter(|path| path.is_absolute())
+        .find_map(|directory| {
+            for name in executables {
+                if let Some(path) = existing_editor_binary(directory.join(name), executables) {
+                    return Some(path);
+                }
+            }
+            let (launcher, relative) = bin_launcher?;
+            if !directory.file_name()?.eq_ignore_ascii_case("bin")
+                || !directory.join(launcher).is_file()
+            {
+                return None;
+            }
+            existing_editor_binary(directory.join(relative), executables)
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn existing_editor_binary(path: PathBuf, names: &[&str]) -> Option<PathBuf> {
+    let resolved = path.canonicalize().ok()?;
+    let name = resolved.file_name()?;
+    (resolved.is_file()
+        && names
+            .iter()
+            .any(|expected| name.eq_ignore_ascii_case(expected)))
+    .then_some(resolved)
+}
+
+#[cfg(target_os = "windows")]
+fn pycharm_toolbox_binary() -> Option<PathBuf> {
+    let launcher = PathBuf::from(std::env::var_os("LOCALAPPDATA")?)
+        .join(r"JetBrains\Toolbox\scripts\pycharm.cmd");
+    if fs::metadata(&launcher).ok()?.len() > 16 * 1024 {
+        return None;
+    }
+    // Read the path from Toolbox's generated shim without invoking a command interpreter.
+    fs::read_to_string(launcher).ok()?.lines().find_map(|line| {
+        let (target, _) = line
+            .trim()
+            .strip_prefix("start \"\" %waitarg% \"")?
+            .split_once('"')?;
+        let path = PathBuf::from(target);
+        path.is_absolute()
+            .then(|| existing_editor_binary(path, &["pycharm64.exe", "pycharm.exe"]))?
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn locate_workspace_editor(target: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    workspace_editor_on_path(target, std::env::split_paths(&path))
+        .or_else(|| {
+            if target == "pycharm" {
+                pycharm_toolbox_binary()
+            } else {
+                None
+            }
+        })
+        .or_else(|| installed_workspace_editor(target, workspace_editor_install_roots()))
+}
+
+#[cfg(target_os = "windows")]
+fn installed_wsl() -> Option<PathBuf> {
+    use windows_sys::Win32::Foundation::NO_ERROR;
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+
+    let key: Vec<u16> = r"Software\Microsoft\Windows\CurrentVersion\Lxss"
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    let value: Vec<u16> = "DefaultDistribution".encode_utf16().chain([0]).collect();
+    let mut size = 0;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut size,
+        )
+    };
+    if status != NO_ERROR || size <= 2 {
+        return None;
+    }
+    let executable = PathBuf::from(std::env::var_os("SystemRoot")?)
+        .canonicalize()
+        .ok()?
+        .join(r"System32\wsl.exe");
+    executable.is_file().then_some(executable)
+}
+
+#[cfg(target_os = "windows")]
+fn visual_studio_from_installer() -> Option<PathBuf> {
+    let installer_root = PathBuf::from(std::env::var_os("ProgramFiles(x86)")?)
+        .canonicalize()
+        .ok()?;
+    let installer = installer_root.join(r"Microsoft Visual Studio\Installer\vswhere.exe");
+    let resolved = installer.canonicalize().ok()?;
+    if !resolved
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&installer.to_string_lossy())
+    {
+        return None;
+    }
+    let mut command = Command::new(resolved);
+    crate::runtime::process::configure_child_process_group(&mut command);
+    let result = command
+        .args([
+            "-products",
+            "*",
+            "-all",
+            "-prerelease",
+            "-find",
+            r"**\Common7\IDE\devenv.exe",
+            "-utf8",
+            "-nologo",
+        ])
+        .output()
+        .ok()?;
+    if !result.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&result.stdout)
+        .lines()
+        .map(|line| PathBuf::from(line.trim_start_matches('\u{feff}').trim()))
+        .find_map(|path| {
+            let executable = path.canonicalize().ok()?;
+            (path.is_absolute()
+                && executable.ends_with(r"Common7\IDE\devenv.exe")
+                && executable.is_file())
+            .then_some(executable)
+        })
 }
 
 #[tauri::command]
@@ -3691,10 +3944,8 @@ pub async fn fs_workspace_editor_targets() -> Result<Vec<String>, FsCommandError
         #[cfg(target_os = "windows")]
         return Ok(WORKSPACE_EDITORS
             .iter()
-            .filter(|(id, _, _)| {
-                installed_workspace_editor(id, workspace_editor_install_roots()).is_some()
-            })
-            .map(|(id, _, _)| (*id).to_string())
+            .filter(|id| locate_workspace_editor(id).is_some())
+            .map(|id| (*id).to_string())
             .collect());
         #[cfg(not(target_os = "windows"))]
         Ok(Vec::new())
@@ -3713,7 +3964,7 @@ pub async fn fs_open_workspace_editor(
     run_blocking_fs("fs_open_workspace_editor", move || {
         #[cfg(target_os = "windows")]
         {
-            let executable = installed_workspace_editor(&editor, workspace_editor_install_roots())
+            let executable = locate_workspace_editor(&editor)
                 .ok_or_else(|| FsError::Other("Editor is unavailable".to_string()))?;
             let scope = resolve_scoped_fs_path(&workdir, &path)?;
             let file = resolve_target(&scope.root, &scope.relative_path)
@@ -3722,7 +3973,39 @@ pub async fn fs_open_workspace_editor(
                 return Err(FsError::Other("Only regular files can be edited".to_string()).into());
             }
             let mut command = Command::new(executable);
-            if let Some(line) = line.filter(|line| *line > 0) {
+            let line = line.filter(|line| *line > 0);
+            if editor == "git-bash" {
+                let directory = file.parent().unwrap_or(&scope.root);
+                command
+                    .current_dir(directory)
+                    .arg(format!("--cd={}", display_path(directory)));
+            } else if matches!(editor.as_str(), "terminal" | "wsl") {
+                let directory = display_path(file.parent().unwrap_or(&scope.root));
+                command.arg("-d").arg(directory.replace(';', r"\;"));
+                if editor == "wsl" {
+                    let wsl = installed_wsl()
+                        .ok_or_else(|| FsError::Other("WSL is unavailable".to_string()))?;
+                    command.arg(display_path(&wsl));
+                    if let Some(unc) = directory.strip_prefix(r"\\") {
+                        let mut parts = unc.split('\\');
+                        if matches!(parts.next(), Some("wsl.localhost" | "wsl$")) {
+                            if let Some(distribution) = parts.next().filter(|part| !part.is_empty())
+                            {
+                                command.args(["-d", &distribution.replace(';', r"\;")]);
+                            }
+                        }
+                    }
+                }
+            } else if matches!(editor.as_str(), "pycharm" | "android-studio") {
+                if let Some(line) = line {
+                    command
+                        .arg("--line")
+                        .arg(line.to_string())
+                        .arg("--column")
+                        .arg(column.unwrap_or(1).max(1).to_string());
+                }
+                command.arg(file);
+            } else if let Some(line) = line.filter(|_| editor != "visual-studio") {
                 command.arg("--goto").arg(format!(
                     "{}:{line}:{}",
                     display_path(&file),
