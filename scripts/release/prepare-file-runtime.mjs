@@ -133,8 +133,8 @@ const acceptance = spawnSync(path.join(runtime, manifest.python), ["-IB", path.j
 });
 if (acceptance.status !== 0) throw new Error("The staged file runtime failed its offline acceptance", { cause: acceptance.error });
 const verifyInstalled = fileURLToPath(new URL("./verify-installed-file-runtime.mjs", import.meta.url));
-const offlineRevision = spawnSync(process.execPath, [verifyInstalled, runtime], { stdio: "inherit", timeout: 100_000 });
-if (offlineRevision.status !== 0) throw new Error("The staged Python failed the clean-profile DOCX/PDF check", { cause: offlineRevision.error });
+const offlineRevision = spawnSync(process.execPath, [verifyInstalled, runtime], { stdio: "inherit", timeout: 165_000 });
+if (offlineRevision.status !== 0) throw new Error("The staged runtime failed the clean-profile file acceptance", { cause: offlineRevision.error });
 await writeFile(path.join(stage, "tauri.file-runtime.conf.json"), JSON.stringify({
   bundle: { resources: { [runtime]: "file-runtime" } },
 }) + "\n", { flag: "wx" });

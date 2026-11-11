@@ -24,7 +24,7 @@
 
 本地 `node scripts/dev-stack.mjs restart desktop` 及调用它的 PowerShell 启动脚本继承同一配置。可用 `ZEROAGENT_DEV_FILE_RUNTIME` 指定运行时目录，或在没有指定依赖包时使用当前检出的 `.zeroagent/file-runtime/desktop-dev`。本地清单格式为 1，包含目录内的 Python 路径及已准备的附加工具路径，文件工具位于同目录的 `tools/`。附加引擎可按开发任务补齐，调用缺少的引擎时报告具体组件。正式包和 Windows 便携版仍校验完整组件。宿主把解析后的绝对路径注入实际运行的 K-brain 子进程。
 
-候选包检查从 MSI、NSIS 安装目录、便携 ZIP、DMG 内的应用和 Linux 各种包载荷运行 Python。测试进程使用全新的用户目录、隔离的 PATH 和 Python 网络审计钩子，验证 DOCX 段落改稿、PDF 定页改稿、PDF 渲染和原件不变，并记录实际解释器路径。这项检查覆盖随包工具，三种设备入口的阅读器和真实模型执行仍需单独验收。
+候选包检查从 MSI、NSIS 安装目录、便携 ZIP、DMG 内的应用和 Linux 各种包载荷运行 Python。测试进程使用全新的用户目录、隔离的 PATH 和 Python 网络审计钩子，验证 DOCX 段落改稿、PDF 定页改稿、PDF 渲染和原件不变。随后通过文档技能的渲染脚本，用包内 LibreOffice 导出两页 Word 改稿，并通过包内 Poppler 逐页渲染。检查记录解释器与 LibreOffice 的实际路径，核对导出 PDF 的页数、修改文字及未修改页。测试原生子进程的离线运行需要在禁网环境执行。三种设备入口的阅读器和真实模型执行仍需单独验收。
 
 CloudChat 模板从同一目录打包技能及工具，锁定 Office、PDF、OCR 和图片格式转换依赖。Linux x64 依赖层提供 Node.js 24.22.1、Artifact Tool 2.8.145 和原生 Skia。候选计划包含 SDK 生成的内容摘要。
 
@@ -32,9 +32,9 @@ CloudChat 模板从同一目录打包技能及工具，锁定 Office、PDF、OCR
 
 Windows x64 通过了桌面技能安装和升级测试，并用本机的 Node、Python 与 Poppler 直接验证了 PDF 提取与渲染、文档修订、演示文稿渲染和模板检查，以及表格原生对象。Linux x64 在禁网容器通过四种格式的工具验收，覆盖文档逐页渲染、扫描 PDF OCR 与涂黑、Office 转换与公式重算、原生数据透视表和双变量模拟运算表。
 
-当前 DOCX 和 PDF 改稿检查在 Windows x64 的独立 Python 测试目录、Linux x64 的无网络容器通过。两者用全新用户目录，核对 `sys.executable` 位于对应测试运行时内。正式安装包和便携版需要四个平台的已审核依赖包后才能完成验收。
+DOCX、PDF 改稿与 Word 渲染检查已在 Windows x64 测试目录及 Linux x64 禁网容器通过。两者使用新的用户目录、测试目录中的 Python 和 LibreOffice 26.2.7。Windows 使用 Python 3.12.14，测试副本保留英语词典，移出其他可选词典后通过首次初始化。Linux 使用 Python 3.12.16，容器仍提供系统共享库。Windows 验证了 Python 网络审计与隔离用户目录，仍需在整机禁网环境验收 MSI、NSIS 和便携 ZIP。
 
-本地 Windows 开发运行时使用目录内的 Python 3.12.14，通过 DOCX 和 PDF 定点改稿及 PDF 渲染检查。本机现有 LibreOffice 在 DOCX 转 PDF 时超时，当前开发清单未启用该引擎，Word 逐页渲染仍需验证。
+本地 Windows 开发运行时使用目录内的 Python 3.12.14，通过 DOCX 和 PDF 定点改稿及 PDF 渲染检查。开发清单未启用此前测试超时的 LibreOffice。新的测试副本与开发目录独立。
 
 单变量模拟运算表可写入 OOXML。本地 LibreOffice 回写样本时将它改写为普通公式，未写出有效的结果缓存。该路径不能作为单变量模拟运算表的验收依据。
 
