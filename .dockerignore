@@ -25,3 +25,4 @@ cert
 workspace
 workspace.zip
 .codex-originals
+crates/.file-runtime-deps

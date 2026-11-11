@@ -283,15 +283,23 @@ fn backend_builtin_seed_uses_active_root_and_preserves_user_collisions() {
     let account_a = tmp.path().join("account-a/engine");
     let account_b = tmp.path().join("account-b/engine");
     let seeded = ensure_backend_builtin_agent_skills(&account_a).unwrap();
-    assert_eq!(seeded.len(), 1);
-    assert_eq!(seeded[0].name, "zeroagent-code-review");
+    assert_eq!(seeded.len(), 5);
+    assert!(seeded.iter().any(|entry| entry.name == "zeroagent-code-review"));
+    assert!(account_a
+        .join("skills/documents/tasks/verify_render.md")
+        .is_file());
     assert!(account_a
         .join("skills/zeroagent-code-review/SKILL.md")
         .is_file());
     assert!(!account_a.join("skills/skills-creator").exists());
     assert!(!account_b.exists());
     assert_eq!(
-        ensure_backend_builtin_agent_skills(&account_a).unwrap()[0].action,
+        ensure_backend_builtin_agent_skills(&account_a)
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.name == "zeroagent-code-review")
+            .unwrap()
+            .action,
         "kept"
     );
     let user_skill = write_skill(
@@ -301,7 +309,12 @@ fn backend_builtin_seed_uses_active_root_and_preserves_user_collisions() {
     );
     let before = fs::read(user_skill.join("SKILL.md")).unwrap();
     assert_eq!(
-        ensure_backend_builtin_agent_skills(&account_b).unwrap()[0].action,
+        ensure_backend_builtin_agent_skills(&account_b)
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.name == "zeroagent-code-review")
+            .unwrap()
+            .action,
         "conflict_preserved"
     );
     assert_eq!(fs::read(user_skill.join("SKILL.md")).unwrap(), before);
@@ -310,6 +323,34 @@ fn backend_builtin_seed_uses_active_root_and_preserves_user_collisions() {
     fs::write(&invalid_root, "keep me").unwrap();
     assert!(ensure_backend_builtin_agent_skills(&invalid_root).is_err());
     assert_eq!(fs::read(&invalid_root).unwrap(), b"keep me");
+}
+
+#[test]
+fn file_skill_seed_replaces_owned_revision_and_installs_package() {
+    let tmp = TempDir::new("zeroagent-file-skill-seed").unwrap();
+    let root = tmp.path().join("skills");
+    let old = write_skill(&root, "zeroagent-word-revision", "Previous document workflow");
+    fs::write(old.join("_zeroagent_builtin.json"), r#"{"schemaVersion":1,"owner":"ZeroAgent","skill":"zeroagent-word-revision","revision":1}"#).unwrap();
+    let user = write_skill(&root, "zeroagent-pdf-revision", "User workflow");
+
+    let seeded = ensure_backend_builtin_agent_skills(tmp.path()).unwrap();
+    assert!(!old.exists());
+    assert!(user.join("SKILL.md").is_file());
+    assert!(root.join(".backups").read_dir().unwrap().any(|entry| {
+        entry.unwrap().path().join("SKILL.md").is_file()
+    }));
+    for name in ["documents", "pdf", "spreadsheet", "presentations"] {
+        assert!(seeded.iter().any(|skill| skill.name == name && skill.action == "created"));
+        let resources = root.join(name);
+        assert!(resources.join("SKILL.md").is_file());
+        assert!(resources.join("LICENSE.md").is_file());
+    }
+    assert!(root.join("documents/scripts/comments_add.py").is_file());
+    assert!(!root.join("documents/original").exists());
+    assert!(ensure_backend_builtin_agent_skills(tmp.path())
+        .unwrap()
+        .iter()
+        .all(|skill| skill.action == "kept"));
 }
 
 #[test]

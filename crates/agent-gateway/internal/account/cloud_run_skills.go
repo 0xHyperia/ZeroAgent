@@ -10,7 +10,7 @@ import (
 //go:embed skills
 var cloudBuiltinSkills embed.FS
 
-const cloudVisualSkillGuidance = ` When installed and enabled in the skill catalog, read imagegen before generate_image and product-design for deliberate UX/design work. Skills grant no unavailable tools. Image generation uses the user's separately configured default model; missing configuration must be surfaced, never substituted. Ready images are displayed in the conversation and saved privately in the personal space.`
+const cloudVisualSkillGuidance = ` When installed and enabled in the skill catalog, read imagegen before generate_image and product-design for deliberate UX/design work. For creating or revising a document, PDF, spreadsheet or presentation, read the corresponding built-in file skill using its package ID (documents, pdf, spreadsheet or presentations). Reader revisions identify the exact source and anchors in the message. Skills grant no unavailable tools. Image generation uses the user's separately configured default model; missing configuration must be surfaced, never substituted. Ready images are displayed in the conversation and saved privately in the personal space.`
 
 func (e *cloudRunToolExecution) visualSchemas() []map[string]any {
 	result := []map[string]any{

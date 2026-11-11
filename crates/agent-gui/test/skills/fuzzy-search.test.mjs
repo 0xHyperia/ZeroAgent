@@ -69,7 +69,7 @@ test("Skills and MCP result cards share fuzzy ranking and keyword highlighting",
   const installedMcp = readUiSource("pages/mcp-hub/McpServersForm.tsx");
   const storeMcp = readUiSource("pages/mcp-hub/McpRegistryBrowser.tsx");
 
-  assert.match(installedSkills, /<SearchHighlight[\s\S]*text=\{skill\.name\}/);
+  assert.match(installedSkills, /<SearchHighlight[\s\S]*text=\{displayName\}/);
   assert.match(importedSkills, /rankFuzzySearchResults\(scan\.skills/);
   assert.match(storeSkills, /includeUnmatched: true/);
   assert.match(installedMcp, /rankFuzzySearchResults\(/);

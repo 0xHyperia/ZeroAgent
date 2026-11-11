@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -202,7 +203,8 @@ type cloudLegacySkill struct {
 }
 
 func cloudExtensionBuiltin(id string) bool {
-	return id == "product-design" || id == "imagegen" || id == "skill-creator" || id == "plugin-creator"
+	return id == "product-design" || id == "imagegen" || id == "skill-creator" || id == "plugin-creator" ||
+		slices.Contains(cloudFileSkillIDs, id)
 }
 
 func builtinCloudExtensions() []CloudExtension {
@@ -211,7 +213,12 @@ func builtinCloudExtensions() []CloudExtension {
 		workflow := cloudNativeWorkflow(current[i].ID, current[i].Kind, current[i].Revisions[0])
 		current[i].Revisions = []CloudExtensionRevision{workflow}
 	}
-	return current
+	fileSkills := readBuiltinCloudExtensions("skills", 1, cloudFileSkillIDs)
+	for i := range fileSkills {
+		revision := &fileSkills[i].Revisions[0]
+		revision.Skills[0].DisplayName = revision.Name
+	}
+	return append(current, fileSkills...)
 }
 
 func effectiveCloudExtensions(doc *CloudExtensions) []CloudExtension {
@@ -227,11 +234,19 @@ func effectiveCloudExtensions(doc *CloudExtensions) []CloudExtension {
 				break
 			}
 		}
-		if !found && (saved.Kind == "plugin" || saved.Kind == "skill") {
+		if !found && !retiredCloudFileSkill(saved.ID) && (saved.Kind == "plugin" || saved.Kind == "skill") {
 			result = append(result, saved)
 		}
 	}
 	return result
+}
+
+func retiredCloudFileSkill(id string) bool {
+	switch id {
+	case "zeroagent-word-revision", "zeroagent-pdf-revision", "zeroagent-xlsx-revision", "zeroagent-pptx-revision":
+		return true
+	}
+	return false
 }
 func cloudExtensionCards(doc *CloudExtensions) []cloudExtensionCard {
 	result := []cloudExtensionCard{}
@@ -296,12 +311,16 @@ func cloudExtensionCards(doc *CloudExtensions) []cloudExtensionCard {
 }
 
 func cloudExtensionRevisionValid(v CloudExtensionRevision) bool {
-	if strings.TrimSpace(v.Name) == "" || len(v.Name) > 64 || len(v.Description) > 500 || strings.TrimSpace(v.Description) == "" || len(v.Skills) == 0 || len(v.Skills) > 20 || len(v.Files) > 64 || len(cloudJSON(v)) > 256<<10 {
+	return cloudExtensionRevisionWithin(v, 64, 64<<10, 256<<10)
+}
+
+func cloudExtensionRevisionWithin(v CloudExtensionRevision, fileLimit, bodyLimit, packageLimit int) bool {
+	if strings.TrimSpace(v.Name) == "" || len(v.Name) > 64 || len(v.Description) > 500 || strings.TrimSpace(v.Description) == "" || len(v.Skills) == 0 || len(v.Skills) > 20 || len(v.Files) > fileLimit || len(cloudJSON(v)) > packageLimit {
 		return false
 	}
 	seen := map[string]bool{}
 	for key, body := range v.Files {
-		if !validCloudToolPath(key) || (strings.HasPrefix(key, ".") && key != ".codex-plugin/plugin.json") || len(body) > 64<<10 || !utf8.ValidString(body) || strings.ContainsRune(body, 0) {
+		if !validCloudToolPath(key) || (strings.HasPrefix(key, ".") && key != ".codex-plugin/plugin.json") || len(body) > bodyLimit || !utf8.ValidString(body) || strings.ContainsRune(body, 0) {
 			return false
 		}
 	}
@@ -838,6 +857,7 @@ func (e *cloudRunToolExecution) resolveSkill(ctx context.Context, packageID, nam
 			return nil, ErrNotFound
 		}
 		if sk := cloudSkillInRevision(p, v, name); sk != nil {
+			files := v.Files
 			selected := file
 			if selected == "" {
 				selected = sk.Entry
@@ -848,12 +868,12 @@ func (e *cloudRunToolExecution) resolveSkill(ctx context.Context, packageID, nam
 					selected = relative
 				}
 			}
-			body, ok := v.Files[selected]
+			body, ok := files[selected]
 			if !ok {
 				return nil, ErrNotFound
 			}
 			keys := []string{}
-			for key := range v.Files {
+			for key := range files {
 				keys = append(keys, key)
 			}
 			sort.Strings(keys)

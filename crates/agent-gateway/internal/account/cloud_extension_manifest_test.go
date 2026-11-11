@@ -10,13 +10,17 @@ import (
 
 func TestBuiltinManifestMembership(t *testing.T) {
 	packages := builtinCloudExtensions()
-	if len(packages) != 4 {
-		t.Fatal("builtin manifest missing", len(packages))
-	}
-	want := map[string]struct {
+	type membership struct {
 		kind, primary string
 		count         int
-	}{"product-design": {"plugin", "index", 10}, "plugin-creator": {"plugin", "create-plugin", 3}, "imagegen": {"skill", "imagegen", 1}, "skill-creator": {"skill", "skill-creator", 1}}
+	}
+	want := map[string]membership{"product-design": {"plugin", "index", 10}, "plugin-creator": {"plugin", "create-plugin", 3}, "imagegen": {"skill", "imagegen", 1}, "skill-creator": {"skill", "skill-creator", 1}}
+	for _, id := range []string{"documents", "pdf", "spreadsheet", "presentations"} {
+		want[id] = membership{"skill", id, 1}
+	}
+	if len(packages) != len(want) {
+		t.Fatal("unexpected number of builtin packages", len(packages))
+	}
 	for _, pkg := range packages {
 		expect, ok := want[pkg.ID]
 		if !ok {

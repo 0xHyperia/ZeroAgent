@@ -1,0 +1,13 @@
+{
+  "name": "spreadsheet",
+  "description": "Create, inspect, edit, recalculate, render and convert spreadsheets, including XLSX, CSV and TSV.",
+  "interface": {
+    "displayName": "表格"
+  },
+  "extensions": {
+    "top.usa0": {
+      "kind": "skill",
+      "primarySkill": "spreadsheet"
+    }
+  }
+}

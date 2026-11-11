@@ -101,6 +101,10 @@ try {
     Assert-True (-not (Test-Path -LiteralPath $report.scratchDirectory)) 'Dry-run must not create the install scratch directory'
     $script:passed++
 
+    $report = Invoke-Case 'runtime-required' $valid $true @{ RequireFileRuntime = $true }
+    Assert-True ($report.status -eq 'failed' -and $report.error -match 'missing the required file runtime') 'Release accepted a portable package without its runtime'
+    $script:passed++
+
     $report = Invoke-Case 'host-refusal' $valid $false
     Assert-True ($report.status -eq 'failed' -and $report.error -match 'Refusing actual installation') 'Non-hosted actual execution must fail before reading/installing artifacts'
     $script:passed++

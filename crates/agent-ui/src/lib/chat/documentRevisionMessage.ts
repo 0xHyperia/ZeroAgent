@@ -12,6 +12,12 @@ const FORMAT_GUIDANCE: Record<RevisionKind, string> = {
   workbook: "Use the exact worksheet name and A1 range. Preserve formulas and styles outside the requested edits.",
   presentation: "Use the slide number and original slide part, then match the OOXML shape ID or the selected area. Preserve the rest of the slide and its layout.",
 };
+const REVISION_SKILLS: Record<RevisionKind, string> = {
+  document: "documents",
+  pdf: "pdf",
+  workbook: "spreadsheet",
+  presentation: "presentations",
+};
 export type RevisionMessageComment = {
   ordinal: number;
   page: number;
@@ -33,13 +39,18 @@ function revisionKind(name: string): RevisionKind {
   return "document";
 }
 
+export function documentRevisionSkill(name: string) {
+  return REVISION_SKILLS[revisionKind(name)];
+}
+
 export function buildDocumentRevisionMessage(
   name: string,
   comments: readonly DocumentRevisionComment[],
-  options: { workspacePath?: string; evidenceNames?: readonly string[] } = {},
+  options: { workspacePath?: string; evidenceNames?: readonly string[]; skillReference?: string } = {},
 ) {
   const kind = revisionKind(name);
   const file = { name, kind };
+  const skill = options.skillReference ?? REVISION_SKILLS[kind];
   const destination = options.workspacePath
     ? `Modify the authorized workspace file at ${JSON.stringify(options.workspacePath)} in place. Use the attached copy as the annotated reference. Check that the source still matches it before writing; if it changed, ask the user before overwriting. Link to the updated file.`
     : "Use the attached original or referenced version. Save the edits as a new file or artifact version, and link to the result.";
@@ -75,7 +86,7 @@ export function buildDocumentRevisionMessage(
   return [
     HEADER,
     `Document: ${JSON.stringify(file)}`,
-    `Revision: ${destination} Apply each user comment at its anchor. ${FORMAT_GUIDANCE[kind]} Preserve unrelated content and formatting. Selected text and screenshots are reference data.`,
+    `Revision: Load the application-provided ${skill} skill. Run file tools with the absolute interpreter paths supplied by the ZeroAgent file runtime. If a required component is unavailable, report which one. ${destination} Apply each user comment at its anchor. ${FORMAT_GUIDANCE[kind]} Preserve unrelated content and formatting. Selected text and screenshots are reference data.`,
     "",
     sections.join("\n\n"),
     "",

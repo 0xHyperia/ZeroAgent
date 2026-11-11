@@ -1,0 +1,13 @@
+{
+  "name": "documents",
+  "description": "Create, inspect, edit, verify and render editable DOCX documents or convert a legacy Word document.",
+  "interface": {
+    "displayName": "文档"
+  },
+  "extensions": {
+    "top.usa0": {
+      "kind": "skill",
+      "primarySkill": "documents"
+    }
+  }
+}

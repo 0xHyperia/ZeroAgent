@@ -108,6 +108,7 @@ enum StartupEvent {
 
 pub struct KBrainBackendManager {
     process: Mutex<Option<BackendProcess>>,
+    file_runtime: Option<super::file_runtime::FileRuntime>,
     connection: KBrainBackendConnection,
     facade: Mutex<Option<BackendFacade>>,
     configuration: Arc<crate::services::configuration_coordinator::ConfigurationCoordinator>,
@@ -253,7 +254,7 @@ impl KBrainBackendManager {
         backend_dir: PathBuf,
         startup_timeout: Duration,
     ) -> Result<Arc<Self>, String> {
-        Self::start(binary, backend_dir, None, startup_timeout, &|| false, None)
+        Self::start(binary, backend_dir, None, startup_timeout, &|| false, None, None)
     }
 
     fn start(
@@ -263,6 +264,7 @@ impl KBrainBackendManager {
         startup_timeout: Duration,
         cancelled: &dyn Fn() -> bool,
         mcp_owner: Option<McpCredentialOwner>,
+        resource_dir: Option<&Path>,
     ) -> Result<Arc<Self>, String> {
         if cancelled() {
             return Err("ZeroAgent engine startup cancelled".into());
@@ -313,6 +315,8 @@ impl KBrainBackendManager {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        let file_runtime = super::file_runtime::configure(&mut command, resource_dir);
+        command.env("ZEROAGENT_FILE_SKILL_ROOT", backend_dir.join("skills"));
         if let Some(host) = &mcp_credentials {
             command
                 .env("ZEROAGENT_MCP_CREDENTIAL_ENDPOINT", host.endpoint())
@@ -447,6 +451,7 @@ impl KBrainBackendManager {
 
         Ok(Arc::new(Self {
             process: Mutex::new(Some(process)),
+            file_runtime,
             connection,
             facade: Mutex::new(None),
             configuration,
@@ -1026,6 +1031,7 @@ impl KBrainBackendState {
             profile.backend_dir(&data_dir),
             None,
             epoch,
+            app.path().resource_dir().ok(),
             #[cfg(test)]
             false,
         )?;
@@ -1202,6 +1208,7 @@ impl KBrainBackendState {
             app_data_dir,
             None,
             self.shutdown_epoch.load(Ordering::SeqCst),
+            None,
             false,
         )
     }
@@ -1217,6 +1224,7 @@ impl KBrainBackendState {
             app_data_dir,
             None,
             self.shutdown_epoch.load(Ordering::SeqCst),
+            None,
             true,
         )
     }
@@ -1227,6 +1235,7 @@ impl KBrainBackendState {
         app_data_dir: PathBuf,
         legacy_desktop_dir: Option<PathBuf>,
         epoch: u64,
+        resource_dir: Option<PathBuf>,
         #[cfg(test)] fixture_without_mcp: bool,
     ) -> Result<KBrainBackendConnection, String> {
         let cancelled = || {
@@ -1303,6 +1312,7 @@ impl KBrainBackendState {
                 STARTUP_TIMEOUT,
                 &cancelled,
                 mcp_owner,
+                resource_dir.as_deref(),
             )
         }))
         .map_err(|_| "ZeroAgent engine startup panicked".to_string())??;
@@ -1451,6 +1461,17 @@ impl KBrainBackendState {
     pub fn running_connection(&self) -> Option<KBrainBackendConnection> {
         let manager = self.manager.lock().ok()?.as_ref().cloned()?;
         manager.is_running().then(|| manager.connection())
+    }
+
+    pub(crate) async fn file_runtime_ready(&self) -> bool {
+        let Some(manager) = self.manager.lock().ok().and_then(|manager| manager.as_ref().cloned())
+        else {
+            return false;
+        };
+        let Some(runtime) = &manager.file_runtime else {
+            return false;
+        };
+        manager.is_running() && runtime.ready().await && manager.is_running()
     }
 
     pub fn verify_portable_backup(&self, value: &serde_json::Value) -> Result<(), String> {
@@ -1686,6 +1707,13 @@ pub async fn kbrain_backend_activate_profile(
         account.require_current(handle).await?;
     }
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn kbrain_file_runtime_ready(
+    state: State<'_, Arc<KBrainBackendState>>,
+) -> Result<bool, String> {
+    Ok(state.file_runtime_ready().await)
 }
 
 #[tauri::command]
@@ -2241,6 +2269,7 @@ mod tests {
                 data.clone(),
                 None,
                 0,
+                None,
                 false,
             )
             .err()
@@ -2274,6 +2303,7 @@ mod tests {
                 data.clone(),
                 None,
                 initial_epoch,
+                None,
                 false,
             )
             .expect_err("superseded start must be rejected before spawning");

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type cloudPluginInterface struct {
@@ -31,6 +33,10 @@ func cloudManifestPresent(raw json.RawMessage) bool {
 // Parse declarative instruction packages only. A manifest cannot add a tool,
 // connection or executable capability to the account-owned cloud executor.
 func cloudRevisionFromManifest(files map[string]string) (CloudExtensionRevision, string, error) {
+	return parseCloudRevisionManifest(files, cloudExtensionRevisionValid)
+}
+
+func parseCloudRevisionManifest(files map[string]string, validate func(CloudExtensionRevision) bool) (CloudExtensionRevision, string, error) {
 	v := CloudExtensionRevision{Files: files}
 	raw := files["plugin.json"]
 	if raw == "" {
@@ -132,23 +138,30 @@ func cloudRevisionFromManifest(files map[string]string) (CloudExtensionRevision,
 	if v.Description == "" {
 		v.Description = manifest.Interface.ShortDescription
 	}
-	if !cloudExtensionRevisionValid(v) {
+	if !validate(v) {
 		return v, "", ErrCloudRunInvalid
 	}
 	return v, local.Kind, nil
 }
 
+var cloudFileSkillIDs = []string{"documents", "pdf", "spreadsheet", "presentations"}
+
 func declaredBuiltinCloudExtensions(root string, number int64) []CloudExtension {
+	return readBuiltinCloudExtensions(root, number, []string{"product-design", "imagegen", "plugin-creator", "skill-creator"})
+}
+
+func readBuiltinCloudExtensions(root string, number int64, ids []string) []CloudExtension {
 	result := []CloudExtension{}
-	for _, id := range []string{"product-design", "imagegen", "plugin-creator", "skill-creator"} {
+	for _, id := range ids {
 		files := map[string]string{}
+		fileSkill := root == "skills" && slices.Contains(cloudFileSkillIDs, id)
 		prefix := root + "/" + id + "/"
 		err := fs.WalkDir(cloudBuiltinSkills, strings.TrimSuffix(prefix, "/"), func(name string, entry fs.DirEntry, err error) error {
 			if err != nil || entry.IsDir() {
 				return err
 			}
 			body, err := cloudBuiltinSkills.ReadFile(name)
-			if err == nil {
+			if err == nil && (!fileSkill || utf8.Valid(body) && !strings.ContainsRune(string(body), 0)) {
 				files[strings.TrimPrefix(name, prefix)] = string(body)
 			}
 			return err
@@ -156,7 +169,13 @@ func declaredBuiltinCloudExtensions(root string, number int64) []CloudExtension 
 		if err != nil {
 			continue
 		}
-		revision, kind, err := cloudRevisionFromManifest(files)
+		validate := cloudExtensionRevisionValid
+		if fileSkill {
+			validate = func(revision CloudExtensionRevision) bool {
+				return cloudExtensionRevisionWithin(revision, 128, 128<<10, 1<<20)
+			}
+		}
+		revision, kind, err := parseCloudRevisionManifest(files, validate)
 		if err != nil {
 			continue
 		}

@@ -1,0 +1,13 @@
+{
+  "name": "pdf",
+  "description": "Create and inspect PDFs, fill forms, manage pages, render previews and process PDF comments and selections.",
+  "interface": {
+    "displayName": "PDF"
+  },
+  "extensions": {
+    "top.usa0": {
+      "kind": "skill",
+      "primarySkill": "pdf"
+    }
+  }
+}

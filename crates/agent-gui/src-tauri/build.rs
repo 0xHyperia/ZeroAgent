@@ -75,6 +75,7 @@ fn main() {
         .join("proto")
         .join("v2")
         .join("gateway_ws.proto");
+    embed_file_skill_packages(&gateway_root);
 
     println!("cargo:rerun-if-changed={}", proto_v2.display());
     println!("cargo:rerun-if-changed={}", proto_v2_ws.display());
@@ -120,4 +121,44 @@ fn main() {
     } else {
         tauri_build::build();
     }
+}
+
+fn embed_file_skill_packages(gateway_root: &std::path::Path) {
+    use std::fmt::Write;
+    use std::path::Path;
+
+    fn emit(root: &Path, directory: &Path, generated: &mut String) {
+        let mut entries: Vec<_> = std::fs::read_dir(directory)
+            .expect("read file skill directory")
+            .map(|entry| entry.expect("read file skill entry").path())
+            .collect();
+        entries.sort();
+        for file in entries {
+            let metadata = std::fs::symlink_metadata(&file).expect("read file skill metadata");
+            if metadata.is_dir() {
+                emit(root, &file, generated);
+            } else {
+                assert!(metadata.is_file(), "invalid file skill entry");
+                let relative = file.strip_prefix(root).unwrap().to_str().unwrap().replace('\\', "/");
+                if relative == "plugin.json" {
+                    continue;
+                }
+                let absolute = file.canonicalize().expect("locate file skill");
+                writeln!(generated, "({relative:?}, include_bytes!({absolute:?})),").unwrap();
+            }
+        }
+    }
+
+    let packages = gateway_root.join("internal/account/skills");
+    let mut generated = String::from("fn file_skill_package(name: &str) -> &'static [(&'static str, &'static [u8])] { match name {\n");
+    for id in ["documents", "pdf", "spreadsheet", "presentations"] {
+        let skill = packages.join(id);
+        println!("cargo:rerun-if-changed={}", skill.display());
+        writeln!(generated, "{id:?} => &[").unwrap();
+        emit(&skill, &skill, &mut generated);
+        generated.push_str("],\n");
+    }
+    generated.push_str("_ => &[], } }\n");
+    std::fs::write(Path::new(&std::env::var_os("OUT_DIR").unwrap()).join("file_skill_packages.rs"), generated)
+        .expect("write embedded file skill manifest");
 }

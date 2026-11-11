@@ -11,12 +11,25 @@ export async function requestWorkspaceRevision(
   host: {
     workspaceRoot: string;
     canSend: () => boolean;
+    locale: string;
+    checkFileRuntime: () => Promise<boolean>;
     importSources: (sources: File[]) => Promise<PendingUploadedFile[] | null | undefined>;
     send: (text: string, files: PendingUploadedFile[]) => Promise<boolean>;
   },
 ) {
   if (!comments.length || comments.length > 20 || !host.canSend()) return false;
   assertCurrent();
+  const zh = host.locale === "zh-CN";
+  const ready = await host.checkFileRuntime().catch(() => null);
+  if (!host.canSend()) return false;
+  assertCurrent();
+  if (ready !== true) {
+    throw new Error(
+      ready === null
+        ? zh ? "无法核对执行设备的文件运行时。批注已保留，请重试。" : "Could not check the device file runtime. Your comments are kept. Try again."
+        : zh ? "执行设备的 ZeroAgent 文件运行时不可用。请检查运行时配置并重启该设备的 ZeroAgent，批注已保留。" : "The device's ZeroAgent file runtime is unavailable. Check its runtime configuration and restart ZeroAgent on that device. Your comments are kept.",
+    );
+  }
   const selectedEvidence = evidence.slice(0, MAX_REVISION_EVIDENCE);
   const files = await host.importSources([source, ...selectedEvidence]);
   if (!files?.some(({ fileName }) => fileName === source.name) || !host.canSend())

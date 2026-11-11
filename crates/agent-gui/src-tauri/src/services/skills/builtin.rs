@@ -7,6 +7,8 @@ use walkdir::WalkDir;
 
 use super::*;
 
+include!(concat!(env!("OUT_DIR"), "/file_skill_packages.rs"));
+
 pub(crate) struct BuiltinSkillFile {
     pub(crate) path: &'static str,
     pub(crate) content: &'static str,
@@ -21,6 +23,37 @@ pub(crate) struct BuiltinSkill {
 const CODE_REVIEW_OWNERSHIP_MARKER_PATH: &str = "_zeroagent_builtin.json";
 const CODE_REVIEW_OWNERSHIP_MARKER_CONTENT: &str =
     "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"zeroagent-code-review\"}\n";
+
+const RETIRED_FILE_SKILLS: &[&str] = &[
+    "zeroagent-word-revision",
+    "zeroagent-pdf-revision",
+    "zeroagent-xlsx-revision",
+    "zeroagent-pptx-revision",
+];
+
+fn legacy_file_skill_marker(name: &str) -> String {
+    format!("{{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"{name}\",\"revision\":1}}")
+}
+
+fn has_legacy_file_skill_marker(target: &Path, name: &str) -> bool {
+    let marker = target.join(CODE_REVIEW_OWNERSHIP_MARKER_PATH);
+    let regular = |path: &Path, directory| {
+        fs::symlink_metadata(path).is_ok_and(|info| {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if info.file_attributes() & 0x400 != 0 {
+                    return false;
+                }
+            }
+            !info.file_type().is_symlink()
+                && if directory { info.is_dir() } else { info.is_file() && info.len() <= 512 }
+        })
+    };
+    regular(target, true)
+        && regular(&marker, false)
+        && fs::read_to_string(marker).is_ok_and(|value| value.trim_end() == legacy_file_skill_marker(name))
+}
 
 const SKILLS_INSTALLER_FILES: &[BuiltinSkillFile] = &[
     BuiltinSkillFile {
@@ -73,6 +106,46 @@ const CODE_REVIEW_FILES: &[BuiltinSkillFile] = &[
 
 pub(crate) const BUILTIN_AGENT_SKILLS: &[BuiltinSkill] = &[
     BuiltinSkill {
+        name: "documents",
+        files: &[
+            BuiltinSkillFile {
+                path: "_zeroagent_builtin.json",
+                content: "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"documents\"}\n",
+            },
+        ],
+        ownership_marker: Some(("_zeroagent_builtin.json", "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"documents\"}\n")),
+    },
+    BuiltinSkill {
+        name: "pdf",
+        files: &[
+            BuiltinSkillFile {
+                path: "_zeroagent_builtin.json",
+                content: "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"pdf\"}\n",
+            },
+        ],
+        ownership_marker: Some(("_zeroagent_builtin.json", "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"pdf\"}\n")),
+    },
+    BuiltinSkill {
+        name: "spreadsheet",
+        files: &[
+            BuiltinSkillFile {
+                path: "_zeroagent_builtin.json",
+                content: "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"spreadsheet\"}\n",
+            },
+        ],
+        ownership_marker: Some(("_zeroagent_builtin.json", "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"spreadsheet\"}\n")),
+    },
+    BuiltinSkill {
+        name: "presentations",
+        files: &[
+            BuiltinSkillFile {
+                path: "_zeroagent_builtin.json",
+                content: "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"presentations\"}\n",
+            },
+        ],
+        ownership_marker: Some(("_zeroagent_builtin.json", "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"presentations\"}\n")),
+    },
+    BuiltinSkill {
         name: "zeroagent-code-review",
         files: CODE_REVIEW_FILES,
         ownership_marker: Some((
@@ -105,7 +178,9 @@ fn builtin_skill_owns_target(target: &Path, builtin: &BuiltinSkill) -> Result<bo
     let marker_path = sanitize_skill_child_rel_path(marker_path)?;
     let marker = target.join(marker_path);
     match fs::read_to_string(&marker) {
-        Ok(content) => Ok(content == expected_content),
+        Ok(content) => Ok(content == expected_content
+            || (matches!(builtin.name, "documents" | "pdf" | "spreadsheet" | "presentations")
+                && has_legacy_file_skill_marker(target, builtin.name))),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(format!(
             "Failed to inspect built-in Skill ownership marker {}: {error}",
@@ -118,6 +193,18 @@ pub(crate) fn is_managed_builtin_skill_dir(skill_dir: &Path, name: &str) -> bool
     builtin_agent_skill(name)
         .and_then(|builtin| builtin_skill_owns_target(skill_dir, builtin).ok())
         .unwrap_or(false)
+}
+
+pub(crate) fn matches_packaged_file_skill_asset(skill_dir: &Path, relative: &Path) -> bool {
+    let Some(name) = skill_dir.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let portable_path = relative.to_string_lossy().replace('\\', "/");
+    let Some((_, expected)) = file_skill_package(name).iter().find(|(path, _)| *path == portable_path) else {
+        return false;
+    };
+    is_managed_builtin_skill_dir(skill_dir, name)
+        && fs::read(skill_dir.join(relative)).as_deref().ok() == Some(*expected)
 }
 
 pub(crate) fn ensure_not_builtin_skill_management_target(
@@ -149,12 +236,24 @@ pub(crate) fn ensure_backend_builtin_agent_skills(
     backend_root: &Path,
 ) -> Result<Vec<SystemBuiltinSkillSeedResponse>, String> {
     let root = backend_root.join("skills");
-    let builtin = builtin_agent_skill("zeroagent-code-review")
-        .ok_or("Missing ZeroAgent code review workflow")?;
+    let builtins = BUILTIN_AGENT_SKILLS
+        .iter()
+        .filter(|skill| skill.ownership_marker.is_some());
+    for builtin in builtins.clone() {
+        validate_backend_builtin_target(backend_root, &root, builtin)?;
+    }
+    seed_builtin_agent_skills(&root, builtins)
+}
+
+fn validate_backend_builtin_target(
+    backend_root: &Path,
+    root: &Path,
+    builtin: &BuiltinSkill,
+) -> Result<(), String> {
     let target = root.join(builtin.name);
     for (path, directory) in [
         (backend_root.to_path_buf(), true),
-        (root.clone(), true),
+        (root.to_path_buf(), true),
         (target.clone(), true),
         (target.join("SKILL.md"), false),
         (target.join(CODE_REVIEW_OWNERSHIP_MARKER_PATH), false),
@@ -188,7 +287,7 @@ pub(crate) fn ensure_backend_builtin_agent_skills(
             }
         }
     }
-    seed_builtin_agent_skills(&root, std::iter::once(builtin))
+    Ok(())
 }
 
 pub(crate) fn builtin_skill_files_match(
@@ -219,6 +318,7 @@ pub(crate) fn builtin_skill_files_match(
                 .map(|path| path.to_string_lossy().replace('\\', "/"))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    expected_files.extend(file_skill_package(builtin.name).iter().map(|(name, _)| (*name).to_string()));
     expected_files.sort();
     if actual_files != expected_files {
         return Ok(false);
@@ -237,6 +337,12 @@ pub(crate) fn builtin_skill_files_match(
                     path.display()
                 ));
             }
+        }
+    }
+    for (name, data) in file_skill_package(builtin.name) {
+        let path = target.join(sanitize_skill_child_rel_path(name)?);
+        if fs::read(path).ok().as_deref() != Some(*data) {
+            return Ok(false);
         }
     }
     Ok(true)
@@ -313,6 +419,15 @@ fn seed_builtin_agent_skills(
                 )
             })?;
         }
+        for (name, data) in file_skill_package(builtin.name) {
+            let path = target.join(sanitize_skill_child_rel_path(name)?);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|error| format!("Failed to create packaged Skill directory: {error}"))?;
+            }
+            fs::write(path, data)
+                .map_err(|error| format!("Failed to install packaged Skill resource: {error}"))?;
+        }
         let validation = validate_skill_dir(&target);
         if !validation.ok {
             return Err(format!(
@@ -327,6 +442,12 @@ fn seed_builtin_agent_skills(
             action: write_action.to_string(),
             backup: backup.map(|path| display_path(&path)),
         });
+    }
+    for name in RETIRED_FILE_SKILLS {
+        let target = root.join(name);
+        if has_legacy_file_skill_marker(&target, name) {
+            backup_existing_path(root, &target, name)?;
+        }
     }
     Ok(results)
 }

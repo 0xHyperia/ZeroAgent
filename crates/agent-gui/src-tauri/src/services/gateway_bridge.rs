@@ -1852,7 +1852,12 @@ pub async fn handle_skill_manage(
     // retain its owner checks, configuration gate, read-bound CAS and recovery.
     let connection =
         crate::services::kbrain_backend::kbrain_backend_connection(app.clone(), backend).await?;
-    let response = kbrain_skill_manage(&connection, payload).await?;
+    let response = if payload.get("action").and_then(Value::as_str) == Some("file-runtime-status") {
+        let state = app.state::<Arc<KBrainBackendState>>();
+        json!({ "ready": state.file_runtime_ready().await })
+    } else {
+        kbrain_skill_manage(&connection, payload).await?
+    };
     serde_json::to_string(&response)
         .map(|result_json| proto::SkillManageResponse { result_json })
         .map_err(|e| format!("serialize skill manage response failed: {e}"))

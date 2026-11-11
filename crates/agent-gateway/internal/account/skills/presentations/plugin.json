@@ -1,0 +1,13 @@
+{
+  "name": "presentations",
+  "description": "Create, inspect, edit and render PPTX slide decks, use a presentation template or convert a legacy PowerPoint deck.",
+  "interface": {
+    "displayName": "演示文稿"
+  },
+  "extensions": {
+    "top.usa0": {
+      "kind": "skill",
+      "primarySkill": "presentations"
+    }
+  }
+}

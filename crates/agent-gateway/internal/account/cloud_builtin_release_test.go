@@ -3,12 +3,19 @@ package account
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 )
 
 func TestBuiltinWorkflowsShipOnlyCurrentDefinitions(t *testing.T) {
 	for _, pkg := range builtinCloudExtensions() {
+		if slices.Contains(cloudFileSkillIDs, pkg.ID) {
+			if len(pkg.Revisions) != 1 || pkg.Revisions[0].Number != 1 {
+				t.Fatalf("%s does not ship exactly one current workflow", pkg.ID)
+			}
+			continue
+		}
 		if len(pkg.Revisions) != 1 || pkg.Revisions[0].Native == nil {
 			t.Fatalf("%s does not ship exactly one current workflow", pkg.ID)
 		}
@@ -17,6 +24,33 @@ func TestBuiltinWorkflowsShipOnlyCurrentDefinitions(t *testing.T) {
 				t.Fatalf("%s still resolves development revision %d", pkg.ID, retired)
 			}
 		}
+	}
+}
+
+func TestBuiltinFileSkillsResolveInCloud(t *testing.T) {
+	_, execution := imageExecutionFixture(t, func(http.ResponseWriter, *http.Request) { t.Error("reading a skill called a provider") })
+	references := map[string]string{
+		"documents": "tasks/verify_render.md", "pdf": "SKILL.md",
+		"spreadsheet": "artifact_tool_docs/DATA_TABLES.md", "presentations": "references/finalization.md",
+	}
+	for _, id := range cloudFileSkillIDs {
+		got, err := execution.resolveSkill(context.Background(), id, id, "")
+		if err != nil || got["package_id"] != id || got["version"] != int64(1) ||
+			got["path"] != "SKILL.md" || !strings.Contains(got["instructions"].(string), "ZEROAGENT_FILE_SKILL_ROOT") {
+			t.Fatalf("%s does not resolve its file runtime instructions: %v", id, err)
+		}
+		files := got["files"].([]string)
+		if !slices.Contains(files, "LICENSE.md") || slices.Contains(files, "original/SKILL.md") {
+			t.Fatalf("%s does not expose the canonical package", id)
+		}
+		ref, err := execution.resolveSkill(context.Background(), id, id, references[id])
+		if err != nil || ref["path"] != references[id] || ref["instructions"] == "" {
+			t.Fatalf("%s cannot load its task guide: %v", id, err)
+		}
+	}
+	_, err := execution.resolveSkill(context.Background(), "zeroagent-word-revision", "zeroagent-word-revision", "")
+	if err != ErrNotFound {
+		t.Fatalf("retired file skill is still resolvable: %v", err)
 	}
 }
 

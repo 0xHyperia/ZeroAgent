@@ -32,6 +32,7 @@ import { Switch } from "@liveagent/ui/components/ui/switch";
 import { Tabs, TabsContent } from "@liveagent/ui/components/ui/tabs";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import { rankFuzzySearchResults } from "@liveagent/ui/lib/shared/fuzzySearch";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import {
@@ -404,6 +405,8 @@ export function SkillsHubPage(props: SkillsHubPageProps) {
   const textFilteredInstalled = useMemo(() => {
     return rankFuzzySearchResults(deferredSkills, deferredFilter, (skill) => [
       skill.name,
+      builtinFileSkillPresentation(skill.name, skill.builtIn)?.zh,
+      builtinFileSkillPresentation(skill.name, skill.builtIn)?.en,
       skill.description,
       skill.baseDir,
       skill.skillFile,

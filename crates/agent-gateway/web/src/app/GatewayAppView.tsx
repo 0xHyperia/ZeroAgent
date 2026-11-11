@@ -1216,6 +1216,12 @@ export function GatewayAppView({
     return requestWorkspaceRevision(revision, {
       workspaceRoot: terminalProjectPath,
       canSend,
+      locale: settings.locale,
+      checkFileRuntime: async () => {
+        const status = await api.manageSkill<{ ready: boolean }>({ action: "file-runtime-status" });
+        if (typeof status?.ready !== "boolean") throw new Error("Missing file runtime status");
+        return status.ready;
+      },
       importSources: (sources) => importDeviceConversationFiles(
         terminalProjectPath, sources, AbortSignal.timeout(60_000),
       ),

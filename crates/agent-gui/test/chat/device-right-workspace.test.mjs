@@ -173,6 +173,8 @@ test("device document revisions attach the original and never send after the aut
   const host = {
     workspaceRoot: "D:/repo",
     canSend: () => current,
+    locale: "zh-CN",
+    checkFileRuntime: async () => true,
     importSources: async (files) => {
       assert.deepEqual(files, [source, screenshot]);
       return uploaded;
@@ -194,6 +196,16 @@ test("device document revisions attach the original and never send after the aut
   assert.equal(await requestWorkspaceRevision(revision, { ...host, workspaceRoot: "D:/other" }), true);
   assert.match(sent[1].text, /Save the edits as a new file or artifact version/);
   assert.doesNotMatch(sent[1].text, /D:\/repo\/report\.pdf/);
+  await assert.rejects(requestWorkspaceRevision(revision, {
+    ...host,
+    checkFileRuntime: async () => false,
+    importSources: () => assert.fail("missing runtime must stop before uploading"),
+  }), /文件运行时.*批注已保留/);
+  await assert.rejects(requestWorkspaceRevision(revision, {
+    ...host,
+    checkFileRuntime: async () => { throw new Error("device disconnected"); },
+    importSources: () => assert.fail("an unavailable device must stop before uploading"),
+  }), /无法核对.*批注已保留/);
   assert.equal(await requestWorkspaceRevision(revision, {
     ...host,
     importSources: async () => {

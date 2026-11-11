@@ -195,6 +195,9 @@ pub(crate) fn validate_skill_dir(skill_dir: &Path) -> SkillValidationResult {
             continue;
         }
         let rel = entry.path().strip_prefix(skill_dir).unwrap_or(entry.path());
+        if super::builtin::matches_packaged_file_skill_asset(skill_dir, rel) {
+            continue;
+        }
         if matches!(
             entry.file_name().to_string_lossy().as_ref(),
             "README.md" | "INSTALLATION_GUIDE.md" | "QUICK_REFERENCE.md" | "CHANGELOG.md"

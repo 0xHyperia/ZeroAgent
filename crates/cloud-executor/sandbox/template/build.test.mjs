@@ -72,7 +72,8 @@ test('default/check use installed SDK serialization without API or ambient crede
     const commands = steps.filter((step) => step.type === 'RUN').map((step) => step.args[0]);
     assert.match(commands[0], /check_environment.py --base-only$/);
     assert.match(commands[1], /--require-hashes --no-deps/);
-    assert.deepEqual(steps.at(-2).args, ['user']);
+    assert.deepEqual(steps.at(-3).args, ['user']);
+    assert.match(steps.at(-2).args[0], /test_file_tool\.py$/);
     assert.deepEqual(steps.at(-1).args, ['/home/user']);
     assert.ok(commands.includes('python3 -IB /opt/zeroagent-template/configure_fonts.py'));
     assert.ok(checked.files.matplotlibrc);

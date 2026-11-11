@@ -287,6 +287,7 @@ export function cloudComposerSkills(
         .filter((skill) => extensionSkillEnabled(pkg, skill))
         .map((skill) => ({
           name: skill.name,
+          ...(pkg.builtin && pkg.id === skill.name ? { builtIn: true } : {}),
           displayName:
             skill.name === pkg.skills[0]?.name
               ? extensionDisplayName(pkg, locale)

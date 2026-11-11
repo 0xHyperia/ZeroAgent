@@ -178,6 +178,12 @@ jobs:
           ZEROAGENT_BACKEND_TEST_BINARY: ${{ github.workspace }}/crates/agent-gui/src-tauri/binaries/k-brain-${{ matrix.target }}
         run: cargo test --locked -p zeroagent --lib --target ${{ matrix.target }}
 
+      - name: Stage verified macOS file runtime
+        shell: bash
+        env:
+          ZEROAGENT_FILE_RUNTIME_PACKS: ${{ vars.ZEROAGENT_FILE_RUNTIME_PACKS }}
+        run: node scripts/release/stage-file-runtime.mjs "${{ matrix.target }}" "$RUNNER_TEMP/zeroagent-file-runtime"
+
       - name: Build macOS bundles
         working-directory: crates/agent-gui
         env:
@@ -187,7 +193,7 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target ${{ matrix.target }} 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target ${{ matrix.target }} 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
@@ -205,6 +211,18 @@ jobs:
           cp "$dmg_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.dmg"
           cp "$updater_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz"
           cp "$updater_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz.sig"
+
+      - name: Exercise file runtime from the macOS disk image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount="$RUNNER_TEMP/zeroagent-dmg"
+          installed="$RUNNER_TEMP/zeroagent-installed"
+          mkdir -p "$mount" "$installed"
+          hdiutil attach dist/*.dmg -nobrowse -readonly -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          ditto "$mount/ZeroAgent.app" "$installed/ZeroAgent.app"
+          node scripts/release/verify-installed-file-runtime.mjs "$installed/ZeroAgent.app/Contents/Resources/file-runtime"
 
       - name: Verify updater asset signatures
         shell: bash
@@ -292,6 +310,12 @@ jobs:
       - name: Prepare reviewed K-brain binaries
         run: pnpm --dir crates/agent-gui prepare:kbrain:release
 
+      - name: Stage verified Windows file runtime
+        shell: bash
+        env:
+          ZEROAGENT_FILE_RUNTIME_PACKS: ${{ vars.ZEROAGENT_FILE_RUNTIME_PACKS }}
+        run: node scripts/release/stage-file-runtime.mjs x86_64-pc-windows-msvc "$RUNNER_TEMP/zeroagent-file-runtime"
+
       - name: Build Windows bundles
         working-directory: crates/agent-gui
         shell: bash
@@ -302,7 +326,7 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target x86_64-pc-windows-msvc 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target x86_64-pc-windows-msvc 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
@@ -331,6 +355,7 @@ jobs:
           cp crates/agent-gui/src-tauri/binaries/k-brain-computer-x86_64-pc-windows-msvc.exe dist/portable/ZeroAgent/k-brain-computer.exe
           cp crates/agent-gui/src-tauri/binaries/liveagent-gateway-x86_64-pc-windows-msvc.exe dist/portable/ZeroAgent/liveagent-gateway.exe
           cp -R crates/agent-gui/browser-extension dist/portable/ZeroAgent/browser-extension
+          cp -R "$RUNNER_TEMP/zeroagent-file-runtime/file-runtime" dist/portable/ZeroAgent/file-runtime
           node scripts/release/verify-kbrain-packaging.mjs --target x86_64-pc-windows-msvc --binary-dir crates/agent-gui/src-tauri/binaries --bundle-dir dist/portable/ZeroAgent --patch-manifest patches/kbrain/manifest.json
           portable_zip="dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Windows-x64-portable.zip"
           powershell -NoProfile -Command "Compress-Archive -Path 'dist/portable/ZeroAgent/*' -DestinationPath '$portable_zip' -Force"
@@ -350,9 +375,9 @@ jobs:
           cargo run --locked --release --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- --config "crates/agent-gui/$ZEROAGENT_TAURI_VERSION_CONFIG" "${assets[@]}"
 
       - name: Test Windows installers on disposable runner
-        timeout-minutes: 10
+        timeout-minutes: 25
         shell: pwsh
-        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:ZEROAGENT_APP_VERSION"
+        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:ZEROAGENT_APP_VERSION" -RequireFileRuntime
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -485,6 +510,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            cpio \
             curl \
             file \
             libayatana-appindicator3-dev \
@@ -494,6 +520,7 @@ jobs:
             libxdo-dev \
             patchelf \
             rpm \
+            rpm2cpio \
             wget
 
       - name: Install repository-pinned Protoc
@@ -543,6 +570,12 @@ jobs:
       - name: Prepare reviewed K-brain binaries
         run: pnpm --dir crates/agent-gui prepare:kbrain:release
 
+      - name: Stage verified Linux file runtime
+        shell: bash
+        env:
+          ZEROAGENT_FILE_RUNTIME_PACKS: ${{ vars.ZEROAGENT_FILE_RUNTIME_PACKS }}
+        run: node scripts/release/stage-file-runtime.mjs x86_64-unknown-linux-gnu "$RUNNER_TEMP/zeroagent-file-runtime"
+
       - name: Build Linux bundles
         working-directory: crates/agent-gui
         env:
@@ -552,7 +585,7 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          pnpm tauri build --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target x86_64-unknown-linux-gnu --bundles appimage deb rpm 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri build --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target x86_64-unknown-linux-gnu --bundles appimage deb rpm 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
@@ -594,6 +627,23 @@ jobs:
           cp "$deb_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Linux-x86_64.deb.sig"
           cp "$rpm_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Linux-x86_64.rpm"
           cp "$rpm_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Linux-x86_64.rpm.sig"
+
+      - name: Exercise the runtime from each Linux package payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/zeroagent-linux-payloads"
+          mkdir -p "$root/deb" "$root/rpm" "$root/appimage"
+          dpkg-deb --extract dist/*.deb "$root/deb"
+          package="$(realpath dist/*.rpm)"
+          (cd "$root/rpm" && rpm2cpio "$package" | cpio --extract --make-directories --quiet)
+          appimage="$(realpath dist/*.AppImage)"
+          (cd "$root/appimage" && "$appimage" --appimage-extract >/dev/null)
+          for format in deb rpm appimage; do
+            mapfile -t manifests < <(find "$root/$format" -path '*/file-runtime/runtime.json' -type f)
+            test "${#manifests[@]}" -eq 1
+            node scripts/release/verify-installed-file-runtime.mjs "$(dirname "${manifests[0]}")"
+          done
 
       - name: Verify updater asset signatures
         shell: bash

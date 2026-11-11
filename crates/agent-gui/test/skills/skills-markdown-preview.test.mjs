@@ -26,9 +26,23 @@ const markdownStyles = readFileSync(
 );
 
 test("Skill and workspace files share the document Markdown presentation", () => {
-  assert.match(skillDrawerSource, /<DocumentMarkdown content=\{previewContent\}/);
+  assert.match(skillDrawerSource, /<DocumentMarkdown content=\{shownContent\}/);
   assert.match(workspacePreviewSource, /<DocumentMarkdown/);
   assert.match(documentMarkdownSource, /"document-markdown"/);
+});
+
+test("native file skills navigate package references through the shared skill reader", () => {
+  assert.match(skillDrawerSource, /<SkillReaderMarkdown file=\{filePath\} content=\{shownContent\}/);
+  assert.match(skillDrawerSource, /readSkillText\(\{ path, offset: 0,/);
+  for (const id of ["documents", "pdf", "spreadsheet", "presentations"]) {
+    const root = new URL(`../../../agent-gateway/internal/account/skills/${id}/`, import.meta.url);
+    const source = readFileSync(new URL("SKILL.md", root), "utf8");
+    assert.doesNotMatch(source, /original\/|load_workspace_dependencies|mark_artifact_operation_started/);
+    for (const [, target] of source.matchAll(/\]\(([^()\s]+)\)/g)) {
+      if (/^(?:[\w+.-]+:|#)/.test(target)) continue;
+      assert.doesNotThrow(() => readFileSync(new URL(target, root)), `${id}: ${target}`);
+    }
+  }
 });
 
 test("document Markdown keeps its typography separate from chat Markdown", () => {

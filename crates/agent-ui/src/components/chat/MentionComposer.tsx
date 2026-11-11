@@ -56,6 +56,7 @@ import {
 } from "@liveagent/ui/lib/extensions/reference";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
 import {
   type ClipboardEvent,
@@ -237,8 +238,8 @@ export const MentionComposer = memo(
       draftOnly = false,
       placeholder = "",
       workdir,
-      enabledSkills = [],
-      slashSkills = enabledSkills,
+      enabledSkills: installedSkills = [],
+      slashSkills: installedSlashSkills = installedSkills,
       mentionExtensions,
       resolveExtensionMention,
       onOpenExtensionMention,
@@ -256,6 +257,14 @@ export const MentionComposer = memo(
     ref,
   ) {
     const { locale, t } = useLocale();
+    const [enabledSkills, slashSkills] = useMemo(() => {
+      const localized = (skills: readonly MentionComposerSkillMention[]) =>
+        skills.map((skill) => {
+          const file = builtinFileSkillPresentation(skill.name, skill.builtIn);
+          return file ? { ...skill, displayName: file[locale === "en-US" ? "en" : "zh"] } : skill;
+        });
+      return [localized(installedSkills), localized(installedSlashSkills)];
+    }, [installedSkills, installedSlashSkills, locale]);
     const suggestionListId = useId();
     const editorRef = useRef<HTMLDivElement>(null);
     const draftOnlyRef = useRef(draftOnly);

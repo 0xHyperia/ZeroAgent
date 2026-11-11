@@ -4,6 +4,7 @@ import generateImage from "../../assets/extensions/generate-image.webp";
 import productDesign from "../../assets/extensions/product-design.webp";
 import type { ExtensionTryResult } from "../../features/extensions/extensionTypes";
 import type { Locale } from "../../i18n/hostTranslations";
+import { builtinFileSkillPresentation } from "../skills/fileSkillPresentation";
 import { parseExtensionReference } from "./reference";
 
 export { parseExtensionReference } from "./reference";
@@ -294,6 +295,8 @@ function englishBuiltinCopy(value: string | undefined) {
 }
 
 export function extensionDisplayName(pkg: PresentedPackage, locale: Locale = "zh-CN") {
+  const fileSkill = builtinFileSkillPresentation(pkg.id, pkg.builtin);
+  if (fileSkill) return fileSkill[locale === "en-US" ? "en" : "zh"];
   const brand = builtin(pkg);
   if (!brand) return pkg.name;
   return locale === "zh-CN" ? brand.name : brand.english;
@@ -326,6 +329,8 @@ export function extensionSkillDisplayName(
   skill: PresentedSkill,
   locale: Locale = "zh-CN",
 ) {
+  const fileSkill = builtinFileSkillPresentation(skill.name, pkg.builtin && pkg.id === skill.name);
+  if (fileSkill) return fileSkill[locale === "en-US" ? "en" : "zh"];
   const copy = builtin(pkg)?.skills[skill.name];
   if (!copy) return skill.display_name || skill.name;
   return locale === "zh-CN" ? copy[0] : (englishBuiltinCopy(skill.display_name) ?? copy[2]);

@@ -29,6 +29,7 @@ export type MentionSearchEntry = {
 
 export type MentionComposerSkill = {
   name: string;
+  builtIn?: boolean;
   /** Exact installed historical references, available only for clipboard restoration. */
   legacyReferences?: {
     name: string;

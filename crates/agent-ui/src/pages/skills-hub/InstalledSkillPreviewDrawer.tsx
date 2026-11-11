@@ -1,6 +1,8 @@
-import { AlertTriangle, BookOpen, Lock, SkillIcon } from "@liveagent/ui/components/IconSet";
+import { AlertTriangle, ArrowLeft, BookOpen, Lock, SkillIcon } from "@liveagent/ui/components/IconSet";
+import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
 import { DocumentMarkdown } from "@liveagent/ui/components/markdown/DocumentMarkdown";
 import { Badge } from "@liveagent/ui/components/ui/badge";
+import { Button } from "@liveagent/ui/components/ui/button";
 import { CopyButton } from "@liveagent/ui/components/ui/copy-button";
 import {
   Sheet,
@@ -12,8 +14,10 @@ import {
 import { Skeleton } from "@liveagent/ui/components/ui/skeleton";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { isAlwaysEnabledSkillName, type SkillSummary } from "@liveagent/ui/lib/skills/index";
-import { useMemo } from "react";
+import { isAlwaysEnabledSkillName, readSkillText, type SkillSummary } from "@liveagent/ui/lib/skills/index";
+import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
+import { SkillReaderMarkdown } from "@liveagent/ui/features/extensions/SkillReaderFiles";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDrawerPresence } from "./useDrawerPresence";
 
 export const INSTALLED_SKILL_PREVIEW_LINES = 10_000;
@@ -221,6 +225,7 @@ export function InstalledSkillPreviewDrawer(props: {
     >
       {snapshot ? (
         <InstalledSkillPreviewPopup
+          key={snapshot.skill.skillFile}
           skill={snapshot.skill}
           preview={snapshot.preview}
           previewContent={previewContent}
@@ -242,11 +247,43 @@ function InstalledSkillPreviewPopup(props: {
   contentReady: boolean;
 }) {
   const { skill, preview, previewContent, checked, skillsEnabled, contentReady } = props;
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const fileSkill = builtinFileSkillPresentation(skill.name, skill.builtIn);
+  const [filePath, setFilePath] = useState("SKILL.md");
+  const [reference, setReference] = useState<InstalledSkillPreviewState | null>(null);
+  const previewHeading = useRef<HTMLHeadingElement>(null);
+  const navigateToFile = (path: string) => {
+    setFilePath(path);
+    previewHeading.current?.scrollIntoView({ block: "start" });
+    previewHeading.current?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    if (filePath === "SKILL.md") return;
+    const path = `${skill.baseDir}/${filePath}`;
+    let cancelled = false;
+    setReference(null);
+    void readSkillText({ path, offset: 0, length: INSTALLED_SKILL_PREVIEW_LINES })
+      .then((result) => {
+        if (!cancelled) setReference({ skillFile: path, ...result, error: null, loading: false });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setReference({ skillFile: path, content: "", truncated: false, loading: false, error: String(error) });
+        }
+      });
+    return () => { cancelled = true; };
+  }, [filePath, skill.baseDir]);
+  const selectedPath = `${skill.baseDir}/${filePath}`;
+  const selectedReference = reference?.skillFile === selectedPath ? reference : null;
+  const atEntry = filePath === "SKILL.md";
+  const shownPreview = atEntry ? preview : selectedReference;
+  const shownContent = atEntry ? previewContent : (selectedReference?.content ?? "");
+  const displayName = fileSkill?.[locale === "en-US" ? "en" : "zh"] ?? skill.name;
+  const PreviewIcon = fileSkill ? getFileTypeIcon(`skill.${fileSkill.extension}`, "file") : SkillIcon;
   const alwaysEnabled = isAlwaysEnabledSkillName(skill.name);
   const source = skill.source;
   const description = skill.description.trim();
-  const previewIsMarkdown = /\.(md|mdx|markdown)$/i.test(skill.skillFile);
+  const previewIsMarkdown = /\.(md|mdx|markdown)$/i.test(atEntry ? skill.skillFile : filePath);
   const statusLabel = alwaysEnabled
     ? t("settings.skillsInstalledPreviewBuiltIn")
     : checked
@@ -267,10 +304,10 @@ function InstalledSkillPreviewPopup(props: {
             "rounded-xl border border-border bg-muted text-foreground",
           )}
         >
-          {alwaysEnabled ? <Lock className="size-5" /> : <SkillIcon className="size-7" />}
+          {alwaysEnabled ? <Lock className="size-5" /> : <PreviewIcon className="size-7" />}
         </div>
         <div className="min-w-0 flex-1">
-          <SheetTitle className="truncate">{skill.name}</SheetTitle>
+          <SheetTitle className="truncate">{displayName}</SheetTitle>
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span>{t("settings.skillsInstalledPreviewStatusLabel")}</span>
@@ -350,40 +387,52 @@ function InstalledSkillPreviewPopup(props: {
               <div className="min-w-0">
                 <h3
                   id="installed-skill-file-preview"
-                  className="text-xs font-semibold text-foreground"
+                  ref={previewHeading}
+                  tabIndex={-1}
+                  className="text-xs font-semibold text-foreground outline-none"
                 >
                   {t("settings.skillsInstalledPreviewFilePreview")}
                 </h3>
                 <div className="mt-1 truncate text-xs text-muted-foreground">
-                  {preview.skillFile || skill.skillFile}
+                  {atEntry ? preview.skillFile || skill.skillFile : selectedPath}
                 </div>
               </div>
               <CopyButton
-                value={previewContent}
+                value={shownContent}
                 label={t("settings.skillsInstalledPreviewCopyFile")}
                 copiedLabel={t("settings.skillsInstalledPreviewCopied")}
               />
             </div>
 
-            {!contentReady ? (
+            {!atEntry ? (
+              <Button variant="ghost" size="sm" className="mb-3" onClick={() => navigateToFile("SKILL.md")}>
+                <ArrowLeft className="size-4" aria-hidden="true" />
+                {displayName}
+              </Button>
+            ) : null}
+            {!contentReady || !shownPreview ? (
               <InstalledPreviewSkeleton />
             ) : (
               <>
-                {preview.error ? (
+                {shownPreview.error ? (
                   <div className="rounded-lg border border-border bg-muted p-3">
                     <div className="flex items-start gap-2 text-xs text-muted-foreground">
                       <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-foreground" />
                       <div className="min-w-0">
                         <div>{t("settings.skillsInstalledPreviewUnavailable")}</div>
-                        <div className="mt-1 break-words text-xs">{preview.error}</div>
+                        <div className="mt-1 break-words text-xs">{shownPreview.error}</div>
                       </div>
                     </div>
                   </div>
                 ) : null}
 
-                {previewContent ? (
+                {shownContent ? (
                   previewIsMarkdown ? (
-                    <DocumentMarkdown content={previewContent} />
+                    fileSkill ? (
+                      <SkillReaderMarkdown file={filePath} content={shownContent} onFollow={navigateToFile} />
+                    ) : (
+                      <DocumentMarkdown content={shownContent} />
+                    )
                   ) : (
                     <pre
                       className={cn(
@@ -391,16 +440,16 @@ function InstalledSkillPreviewPopup(props: {
                         "font-mono text-xs leading-5 text-foreground",
                       )}
                     >
-                      {previewContent}
+                      {shownContent}
                     </pre>
                   )
-                ) : preview.error ? null : (
+                ) : shownPreview.error ? null : (
                   <div className="rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
                     {t("settings.skillsInstalledPreviewEmpty")}
                   </div>
                 )}
 
-                {preview.truncated ? (
+                {shownPreview.truncated ? (
                   <div
                     className={cn(
                       "mt-2 rounded-lg border border-border bg-muted px-3 py-2",

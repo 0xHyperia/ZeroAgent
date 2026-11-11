@@ -14,7 +14,7 @@ index 83f98362a94c2310bbf05644ea8b05f51da8b08c..ba06900415296c0f8645c8cfd2f70448
 +	if n == "skills-creator" || n == "skills-installer" {
 +		return true
 +	}
-+	if n != "zeroagent-code-review" {
++	if n != "zeroagent-code-review" && n != "documents" && n != "pdf" && n != "spreadsheet" && n != "presentations" {
 +		return false
 +	}
 +	path, err := safePath(m.root, n+"/_zeroagent_builtin.json")
@@ -27,7 +27,7 @@ index 83f98362a94c2310bbf05644ea8b05f51da8b08c..ba06900415296c0f8645c8cfd2f70448
 +	}
 +	defer file.Close()
 +	body, err := io.ReadAll(io.LimitReader(file, 512))
-+	return err == nil && string(body) == "{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":\"zeroagent-code-review\"}\n"
++	return err == nil && string(body) == fmt.Sprintf("{\"schemaVersion\":1,\"owner\":\"ZeroAgent\",\"skill\":%q}\n", n)
 +}
  
  // List returns the usable skills of the managed root (top-level skills and

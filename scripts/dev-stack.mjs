@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   createReadStream,
@@ -11,6 +11,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   unwatchFile,
@@ -61,6 +62,9 @@ Environment variables:
   ZEROAGENT_DEV_DESKTOP_PORT    Desktop Vite port (default: 2120)
   ZEROAGENT_DEV_MCP_BRIDGE_PORT MCP Bridge port (default: 9223)
   ZEROAGENT_DEV_DESKTOP_EXTERNAL_FRONTEND Set to 1 when an independently managed desktop Vite is ready
+  ZEROAGENT_DEV_FILE_RUNTIME    Absolute path to an already staged file runtime
+  ZEROAGENT_FILE_RUNTIME_SOURCE and ZEROAGENT_FILE_RUNTIME_MANIFEST_SHA256  Reviewed local dependency tree and manifest digest
+  ZEROAGENT_FILE_RUNTIME_PACKS  Reviewed dependency packs by desktop target
   ZEROAGENT_DEV_STATE_DIR       State and log directory (default: isolated per checkout)`);
 }
 
@@ -294,14 +298,66 @@ async function runService(service, token) {
   process.exitCode = exitCode;
 }
 
-function launchSupervisor(service) {
+function desktopFileRuntime() {
+  if (process.env.ZEROAGENT_DEV_FILE_RUNTIME) return resolve(process.env.ZEROAGENT_DEV_FILE_RUNTIME);
+  if (!process.env.ZEROAGENT_FILE_RUNTIME_SOURCE && !process.env.ZEROAGENT_FILE_RUNTIME_PACKS) {
+    const runtime = join(repoRoot, ".zeroagent", "file-runtime", "desktop-dev");
+    if (existsSync(join(runtime, "runtime.json"))) return runtime;
+    console.warn("desktop: file runtime unavailable. Set ZEROAGENT_DEV_FILE_RUNTIME or configure a runtime pack to enable reader revisions.");
+    return undefined;
+  }
+  const target = ({
+    "win32-x64": "x86_64-pc-windows-msvc",
+    "darwin-x64": "x86_64-apple-darwin",
+    "darwin-arm64": "aarch64-apple-darwin",
+    "linux-x64": "x86_64-unknown-linux-gnu",
+  })[`${process.platform}-${process.arch}`];
+  if (!target) fail("file runtime has no build for this desktop target");
+  const hash = createHash("sha256");
+  for (const input of [
+    target,
+    process.env.ZEROAGENT_FILE_RUNTIME_SOURCE,
+    process.env.ZEROAGENT_FILE_RUNTIME_MANIFEST_SHA256,
+    process.env.ZEROAGENT_FILE_RUNTIME_PACKS,
+  ]) hash.update(JSON.stringify(input ?? "") + "\n");
+  for (const file of ["file_tool.py", "office.py", "document_review.py", "pdf_tools.py", "runtime_common.py", "artifact_tool.mjs"]) {
+    hash.update(readFileSync(join(repoRoot, "crates/file-runtime", file)));
+  }
+  const cache = join(stateDir, `file-runtime-${hash.digest("hex").slice(0, 24)}`);
+  const runtime = join(cache, "file-runtime");
+  const manifest = join(runtime, "runtime.json");
+  if (!existsSync(manifest)) {
+    mkdirSync(stateDir, { recursive: true });
+    const staging = `${cache}-${randomUUID()}`;
+    try {
+      const result = spawnSync(process.execPath, [join(repoRoot, "scripts/release/stage-file-runtime.mjs"), target, staging], {
+        stdio: "inherit",
+      });
+      if (result.status !== 0) throw new Error("Failed to prepare the desktop file runtime", { cause: result.error });
+      rmSync(join(staging, "tauri.file-runtime.conf.json"));
+      try {
+        renameSync(staging, cache);
+      } catch (error) {
+        if (!existsSync(manifest)) throw error;
+      }
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+    }
+  }
+  return runtime;
+}
+
+function launchSupervisor(service, fileRuntime) {
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(logPath(service), "");
   const log = openSync(logPath(service), "a");
   const token = randomUUID();
   const supervisor = spawn(process.execPath, [scriptPath, "__run", service, token], {
     detached: true,
-    env: process.env,
+    env: {
+      ...process.env,
+      ...(fileRuntime ? { ZEROAGENT_DEV_FILE_RUNTIME: fileRuntime } : {}),
+    },
     shell: false,
     stdio: ["ignore", log, log],
     windowsHide: true,
@@ -377,7 +433,7 @@ async function startService(service) {
     return false;
   }
 
-  const supervisor = launchSupervisor(service);
+  const supervisor = launchSupervisor(service, service === "desktop" ? desktopFileRuntime() : undefined);
   if (await waitUntilReady(service, timeoutSeconds)) {
     console.log(`${service}: started (managed pid ${supervisor.pid}, ${urls[service]})`);
     return true;

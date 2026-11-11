@@ -1969,6 +1969,8 @@ function ChatPageContent(props: ChatPageProps) {
       return requestWorkspaceRevision(revision, {
         workspaceRoot: displayedConversationWorkdir,
         canSend,
+        locale: settings.locale,
+        checkFileRuntime: () => invoke<boolean>("kbrain_file_runtime_ready"),
         importSources: (sources) => importReadableFiles(
           sources,
           { conversationId, workdir: displayedConversationWorkdir },
@@ -1992,6 +1994,7 @@ function ChatPageContent(props: ChatPageProps) {
       displayedConversationWorkdir,
       importReadableFiles,
       isConversationRunning,
+      settings.locale,
       workspaceOverlays.workspaceViewScope,
     ],
   );

@@ -331,6 +331,7 @@ fn exercise_native_mcp_adapted_sidecar_modes(
             #[cfg(desktop)]
             device_skills: None,
         }),
+        None,
     )
     .unwrap();
     let connection = manager.connection();
@@ -441,6 +442,7 @@ fn exercise_native_mcp_adapted_sidecar_modes(
             #[cfg(desktop)]
             device_skills: None,
         }),
+        None,
     )
     .unwrap();
     let connection = manager.connection();

@@ -730,6 +730,32 @@
       "upstream_relation": "adapt"
     },
     {
+      "id": "file-runtime-skills",
+      "name": "内置文件技能与独立工具",
+      "status": "active",
+      "owner": "zeroagent",
+      "surfaces": ["desktop", "webui", "gateway"],
+      "entrypoints": [
+        "crates/file-runtime/file_tool.py",
+        "crates/agent-gui/src-tauri/src/services/file_runtime.rs",
+        "crates/agent-gui/src-tauri/src/services/skills/builtin.rs",
+        "crates/agent-gateway/internal/account/cloud_extension_manifest.go",
+        "crates/cloud-executor/sandbox/template/build.mjs",
+        "crates/agent-ui/src/lib/chat/documentRevisionMessage.ts",
+        "scripts/release/stage-file-runtime.mjs"
+      ],
+      "tests": [
+        "crates/file-runtime/test_file_tool.py",
+        "crates/agent-gateway/internal/account/cloud_builtin_release_test.go",
+        "crates/agent-gui/test/chat/device-right-workspace.test.mjs",
+        "crates/agent-gui/test/skills/skills-markdown-preview.test.mjs",
+        "crates/cloud-executor/sandbox/template/build.test.mjs",
+        "scripts/release/verify-installed-file-runtime.mjs"
+      ],
+      "security": "工具运行于现有设备执行权限或账户隔离环境。输入使用工作区相对引用，编辑校验源 SHA-256。通过临时副本重读校验并独占发布新文件。设备阅读器批注沿用原对话和授权，执行设备缺少独立运行时则保留批注并停止提交。开发与桌面发行均从运行时清单解析绝对路径，发行构建校验完整依赖。桌面安装和真实候选镜像需单独验收。",
+      "upstream_relation": "adapt"
+    },
+    {
       "id": "model-preferences-entry",
       "name": "模型菜单统一高级设置",
       "status": "active",

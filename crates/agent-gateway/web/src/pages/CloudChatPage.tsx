@@ -47,6 +47,7 @@ import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import {
   buildDocumentRevisionMessage,
+  documentRevisionSkill,
   MAX_REVISION_EVIDENCE,
   parseDocumentRevisionMessage,
 } from "@liveagent/ui/lib/chat/documentRevisionMessage";
@@ -5110,8 +5111,11 @@ export function CloudChatPage({
         }
       }
       if (!isCurrentView(view)) return false;
+      const skill = documentRevisionSkill(latest.name);
       const text = buildDocumentRevisionMessage(latest.name, comments, {
         evidenceNames: screenshots.map(({ name }) => name),
+        skillReference: enabledCloudSkills.find((entry) => entry.builtIn && entry.name === skill)
+          ?.skillFile,
       });
       return (
         (await send(

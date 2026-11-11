@@ -1,3 +1,5 @@
+import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
+import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import {
   type Activity,
   BookOpen,
@@ -185,14 +187,18 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
     onDelete,
     onSelectCategory,
   } = props;
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const effectivelyEnabled = skillsEnabled && checked;
   const packName = skillPackName(skill);
   const cardIdentity = useMemo(
     () => (alwaysEnabled ? null : getInstalledSkillCardIdentity(skill.name, primaryCategory)),
     [alwaysEnabled, primaryCategory, skill.name],
   );
-  const CardIcon = alwaysEnabled
+  const fileSkill = builtinFileSkillPresentation(skill.name, skill.builtIn);
+  const displayName = fileSkill?.[locale === "en-US" ? "en" : "zh"] ?? skill.name;
+  const CardIcon = fileSkill
+    ? getFileTypeIcon(`skill.${fileSkill.extension}`, "file")
+    : alwaysEnabled
     ? SkillIcon
     : INSTALLED_SKILL_CARD_ICONS[cardIdentity?.iconName ?? "circleHelp"];
   const metadataSource = getInstalledSkillCardSource(skill);
@@ -219,7 +225,7 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
       >
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <SearchHighlight
-            text={skill.name}
+            text={displayName}
             query={searchQuery}
             className="truncate text-sm font-semibold text-foreground"
           />

@@ -14,6 +14,7 @@ export function kbrainComposerSkillsFromList(result: {
     description: string;
     skillFile: string;
     baseDir: string;
+    builtIn?: boolean;
     pack?: string;
     shadowed?: boolean;
   }> | null;
@@ -27,6 +28,7 @@ export function kbrainComposerSkillsFromList(result: {
       description: skill.description,
       skillFile: skill.skillFile,
       baseDir: skill.baseDir,
+      ...(skill.builtIn ? { builtIn: true } : {}),
       ...(skill.pack ? { pack: skill.pack } : {}),
     }));
 }

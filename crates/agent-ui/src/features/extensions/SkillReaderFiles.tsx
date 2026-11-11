@@ -20,7 +20,7 @@ type FileTree = { folders: Map<string, FileTree>; files: string[] };
 const emptyTree = (): FileTree => ({ folders: new Map(), files: [] });
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
-function resolveSkillReaderFile(current: string, reference: string, readable: ReadonlySet<string>) {
+function resolveSkillReaderFile(current: string, reference: string, readable?: ReadonlySet<string>) {
   const path = reference.trim().split("#", 1)[0];
   if (!path || /^(?:\/|[\w+.-]+:)|[\\?]/.test(path)) return;
   const parts: string[] = [];
@@ -44,6 +44,11 @@ function resolveSkillReaderFile(current: string, reference: string, readable: Re
     }
   }
   const relative = folder.join("/");
+  if (!readable) {
+    return relative !== current && /\.(?:md|txt|py|mjs|js|json|ya?ml)$/i.test(relative)
+      ? relative
+      : undefined;
+  }
   if (relative !== current && readable.has(relative)) return relative;
   // Built-in workflows also refer to shared files by their package paths.
   const packagePath = parts.join("/");
@@ -64,7 +69,7 @@ export function SkillReaderMarkdown({
 }: {
   file: string;
   content: string;
-  readableFiles: ReadonlySet<string>;
+  readableFiles?: ReadonlySet<string>;
   onFollow: (path: string, opener: HTMLButtonElement) => void;
 }) {
   const overrides = useMemo<

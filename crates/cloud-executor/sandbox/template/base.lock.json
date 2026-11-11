@@ -41,7 +41,30 @@
   "additional_packages": {
     "pypdf": "6.21.4",
     "python-pptx": "1.0.2",
-    "XlsxWriter": "3.2.9"
+    "XlsxWriter": "3.2.9",
+    "pypdfium2": "5.9.0",
+    "reportlab": "4.4.9",
+    "charset-normalizer": "3.5.2",
+    "pdf2image": "1.17.0",
+    "pdfplumber": "0.11.9",
+    "pdfminer.six": "20251230",
+    "cryptography": "50.0.2",
+    "cffi": "2.0.0",
+    "pycparser": "3.0"
+  },
+  "file_runtime_debian_packages": {
+    "libreoffice-writer": "4:25.2.3-2+deb13u9",
+    "libreoffice-calc": "4:25.2.3-2+deb13u9",
+    "libreoffice-impress": "4:25.2.3-2+deb13u9",
+    "tesseract-ocr": "5.5.0-1+b1",
+    "tesseract-ocr-eng": "1:4.1.0-2",
+    "tesseract-ocr-chi-sim": "1:4.1.0-2",
+    "tesseract-ocr-chi-tra": "1:4.1.0-2",
+    "git": "1:2.47.3-0+deb13u1",
+    "poppler-utils": "25.03.0-5+deb13u4",
+    "unzip": "6.0-29+deb13u1",
+    "libheif-examples": "1.23.6-2~deb13u1",
+    "libjxr-tools": "1.2~git20170615.f752187-5.3"
   },
   "matplotlib_defaults": {
     "family": "Noto Sans SC",

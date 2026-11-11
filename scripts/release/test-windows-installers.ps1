@@ -25,7 +25,8 @@ param(
     [string]$PreviousArtifactDir,
     [string]$PreviousVersion,
     [string]$UpdaterConfig,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$RequireFileRuntime
 )
 
 Set-StrictMode -Version Latest
@@ -286,12 +287,13 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
             if ($seen.ContainsKey($name)) { throw "Duplicate portable ZIP entry: $name" }
             $seen[$name] = $true
             if ($name.EndsWith('/')) {
-                if ($name -cne 'browser-extension/' -or $entry.Length -ne 0) { throw "Unexpected portable ZIP directory: $name" }
+                if (($name -cne 'browser-extension/' -and !$name.StartsWith('file-runtime/')) -or $entry.Length -ne 0) { throw "Unexpected portable ZIP directory: $name" }
                 continue
             }
-            if ($script:payloadNames -notcontains $name) { throw "Unexpected portable ZIP file: $name" }
+            $runtimeMember = $name.StartsWith('file-runtime/')
+            if ($script:payloadNames -notcontains $name -and !$runtimeMember) { throw "Unexpected portable ZIP file: $name" }
             $total += $entry.Length
-            if ($entry.Length -le 0 -or $entry.Length -gt 536870912 -or $total -gt 2147483648) { throw 'Portable ZIP exceeds payload size limits or contains an empty file' }
+            if ((!$runtimeMember -and $entry.Length -le 0) -or $entry.Length -gt 536870912 -or $total -gt 2147483648) { throw 'Portable ZIP exceeds payload size limits or contains an empty file' }
             $stream = $entry.Open(); $sha = [Security.Cryptography.SHA256]::Create()
             try {
                 $hash = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
@@ -310,7 +312,30 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
         if ($PreviousRelease -and $inventory.Count -eq 1 -and $inventory.ContainsKey('ZeroAgent.exe')) {
             return $inventory
         }
-        if ($inventory.Count -ne 6) { throw 'Portable ZIP must contain exactly the six expected payload files' }
+        $runtimeManifest = $zip.GetEntry('file-runtime/runtime.json')
+        if ($runtimeManifest) {
+            if ($runtimeManifest.Length -gt 16777216) { throw 'Portable runtime manifest exceeds its size limit' }
+            $reader = [IO.StreamReader]::new($runtimeManifest.Open())
+            try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+            if ($manifest.format -ne 1 -or $manifest.target -ne 'x86_64-pc-windows-msvc') { throw 'Portable runtime targets the wrong platform' }
+            $allowed = @{'file-runtime/runtime.json' = $true}
+            foreach ($tool in @('file_tool.py','office.py','document_review.py','pdf_tools.py','runtime_common.py','artifact_tool.mjs')) {
+                $allowed["file-runtime/tools/$tool"] = $true
+            }
+            foreach ($file in $manifest.files.PSObject.Properties) {
+                $member = "file-runtime/$($file.Name)"
+                if ($allowed.ContainsKey($member) -or !$inventory.ContainsKey($member) -or $inventory[$member].sha256 -cne $file.Value) {
+                    throw "Portable runtime manifest mismatch: $member"
+                }
+                $allowed[$member] = $true
+            }
+            foreach ($name in $allowed.Keys) { if (!$inventory.ContainsKey($name)) { throw "Missing portable runtime member: $name" } }
+            if ($inventory.Count -ne (6 + $allowed.Count)) { throw 'Portable runtime contains undeclared files' }
+        } elseif ($inventory.Count -ne 6) {
+            throw 'Portable ZIP must contain the six expected payload files'
+        } elseif ($RequireFileRuntime -and !$PreviousRelease) {
+            throw 'Portable ZIP is missing the required file runtime'
+        }
         foreach ($name in $script:payloadNames) { if (-not $inventory.ContainsKey($name)) { throw "Missing portable payload $name" } }
         return $inventory
     } finally { $zip.Dispose() }
@@ -391,6 +416,20 @@ function Assert-UpgradeDataFixtures($Fixtures) {
     }
 }
 
+function Get-OwnedRuntimeFiles([string]$Directory, [string]$Relative, [string]$InstallDir) {
+    foreach ($item in Get-ChildItem -LiteralPath $Directory -Force) {
+        [void](Get-SafeFullPath $item.FullName)
+        Assert-Below $item.FullName $InstallDir
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Installed runtime contains a reparse point' }
+        $child = "$Relative/$($item.Name)"
+        if ($item.PSIsContainer) {
+            Get-OwnedRuntimeFiles $item.FullName $child $InstallDir
+        } else {
+            [ordered]@{ relativePath = $child; bytes = $item.Length; sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+        }
+    }
+}
+
 function Get-OwnedFiles([string]$InstallDir) {
     $root = Get-SafeFullPath $InstallDir
     if (-not (Test-Path -LiteralPath $root)) { return @() }
@@ -399,6 +438,11 @@ function Get-OwnedFiles([string]$InstallDir) {
     foreach ($item in Get-ChildItem -LiteralPath $root -Force) {
         [void](Get-SafeFullPath $item.FullName)
         if ($item.PSIsContainer) {
+            if ($item.Name -ceq 'file-runtime') {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Installed runtime is a reparse point' }
+                $files += @(Get-OwnedRuntimeFiles $item.FullName 'file-runtime' $root)
+                continue
+            }
             if ($item.Name -cne 'browser-extension') { throw "Unexpected installed directory: $($item.Name)" }
             foreach ($child in Get-ChildItem -LiteralPath $item.FullName -Force) {
                 [void](Get-SafeFullPath $child.FullName)
@@ -438,13 +482,15 @@ function Test-InstalledPayloads([string]$InstallDir, [string]$Kind, $Portable, $
             throw "Unexpected installed file: $($file.relativePath)"
         }
     }
-    foreach ($name in $script:payloadNames) {
+    $ownedByPath = @{}
+    foreach ($file in $ownedFiles) { $ownedByPath[$file.relativePath] = $file }
+    foreach ($name in $Portable.Keys) {
         if (-not $Portable.ContainsKey($name)) { continue }
         $path = Get-SafeFullPath (Join-Path $InstallDir $name)
         Assert-Below $path $InstallDir
         $file = Get-Item -LiteralPath $path
         $portableFile = $Portable[$name]
-        $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hash = $ownedByPath[$name].sha256
         $check = [ordered]@{ relativePath = $name; bytes = $file.Length; sha256 = $hash; portableSha256 = $portableFile.sha256; rawSha256MatchesPortable = ($hash -ceq $portableFile.sha256) }
         if ($file.Length -ne $portableFile.bytes) { throw "$name has an unexpected installed length" }
         if ($name -ieq 'ZeroAgent.exe') {
@@ -642,6 +688,11 @@ function Invoke-InstallerCycle([string]$Kind, [string]$InstallerPath, [string]$I
         $phase.installedFiles = @(Get-OwnedFiles $InstallDir)
         if ($installed.exitCode -ne 0) { throw "$Kind installation returned $($installed.exitCode); reboot-required codes are not accepted as a complete pass" }
         $phase.verification = Test-InstalledPayloads $InstallDir $Kind $Portable $Metadata
+        if ($Portable.ContainsKey('file-runtime/runtime.json')) {
+            $proof = & node (Join-Path $PSScriptRoot 'verify-installed-file-runtime.mjs') (Join-Path $InstallDir 'file-runtime')
+            if ($LASTEXITCODE -ne 0) { throw "$Kind file runtime acceptance failed" }
+            $phase.fileRuntime = $proof | ConvertFrom-Json
+        }
     } catch { $phase.error = $_.Exception.Message }
     finally {
         if ($phase.ownershipProved) {
@@ -739,17 +790,17 @@ try {
             foreach ($kind in @('msi', 'nsis')) {
                 [ordered]@{ operation = "$kind-install-previous"; version = $PreviousVersion; payloadCount = $previous.portable.Count }
                 [ordered]@{ operation = "$kind-seed-user-data"; locations = @('roaming-app-data', 'local-app-data', 'zeroagent-profile', 'liveagent-profile') }
-                [ordered]@{ operation = "$kind-upgrade"; version = $ExpectedVersion; payloadCount = 6; sameDirectory = $true; compareUserDataBytes = $true }
+                [ordered]@{ operation = "$kind-upgrade"; version = $ExpectedVersion; payloadCount = $portable.Count; sameDirectory = $true; compareUserDataBytes = $true }
                 [ordered]@{ operation = "$kind-upgrade-uninstall"; requiresProvedOwnership = $true; compareUserDataBytes = $true }
             }
         )
     } else {
         $script:report.plan = @(
             [ordered]@{ operation = 'msi-install'; executable = $script:msiexec; switches = @('/i', 'owned staged MSI', '/qn', '/norestart', "INSTALLDIR=$msiInstall", '/l*v', (Join-Path $ReportDir 'msi-install.log')) },
-            [ordered]@{ operation = 'verify-msi'; payloadCount = 6; companionHashMatches = 5; mainMarker = 'UNK -> MSI'; expectedProductVersion = $ExpectedVersion },
+            [ordered]@{ operation = 'verify-msi'; payloadCount = $portable.Count; companionHashMatches = ($portable.Count - 1); mainMarker = 'UNK -> MSI'; expectedProductVersion = $ExpectedVersion },
             [ordered]@{ operation = 'msi-uninstall'; executable = $script:msiexec; switches = @('/x', $metadata.productCode, '/qn', '/norestart', '/l*v', (Join-Path $ReportDir 'msi-uninstall.log')); requiresProvedOwnership = $true },
             [ordered]@{ operation = 'nsis-install'; executable = 'owned staged Setup.exe'; switches = @('/S', "/D=$nsisInstall") },
-            [ordered]@{ operation = 'verify-nsis'; payloadCount = 6; companionHashMatches = 5; mainMarker = 'UNK -> NSS'; expectedProductVersion = $ExpectedVersion },
+            [ordered]@{ operation = 'verify-nsis'; payloadCount = $portable.Count; companionHashMatches = ($portable.Count - 1); mainMarker = 'UNK -> NSS'; expectedProductVersion = $ExpectedVersion },
             [ordered]@{ operation = 'nsis-uninstall'; executable = (Join-Path $nsisInstall 'uninstall.exe'); switches = @('/S'); requiresProvedOwnership = $true; waitFor = 'process tree, files, uninstall registry and MSI product state'; allowedResidue = 'Only an HKCU usa0/ZeroAgent install-directory preference pointing to this exact owned GUID directory; never delete user data' }
         )
     }
@@ -778,6 +829,13 @@ try {
             }
             Invoke-InstallerCycle 'msi' $stagedMsi $msiInstall $metadata $portable
             Invoke-InstallerCycle 'nsis' $stagedNsis $nsisInstall $metadata $portable
+            if ($portable.ContainsKey('file-runtime/runtime.json')) {
+                $portableInstall = Join-Path $script:scratch 'portable'
+                [IO.Compression.ZipFile]::ExtractToDirectory($artifacts.portable, $portableInstall)
+                $proof = & node (Join-Path $PSScriptRoot 'verify-installed-file-runtime.mjs') (Join-Path $portableInstall 'file-runtime')
+                if ($LASTEXITCODE -ne 0) { throw 'Portable file runtime acceptance failed' }
+                $script:report.portableFileRuntime = $proof | ConvertFrom-Json
+            }
         }
         $script:report.after = Get-FreshnessState $metadata
         $script:report.status = 'passed'

@@ -6,29 +6,84 @@ import { Template } from 'e2b';
 
 export const directory = path.dirname(fileURLToPath(import.meta.url));
 const sourceFiles = ['base.lock.json', 'requirements.lock.txt', 'check_environment.py', 'acceptance.py', 'matplotlibrc', 'configure_fonts.py', 'font-assets.lock.json', 'install_fonts.py'];
+const runtimeFiles = ['file_tool.py', 'office.py', 'document_review.py', 'pdf_tools.py', 'runtime_common.py', 'artifact_tool.mjs', 'test_file_tool.py'];
+const context = path.resolve(directory, '../../..');
+const templateSources = sourceFiles.map((name) => `cloud-executor/sandbox/template/${name}`);
+const runtimeSources = runtimeFiles.map((name) => `file-runtime/${name}`);
+const skillRoot = 'agent-gateway/internal/account/skills';
+const fileSkills = ['documents', 'pdf', 'spreadsheet', 'presentations'];
+const artifactLayer = '.file-runtime-deps/artifact-tool-linux-x64';
+const artifactRuntime = '/opt/zeroagent-file-runtime/artifact-tool';
+const artifactNode = artifactRuntime + '/zeroagent-node';
+const artifactPackage = 'node_modules/@oai/artifact-tool';
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const fail = (code) => { throw new Error(code); };
 export async function readLock() {
   return JSON.parse(await readFile(path.join(directory, 'base.lock.json'), 'utf8'));
 }
 
-export function specification(lock) {
+export function specification(lock, artifactAvailable = false) {
   if (lock.base_kind !== 'official_public_template_build'
     || !/^[a-z0-9]{20}:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(lock.template)
     || lock.template !== `${lock.template_id}:${lock.build_id}` || lock.image !== undefined) fail('immutable_template_build_required');
   if (lock.startup_contract !== 'inherit_immutable_base_start_and_ready'
     || lock.start_command !== undefined) fail('base_startup_inheritance_required');
-  return Template({ fileContextPath: directory })
+  const packages = Object.entries(lock.file_runtime_debian_packages ?? {});
+  const requiredEngines = ['libreoffice-writer', 'libreoffice-calc', 'libreoffice-impress',
+    'tesseract-ocr', 'tesseract-ocr-eng', 'tesseract-ocr-chi-sim', 'tesseract-ocr-chi-tra',
+    'git', 'poppler-utils', 'unzip', 'libheif-examples', 'libjxr-tools'];
+  if (packages.length !== requiredEngines.length || packages.some(([name, version]) =>
+    !requiredEngines.includes(name) || !/^[0-9a-zA-Z.+:~-]+$/.test(version))) fail('file_runtime_engine_pins_required');
+  const install = packages.map(([name, version]) => `${name}=${version}`).join(' ');
+  let template = Template({ fileContextPath: context })
     .fromTemplate(lock.template)
     .setUser('root')
-    .copy(sourceFiles, '/opt/zeroagent-template/', { user: 'root', mode: 0o644, resolveSymlinks: false })
+    .copy(templateSources, '/opt/zeroagent-template/', { user: 'root', mode: 0o644, resolveSymlinks: false })
+    .copy(runtimeSources, '/opt/zeroagent-file-runtime/', { user: 'root', mode: 0o644, resolveSymlinks: false });
+  for (const id of fileSkills) {
+    template = template.copy(`${skillRoot}/${id}`, `/opt/zeroagent-file-runtime/skills/${id}/`, {
+      user: 'root', resolveSymlinks: false,
+    });
+  }
+  if (artifactAvailable) {
+    template = template
+      .copy(artifactLayer, artifactRuntime + '/', { user: 'root', resolveSymlinks: false })
+      .setEnvs({
+        ZEROAGENT_FILE_NODE: artifactNode,
+        ZEROAGENT_FILE_ARTIFACT_ENTRY: artifactRuntime + '/' + artifactPackage + '/dist/artifact_tool.mjs',
+        RUNTIME_NODE: artifactNode,
+        RUNTIME_NODE_MODULES: artifactRuntime + '/node_modules',
+      });
+  }
+  template = template
     .runCmd('python3 -IB /opt/zeroagent-template/check_environment.py --base-only')
     .runCmd('python3 -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: --require-hashes --no-deps --index-url https://pypi.org/simple -r /opt/zeroagent-template/requirements.lock.txt')
     .runCmd('python3 -IB /opt/zeroagent-template/check_environment.py')
     .runCmd('python3 -IB /opt/zeroagent-template/install_fonts.py')
     .runCmd('python3 -IB /opt/zeroagent-template/configure_fonts.py')
+    .runCmd(`apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${install} && rm -rf /var/lib/apt/lists/*`)
+    .setEnvs({
+      ZEROAGENT_FILE_SOFFICE: '/usr/bin/soffice',
+      ZEROAGENT_FILE_TESSERACT: '/usr/bin/tesseract',
+      ZEROAGENT_FILE_CJK_FONT: '/usr/local/share/fonts/zeroagent/NotoSansSC-VF.ttf',
+      ZEROAGENT_FILE_SKILL_ROOT: '/opt/zeroagent-file-runtime/skills',
+      ZEROAGENT_FILE_TOOL: '/opt/zeroagent-file-runtime/file_tool.py',
+      ZEROAGENT_FILE_PYTHON: '/usr/local/bin/python3',
+      ZEROAGENT_FILE_GIT: '/usr/bin/git',
+      ZEROAGENT_FILE_POPPLER_BIN: '/usr/bin',
+      ZEROAGENT_FILE_UNZIP: '/usr/bin/unzip',
+      ZEROAGENT_FILE_HEIF_CONVERT: '/usr/bin/heif-convert',
+      ZEROAGENT_FILE_JXR_DECODER: '/usr/bin/JxrDecApp',
+      RUNTIME_PYTHON: '/usr/local/bin/python3',
+    })
+    .runCmd('test -x /usr/local/bin/python3 && /usr/bin/soffice --version && /usr/bin/tesseract --list-langs && /usr/local/bin/python3 -IB /opt/zeroagent-file-runtime/file_tool.py --help');
+  if (artifactAvailable) {
+    template = template.runCmd(`chmod 0755 ${artifactNode} && test "$(${artifactNode} --version)" = v24.22.1 && ${artifactNode} /opt/zeroagent-file-runtime/artifact_tool.mjs --probe`);
+  }
+  return template
     .runCmd('install -d -o user -g user -m 0700 /home/user/zeroagent-workspace')
     .setUser(lock.user)
+    .runCmd('/usr/local/bin/python3 -IB /opt/zeroagent-file-runtime/test_file_tool.py')
     .setWorkdir(lock.workdir);
 }
 
@@ -53,18 +108,57 @@ export async function plan() {
     if (!info.isFile() || info.nlink !== 1 || info.size > 65536) fail('untrusted_build_file');
     files[name] = sha256(await readFile(file));
   }
-  const template = specification(lock);
+  for (const name of runtimeSources) {
+    const file = path.join(context, name);
+    const info = await lstat(file);
+    if (!info.isFile() || info.nlink !== 1 || info.size > 65536) fail('untrusted_file_runtime_source');
+    files[name] = sha256(await readFile(file));
+  }
+  const artifactAvailable = await checkArtifactLayer();
+  const template = specification(lock, artifactAvailable);
   // SDK serialization is local. fromTemplate has no Dockerfile representation in this SDK.
   const sdk = JSON.parse(await Template.toJSON(template, true));
   const candidate = { format: 2, base: lock.template, base_kind: lock.base_kind,
     base_inventory_verified: lock.inventory_verified, platform: lock.platform, sdk_versions: lock.sdk,
     files, sdk, dockerfile: null, dockerfile_unavailable: 'provider_template_build_has_no_local_image',
     build_resources: { cpuCount: 2, memoryMB: 2048 },
+    artifact_tool_available: artifactAvailable,
     runtime_network: 'deny-all-configured-by-executor-at-create',
     remote_verified: false, envd_minimum: lock.envd.minimum_version };
   // SDK copy hashes are portable; local fileContextPath is deliberately not part of the public receipt.
   const planSha256 = sha256(JSON.stringify(candidate));
   return { candidate, plan_sha256: planSha256, template };
+}
+
+async function checkArtifactLayer() {
+  const directory = path.join(context, artifactLayer);
+  let info;
+  try {
+    info = await lstat(directory);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+  if (!info.isDirectory() || info.isSymbolicLink()) fail('invalid_artifact_layer');
+  const pkg = JSON.parse(await readFile(path.join(directory, artifactPackage, 'package.json'), 'utf8'));
+  if (pkg.name !== '@oai/artifact-tool' || pkg.version !== '2.8.145') fail('invalid_artifact_tool_version');
+  for (const member of ['zeroagent-node', artifactPackage + '/node_modules/skia-canvas/lib/skia.node']) {
+    const filename = path.join(directory, member);
+    if (!(await lstat(filename)).isFile()) fail('artifact_tool_requires_linux_x64');
+    const binary = await open(filename, 'r');
+    try {
+      const header = Buffer.alloc(20);
+      await binary.read(header, 0, header.length, 0);
+      if (!header.subarray(0, 6).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1]))
+        || header.readUInt16LE(18) !== 62) fail('artifact_tool_requires_linux_x64');
+    } finally {
+      await binary.close();
+    }
+  }
+  for (const license of [artifactPackage + '/LICENSE.md', 'NODE-LICENSE']) {
+    if (!(await lstat(path.join(directory, license))).isFile()) fail('artifact_runtime_license_required');
+  }
+  return true;
 }
 
 export function validateApproval(config, currentPlan, now = Date.now()) {
@@ -134,6 +228,7 @@ export async function main(args) {
     return { dockerfile: target, plan_sha256: prepared.plan_sha256, api_calls: 0 };
   }
   if (args.length !== 3 || args[0] !== '--execute' || args[1] !== '--private-config') fail('use_plan_or_explicit_execute_private_config');
+  if (!prepared.candidate.artifact_tool_available) fail('artifact_tool_runtime_required_for_candidate');
   return executeApproved(await readPrivate(args[2]), prepared);
 }
 

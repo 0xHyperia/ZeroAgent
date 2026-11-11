@@ -14,6 +14,7 @@ import {
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { extensionReferencePresentation } from "@liveagent/ui/lib/extensions/presentation";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import { Fragment, type RefObject, useEffect, useRef } from "react";
 import { ExtensionMark } from "../../features/extensions/ExtensionMark";
 import { Popover, PopoverContent } from "../ui/popover";
@@ -270,7 +271,12 @@ export function Popup({
               const previous = suggestions[i - 1];
               const showGroupHeader =
                 previous?.type !== "command" || previous.command.group !== command.group;
-              const CommandIcon = command.kind === "skill" ? Blend : Terminal;
+              const file = command.kind === "skill"
+                ? builtinFileSkillPresentation(command.skill.name, command.skill.builtIn)
+                : undefined;
+              const CommandIcon = file
+                ? getFileTypeIcon(`skill.${file.extension}`, "file")
+                : command.kind === "skill" ? Blend : Terminal;
               const brand =
                 command.kind === "skill"
                   ? extensionReferencePresentation(command.skill.skillFile)
@@ -353,7 +359,9 @@ export function Popup({
             const parts = entry ? entry.path.split("/") : [];
             const fileName = parts.pop() || "";
             const dirPath = parts.join("/");
-            const Icon = entry ? getFileTypeIcon(entry.path, entry.kind) : null;
+            const file = skill ? builtinFileSkillPresentation(skill.name, skill.builtIn) : undefined;
+            const Icon = entry ? getFileTypeIcon(entry.path, entry.kind)
+              : file ? getFileTypeIcon(`skill.${file.extension}`, "file") : null;
             const category = suggestion.type === "category" ? suggestion.category : null;
             const title =
               app?.name ??
