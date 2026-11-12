@@ -22,7 +22,6 @@ import {
 import { useLocale } from "../../i18n";
 import { ChevronRight, List, Search, SquareMousePointer, X } from "../IconSet";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
-import { LabelTooltip } from "../ui/label-tooltip";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { DocumentNavigation } from "./DocumentNavigation";
 import type { DocumentRegion } from "./docxReaderDocument";
@@ -42,6 +41,7 @@ import { pdfPreviewAssetsURL } from "./pdfPreviewAssets";
 import { capturePDFRevisionEvidence } from "./pdfRevisionEvidence";
 import { normalizedPDFRegion, pdfTextRange, readPDFTextRange } from "./pdfTextRange";
 import { boundedPreviewScale } from "./previewGeometry";
+import { ReaderCommentTooltip } from "./ReaderCommentTooltip";
 import {
   type DocumentRevisionComment,
   ResourceDocumentComments,
@@ -1369,11 +1369,8 @@ const PDFPage = memo(function PDFPage({
                 ) : null,
               )}
               {onEditComment && (
-                <LabelTooltip
+                <ReaderCommentTooltip
                   label={comment.comment}
-                  contentClassName="za-slide-comment-preview"
-                  side="top"
-                  delay={180}
                   disabled={!!activeSelection?.editingCommentId}
                   render={
                     <button

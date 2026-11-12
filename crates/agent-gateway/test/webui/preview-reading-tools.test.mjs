@@ -138,7 +138,7 @@ test("PDF text shortcut accepts a same-page selection and rechecks file authorit
     assertCurrent() { if (!authorized) throw new Error("expired"); },
     onPick: (selection) => picked.push(selection),
   }));
-  const action = () => app.host.querySelector(".za-pdf-selection-action");
+  const action = () => app.host.querySelector(".za-reader-text-selection-action");
   async function select(end) {
     await app.env.act(async () => {
       const native = window.getSelection();

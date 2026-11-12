@@ -11,7 +11,6 @@ import {
 import { flushSync } from "react-dom";
 import { ChevronRight, LayoutGrid, PanelLeft, Play, SquareMousePointer, X } from "../IconSet";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
-import { LabelTooltip } from "../ui/label-tooltip";
 import { Popover, PopoverContent, PopoverTitle } from "../ui/popover";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import type { DocumentRegion } from "./docxReaderDocument";
@@ -37,6 +36,7 @@ import {
 } from "./presentationViewport";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
 import type { PreviewWorkerResult, SlideRevisionMetadata } from "./previewWorkerProtocol";
+import { ReaderCommentTooltip } from "./ReaderCommentTooltip";
 import {
   type DocumentRevisionComment,
   ResourceDocumentComments,
@@ -381,10 +381,8 @@ function SlideAnnotationLayer({
         return (
           <span key={mark.id}>
             {region && renderRegion(region, "marked", rotation)}
-            <LabelTooltip
+            <ReaderCommentTooltip
               label={mark.comment}
-              side="top"
-              contentClassName="za-slide-comment-preview"
               render={
                 <Button
                   variant="ghost"

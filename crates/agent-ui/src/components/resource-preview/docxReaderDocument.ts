@@ -1,7 +1,7 @@
 import { docxCoverDocument } from "./docxCoverDocument";
 import { createDocxOutline, type DocxOutlineEntry } from "./docxOutline";
 import { isolatedPreviewDocument } from "./previewPolicy";
-import { COMMENT_CURSOR, COMMENT_PIN } from "./readerInteraction";
+import { COMMENT_CURSOR, COMMENT_PIN, READER_COMMENT_PREVIEW_DELAY } from "./readerInteraction";
 
 export type DocumentAnchor = { id: string; page: number; text: string; kind?: "image" };
 export type DocumentHeading = { id: string; title: string; level: number };
@@ -22,12 +22,17 @@ export type DocumentSelection = {
 };
 
 /** Application-owned code only. Opaque sandbox; no origin, network, files or host API. */
-function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
+function readerBridge(
+  token: string,
+  validRegion: typeof validDocumentRegion,
+  previewDelay: number,
+) {
   const send = (value: object) => parent.postMessage({ token, ...value }, "*");
   let enabled = false;
   let canModify = false;
   let viewportTop = 0;
   let viewportHeight = innerHeight;
+  let textClip: { left: number; top: number; right: number; bottom: number } | null = null;
   let lastHeight = 0;
   let editing = false;
   let editingCommentId = "";
@@ -148,12 +153,50 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   document.addEventListener("touchcancel", () => {
     pinchDistance = 0;
   });
-  const notes = new WeakMap<Element, string>();
   const noteIds = new WeakMap<Element, string>();
-  const tip = document.createElement("div");
-  tip.className = "za-reader-comment-tip";
-  tip.setAttribute("role", "tooltip");
-  const hideTip = () => tip.remove();
+  let previewTimer = 0;
+  let previewOpen = false;
+  function hideTip() {
+    clearTimeout(previewTimer);
+    if (!previewOpen) return;
+    previewOpen = false;
+    send({ type: "comment-preview-close" });
+  }
+  function addCommentPin(mark: HTMLElement, item: { commentId: string; comment?: string }) {
+    const id = item.commentId;
+    noteIds.set(mark, id);
+    const pin = document.createElement("button");
+    pin.type = "button";
+    pin.className = "za-reader-comment-pin";
+    pin.setAttribute("aria-label", "编辑文档批注");
+    if (typeof item.comment === "string")
+      pin.setAttribute("aria-description", item.comment.slice(0, 2000));
+    const showTip = () => {
+      if (!canModify || editingCommentId === id || !pin.isConnected) return;
+      const { x, y, width, height } = pin.getBoundingClientRect();
+      previewOpen = true;
+      send({ type: "comment-preview", id, x, y, width, height });
+    };
+    pin.addEventListener("pointerenter", (event) => {
+      if (event.pointerType === "touch" || drag) return;
+      clearTimeout(previewTimer);
+      previewTimer = window.setTimeout(showTip, previewDelay);
+    });
+    pin.addEventListener("pointerleave", () => {
+      if (!pin.matches(":focus-visible")) hideTip();
+    });
+    pin.addEventListener("focus", () => {
+      if (pin.matches(":focus-visible")) showTip();
+    });
+    pin.addEventListener("blur", hideTip);
+    pin.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!canModify) return;
+      hideTip();
+      send({ type: "edit-comment", id });
+    });
+    mark.append(pin);
+  }
   const savedAnnotationAt = (event: MouseEvent, target: Element) =>
     [...document.querySelectorAll<HTMLElement>(".za-reader-saved-region")].find((element) => {
       const rect = element.getBoundingClientRect();
@@ -164,26 +207,14 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
         event.clientY <= rect.bottom
       );
     }) ?? target.closest("[data-commented]");
-  document.addEventListener("pointermove", (event) => {
-    if (drag || !(event.target instanceof Element)) {
-      hideTip();
-      return;
-    }
-    const marked = savedAnnotationAt(event, event.target);
-    const note = marked ? notes.get(marked) : "";
-    if (!note || !marked || noteIds.get(marked) === editingCommentId) {
-      hideTip();
-      return;
-    }
-    tip.textContent = note;
-    const rect = marked.getBoundingClientRect();
-    tip.style.left = `${Math.max(8, Math.min(rect.right - 240, innerWidth - 256))}px`;
-    tip.style.top = `${Math.min(rect.bottom + 8, viewportTop + viewportHeight - 64)}px`;
-    if (!tip.isConnected) document.body.append(tip);
-  });
-  document.addEventListener("pointerleave", hideTip);
   const choose = (event: MouseEvent, target = event.target) => {
-    if (!enabled || !canModify || !(target instanceof Element)) return;
+    if (
+      !enabled ||
+      !canModify ||
+      !(target instanceof Element) ||
+      target.closest(".za-reader-comment-pin")
+    )
+      return;
     const range = getSelection()?.rangeCount ? getSelection()?.getRangeAt(0) : null;
     const saved = savedAnnotationAt(event, target);
     const savedId = saved && noteIds.get(saved);
@@ -260,9 +291,126 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
       ...(region && validRegion(region) ? { region } : {}),
     });
   };
-  // Ordinary reading keeps text selection intact; only embedded images expose this shortcut.
+  let selectingText: number | null = null;
+  let selectionFrame = 0;
+  let showingTextAction = false;
+  function readTextSelection() {
+    const selected = getSelection();
+    if (
+      enabled ||
+      !canModify ||
+      editing ||
+      selectingText !== null ||
+      !textClip ||
+      !selected ||
+      selected.isCollapsed ||
+      selected.rangeCount !== 1
+    )
+      return null;
+    const range = selected.getRangeAt(0);
+    const paperAt = (node: Node) =>
+      (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>(
+        "[data-reader-page]",
+      );
+    const page = paperAt(range.startContainer);
+    if (!page || page !== paperAt(range.endContainer)) return null;
+    const paper = page.getBoundingClientRect();
+    if (!paper.width || !paper.height) return null;
+    const anchors: DocumentSelectionAnchor[] = [];
+    let count = 0;
+    for (const block of page.querySelectorAll<HTMLElement>(
+      "[data-reader-block]:not([data-reader-kind])",
+    )) {
+      if (!range.intersectsNode(block)) continue;
+      const part = document.createRange();
+      part.selectNodeContents(block);
+      if (part.compareBoundaryPoints(Range.START_TO_START, range) < 0)
+        part.setStart(range.startContainer, range.startOffset);
+      if (part.compareBoundaryPoints(Range.END_TO_END, range) > 0)
+        part.setEnd(range.endContainer, range.endOffset);
+      const text = part.toString();
+      if (!text.length || !block.dataset.readerBlock) continue;
+      const prefix = document.createRange();
+      prefix.selectNodeContents(block);
+      prefix.setEnd(part.startContainer, part.startOffset);
+      const start = prefix.toString().length;
+      count += text.length;
+      if (anchors.length >= 20 || count > 2000) return null;
+      anchors.push({ id: block.dataset.readerBlock, start, end: start + text.length });
+    }
+    const first = anchors[0];
+    if (!first || !range.toString().trim()) return null;
+    const backwards =
+      selected.anchorNode === range.endContainer && selected.anchorOffset === range.endOffset;
+    const clip = textClip;
+    const rects = Array.from(range.getClientRects()).filter(
+      (rect) =>
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.right > clip.left &&
+        rect.left < clip.right &&
+        rect.bottom > clip.top &&
+        rect.top < clip.bottom,
+    );
+    const anchor = backwards ? rects[0] : rects.at(-1);
+    if (!anchor) return null;
+    const bounds = range.getBoundingClientRect();
+    const left = Math.max(paper.left, bounds.left);
+    const top = Math.max(paper.top, bounds.top);
+    const region = {
+      left: (left - paper.left) / paper.width,
+      top: (top - paper.top) / paper.height,
+      width: (Math.min(paper.right, bounds.right) - left) / paper.width,
+      height: (Math.min(paper.bottom, bounds.bottom) - top) / paper.height,
+    };
+    if (!validRegion(region)) return null;
+    return {
+      ...first,
+      ...(anchors.length > 1 ? { anchors } : {}),
+      x: bounds.right,
+      y: bounds.bottom,
+      region,
+      pageWidth: paper.width,
+      pageHeight: paper.height,
+      anchor: { x: anchor.left, y: anchor.top, width: anchor.width, height: anchor.height },
+    };
+  }
+  function hideTextAction() {
+    if (!showingTextAction) return;
+    showingTextAction = false;
+    send({ type: "text-selection-clear" });
+  }
+  function refreshTextAction() {
+    if (selectionFrame) return;
+    selectionFrame = requestAnimationFrame(() => {
+      selectionFrame = 0;
+      const selection = readTextSelection();
+      if (!selection) {
+        hideTextAction();
+        return;
+      }
+      showingTextAction = true;
+      send({ type: "text-selection", ...selection });
+    });
+  }
+  document.addEventListener("selectionchange", refreshTextAction);
+  document.addEventListener("pointerdown", (event) => {
+    if (enabled || !canModify || event.button !== 0) return;
+    selectingText = event.pointerId;
+    hideTextAction();
+  });
+  const finishTextSelection = (event: PointerEvent) => {
+    if (selectingText !== event.pointerId) return;
+    selectingText = null;
+    refreshTextAction();
+  };
+  document.addEventListener("pointerup", finishTextSelection);
+  document.addEventListener("pointercancel", finishTextSelection);
+
+  // Ordinary reading keeps text selection intact.
   document.addEventListener("click", (event) => {
     if (enabled || !canModify || !(event.target instanceof Element)) return;
+    if (getSelection()?.isCollapsed === false) return;
     const mark = savedAnnotationAt(event, event.target);
     const id = mark && noteIds.get(mark);
     if (id && getSelection()?.isCollapsed !== false) {
@@ -304,9 +452,22 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
     });
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && canModify && !event.isComposing && (enabled || tracked)) {
-      event.preventDefault();
-      if (!event.repeat) send({ type: "annotation-escape" });
+    if (event.key === "Escape" && canModify && !event.isComposing) {
+      if (showingTextAction) {
+        event.preventDefault();
+        getSelection()?.removeAllRanges();
+        hideTextAction();
+        return;
+      }
+      if (previewOpen) {
+        event.preventDefault();
+        hideTip();
+        return;
+      }
+      if (enabled || tracked) {
+        event.preventDefault();
+        if (!event.repeat) send({ type: "annotation-escape" });
+      }
     }
     if (
       (event.ctrlKey || event.metaKey) &&
@@ -327,7 +488,7 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
     if (!enabled || event.button !== 0 || event.shiftKey || !(event.target instanceof Element))
       return;
     const page = event.target.closest<HTMLElement>("[data-reader-page]");
-    if (!page) return;
+    if (!page || event.target.closest(".za-reader-comment-pin")) return;
     event.preventDefault();
     getSelection()?.removeAllRanges();
     drag = { x: event.clientX, y: event.clientY, page, target: event.target, moved: false };
@@ -415,8 +576,20 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   window.addEventListener("message", (event) => {
     if (event.source !== parent || event.data?.token !== token) return;
     const message = event.data;
-    if (message.type === "capabilities" && typeof message.revision === "boolean")
+    if (message.type === "capabilities" && typeof message.revision === "boolean") {
       canModify = message.revision;
+      refreshTextAction();
+    }
+    if (message.type === "clear-text-selection") {
+      getSelection()?.removeAllRanges();
+      hideTextAction();
+    }
+    if (message.type === "confirm-text-selection" && typeof message.requestId === "string") {
+      const selection = readTextSelection();
+      if (selection)
+        send({ type: "text-selection-confirmed", requestId: message.requestId, ...selection });
+      else hideTextAction();
+    }
     if (
       message.type === "navigate" &&
       typeof message.id === "string" &&
@@ -446,9 +619,18 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
     ) {
       viewportTop = message.top;
       viewportHeight = message.height;
+      const clip = message.textClip;
+      textClip =
+        clip &&
+        [clip.left, clip.top, clip.right, clip.bottom].every(Number.isFinite) &&
+        clip.right > clip.left &&
+        clip.bottom > clip.top
+          ? clip
+          : null;
       publishPage();
       position();
       hideTip();
+      refreshTextAction();
     }
     if (
       message.type === "layout" &&
@@ -461,6 +643,7 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
         document.documentElement.style.setProperty("--reader-scale", String(message.scale));
       measure();
       position();
+      hideTip();
     }
     if (message.type === "annotate" && typeof message.enabled === "boolean") {
       enabled = message.enabled;
@@ -473,11 +656,14 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
       document.querySelectorAll<HTMLElement>("[data-reader-block]").forEach((element) => {
         element.tabIndex = enabled ? 0 : -1;
       });
+      selectingText = null;
+      refreshTextAction();
     }
     if (message.type === "track") {
       editing = message.editing === true;
       editingCommentId = typeof message.commentId === "string" ? message.commentId : "";
       if (editing) hideTip();
+      refreshTextAction();
       tracked =
         /^za-reader-(?:page|block)-\d+$/.test(message.id) &&
         Number.isSafeInteger(message.page) &&
@@ -501,9 +687,8 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
           Array.isArray(message.items) && message.items.length <= 20
             ? message.items.find((item: { id?: string }) => item.id === element.dataset.readerBlock)
             : null;
-        if (item && typeof item.comment === "string")
-          notes.set(element, item.comment.slice(0, 2000));
-        if (item && typeof item.commentId === "string") noteIds.set(element, item.commentId);
+        element.querySelector(":scope > .za-reader-comment-pin")?.remove();
+        if (item && typeof item.commentId === "string") addCommentPin(element, item);
         else noteIds.delete(element);
       });
     }
@@ -525,8 +710,7 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
           width: `${item.region.width * 100}%`,
           height: `${item.region.height * 100}%`,
         });
-        if (typeof item.comment === "string") notes.set(mark, item.comment.slice(0, 2000));
-        if (typeof item.commentId === "string") noteIds.set(mark, item.commentId);
+        if (typeof item.commentId === "string") addCommentPin(mark, item);
         page.append(mark);
       }
     }
@@ -623,7 +807,7 @@ export function prepareReaderDocument(root: HTMLElement, outline: readonly DocxO
     }
   }
   const token = crypto.randomUUID().replaceAll("-", "");
-  const script = `(${readerBridge.toString()})(${JSON.stringify(token)},${validDocumentRegion.toString()})`;
+  const script = `(${readerBridge.toString()})(${JSON.stringify(token)},${validDocumentRegion.toString()},${READER_COMMENT_PREVIEW_DELAY})`;
   const css = `<style>
 html,body{overflow:hidden;scrollbar-width:none}
 body{padding:0!important}
@@ -636,9 +820,12 @@ body[data-annotating] [data-reader-block]:is(:hover,:focus-visible):not(:has([da
 [data-reader-kind="image"][data-active]{outline:1px dashed #3478df;outline-offset:3px}
 body[data-annotating] [data-reader-block][data-active]{background:#3478df1a;outline:2px dashed #3478df;outline-offset:5px}
 [data-reader-block][data-commented],body[data-annotating] [data-reader-block][data-commented]{position:relative;background:#3478df1a;outline:2px dashed #3478df;outline-offset:5px}
-[data-reader-block][data-commented]:after,body[data-annotating] [data-reader-block][data-active]:after,.za-reader-region:after{content:'';position:absolute;right:calc(-12px / var(--reader-scale,1));top:calc(-12px / var(--reader-scale,1));width:calc(28px / var(--reader-scale,1));height:calc(28px / var(--reader-scale,1));background:${COMMENT_PIN} center/contain no-repeat;filter:drop-shadow(0 2px 2px #0002);pointer-events:auto;cursor:${COMMENT_CURSOR}}
+body[data-annotating] [data-reader-block][data-active]:not([data-commented]):after,.za-reader-region:not(:has(.za-reader-comment-pin)):after,.za-reader-comment-pin{content:'';position:absolute;right:calc(-12px / var(--reader-scale,1));top:calc(-12px / var(--reader-scale,1));width:calc(28px / var(--reader-scale,1));height:calc(28px / var(--reader-scale,1));background:${COMMENT_PIN} center/contain no-repeat;filter:drop-shadow(0 2px 2px #0002)}
+.za-reader-comment-pin{padding:0;border:0;border-radius:50%;pointer-events:auto;cursor:pointer;transition:scale 150ms ease}
+.za-reader-comment-pin:hover{scale:1.08}
+.za-reader-comment-pin:focus-visible{outline:2px solid #3478df;outline-offset:1px}
+@media(prefers-reduced-motion:reduce){.za-reader-comment-pin{transition:none}}
 body[data-annotating] [data-reader-block][data-commented]:hover{outline-color:#2563eb;background:#3478df24}
-.za-reader-comment-tip{position:absolute;z-index:20;padding:8px 12px;max-width:280px;background:white;color:#171717;border:1px solid #e5e5e5;border-radius:9px;box-shadow:0 4px 16px #0002;font:calc(14px / var(--reader-scale,1))/1.5 system-ui;pointer-events:none;overflow-wrap:anywhere}
 .za-reader-region{position:absolute;border:2px dashed #3478df;background:#3478df1a;pointer-events:none;box-sizing:border-box;z-index:5}
 .za-reader-region[data-point]{border:0;background:none}
 .za-reader-region-drawing{position:fixed}

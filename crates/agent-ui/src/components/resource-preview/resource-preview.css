@@ -598,7 +598,7 @@
 .za-slide-comment-pin:hover {
   background: transparent;
 }
-.app-tooltip-surface.za-slide-comment-preview {
+.app-tooltip-surface.za-reader-comment-preview {
   --tooltip-surface: var(--card);
   --tooltip-foreground: var(--card-foreground);
   max-inline-size: min(280px, calc(100vw - 16px));
@@ -609,7 +609,7 @@
   font-weight: 400;
 }
 .za-slide-region-action,
-.za-pdf-selection-action {
+.za-reader-text-selection-action {
   position: absolute;
   z-index: 1;
   translate: -50% -100%;
@@ -622,11 +622,11 @@
 .za-slide-region-action {
   scale: calc(1 / var(--za-grid-scale, 1));
 }
-.za-pdf-selection-action {
+.za-reader-text-selection-action {
   z-index: 4;
 }
 @container resource-preview (max-width: 600px) {
-  .za-pdf-selection-action {
+  .za-reader-text-selection-action {
     min-height: var(--za-touch-target);
   }
 }
@@ -640,12 +640,12 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .za-slide-region-action,
-  .za-pdf-selection-action {
+  .za-reader-text-selection-action {
     animation: none;
   }
 }
 .za-slide-region-action[data-below="true"],
-.za-pdf-selection-action[data-below="true"] {
+.za-reader-text-selection-action[data-below="true"] {
   translate: -50% 0;
   transform-origin: center top;
   transform: translateY(8px);

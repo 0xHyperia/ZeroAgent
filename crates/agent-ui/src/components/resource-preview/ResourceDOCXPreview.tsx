@@ -1,4 +1,12 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { List, SquareMousePointer } from "../IconSet";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
@@ -11,6 +19,12 @@ import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./Prev
 import { PreviewScrollArea } from "./PreviewScrollArea";
 import { PreviewLeadingTools, PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
+import { ReaderCommentTooltip } from "./ReaderCommentTooltip";
+import {
+  ReaderTextSelectionAction,
+  readerSelectionPosition,
+  readerSelectionViewport,
+} from "./ReaderTextSelectionAction";
 import {
   type DocumentRevisionComment,
   ResourceDocumentComments,
@@ -45,13 +59,25 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   const toggleAnnotation = useCallback(() => {
     setAnnotating((enabled) => !enabled);
   }, []);
-  const commentMarks = useRef<string[]>([]);
-  const commentNotes = useRef<{ id: string; comment: string; commentId: string }[]>([]);
-  const regionMarks = useRef<{ page: number; region: NonNullable<RevisionSelection["region"]> }[]>(
-    [],
-  );
+  const [marks, setMarks] = useState<readonly DocumentRevisionComment[]>([]);
+  const [preview, setPreview] = useState<{
+    id: string;
+    token: string;
+    bounds: DOMRect;
+    open: boolean;
+  } | null>(null);
+  const previewComment = marks.find((item) => item.id === preview?.id)?.comment;
+  const closePreview = useCallback(() => {
+    setPreview((old) => (old?.open ? { ...old, open: false } : old));
+  }, []);
   const [selection, setSelection] = useState<RevisionSelection | null>(null);
   const [imageShortcut, setImageShortcut] = useState<RevisionSelection | null>(null);
+  const [textShortcut, setTextShortcut] = useState<{
+    token: string;
+    position: ReturnType<typeof readerSelectionPosition>;
+  } | null>(null);
+  const textSelectionRequest = useRef("");
+  const textAction = useRef<HTMLButtonElement>(null);
   const selectionRef = useRef(selection ?? imageShortcut);
   selectionRef.current = selection ?? imageShortcut;
   const { onRequestRevision } = useContext(PreviewIdentityContext);
@@ -70,18 +96,14 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     setSelection(next?.editingCommentId ? { ...next, visible: false } : next);
   }, []);
   const handleEscape = useCallback(() => {
-    if (selection) dismissSelection.current?.();
+    if (preview?.open) closePreview();
+    else if (selection) dismissSelection.current?.();
     else if (annotating) setAnnotating(false);
     else if (imageShortcut) setImageShortcut(null);
     else return false;
     return true;
-  }, [annotating, imageShortcut, selection]);
+  }, [annotating, closePreview, imageShortcut, preview?.open, selection]);
   const chrome = useContext(PreviewToolbarMount);
-  const registerEscape = chrome?.registerEscapeHandler;
-  useLayoutEffect(
-    () => (selection || annotating || imageShortcut ? registerEscape?.(handleEscape) : undefined),
-    [annotating, handleEscape, imageShortcut, registerEscape, selection],
-  );
   const setFileMenu = chrome?.setFileMenu;
   useEffect(() => {
     if (!setFileMenu || props.thumbnail) return;
@@ -234,6 +256,46 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     },
     [reader],
   );
+  const clearTextSelection = useCallback(() => {
+    textSelectionRequest.current = "";
+    setTextShortcut(null);
+    post({ type: "clear-text-selection" });
+    if (document.activeElement === textAction.current)
+      frame.current?.focus({ preventScroll: true });
+  }, [post]);
+  const escapeReader = useCallback(() => {
+    if (!textShortcut || textShortcut.token !== reader?.token) return handleEscape();
+    clearTextSelection();
+    return true;
+  }, [clearTextSelection, handleEscape, reader?.token, textShortcut]);
+  const registerEscape = chrome?.registerEscapeHandler;
+  useLayoutEffect(
+    () =>
+      selection || annotating || imageShortcut || preview?.open || textShortcut
+        ? registerEscape?.(escapeReader)
+        : undefined,
+    [
+      annotating,
+      escapeReader,
+      imageShortcut,
+      preview?.open,
+      registerEscape,
+      selection,
+      textShortcut,
+    ],
+  );
+  const requestTextModification = useCallback(() => {
+    if (!textShortcut || textShortcut.token !== reader?.token || !onRequestRevision) return;
+    try {
+      assertCurrent();
+    } catch {
+      clearTextSelection();
+      return;
+    }
+    const requestId = crypto.randomUUID();
+    textSelectionRequest.current = requestId;
+    post({ type: "confirm-text-selection", requestId });
+  }, [assertCurrent, clearTextSelection, onRequestRevision, post, reader?.token, textShortcut]);
   function navigate(id: string, comment?: DocumentRevisionComment, source?: "marker") {
     if (source === "marker") return;
     post({ type: "navigate", id, region: comment?.region });
@@ -244,12 +306,21 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     const element = container.current;
     if (element)
       logicalScroll.current = (element.scrollTop - (floatingTools ? 80 : 20 * scale)) / scale;
-    if (element)
+    if (element) {
+      const paper = frame.current?.getBoundingClientRect();
+      const view = readerSelectionViewport(element);
       post({
         type: "viewport",
         top: element.scrollTop / scale,
         height: element.clientHeight / scale,
+        textClip: paper && {
+          left: (view.left - paper.left) / scale,
+          right: (view.right - paper.left) / scale,
+          top: (view.top - paper.top) / scale,
+          bottom: (view.bottom - paper.top) / scale,
+        },
       });
+    }
   }, [container, scale, post, floatingTools]);
   useLayoutEffect(() => {
     const element = container.current;
@@ -269,26 +340,43 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     }
     previousScale.current = scale;
   }, [container, scale, floatingTools]);
-  useEffect(() => {
+  const markMessages = useMemo(() => {
+    const blocks = marks.filter((item) => !item.region || item.kind === "image");
+    return {
+      ids: blocks.flatMap((item) => item.anchors?.map((anchor) => anchor.id) ?? [item.block]),
+      items: blocks.map((item) => ({ id: item.block, comment: item.comment, commentId: item.id })),
+      regions: marks.flatMap((item) =>
+        item.region && item.kind !== "image"
+          ? [{ page: item.page, region: item.region, comment: item.comment, commentId: item.id }]
+          : [],
+      ),
+    };
+  }, [marks]);
+  const postMarks = useCallback(() => {
+    post({ type: "marks", ids: markMessages.ids, items: markMessages.items });
+  }, [markMessages, post]);
+  const selectedRegion = selection?.kind === "image" ? undefined : selection?.region;
+  const selectedPage = selection?.page;
+  const postRegions = useCallback(() => {
     post({
       type: "regions",
       items: [
-        ...regionMarks.current,
-        ...(selection?.region && selection.kind !== "image"
-          ? [{ page: selection.page, region: selection.region }]
-          : []),
+        ...markMessages.regions,
+        ...(selectedRegion && selectedPage ? [{ page: selectedPage, region: selectedRegion }] : []),
       ],
     });
-  }, [selection, post]);
+  }, [markMessages, post, selectedPage, selectedRegion]);
+  useEffect(postMarks, [postMarks]);
+  useEffect(postRegions, [postRegions]);
   const trackedSelection = selection ?? imageShortcut;
-  const selectedRegion = trackedSelection?.region;
+  const trackedRegion = trackedSelection?.region;
   const editingComment = !!selection;
   useEffect(() => {
     post({
       type: "track",
       id: trackedSelection?.id,
       page: trackedSelection?.page,
-      region: selectedRegion,
+      region: trackedRegion,
       editing: editingComment,
       commentId: trackedSelection?.editingCommentId,
     });
@@ -297,7 +385,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     trackedSelection?.id,
     trackedSelection?.page,
     trackedSelection?.editingCommentId,
-    selectedRegion,
+    trackedRegion,
     editingComment,
   ]);
   useEffect(() => {
@@ -309,7 +397,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   }, [post, floatingTools, scale, updateViewport]);
   useEffect(() => {
     if (viewport.height > 0) updateLayout();
-  }, [updateLayout, viewport.height]);
+  }, [updateLayout, viewport.height, viewport.width]);
   useEffect(() => {
     if (!reader) return;
     const receive = (event: MessageEvent) => {
@@ -362,7 +450,8 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
         updateLayout();
         post({ type: "capabilities", revision: !!onRequestRevision });
         post({ type: "annotate", enabled: annotating });
-        post({ type: "marks", ids: commentMarks.current, items: commentNotes.current });
+        postMarks();
+        postRegions();
       }
       if (
         event.data.type === "height" &&
@@ -417,8 +506,42 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
           );
         }
       }
+      if (event.data.type === "comment-preview-close") {
+        closePreview();
+      }
+      if (event.data.type === "comment-preview" && onRequestRevision) {
+        const { id, x, y, width, height } = event.data;
+        const paper = frame.current?.getBoundingClientRect();
+        const viewport = container.current?.getBoundingClientRect();
+        if (
+          paper &&
+          viewport &&
+          marks.some((item) => item.id === id) &&
+          [x, y].every((value) => Number.isFinite(value) && Math.abs(value) <= 2_000_000) &&
+          [width, height].every((value) => Number.isFinite(value) && value > 0 && value <= 500)
+        ) {
+          const bounds = new DOMRect(
+            paper.left + x * scale,
+            paper.top + y * scale,
+            width * scale,
+            height * scale,
+          );
+          if (
+            bounds.right > viewport.left &&
+            bounds.left < viewport.right &&
+            bounds.bottom > viewport.top &&
+            bounds.top < viewport.bottom
+          ) {
+            setPreview({ id, token: reader.token, bounds, open: true });
+          }
+        }
+      }
       if (event.data.type === "annotation-escape") handleEscape();
       if (event.data.type === "image-shortcut-clear") setImageShortcut(null);
+      if (event.data.type === "text-selection-clear") {
+        textSelectionRequest.current = "";
+        setTextShortcut(null);
+      }
       if (
         event.data.type === "edit-comment" &&
         onRequestRevision &&
@@ -426,14 +549,74 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
       )
         annotationEdit.current?.(event.data.id, "marker");
       if (event.data.type === "request-modification" && onRequestRevision) {
-        if (selectionRef.current?.kind === "image") requestImageModification();
+        if (textShortcut?.token === reader.token) requestTextModification();
+        else if (selectionRef.current?.kind === "image") requestImageModification();
         else toggleAnnotation();
       }
+      const textCandidate = event.data.type === "text-selection";
+      const confirmedText =
+        event.data.type === "text-selection-confirmed" &&
+        !!textSelectionRequest.current &&
+        event.data.requestId === textSelectionRequest.current;
+      const text =
+        (textCandidate || confirmedText) && onRequestRevision && !annotating && !selection;
+      if (confirmedText) {
+        textSelectionRequest.current = "";
+        setTextShortcut(null);
+      }
       if (
+        text ||
         (event.data.type === "selection" && annotating) ||
         (event.data.type === "image-shortcut" && onRequestRevision && !annotating && !selection)
       ) {
         const chosen = checkedDocumentSelection(event.data, reader.blocks, reader.pageCount);
+        if (text) {
+          const anchor = event.data.anchor;
+          const paper = frame.current?.getBoundingClientRect();
+          const view = container.current;
+          const area = surface.current?.getBoundingClientRect();
+          if (
+            !chosen?.quote.trim() ||
+            chosen.kind ||
+            !anchor ||
+            !paper ||
+            !view ||
+            !area ||
+            ![anchor.x, anchor.y, anchor.width, anchor.height].every(
+              (n) => Number.isFinite(n) && Math.abs(n) <= 100_000,
+            ) ||
+            anchor.width <= 0 ||
+            anchor.height <= 0
+          ) {
+            setTextShortcut(null);
+            return;
+          }
+          const rect = new DOMRect(
+            paper.left + anchor.x * scale,
+            paper.top + anchor.y * scale,
+            anchor.width * scale,
+            anchor.height * scale,
+          );
+          const clip = readerSelectionViewport(view);
+          if (
+            rect.right <= clip.left ||
+            rect.left >= clip.right ||
+            rect.bottom <= clip.top ||
+            rect.top >= clip.bottom
+          ) {
+            setTextShortcut(null);
+            return;
+          }
+          if (textCandidate) {
+            setImageShortcut(null);
+            setTextShortcut({
+              token: reader.token,
+              position: readerSelectionPosition(rect, clip, area),
+            });
+            return;
+          }
+          setAnnotating(true);
+        }
         if (chosen && (event.data.type !== "image-shortcut" || chosen.kind === "image")) {
           if (event.data.type === "selection" && dismissSelection.current?.() === false) return;
           if (event.data.type === "selection") setImageShortcut(null);
@@ -460,6 +643,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     reader,
     annotating,
     assertCurrent,
+    closePreview,
     scale,
     post,
     container,
@@ -468,11 +652,16 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     updateViewport,
     setZoom,
     onRequestRevision,
+    marks,
+    postMarks,
+    postRegions,
     selection,
     handleEscape,
     imageShortcutPosition,
     toggleAnnotation,
     requestImageModification,
+    requestTextModification,
+    textShortcut,
   ]);
   if (props.thumbnail)
     return (
@@ -547,7 +736,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             event.key === "Escape" &&
             !event.defaultPrevented &&
             !event.nativeEvent.isComposing &&
-            (event.repeat ? !!selection : handleEscape())
+            (event.repeat ? !!selection || !!textShortcut : escapeReader())
           ) {
             event.preventDefault();
             event.stopPropagation();
@@ -685,7 +874,22 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             <PreviewLoading onCancel={props.onCancel} />
           </div>
         ) : null}
-        {imageShortcut && !annotating && imageShortcut.visible !== false && onRequestRevision ? (
+        {textShortcut &&
+        textShortcut.token === reader?.token &&
+        !annotating &&
+        !selection &&
+        onRequestRevision ? (
+          <ReaderTextSelectionAction
+            actionRef={textAction}
+            position={textShortcut.position}
+            onPick={requestTextModification}
+          />
+        ) : null}
+        {imageShortcut &&
+        !textShortcut &&
+        !annotating &&
+        imageShortcut.visible !== false &&
+        onRequestRevision ? (
           <div
             className="za-document-image-shortcut"
             style={{ left: imageShortcut.x, top: imageShortcut.y }}
@@ -697,6 +901,14 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             </Button>
           </div>
         ) : null}
+        {preview && previewComment && preview.token === reader?.token && (
+          <ReaderCommentTooltip
+            label={previewComment}
+            anchor={{ getBoundingClientRect: () => preview.bounds }}
+            open={preview.open && selection?.editingCommentId !== preview.id}
+            onClose={closePreview}
+          />
+        )}
         {!props.thumbnail ? (
           <ResourceDocumentComments
             editRef={annotationEdit}
@@ -707,38 +919,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
             onSelection={selectComment}
             onNavigate={navigate}
             resolveSelectionBounds={resolveSelectionBounds}
-            onMarks={(items) => {
-              const ids = items
-                .filter((item) => !item.region || item.kind === "image")
-                .flatMap((item) => item.anchors?.map((anchor) => anchor.id) ?? [item.block]);
-              commentMarks.current = ids;
-              commentNotes.current = items
-                .filter((item) => !item.region || item.kind === "image")
-                .map((item) => ({ id: item.block, comment: item.comment, commentId: item.id }));
-              post({ type: "marks", ids, items: commentNotes.current });
-              const regions = items.flatMap((item) =>
-                item.region && item.kind !== "image"
-                  ? [
-                      {
-                        page: item.page,
-                        region: item.region,
-                        comment: item.comment,
-                        commentId: item.id,
-                      },
-                    ]
-                  : [],
-              );
-              regionMarks.current = regions;
-              post({
-                type: "regions",
-                items: [
-                  ...regions,
-                  ...(selection?.region && selection.kind !== "image"
-                    ? [{ page: selection.page, region: selection.region }]
-                    : []),
-                ],
-              });
-            }}
+            onMarks={setMarks}
           />
         ) : null}
       </div>

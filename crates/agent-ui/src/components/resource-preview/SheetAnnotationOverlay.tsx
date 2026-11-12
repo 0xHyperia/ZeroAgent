@@ -2,8 +2,8 @@ import { parseXlsxRange, type XlsxCellAddress } from "@extend-ai/react-xlsx";
 import { type RefObject, useLayoutEffect, useRef } from "react";
 import { SquareMousePointer } from "../IconSet";
 import { KbdShortcut } from "../ui/kbd";
-import { LabelTooltip } from "../ui/label-tooltip";
 import { TooltipButton as Button } from "../ui/tooltip-button";
+import { ReaderCommentTooltip } from "./ReaderCommentTooltip";
 import type { DocumentRevisionComment, RevisionSelection } from "./ResourceDocumentComments";
 import { COMMENT_PIN } from "./readerInteraction";
 import { projectSheetRange, type SheetGrid, sheetRangeTopRight } from "./sheetAnnotationGeometry";
@@ -162,10 +162,8 @@ export function SheetAnnotationOverlay({
         return (
           <div key={mark.id} data-sheet-comment={mark.id} data-sheet-range={target.range}>
             <RangeOutline />
-            <LabelTooltip
+            <ReaderCommentTooltip
               label={mark.comment}
-              side="top"
-              contentClassName="za-slide-comment-preview"
               render={
                 <Button
                   variant="ghost"

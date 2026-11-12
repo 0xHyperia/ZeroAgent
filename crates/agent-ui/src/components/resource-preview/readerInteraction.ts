@@ -12,6 +12,7 @@ function commentPin(size: number) {
 }
 
 export const COMMENT_PIN = commentPin(28);
+export const READER_COMMENT_PREVIEW_DELAY = 180;
 export const COMMENT_CURSOR = `${COMMENT_PIN} 4 24, pointer`;
 export const SHEET_COMMENT_CURSOR = `${commentPin(26)} 13 12, crosshair`;
 export const READER_NAVIGATION_WIDTH = 232;

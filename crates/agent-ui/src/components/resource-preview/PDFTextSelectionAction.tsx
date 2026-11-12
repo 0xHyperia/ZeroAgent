@@ -1,8 +1,10 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
-import { useLocale } from "../../i18n";
-import { SquareMousePointer } from "../IconSet";
-import { Button } from "../ui/button";
 import { normalizedPDFRegion, readPDFTextRange } from "./pdfTextRange";
+import {
+  ReaderTextSelectionAction,
+  readerSelectionPosition,
+  readerSelectionViewport,
+} from "./ReaderTextSelectionAction";
 import type { RevisionSelection } from "./ResourceDocumentComments";
 import type { PreviewZoom } from "./readingSession";
 
@@ -26,11 +28,7 @@ function readAnchor(viewport: HTMLElement, workspace: HTMLElement, pageCount: nu
   const area = workspace.getBoundingClientRect();
   const view = viewport.getBoundingClientRect();
   if (!paperBox.width || !paperBox.height || !view.width || !view.height) return null;
-  const win = viewport.ownerDocument.defaultView;
-  const left = Math.max(view.left, 0);
-  const right = Math.min(view.right, win?.innerWidth ?? view.right);
-  const top = Math.max(view.top, 0);
-  const bottom = Math.min(view.bottom, win?.innerHeight ?? view.bottom);
+  const { left, right, top, bottom } = readerSelectionViewport(viewport);
   const backwards =
     selected.anchorNode === range.endContainer && selected.anchorOffset === range.endOffset;
   const visibleRects = Array.from(range.getClientRects()).filter(
@@ -45,9 +43,6 @@ function readAnchor(viewport: HTMLElement, workspace: HTMLElement, pageCount: nu
   const anchor = backwards ? visibleRects[0] : visibleRects.at(-1);
   if (!anchor) return null;
   const rect = range.getBoundingClientRect();
-  const below = anchor.top - top < 52;
-  const x = (Math.max(anchor.left, left) + Math.min(anchor.right, right)) / 2 - area.left;
-  const y = (below ? anchor.bottom : anchor.top) - area.top;
   const revision: RevisionSelection = {
     id: `pdf-page-${page}`,
     page,
@@ -59,7 +54,10 @@ function readAnchor(viewport: HTMLElement, workspace: HTMLElement, pageCount: nu
     x: Math.max(12, Math.min(anchor.left - area.left, area.width - 352)),
     y: Math.min(anchor.bottom - area.top, area.height - 110),
   };
-  return { x, y, below, revision };
+  return {
+    position: readerSelectionPosition(anchor, { left, right, top, bottom }, area),
+    revision,
+  };
 }
 
 export function PDFTextSelectionAction({
@@ -77,7 +75,6 @@ export function PDFTextSelectionAction({
   assertCurrent: () => void;
   onPick: (selection: RevisionSelection) => void;
 }) {
-  const { locale } = useLocale();
   const action = useRef<HTMLButtonElement>(null);
   const [candidate, setCandidate] = useState<ReturnType<typeof readAnchor>>(null);
   // Zoom changes paper size even when the viewport itself stays the same.
@@ -147,21 +144,10 @@ export function PDFTextSelectionAction({
   }, [viewport, workspace, pageCount, zoom]);
   if (!candidate) return null;
   return (
-    <Button
-      ref={action}
-      type="button"
-      variant="outline"
-      size="sm"
-      className="za-pdf-selection-action"
-      data-below={candidate.below}
-      style={{
-        left: `clamp(min(50%, 80px), ${candidate.x}px, max(50%, calc(100% - 80px)))`,
-        top: candidate.y,
-      }}
-      onPointerDown={(event) => {
-        if (event.pointerType === "mouse" && event.button === 0) event.preventDefault();
-      }}
-      onClick={() => {
+    <ReaderTextSelectionAction
+      actionRef={action}
+      position={candidate.position}
+      onPick={() => {
         const view = viewport.current;
         const root = workspace.current;
         if (!view || !root) return;
@@ -176,9 +162,6 @@ export function PDFTextSelectionAction({
         view.ownerDocument.getSelection()?.removeAllRanges();
         onPick(anchor.revision);
       }}
-    >
-      <SquareMousePointer className="size-4" aria-hidden="true" />
-      {locale === "zh-CN" ? "请求修改" : "Request changes"}
-    </Button>
+    />
   );
 }
