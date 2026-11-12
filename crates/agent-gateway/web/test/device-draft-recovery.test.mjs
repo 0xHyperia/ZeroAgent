@@ -104,6 +104,56 @@ test("a missing, reassigned or archived workspace cannot acquire an existing bro
   assert.ok(recovery.readGatewayDeviceDraft(owner));
 });
 
+test("Markdown excerpts stay outside the textbox and round-trip in the scoped device draft", async (t) => {
+  const { env, recovery } = await setup(t);
+  const { MentionComposer } = env.loadModule("@liveagent/ui/components/chat/MentionComposer.tsx");
+  const { buildTextFromComposerDraft } = env.loadModule("@liveagent/ui/lib/chat/composerDraft.ts");
+  const root = env.createRoot(document.body.appendChild(document.createElement("div")));
+  const ref = env.React.createRef();
+  const emptyStates = [];
+  let sends = 0;
+  await env.act(async () => root.render(env.React.createElement(MentionComposer, {
+    ref,
+    workdir: workspace.path,
+    onSend() { sends++; },
+    onEmptyChange(empty) { emptyStates.push(empty); },
+  })));
+  const textbox = document.querySelector('[role="textbox"]');
+  const pill = () => document.querySelector("[data-composer-workspace-excerpts]");
+  try {
+    await env.act(async () => {
+      assert.ok(ref.current.insertWorkspaceExcerpt("Header\r\nNext line", "docs/api.md", "Explain this"));
+    });
+    assert.ok(pill());
+    assert.equal(textbox.textContent, "");
+    assert.equal(emptyStates.at(-1), false);
+    assert.equal(ref.current.hasContent(), true);
+    const quoteOnly = ref.current.getDraft();
+    assert.equal(quoteOnly.isEmpty, false);
+    assert.match(buildTextFromComposerDraft(quoteOnly), /docs\/api\.md\n> Header\n> Next line\n\nComment: Explain this/);
+    await env.act(async () => {
+      ref.current.setDraft({ ...quoteOnly, segments: [{ type: "text", text: "My question" }, ...quoteOnly.segments] });
+    });
+    recovery.saveGatewayDeviceDraft(owner, { workspace, segments: ref.current.getDraft().segments, attachments: [], unfinishedUpload: false });
+    await env.act(async () => ref.current.clear());
+    assert.equal(pill(), null);
+    assert.equal(recovery.readGatewayDeviceDraft(otherOwner), null);
+    assert.equal(recovery.readGatewayDeviceDraft(otherDevice), null);
+    const restored = recovery.restoreGatewayDeviceDraft(recovery.readGatewayDeviceDraft(owner));
+    await env.act(async () => ref.current.setDraft(restored.composer));
+    assert.equal(textbox.textContent, "My question");
+    assert.ok(pill());
+    assert.equal(ref.current.getDraft().segments.at(-1).type, "workspaceExcerpt");
+    await env.act(async () => pill().querySelector("button[aria-label]").click());
+    assert.equal(pill(), null);
+    assert.equal(textbox.textContent, "My question");
+    assert.equal(buildTextFromComposerDraft(ref.current.getDraft()), "My question");
+    assert.equal(sends, 0);
+  } finally {
+    await env.act(async () => root.unmount());
+  }
+});
+
 test("retry preserves a blocked original workspace draft and later edits in a different workspace", async (t) => {
   const { recovery } = await setup(t);
   const newId = "__local_draft__:fallback";

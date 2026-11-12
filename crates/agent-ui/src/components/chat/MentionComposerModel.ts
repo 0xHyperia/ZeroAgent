@@ -7,6 +7,7 @@ import type {
   FileMentionReference,
 } from "@liveagent/ui/lib/chat/mentionReferences";
 import { MAX_CONVERSATION_MENTION_REFERENCES } from "@liveagent/ui/lib/chat/mentionReferences";
+import type { WorkspaceExcerpt } from "@liveagent/ui/lib/chat/workspaceExcerpt";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -172,6 +173,7 @@ export interface MentionComposerHandle {
    * unavailable/disabled or the text is blank.
    */
   insertQuote: (text: string) => boolean;
+  insertWorkspaceExcerpt: (text: string, path: string, comment?: string) => boolean;
   /**
    * Runs the draft as a registered action/prompt command instead of sending.
    * Returns false (send normally) when the draft is not a registered command.
@@ -209,7 +211,8 @@ export type MentionComposerDraftSegment =
   | { type: "commitMention"; commit: MentionComposerCommitMention }
   | { type: "gitFileMention"; file: MentionComposerGitFileMention }
   | { type: "conversationMention"; conversation: MentionComposerConversationMention }
-  | { type: "codeMention"; reference: CodeMentionReference };
+  | { type: "codeMention"; reference: CodeMentionReference }
+  | { type: "workspaceExcerpt"; excerpt: WorkspaceExcerpt };
 
 export type MentionComposerDraft = {
   segments: MentionComposerDraftSegment[];

@@ -51,6 +51,11 @@ import {
 } from "@liveagent/ui/lib/chat/mentionReferences";
 import { buildComposerQuoteInsertion } from "@liveagent/ui/lib/chat/transcriptQuote";
 import {
+  formatWorkspaceExcerpt,
+  normalizeWorkspaceExcerpt,
+  type WorkspaceExcerpt,
+} from "@liveagent/ui/lib/chat/workspaceExcerpt";
+import {
   extensionDraftSelection,
   parseExtensionReference,
 } from "@liveagent/ui/lib/extensions/reference";
@@ -77,6 +82,7 @@ import {
 } from "react";
 import { readComposerSendShortcut, shouldSendOnEnter } from "../../lib/chat/sendShortcut";
 import { ComposerCommandPanel } from "./ComposerCommandPanel";
+import { ComposerWorkspaceExcerpts } from "./ComposerWorkspaceExcerpts";
 import {
   CARET_ANCHOR_TEXT,
   COMMIT_MENTION_SHA_ATTR,
@@ -267,6 +273,12 @@ export const MentionComposer = memo(
     }, [installedSkills, installedSlashSkills, locale]);
     const suggestionListId = useId();
     const editorRef = useRef<HTMLDivElement>(null);
+    const [workspaceExcerpts, setWorkspaceExcerpts] = useState<WorkspaceExcerpt[]>([]);
+    const workspaceExcerptsRef = useRef<WorkspaceExcerpt[]>([]);
+    const replaceWorkspaceExcerpts = useCallback((excerpts: WorkspaceExcerpt[]) => {
+      workspaceExcerptsRef.current = excerpts;
+      setWorkspaceExcerpts(excerpts);
+    }, []);
     const draftOnlyRef = useRef(draftOnly);
     draftOnlyRef.current = draftOnly;
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -928,7 +940,10 @@ export const MentionComposer = memo(
     const refreshEmptyState = useCallback(() => {
       const el = editorRef.current;
       if (!el) return;
-      applyEmptyState(editorTextIsEmpty(el), editorHasNoContent(el));
+      applyEmptyState(
+        !workspaceExcerptsRef.current.length && editorTextIsEmpty(el),
+        editorHasNoContent(el),
+      );
     }, [applyEmptyState]);
 
     // Range/chip edits bypass the browser editing pipeline. Publish the same
@@ -995,6 +1010,8 @@ export const MentionComposer = memo(
       }
 
       const segments = serializeChildrenToSegments(el, largePastesRef.current);
+      for (const excerpt of workspaceExcerptsRef.current)
+        segments.push({ type: "workspaceExcerpt", excerpt });
       const largePastes: MentionComposerLargePaste[] = [];
       const skillMentions: MentionComposerSkillMention[] = [];
       const appMentions: MentionComposerAppMention[] = [];
@@ -1045,6 +1062,10 @@ export const MentionComposer = memo(
           const token = formatCodeMentionToken(segment.reference);
           textParts.push(token);
           textWithoutLargePastesParts.push(token);
+        } else if (segment.type === "workspaceExcerpt") {
+          const quote = formatWorkspaceExcerpt(segment.excerpt);
+          textParts.push(quote);
+          textWithoutLargePastesParts.push(quote);
         }
       }
 
@@ -1061,7 +1082,7 @@ export const MentionComposer = memo(
         gitFileMentions,
         conversationMentions,
         codeMentions,
-        isEmpty: editorTextIsEmpty(el),
+        isEmpty: !workspaceExcerptsRef.current.length && editorTextIsEmpty(el),
       };
     }, []);
 
@@ -1149,6 +1170,7 @@ export const MentionComposer = memo(
         if (!el) return;
         resetPromptHistoryRecall();
         el.innerHTML = "";
+        replaceWorkspaceExcerpts([]);
         largePastesRef.current.clear();
         closeCommitTooltip();
         closeComposerContextMenu();
@@ -1170,6 +1192,7 @@ export const MentionComposer = memo(
         insertLargePaste,
         placeCaretAtEditorEnd,
         refreshEmptyState,
+        replaceWorkspaceExcerpts,
         resetPromptHistoryRecall,
       ],
     );
@@ -1180,6 +1203,11 @@ export const MentionComposer = memo(
         if (!el) return;
         resetPromptHistoryRecall();
         el.innerHTML = "";
+        replaceWorkspaceExcerpts(
+          draft.segments.flatMap((segment) =>
+            segment.type === "workspaceExcerpt" ? [segment.excerpt] : [],
+          ),
+        );
         largePastesRef.current.clear();
         closeCommitTooltip();
         closeComposerContextMenu();
@@ -1214,7 +1242,7 @@ export const MentionComposer = memo(
           } else if (segment.type === "codeMention") {
             const chip = createCodeMentionChip(segment.reference);
             if (chip) el.appendChild(chip);
-          } else if (segment.text) {
+          } else if (segment.type === "text" && segment.text) {
             el.appendChild(document.createTextNode(normalizeLogicalLineEndings(segment.text)));
           }
         }
@@ -1237,6 +1265,7 @@ export const MentionComposer = memo(
         currentConversationId,
         placeCaretAtEditorEnd,
         refreshEmptyState,
+        replaceWorkspaceExcerpts,
         resetPromptHistoryRecall,
       ],
     );
@@ -1278,7 +1307,7 @@ export const MentionComposer = memo(
       if (!commandRecovery) return;
       setCommandPanel(commandRecovery.panel);
       const el = editorRef.current;
-      if (isDomEmpty && el && editorTextIsEmpty(el)) {
+      if (isDomEmpty && el && !workspaceExcerptsRef.current.length && editorTextIsEmpty(el)) {
         applyDraft(commandRecovery.draft);
         clearCommandRecovery(currentConversationId ?? "");
       }
@@ -1286,7 +1315,13 @@ export const MentionComposer = memo(
 
     const runCommandDraft = useCallback(() => {
       const el = editorRef.current;
-      if (!el || !commandHost || commandHost.isDraftReserved?.()) return false;
+      if (
+        !el ||
+        !commandHost ||
+        commandHost.isDraftReserved?.() ||
+        workspaceExcerptsRef.current.length
+      )
+        return false;
       const draft = buildDraft();
       // 只有草稿以纯文本“/名称”开头才是指令；开头是 Skill 等标签时照常发送。
       const lead = draft.segments.find(
@@ -1306,19 +1341,25 @@ export const MentionComposer = memo(
     useImperativeHandle(
       ref,
       () => ({
-        getText: () => {
-          const el = editorRef.current;
-          if (!el) return "";
-          return normalizeSerializedText(serializeChildren(el, largePastesRef.current));
-        },
+        getText: () => buildDraft().text,
         getDraft: buildDraft,
         hasContent: () => {
           const el = editorRef.current;
-          return el != null && !editorTextIsEmpty(el);
+          return el != null && (workspaceExcerptsRef.current.length > 0 || !editorTextIsEmpty(el));
         },
         setText: setEditorText,
         runCommandDraft,
         setDraft: applyDraft,
+        insertWorkspaceExcerpt: (text, path, comment) => {
+          if (!editorRef.current || disabled) return false;
+          const excerpt = normalizeWorkspaceExcerpt({ id: createUuid(), text, path, comment });
+          if (!excerpt) return false;
+          resetPromptHistoryRecall();
+          replaceWorkspaceExcerpts([...workspaceExcerptsRef.current, excerpt]);
+          focusEditorAtSavedSelection();
+          notifyUserEdit();
+          return true;
+        },
         insertFileMention: (path: string, kind: "file" | "dir") => {
           const el = editorRef.current;
           if (!el) return;
@@ -1480,6 +1521,7 @@ export const MentionComposer = memo(
           clearTransientText(false);
           resetPromptHistoryRecall();
           el.innerHTML = "";
+          replaceWorkspaceExcerpts([]);
           largePastesRef.current.clear();
           closeCommitTooltip();
           closeComposerContextMenu();
@@ -1518,8 +1560,10 @@ export const MentionComposer = memo(
         closeComposerContextMenu,
         closeMentionSession,
         focusEditorAtSavedSelection,
+        notifyUserEdit,
         placeCaretAtEditorEnd,
         refreshEmptyState,
+        replaceWorkspaceExcerpts,
         resetPromptHistoryRecall,
         runCommandDraft,
         setEditorText,
@@ -2597,6 +2641,19 @@ export const MentionComposer = memo(
         <div className="sr-only" role="status" aria-atomic="true">
           {popupStatus}
         </div>
+        {workspaceExcerpts.length > 0 && (
+          <ComposerWorkspaceExcerpts
+            excerpts={workspaceExcerpts}
+            onRemove={(id) => {
+              const remaining = id
+                ? workspaceExcerptsRef.current.filter((item) => item.id !== id)
+                : [];
+              replaceWorkspaceExcerpts(remaining);
+              if (!remaining.length) focusEditorAtSavedSelection();
+              notifyUserEdit();
+            }}
+          />
+        )}
         {/* biome-ignore lint/a11y/useSemanticElements: The composer is contenteditable so it can host inline mention chips. */}
         <div
           ref={editorRef}

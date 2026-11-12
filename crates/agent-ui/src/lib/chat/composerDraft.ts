@@ -22,6 +22,7 @@ import {
   withPastedTextDisplayMetadata,
 } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
+import { formatWorkspaceExcerpt } from "./workspaceExcerpt";
 
 export function buildPastedTextFileName(paste: MentionComposerLargePaste, index: number) {
   const baseName = paste.label
@@ -73,6 +74,7 @@ export function buildTextFromComposerDraft(
           return formatConversationMentionToken(segment.conversation);
         }
         if (segment.type === "codeMention") return formatCodeMentionToken(segment.reference);
+        if (segment.type === "workspaceExcerpt") return formatWorkspaceExcerpt(segment.excerpt);
         const file = pastedFileById?.get(segment.paste.id);
         return file ? `[${segment.paste.label}: ${file.relativePath}]` : segment.paste.text;
       })

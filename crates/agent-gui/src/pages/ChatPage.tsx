@@ -48,7 +48,7 @@ import {
 } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
 import type { ConversationImageEditReceipt } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
-import { formatWorkspaceFileExcerpt, requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
+import { requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
@@ -2016,15 +2016,13 @@ function ChatPageContent(props: ChatPageProps) {
   const workspaceVisible = chatVisible && rightDockOpen;
   const insertWorkspaceMarkdownSelection = useCallback(
     (text: string, path: string, comment?: string) => {
-      const zh = settings.locale === "zh-CN";
-      const excerpt = formatWorkspaceFileExcerpt(text, path, comment, zh);
-      if (!excerpt || !workspaceVisible) return false;
-      const composer = composerRef.current;
-      const accepted = composer?.appendSegments([
-        { type: "text", text: excerpt },
-      ]);
-      if (accepted) composer?.focus();
-      else notifyChatFileLinkError(zh ? "当前输入框不可用" : "The composer is unavailable");
+      if (!workspaceVisible) return false;
+      const accepted = composerRef.current?.insertWorkspaceExcerpt(text, path, comment);
+      if (!accepted) {
+        notifyChatFileLinkError(
+          settings.locale === "zh-CN" ? "当前输入框不可用" : "The composer is unavailable",
+        );
+      }
       return Boolean(accepted);
     },
     [notifyChatFileLinkError, settings.locale, workspaceVisible],

@@ -17,6 +17,7 @@ import { useLocale } from "../../i18n";
 import { throttledCodePlugin } from "../../lib/markdownCodeHighlight";
 import { copyTextToClipboard } from "../../lib/shared/clipboard";
 import { COPY_FEEDBACK_DURATION, useCopyFeedback } from "../../lib/shared/useCopyFeedback";
+import { DEFAULT_MARKDOWN_CODE_LANGUAGE, MARKDOWN_CODE_THEMES } from "../../lib/syntaxHighlighter";
 import { Check, ChevronRight, Copy, FileText } from "../IconSet";
 import { MarkdownMermaidBlock } from "../markdown/MarkdownMermaidBlock";
 import {
@@ -337,7 +338,7 @@ const MarkdownBody = memo(function MarkdownBody({
         const child = isValidElement<ComponentProps<"code">>(children) ? children : null;
         const code = child ? codeText(child.props.children).replace(/\n$/, "") : codeText(children);
         const language =
-          child?.props.className?.match(/language-([^\s]+)/)?.[1]?.toLowerCase() ?? "text";
+          child?.props.className?.match(/language-([^\s]+)/)?.[1]?.toLowerCase() ?? "";
         if (language === "mermaid" || language === "mmd") {
           return (
             <MarkdownMermaidBlock
@@ -375,7 +376,7 @@ const MarkdownBody = memo(function MarkdownBody({
         components={components}
         controls={false}
         lineNumbers={false}
-        shikiTheme={["github-light", "github-dark"]}
+        shikiTheme={[...MARKDOWN_CODE_THEMES]}
         plugins={!thumbnail && throttledCodePlugin ? { code: throttledCodePlugin } : undefined}
       >
         {text}
@@ -437,7 +438,7 @@ function MarkdownCode({
     </div>
   ) : null;
   return (
-    <div className="za-markdown-code" data-wrapped={wrapped} data-language={language}>
+    <div className="za-markdown-code" data-wrapped={wrapped} data-language={language || "text"}>
       {plain ? (
         <div className="za-markdown-code-plain">
           <div className="za-markdown-code-heading">{language === "text" ? "" : language}</div>
@@ -447,7 +448,11 @@ function MarkdownCode({
           </pre>
         </div>
       ) : (
-        <CodeBlock code={code} language={language} lineNumbers={false}>
+        <CodeBlock
+          code={code}
+          language={language || DEFAULT_MARKDOWN_CODE_LANGUAGE}
+          lineNumbers={false}
+        >
           {tools}
         </CodeBlock>
       )}

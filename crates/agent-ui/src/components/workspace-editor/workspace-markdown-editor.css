@@ -119,6 +119,14 @@
   padding-inline: 12px;
 }
 
+.za-workspace-markdown-editor .za-md-code-token {
+  color: var(--za-md-token-light);
+}
+
+.za-workspace-markdown-editor[data-markdown-theme="dark"] .za-md-code-token {
+  color: var(--za-md-token-dark);
+}
+
 .za-workspace-markdown-content .za-md-code-first {
   position: relative;
   border-start-start-radius: 8px;

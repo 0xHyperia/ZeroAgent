@@ -51,6 +51,7 @@ import {
 } from "./useWorkspaceMarkdownSelectionEdit";
 import WorkspaceMarkdownSelectionReview from "./WorkspaceMarkdownSelectionReview";
 import { workspaceMarkdownHeadingSlug } from "./workspaceMarkdownAssets";
+import { workspaceMarkdownCodeHighlight } from "./workspaceMarkdownCodeHighlight";
 import {
   applyWorkspaceMarkdownEdits,
   type MarkdownSourceEdit,
@@ -392,6 +393,7 @@ export default function WorkspaceMarkdownEditor(props: Props) {
         doc: workspaceMarkdownEditorText(content.current),
         extensions: [
           markdown({ base: markdownLanguage }),
+          workspaceMarkdownCodeHighlight,
           markdownSelectionEditField,
           undoHistory.current.of(history()),
           search(),
@@ -668,7 +670,11 @@ export default function WorkspaceMarkdownEditor(props: Props) {
     />
   );
   return (
-    <div className="za-workspace-markdown-editor" data-markdown-mode={props.mode}>
+    <div
+      className="za-workspace-markdown-editor"
+      data-markdown-mode={props.mode}
+      data-markdown-theme={props.theme}
+    >
       <div ref={root} className="za-workspace-markdown-content" inert={fullReview} />
       {props.mode === "preview" &&
         diagramHosts.map(({ element, chart, id }) =>

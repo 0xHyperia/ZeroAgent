@@ -37,7 +37,7 @@ import { MIN_DOCKED_WORKSPACE_WITH_CAPTIONS } from "@liveagent/ui/components/pro
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
 import { useWorkspaceTabPresentation } from "@liveagent/ui/components/project-tools/WorkspaceTabPresentation";
 import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
-import { formatWorkspaceFileExcerpt, requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
+import { requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
 import type { ProjectToolTextGenerationClient } from "@liveagent/ui/lib/ai/projectToolTextGeneration";
 import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import { useGatewayDeviceImages } from "@/components/GatewayDeviceImages";
@@ -1267,13 +1267,14 @@ export function GatewayAppView({
     });
   };
   const insertWorkspaceMarkdownSelection = (text: string, path: string, comment?: string) => {
-    const zh = settings.locale === "zh-CN";
-    const excerpt = formatWorkspaceFileExcerpt(text, path, comment, zh);
-    if (!excerpt || !rightDockOpen) return false;
-    const composer = composerRef.current;
-    const accepted = composer?.appendSegments([{ type: "text", text: excerpt }]);
-    if (accepted) composer?.focus();
-    else addNotify("error", zh ? "当前输入框不可用" : "The composer is unavailable");
+    if (!rightDockOpen) return false;
+    const accepted = composerRef.current?.insertWorkspaceExcerpt(text, path, comment);
+    if (!accepted) {
+      addNotify(
+        "error",
+        settings.locale === "zh-CN" ? "当前输入框不可用" : "The composer is unavailable",
+      );
+    }
     return Boolean(accepted);
   };
   const markdownTextGeneration: ProjectToolTextGenerationClient | undefined = api && !transportInputDisabled ? {

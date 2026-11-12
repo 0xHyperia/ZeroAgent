@@ -26,6 +26,7 @@ import {
   formatFileMentionToken,
   formatMarkdownReferenceDestination,
 } from "@liveagent/ui/lib/chat/mentionReferences";
+import { formatWorkspaceExcerpt } from "@liveagent/ui/lib/chat/workspaceExcerpt";
 import { extensionReferencePresentation } from "@liveagent/ui/lib/extensions/presentation";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { mentionChipClassName } from "./mentionChipStyles";
@@ -342,6 +343,7 @@ export function serializeDraftSegments(segments: MentionComposerDraftSegment[]) 
         return formatConversationMentionToken(segment.conversation);
       }
       if (segment.type === "codeMention") return formatCodeMentionToken(segment.reference);
+      if (segment.type === "workspaceExcerpt") return formatWorkspaceExcerpt(segment.excerpt);
       return segment.text;
     })
     .join("");
@@ -1810,6 +1812,7 @@ export function createComposerSegmentNode(
   segment: MentionComposerDraftSegment,
   largePastes: Map<string, MentionComposerLargePaste>,
 ): Node | null {
+  if (segment.type === "workspaceExcerpt") return null;
   if (segment.type === "text") {
     return segment.text ? document.createTextNode(normalizeLogicalLineEndings(segment.text)) : null;
   }

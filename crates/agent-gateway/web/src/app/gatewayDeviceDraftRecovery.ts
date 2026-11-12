@@ -11,6 +11,7 @@ import {
 import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import { parseFileMentionPath } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
+import { normalizeWorkspaceExcerpt } from "@liveagent/ui/lib/chat/workspaceExcerpt";
 import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 import type { AppSettings } from "@liveagent/ui/lib/settings/types";
 import { workspaceProjectPathKey } from "@liveagent/ui/lib/settings/workspaceProjects";
@@ -104,6 +105,10 @@ export function createGatewayDevicePaneDraftRegistry() {
 
 function normalizeSegment(value: unknown) {
   const segment = clipboardRecord(value);
+  if (segment?.type === "workspaceExcerpt") {
+    const excerpt = normalizeWorkspaceExcerpt(segment.excerpt);
+    return excerpt ? { type: "workspaceExcerpt" as const, excerpt } : null;
+  }
   if (segment?.type !== "skillMention") {
     const normalized = normalizeComposerClipboardSegment(value, []);
     // Git's transport remote can contain embedded credentials. Only keep the

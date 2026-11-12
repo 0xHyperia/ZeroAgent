@@ -1,5 +1,7 @@
 import { createHighlighter, type ThemeRegistrationRaw } from "shiki";
 
+export const MARKDOWN_CODE_THEMES = ["github-light", "github-dark"] as const;
+export const DEFAULT_MARKDOWN_CODE_LANGUAGE = "markdown";
 export const SOURCE_LIGHT_THEME = "zeroagent-source-light";
 export const SOURCE_DARK_THEME = "zeroagent-source-dark";
 
@@ -91,7 +93,7 @@ const sourceDark = sourceTheme(SOURCE_DARK_THEME, "dark", {
 let highlighter: ReturnType<typeof createHighlighter> | undefined;
 export function getSyntaxHighlighter() {
   highlighter ??= createHighlighter({
-    themes: ["github-light", "github-dark", sourceLight, sourceDark],
+    themes: [...MARKDOWN_CODE_THEMES, sourceLight, sourceDark],
     langs: [],
   }).catch((error) => {
     highlighter = undefined;

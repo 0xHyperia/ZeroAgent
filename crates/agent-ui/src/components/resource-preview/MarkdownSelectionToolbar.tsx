@@ -181,7 +181,10 @@ export function MarkdownSelectionToolbar({
     : null;
   const add = (note?: string) => {
     if (!actions.onAddToChat(selection.text, note)) return;
-    window.getSelection()?.removeAllRanges();
+    const currentSelection = window.getSelection();
+    if (root.current?.contains(currentSelection?.anchorNode ?? null)) {
+      currentSelection?.removeAllRanges();
+    }
     close();
   };
   return createPortal(

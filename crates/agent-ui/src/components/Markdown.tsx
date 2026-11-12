@@ -57,6 +57,7 @@ import {
 import { normalizeLatexDelimiters } from "../lib/normalizeLatexDelimiters";
 import { copyTextToClipboard } from "../lib/shared/clipboard";
 import { cn } from "../lib/shared/utils";
+import { DEFAULT_MARKDOWN_CODE_LANGUAGE, MARKDOWN_CODE_THEMES } from "../lib/syntaxHighlighter";
 import { createStreamingBlockParser } from "../lib/streamingMarkdownBlocks";
 import { MarkdownMermaidBlock } from "./markdown/MarkdownMermaidBlock";
 import {
@@ -241,7 +242,7 @@ const streamdownPlugins = { code: throttledCodePlugin, math, cjk: cjkDoubleTilde
 // context a new value on each streaming update, re-rendering the consumers in
 // every already-finished block and walking the whole tree to find them.
 type StreamdownProps = ComponentProps<typeof Streamdown>;
-const streamdownShikiThemes: StreamdownProps["shikiTheme"] = ["github-light", "github-dark"];
+const streamdownShikiThemes: StreamdownProps["shikiTheme"] = [...MARKDOWN_CODE_THEMES];
 function streamdownControls(interactive: boolean): StreamdownProps["controls"] {
   return {
     code: false,
@@ -349,7 +350,6 @@ type MarkdownFileLinkProps = ComponentProps<"a"> &
     workdir?: string;
   };
 
-const DEFAULT_CODE_BLOCK_LANGUAGE = "markdown";
 
 function readRewrittenChatFileLink(props: MarkdownAnchorFallbackProps) {
   const href = typeof props.href === "string" ? props.href : "";
@@ -510,7 +510,7 @@ function getCodeLanguage(className?: string) {
 function ensureCodeBlockLanguage(child: ReactElement<StreamdownCodeChildProps>) {
   if (getCodeLanguage(child.props.className)) return child;
   return cloneElement(child, {
-    className: cn(child.props.className, `language-${DEFAULT_CODE_BLOCK_LANGUAGE}`),
+    className: cn(child.props.className, `language-${DEFAULT_MARKDOWN_CODE_LANGUAGE}`),
   });
 }
 
@@ -671,7 +671,7 @@ export function CollapsibleCodePre({
           style={{ maxHeight: CODE_BLOCK_CLAMP_PX }}
         >
           <div className="flex h-8 items-center px-3 text-xs font-medium tracking-0p06em text-muted-foreground/85">
-            {language || DEFAULT_CODE_BLOCK_LANGUAGE}
+            {language || DEFAULT_MARKDOWN_CODE_LANGUAGE}
           </div>
           <pre className="!m-0 !overflow-x-auto !pb-2">
             <code

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 
 test("editable Markdown renders tables, code fences and Mermaid without modifying source", async () => {
@@ -46,6 +47,11 @@ test("editable Markdown renders tables, code fences and Mermaid without modifyin
     ">",
     ">   A --> B",
     "> " + fence,
+    "",
+    "> " + fence + "py",
+    '> label = "中文"',
+    "> return label",
+    "> " + fence,
   ].join("\n");
   const opened = [];
   const changed = [];
@@ -77,6 +83,18 @@ test("editable Markdown renders tables, code fences and Mermaid without modifyin
       container.querySelector(".za-md-mermaid-widget [data-chart]").dataset.chart,
       "flowchart TD\n\n  A --> B",
     );
+    const tokens = () => [...container.querySelectorAll(".za-md-code-token")];
+    const token = (text) => tokens().find((span) => span.textContent === text);
+    const deadline = Date.now() + 5000;
+    while ((!token("const") || !token("return")) && Date.now() < deadline) {
+      await act(async () => delay(25));
+    }
+    assert.ok(token("const"));
+    assert.ok(token("return"), "quoted fence preserves the source offset after the quote marker");
+    assert.notEqual(
+      token("const").style.getPropertyValue("--za-md-token-light"),
+      token("const").style.getPropertyValue("--za-md-token-dark"),
+    );
 
     const tableRows = [...container.querySelectorAll(".za-md-table-row")];
     assert.deepEqual(
@@ -105,13 +123,44 @@ test("editable Markdown renders tables, code fences and Mermaid without modifyin
     await act(async () => handle.current.revealLine(3, 1));
     assert.equal(editorLine("ts options").textContent, fence + "ts options");
 
-    await act(async () => root.render(React.createElement(Editor, { ...props, mode: "source" })));
+    await act(async () =>
+      root.render(React.createElement(Editor, { ...props, mode: "source", theme: "dark" })),
+    );
     assert.equal(container.querySelector(".za-md-mermaid-widget"), null);
+    assert.ok(token("const"));
+    assert.equal(container.querySelector("[data-markdown-theme]").dataset.markdownTheme, "dark");
     assert.equal(editorLine("flowchart TD").textContent, "> flowchart TD");
     assert.equal(editorLine("Heading").textContent, "# Heading");
     assert.equal(editorLine("Quantity").textContent, "| Name | Quantity |");
     assert.equal(handle.current.getValue(), source);
     assert.deepEqual(changed, []);
+
+    const fallbackSource = [
+      fence,
+      "# Untyped Markdown",
+      fence,
+      "",
+      "    # Indented Markdown",
+      "",
+      fence + "text",
+      "# Explicit plain text",
+      fence,
+      "",
+      fence + "unknown-grammar",
+      "plainUnknown = 1",
+      fence,
+    ].join("\n");
+    await act(async () => root.render(React.createElement(Editor, { ...props, value: fallbackSource })));
+    const marksIn = (text) => editorLine(text)?.querySelectorAll(".za-md-code-token");
+    const fallbackDeadline = Date.now() + 5000;
+    while (!marksIn("Untyped Markdown")?.length && Date.now() < fallbackDeadline) {
+      await act(async () => delay(25));
+    }
+    assert.ok(marksIn("Untyped Markdown")?.length);
+    assert.ok(marksIn("Indented Markdown")?.length);
+    assert.equal(marksIn("Explicit plain text")?.length, 0);
+    assert.equal(marksIn("plainUnknown")?.length, 0);
+    assert.equal(handle.current.getValue(), fallbackSource);
   } finally {
     await act(async () => root.unmount());
     if (previousWindow === undefined) delete globalThis.Window;

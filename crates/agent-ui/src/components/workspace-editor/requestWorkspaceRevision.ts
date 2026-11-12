@@ -46,20 +46,3 @@ export async function requestWorkspaceRevision(
   });
   return host.send(text, files);
 }
-
-export function formatWorkspaceFileExcerpt(
-  text: string,
-  path: string,
-  comment: string | undefined,
-  zh: boolean,
-) {
-  const selected = text.trim();
-  if (!selected) return "";
-  const label = `${zh ? "引用文件" : "File excerpt"} ${path.replace(/[\r\n]/g, " ")}`;
-  const quote = selected
-    .split(/\r?\n/)
-    .map((line) => `> ${line}`)
-    .join("\n");
-  const note = comment?.trim();
-  return `\n\n${label}\n${quote}${note ? `\n\n${note}` : ""}\n`;
-}
