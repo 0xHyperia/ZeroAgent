@@ -608,16 +608,27 @@
   border-color: var(--za-border);
   font-weight: 400;
 }
-.za-slide-region-action {
+.za-slide-region-action,
+.za-pdf-selection-action {
   position: absolute;
   z-index: 1;
   translate: -50% -100%;
-  scale: calc(1 / var(--za-grid-scale, 1));
   transform-origin: center bottom;
   transform: translateY(-8px);
   white-space: nowrap;
   box-shadow: 0 2px 10px #0002;
   animation: za-slide-comment-appear 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.za-slide-region-action {
+  scale: calc(1 / var(--za-grid-scale, 1));
+}
+.za-pdf-selection-action {
+  z-index: 4;
+}
+@container resource-preview (max-width: 600px) {
+  .za-pdf-selection-action {
+    min-height: var(--za-touch-target);
+  }
 }
 .za-preview-slides-layout .za-document-comment-input {
   animation: za-slide-comment-appear 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -632,11 +643,13 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .za-slide-region-action,
+  .za-pdf-selection-action,
   .za-preview-slides-layout .za-document-comment-input {
     animation: none;
   }
 }
-.za-slide-region-action[data-below="true"] {
+.za-slide-region-action[data-below="true"],
+.za-pdf-selection-action[data-below="true"] {
   translate: -50% 0;
   transform-origin: center top;
   transform: translateY(8px);
@@ -1082,17 +1095,10 @@
 }
 .za-preview-pdf-page {
   position: relative;
-  margin: 0 auto 28px;
+  flex: none;
   background: white;
+  outline: 1px solid var(--za-border);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
-}
-.za-preview-paper-number {
-  position: absolute;
-  bottom: -22px;
-  inset-inline: 0;
-  text-align: center;
-  color: hsl(var(--muted-foreground));
-  font: 10px / 1.5 system-ui;
 }
 .za-preview-pdf canvas {
   display: block;
@@ -1192,69 +1198,6 @@
   /* Paper transforms are anchored by the reader, never by the browser's DOM scroll anchor. */
   overflow-anchor: none;
 }
-.za-pdf-floating-pages {
-  position: absolute;
-  z-index: 2;
-  top: calc(var(--za-reader-top-inset, 0px) + 8px);
-  inset-inline-end: calc(var(--za-reader-side-inset, 0px) + 8px);
-  padding: 2px;
-  border: 1px solid var(--za-border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--za-surface) 92%, transparent);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 140ms ease;
-}
-.za-pdf-floating-pages .za-preview-pages[data-compact] button {
-  min-width: 26px;
-  width: 26px;
-  min-height: 26px;
-  height: 26px;
-  border-radius: 50%;
-}
-.za-pdf-floating-pages .za-preview-page-number {
-  gap: 0;
-  padding-inline: 2px;
-  font-size: 13px;
-  line-height: 1;
-}
-.za-pdf-floating-pages .za-preview-page-number input {
-  min-height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-}
-.za-document-workspace[data-workspace-pdf] .za-preview-pdf > .za-preview-scroll-content {
-  padding-bottom: 12px;
-}
-.za-document-workspace[data-workspace-pdf] .za-preview-pdf .za-preview-pdf-page {
-  margin-bottom: 0;
-  border-radius: 3px;
-  overflow: hidden;
-}
-.za-document-workspace[data-workspace-pdf] .za-preview-pdf .za-preview-paper-number {
-  display: none;
-}
-.za-document-workspace:is(:hover, :focus-within) > .za-pdf-floating-pages {
-  opacity: 1;
-  pointer-events: auto;
-}
-@media (hover: none) {
-  .za-document-workspace > .za-pdf-floating-pages {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-@media (pointer: coarse) {
-  .za-pdf-floating-pages .za-preview-pages[data-compact] button,
-  .za-pdf-floating-pages .za-preview-page-number input {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
 .za-document-navigation {
   position: absolute;
   inset: var(--za-reader-top-inset, 12px) auto 8px 6px;
@@ -1336,10 +1279,6 @@
 }
 .za-docx-zoom-viewport > .za-preview-scroll-content {
   padding-inline: var(--za-reader-navigation-inset, 0px) var(--za-reader-side-inset, 0px);
-}
-.za-preview-pdf > .za-preview-scroll-content {
-  padding-inline: calc(var(--za-reader-navigation-inset, 0px) + 16px)
-    calc(var(--za-reader-side-inset, 0px) + 16px);
 }
 @container reader-stage (max-width: 599px) {
   .za-reader-stage:has(> .za-reader-inspector),
@@ -1553,9 +1492,11 @@
 /* PDF.js text geometry: transparent selectable glyph layer over verified raster paper. */
 .za-pdf-text-layer {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   overflow: clip;
   line-height: 1;
+  text-align: initial;
   letter-spacing: normal;
   word-spacing: normal;
   text-size-adjust: none;
@@ -1565,6 +1506,15 @@
   --min-font-size: 1;
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
   --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.za-pdf-text-layer[data-main-rotation="90"] {
+  transform: rotate(90deg) translateY(-100%);
+}
+.za-pdf-text-layer[data-main-rotation="180"] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.za-pdf-text-layer[data-main-rotation="270"] {
+  transform: rotate(270deg) translateX(-100%);
 }
 .za-pdf-text-layer :is(span, br) {
   position: absolute;
@@ -1589,11 +1539,65 @@
 .za-pdf-text-layer ::selection {
   background: #80b9ee70;
 }
+.za-pdf-find {
+  position: absolute;
+  z-index: 5;
+  top: calc(var(--za-reader-top-inset, 0px) + 8px);
+  inset-inline-end: calc(var(--za-reader-side-inset, 0px) + 12px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: min(320px, calc(100% - var(--za-reader-side-inset, 0px) - 24px));
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--za-border);
+  border-radius: 12px;
+  background: var(--za-surface);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+  font-size: 12px;
+}
+.za-pdf-find input {
+  min-width: 0;
+  flex: 1;
+  padding: 4px;
+}
+.za-pdf-find [role="status"] {
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.za-pdf-find-match {
+  background: #ffdb526b;
+  color: transparent;
+}
+.za-pdf-find-match[data-active] {
+  background: #f6a62196;
+}
+.za-pdf-links {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.za-pdf-links :is(a, button) {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.za-pdf-links :is(a, button):hover {
+  background: #3478df1a;
+}
+.za-pdf-links :is(a, button):focus-visible {
+  outline: 2px solid #3478df;
+  outline-offset: 1px;
+}
 .za-preview-pdf-page[data-annotating="true"] .za-pdf-text-layer span:hover {
   outline: 1px solid #3478df;
 }
 .za-document-page-link .za-preview-pdf-page {
   min-width: 0;
+  outline: none;
   flex: 1;
   pointer-events: none;
   overflow: hidden;
@@ -1642,10 +1646,6 @@
 }
 
 .za-reader-history-time-compact {
-  display: none;
-}
-
-.za-document-page-link .za-preview-paper-number {
   display: none;
 }
 
@@ -1804,8 +1804,13 @@
   flex-direction: column;
 }
 .za-preview-pdf > .za-preview-scroll-content {
-  padding: var(--za-reader-top-inset, 28px) calc(var(--za-reader-side-inset, 0px) + 16px) 52px
-    calc(var(--za-reader-navigation-inset, 0px) + 16px);
+  display: flex;
+  width: max-content;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: var(--za-reader-top-inset, 24px) calc(var(--za-reader-side-inset, 0px) + 24px) 24px
+    calc(var(--za-reader-navigation-inset, 0px) + 24px);
 }
 .za-preview-slide-scroll > .za-preview-scroll-content {
   min-height: 100%;
@@ -2110,15 +2115,20 @@
   border: 2px dashed #3478df;
   background: #3478df1a;
 }
-.za-pdf-comment-marks span:after {
-  content: "";
+.za-pdf-comment-pin {
   position: absolute;
-  right: -11px;
-  top: -11px;
+  z-index: 1;
   width: 28px;
   height: 28px;
+  translate: -50% -50%;
+  border: 0;
+  border-radius: 50%;
   background: var(--za-comment-pin) center / contain no-repeat;
   filter: drop-shadow(0 2px 2px #0002);
+  pointer-events: auto;
+}
+.za-pdf-comment-pin:hover {
+  scale: 1.08;
 }
 @container reader-stage (max-width: 599px) {
   .za-resource-preview,
@@ -2182,7 +2192,7 @@
   padding: 0;
 }
 .za-resource-preview[data-variant="thumbnail"] .za-preview-pdf-page {
-  margin: 0;
+  outline: none;
   box-shadow: none;
 }
 .za-reader-timeline h4 {
@@ -2248,25 +2258,6 @@
 .za-reader-timeline-point:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
-}
-.za-pdf-comment-marks [data-note] {
-  pointer-events: auto;
-}
-.za-pdf-comment-marks [data-note]:hover::before {
-  content: attr(data-note);
-  position: absolute;
-  right: 0;
-  top: 100%;
-  z-index: 8;
-  min-width: 160px;
-  max-width: 280px;
-  padding: 8px 12px;
-  background: var(--za-surface);
-  color: hsl(var(--foreground));
-  border: 1px solid var(--za-border);
-  border-radius: 9px;
-  box-shadow: 0 4px 16px #0002;
-  font: 14px / 1.5 system-ui;
 }
 @media (prefers-reduced-motion: reduce) {
   .za-reader-timeline-point {

@@ -107,6 +107,67 @@ test("PDF comment anchors survive glyph span splits and reject changed originals
   assert.equal(pdfTextRange(layer,3,10,'udChat ').toString(),'udChat ');
 });
 
+test("PDF text shortcut accepts a same-page selection and rechecks file authority on activation", async (t) => {
+  const app = await setup(t);
+  const { PDFTextSelectionAction } = app.env.loadModule("@liveagent/ui/components/resource-preview/PDFTextSelectionAction.tsx");
+  const h = app.env.React.createElement;
+  const workspace = { current: document.createElement("div") };
+  const viewport = { current: workspace.current.appendChild(document.createElement("div")) };
+  document.body.appendChild(workspace.current);
+  t.after(() => workspace.current.remove());
+  const box = new window.DOMRect(0, 0, 400, 600);
+  workspace.current.getBoundingClientRect = viewport.current.getBoundingClientRect = () => box;
+  function makePaper(number) {
+    const paper = viewport.current.appendChild(document.createElement("div"));
+    Object.assign(paper.dataset, { pdfPage: String(number), pdfPageWidth: "600", pdfPageHeight: "800" });
+    paper.getBoundingClientRect = () => box;
+    const layer = paper.appendChild(document.createElement("div"));
+    layer.className = "za-pdf-text-layer";
+    return layer.appendChild(document.createTextNode("退款需求"));
+  }
+  const first = makePaper(1);
+  const second = makePaper(2);
+  const rect = new window.DOMRect(100, 150, 80, 20);
+  const rangeProto = window.Range.prototype;
+  rangeProto.getClientRects = () => [rect];
+  rangeProto.getBoundingClientRect = () => rect;
+  let authorized = true;
+  const picked = [];
+  await app.render(h(PDFTextSelectionAction, {
+    viewport, workspace, pageCount: 2, zoom: "fit-width",
+    assertCurrent() { if (!authorized) throw new Error("expired"); },
+    onPick: (selection) => picked.push(selection),
+  }));
+  const action = () => app.host.querySelector(".za-pdf-selection-action");
+  async function select(end) {
+    await app.env.act(async () => {
+      const native = window.getSelection();
+      const range = document.createRange();
+      range.setStart(first, 0);
+      range.setEnd(end, 4);
+      native.removeAllRanges();
+      native.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+      await new Promise(requestAnimationFrame);
+    });
+  }
+  await select(second);
+  assert.equal(action(), null);
+  await select(first);
+  await app.wait(action);
+  authorized = false;
+  await app.env.act(async () => action().click());
+  assert.equal(picked.length, 0);
+  authorized = true;
+  await select(first);
+  await app.wait(action);
+  await app.env.act(async () => action().click());
+  assert.deepEqual(picked.map(({ page, start, end, quote, pdf }) => ({ page, start, end, quote, pdf })), [
+    { page: 1, start: 0, end: 4, quote: "退款需求", pdf: { pageCount: 2, pageWidth: 600, pageHeight: 800, kind: "text" } },
+  ]);
+  assert.equal(window.getSelection().isCollapsed, true);
+});
+
 test("reading snapshots retain typed revision targets and zero-area document points", async (t) => {
   const app = await setup(t);
   const { createReadingSnapshotStore } = app.env.loadModule("@liveagent/ui/components/resource-preview/readingSession.tsx");

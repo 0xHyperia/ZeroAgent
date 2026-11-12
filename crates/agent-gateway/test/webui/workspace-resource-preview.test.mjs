@@ -48,6 +48,78 @@ test("authorized workspace bytes use the shared PDF failure UI and keep the orig
   assert.deepEqual(app.saves,[{data:sample.data,fileName:"文件.pdf",mimeType:"application/pdf"}]);
 });
 
+test("a workspace PDF tab aligns selectable text to mixed-size and rotated pages", async (t) => {
+  const sample = response("混合页面.pdf", "application/pdf", "%PDF-1.7\nfixture");
+  const paper = [
+    { width: 600, height: 800, rotation: 0, userUnit: 1 },
+    { width: 200, height: 400, rotation: 90, userUnit: 2 },
+    { width: 600, height: 600, rotation: 0, userUnit: 1 },
+  ];
+  const app = await mount(t, request(1, sample.path), async () => sample, undefined, {
+    props: { reader: true, tabbed: true },
+    mocks: {
+      "./pdfPreviewAssets": { pdfPreviewAssetsURL: () => "/fixture-pdf-assets/" },
+      "pdfjs-dist": {
+        version: "fixture",
+        GlobalWorkerOptions: {},
+        AnnotationMode: { DISABLE: 0 },
+        AnnotationType: { LINK: 2 },
+        TextLayer: class {
+          constructor({ container, viewport }) {
+            container.style.width = "1px";
+            container.style.height = "1px";
+            container.dataset.mainRotation = String(viewport.rotation);
+          }
+          async render() {}
+          cancel() {}
+        },
+        getDocument: () => ({
+          promise: Promise.resolve({
+            numPages: paper.length,
+            getPage: async (number) => {
+              const { width, height, rotation, userUnit } = paper[number - 1];
+              function getViewport({ scale, rotation: angle = rotation }) {
+                const sideways = angle % 180 !== 0;
+                return {
+                  width: (sideways ? height : width) * scale * userUnit,
+                  height: (sideways ? width : height) * scale * userUnit,
+                  scale,
+                  rotation: angle,
+                  clone: ({ rotation }) => getViewport({ scale, rotation }),
+                };
+              }
+              return {
+                userUnit,
+                getViewport,
+                getTextContent: async () => ({ items: [] }),
+                getAnnotations: async () => [],
+                render: () => ({ promise: Promise.resolve(), cancel() {} }),
+              };
+            },
+          }),
+          destroy: async () => {},
+        }),
+      },
+      "pdfjs-dist/build/pdf.worker.min.mjs?url": "/fixture-pdf-worker.mjs",
+    },
+  });
+  const pages = () => app.host.querySelectorAll(".za-preview-pdf [data-pdf-page]");
+  await app.env.waitFor(() => pages().length === paper.length);
+  const textLayer = pages()[1].querySelector(".za-pdf-text-layer");
+  await app.env.waitFor(() => Number.parseFloat(textLayer.style.width) > 1);
+  assert.deepEqual(Array.from(pages(), (page) => page.dataset.pdfPage), ["1", "2", "3"]);
+  assert.ok(Number.parseFloat(pages()[1].style.minHeight) < Number.parseFloat(pages()[0].style.minHeight));
+  assert.equal(textLayer.dataset.mainRotation, "90");
+  assert.equal(Number(textLayer.style.getPropertyValue("--total-scale-factor")), (96 / 72) * 2);
+  const scale = Number(textLayer.style.scale);
+  const displayWidth = Number.parseFloat(textLayer.style.height) * scale;
+  const displayHeight = Number.parseFloat(textLayer.style.width) * scale;
+  assert.ok(Math.abs(displayWidth - Number.parseFloat(pages()[1].style.width)) < 0.01);
+  assert.ok(Math.abs(displayHeight - Number.parseFloat(pages()[1].style.minHeight)) < 0.01);
+  assert.equal(app.host.querySelector(".za-pdf-floating-pages"), null);
+  assert.equal(app.reads.length, 1);
+});
+
 test("the conversation reader submits the displayed document snapshot and retires callbacks on file switch", async t => {
   const pdf = response("source.pdf", "application/pdf", "the displayed PDF bytes");
   const legacy = response("legacy.doc", "text/html", "<p>Converted view</p>");

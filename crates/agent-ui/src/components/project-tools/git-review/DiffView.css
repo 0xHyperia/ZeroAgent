@@ -438,10 +438,6 @@
   width: 100%;
 }
 
-.za-review-pdf .za-preview-paper-number {
-  display: none;
-}
-
 .za-review-pdf-pages {
   position: absolute;
   top: 2px;

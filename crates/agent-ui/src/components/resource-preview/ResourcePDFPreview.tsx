@@ -3,39 +3,45 @@ import {
   GlobalWorkerOptions,
   getDocument,
   type PDFDocumentProxy,
+  type PDFPageProxy,
   version as pdfVersion,
   TextLayer,
 } from "pdfjs-dist";
 import pdfWorkerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
+  memo,
   type RefObject,
   useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { useLocale } from "../../i18n";
-import { ChevronRight, List, SquareMousePointer } from "../IconSet";
+import { ChevronRight, List, Search, SquareMousePointer, X } from "../IconSet";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
+import { LabelTooltip } from "../ui/label-tooltip";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { DocumentNavigation } from "./DocumentNavigation";
 import type { DocumentRegion } from "./docxReaderDocument";
+import { PDFPageLinks } from "./PDFPageLinks";
+import { PDFTextSelectionAction } from "./PDFTextSelectionAction";
 import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
 import {
   PreviewLeadingTools,
-  PreviewPageControls,
   PreviewToolbar,
   PreviewZoomControl,
   previewPageKey,
 } from "./PreviewToolbar";
+import { createPDFFind, type PDFFind } from "./pdfFind";
 import { pdfPreviewAssetsURL } from "./pdfPreviewAssets";
 import { capturePDFRevisionEvidence } from "./pdfRevisionEvidence";
-import { pdfTextRange } from "./pdfTextRange";
-import { boundedPreviewScale, previewScale } from "./previewGeometry";
+import { normalizedPDFRegion, pdfTextRange, readPDFTextRange } from "./pdfTextRange";
+import { boundedPreviewScale } from "./previewGeometry";
 import {
   type DocumentRevisionComment,
   ResourceDocumentComments,
@@ -52,27 +58,16 @@ import { usePreviewViewport } from "./usePreviewViewport";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerURL;
 const DEFAULT_PAGE = { width: 816, height: 1056 };
+const THUMBNAIL_PANE = { width: 124, height: 180 };
 const PDF_ZOOM_STOPS = [
   30, 40, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500, 600, 700, 800,
 ];
 function pdfPageScale(zoom: PreviewZoom, size: typeof DEFAULT_PAGE, pane: typeof DEFAULT_PAGE) {
-  return typeof zoom === "number"
-    ? Math.max(30, Math.min(800, zoom)) / 100
-    : previewScale(zoom, size, pane);
+  if (typeof zoom === "number") return Math.max(30, Math.min(800, zoom)) / 100;
+  const width = Math.max(1, pane.width - 48) / size.width;
+  return Math.min(1, width, zoom === "fit-page" ? Math.max(1, pane.height - 48) / size.height : 1);
 }
 const NO_COMMENTS: readonly DocumentRevisionComment[] = [];
-
-function normalizedPDFRegion(rect: DocumentRegion, paper: DOMRect): DocumentRegion {
-  const clamp = (value: number) => Math.max(0, Math.min(1, value));
-  const left = clamp((rect.left - paper.left) / paper.width);
-  const top = clamp((rect.top - paper.top) / paper.height);
-  return {
-    left,
-    top,
-    width: clamp((rect.left + rect.width - paper.left) / paper.width) - left,
-    height: clamp((rect.top + rect.height - paper.top) / paper.height) - top,
-  };
-}
 
 function openPreviewPDF(bytes: Uint8Array) {
   const assets = pdfPreviewAssetsURL(pdfVersion);
@@ -148,6 +143,7 @@ export function GitReviewPDFPreview({ bytes }: { bytes: Uint8Array }) {
               root={container}
               assertCurrent={assertInlinePdfCurrent}
               renderText={false}
+              exactWidth
             />
           )}
           {pdf.numPages > 1 && (
@@ -202,23 +198,26 @@ export default function ResourcePDFPreview({
 }) {
   const { onRequestRevision } = useContext(PreviewIdentityContext);
   const chrome = useContext(PreviewToolbarMount);
-  const singlePage = Boolean(chrome?.workspaceTab && !thumbnail);
+  const { locale } = useLocale();
+  const zh = locale === "zh-CN";
   const [navigation, setNavigation] = usePreviewReadingState("pdfNavigation", false);
   const [annotating, setAnnotating] = useState(false);
+  const [selection, setSelection] = useState<RevisionSelection | null>(null);
   const annotationExit = useRef<(() => void) | null>(null);
   const annotationState = useRef(false);
-  annotationState.current = annotating;
+  annotationState.current = annotating || !!selection;
   const toggleAnnotation = useCallback(() => {
     if (annotationState.current) annotationExit.current?.();
     else setAnnotating(true);
   }, []);
-  const [selection, setSelection] = useState<RevisionSelection | null>(null);
   const [commentDestination, setCommentDestination] = useState<{
     comment: DocumentRevisionComment;
     request: number;
   } | null>(null);
   const [markedComments, setMarkedComments] =
     useState<readonly DocumentRevisionComment[]>(NO_COMMENTS);
+  const editComment = useRef<((id: string, source?: "marker") => void) | null>(null);
+  const editAtMarker = useCallback((id: string) => editComment.current?.(id, "marker"), []);
   const setFileMenu = chrome?.setFileMenu;
   useEffect(() => {
     if (!setFileMenu || thumbnail) return;
@@ -241,7 +240,18 @@ export default function ResourcePDFPreview({
   }, [setFileMenu, thumbnail, onRequestRevision, setNavigation, toggleAnnotation]);
 
   const workspace = useRef<HTMLDivElement>(null);
-  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [loaded, setLoaded] = useState<{
+    bytes: Uint8Array;
+    pdf: PDFDocumentProxy;
+    firstSize: typeof DEFAULT_PAGE;
+  } | null>(null);
+  const document = loaded?.bytes === bytes ? loaded.pdf : null;
+  const firstSize = loaded?.bytes === bytes ? loaded.firstSize : DEFAULT_PAGE;
+  const [pageSizes, setPageSizes] = useState<{
+    pdf: PDFDocumentProxy;
+    values: (typeof DEFAULT_PAGE | undefined)[];
+  }>();
+  const saveLayoutAnchor = useRef<() => void>(() => {});
   const prepareEvidence = (comments: readonly DocumentRevisionComment[]) =>
     document ? capturePDFRevisionEvidence(document, comments, assertCurrent) : Promise.resolve([]);
   const [painted, setPainted] = useState(false);
@@ -257,17 +267,27 @@ export default function ResourcePDFPreview({
   } | null>(null);
   const [error, setError] = useState("");
   const { container, viewport, sideInset } = usePreviewViewport();
-  const paperViewport = {
-    ...viewport,
-    width: thumbnail
-      ? Math.max(1, viewport.width)
-      : Math.max(
-          1,
-          viewport.width -
-            sideInset -
-            (navigation && viewport.width >= 600 ? READER_NAVIGATION_INSET : 0),
-        ),
-  };
+  const [findOpen, setFindOpen] = useState(false);
+  const [findStarted, setFindStarted] = useState(false);
+  const [find, setFind] = useState<PDFFind>();
+  const [findQuery, setFindQuery] = useState("");
+  const [findStatus, setFindStatus] = useState({ current: 0, total: 0, pending: false });
+  const [findError, setFindError] = useState(false);
+  const findInput = useRef<HTMLInputElement>(null);
+  const revealPage = useRef<(target: number, behavior?: ScrollBehavior) => void>(() => {});
+  const paperViewport = useMemo(
+    () => ({
+      height: viewport.height,
+      width: Math.max(
+        1,
+        viewport.width -
+          (thumbnail
+            ? 0
+            : sideInset + (navigation && viewport.width >= 600 ? READER_NAVIGATION_INSET : 0)),
+      ),
+    }),
+    [viewport.height, viewport.width, thumbnail, sideInset, navigation],
+  );
   const [actualPercent, setActualPercent] = useState(100);
   const initialPage = useRef(page);
   const currentPage = useRef(page);
@@ -279,48 +299,63 @@ export default function ResourcePDFPreview({
     },
     [],
   );
-  function trackPage() {
+  const pageElements = useRef<HTMLElement[]>([]);
+  function trackViewport() {
     if (scrollFrame.current !== null) return;
     scrollFrame.current = requestAnimationFrame(() => {
       scrollFrame.current = null;
       const element = container.current;
       if (!element || !document) return;
-      const line = element.scrollTop + element.clientHeight * 0.45;
-      const pages = element.querySelectorAll<HTMLElement>("[data-pdf-page]");
-      // Stable page placeholders permit logarithmic lookup even in long documents.
+      const viewportBox = element.getBoundingClientRect();
+      const pages = pageElements.current;
       let low = 0,
-        high = pages.length - 1,
-        index = 0;
-      while (low <= high) {
+        high = pages.length;
+      while (low < high) {
         const middle = (low + high) >>> 1;
-        const candidate = pages[middle];
-        if (candidate instanceof HTMLElement && candidate.offsetTop <= line) {
-          index = middle;
-          low = middle + 1;
-        } else high = middle - 1;
+        if (pages[middle].getBoundingClientRect().bottom <= viewportBox.top) low = middle + 1;
+        else high = middle;
       }
-      const number = Number(pages[index]?.getAttribute("data-pdf-page"));
-      if (number >= 1 && number <= document.numPages) setPage(number);
+      let best = Math.min(low + 1, pages.length);
+      let maxVisibility = 0;
+      for (let index = low; index < pages.length; index++) {
+        const box = pages[index].getBoundingClientRect();
+        if (box.top >= viewportBox.bottom) break;
+        const height =
+          Math.min(box.bottom, viewportBox.bottom) - Math.max(box.top, viewportBox.top);
+        const width = Math.min(box.right, viewportBox.right) - Math.max(box.left, viewportBox.left);
+        const visibility = (Math.max(0, height) * Math.max(0, width)) / (box.width * box.height);
+        if (visibility > maxVisibility) {
+          maxVisibility = visibility;
+          best = index + 1;
+        }
+      }
+      if (best && best !== currentPage.current) setPage(best);
+      trackSelection();
     });
   }
   useEffect(() => {
     let active = true;
     setPainted(false);
+    setError("");
     const task = openPreviewPDF(bytes);
     const timer = setTimeout(() => {
       if (active) {
         setError("PDF 较复杂，读取超时。请下载原件查看。");
-        void task.destroy();
+        active = false;
+        void task.destroy().catch(() => {});
       }
     }, 30_000);
     void task.promise
-      .then((result) => {
-        clearTimeout(timer);
+      .then(async (result) => {
         assertCurrent();
         if (!result.numPages || result.numPages > 1000) throw new Error("PDF 页数超过预览限制。");
+        const first = await result.getPage(1);
+        clearTimeout(timer);
         if (active) {
+          assertCurrent();
           setPage(Math.min(result.numPages, Math.max(1, initialPage.current)));
-          setDocument(result);
+          const { width, height } = first.getViewport({ scale: 96 / 72 });
+          setLoaded({ bytes, pdf: result, firstSize: { width, height } });
         }
       })
       .catch(() => {
@@ -330,10 +365,43 @@ export default function ResourcePDFPreview({
     return () => {
       active = false;
       clearTimeout(timer);
-      void task.destroy();
+      void task.destroy().catch(() => {});
     };
   }, [bytes, assertCurrent, setPage]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: paper geometry changes require restoring the visible page after reflow.
+  useEffect(() => {
+    if (!document || thumbnail || document.numPages <= 1) return;
+    let active = true;
+    const sizes: (typeof DEFAULT_PAGE | undefined)[] = [firstSize];
+    void (async () => {
+      for (let start = 2; start <= document.numPages && active; start += 8) {
+        const count = Math.min(8, document.numPages - start + 1);
+        const results = await Promise.allSettled(
+          Array.from({ length: count }, (_, offset) => document.getPage(start + offset)),
+        );
+        if (!active) return;
+        for (const [offset, result] of results.entries()) {
+          if (result.status === "fulfilled") {
+            const { width, height } = result.value.getViewport({ scale: 96 / 72 });
+            sizes[start + offset - 1] = { width, height };
+          }
+        }
+        // Replacing estimates must not jump away from the reader's current paper.
+        if (container.current?.scrollTop && !zoomAnchor.current) saveLayoutAnchor.current();
+        setPageSizes({ pdf: document, values: sizes.slice() });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [document, thumbnail, firstSize, container]);
+  useLayoutEffect(() => {
+    pageElements.current = Array.from(
+      container.current?.querySelectorAll<HTMLElement>("[data-pdf-page]") ?? [],
+    );
+    if (!thumbnail && document) revealPage.current(currentPage.current, "instant");
+  }, [document, thumbnail, container]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reposition the anchor after a geometry change.
   useLayoutEffect(() => {
     const anchor = zoomAnchor.current;
     const view = container.current;
@@ -342,46 +410,113 @@ export default function ResourcePDFPreview({
       const rect = anchor.page.getBoundingClientRect();
       view.scrollLeft += rect.left + anchor.x * rect.width - anchor.clientX;
       view.scrollTop += rect.top + anchor.y * rect.height - anchor.clientY;
-      return;
     }
-    // A cover must never scroll its containing composer or file browser.
-    if (!document || thumbnail || singlePage) return;
-    // A narrower pane changes every paper's height. Retain the page, rather than
-    // retaining a pixel offset which could now point into a different page.
-    const frame = requestAnimationFrame(() => {
-      container.current
-        ?.querySelector(`[data-pdf-page="${currentPage.current}"]`)
-        ?.scrollIntoView?.({ block: "start", behavior: "instant" });
-    });
-    return () => cancelAnimationFrame(frame);
+    trackViewport();
   }, [
-    document,
     thumbnail,
-    singlePage,
     container,
     viewport.width,
     viewport.height,
     zoom,
     sideInset,
     navigation,
+    pageSizes,
   ]);
-  function navigatePage(target: number) {
+
+  function navigatePage(target: number, behavior = readerScrollBehavior()) {
     if (!document || !Number.isInteger(target) || target < 1 || target > document.numPages) return;
-    setPage(target);
-    if (singlePage && target !== page) {
-      setSelection(null);
-      if (container.current) container.current.scrollTop = 0;
-      return;
-    }
-    container.current
-      ?.querySelector(`[data-pdf-page="${target}"]`)
-      ?.scrollIntoView?.({ block: "start", behavior: readerScrollBehavior() });
+    if (target !== currentPage.current) setPage(target);
+    const view = container.current;
+    const paper = pageElements.current[target - 1];
+    if (!view || !paper) return;
+    const padding = view.firstElementChild
+      ? Number.parseFloat(getComputedStyle(view.firstElementChild).paddingTop) || 0
+      : 0;
+    view.scrollTo?.({
+      top:
+        view.scrollTop +
+        paper.getBoundingClientRect().top -
+        view.getBoundingClientRect().top -
+        padding,
+      behavior,
+    });
   }
-  const visiblePages = document
-    ? singlePage
-      ? [Math.max(1, Math.min(page, document.numPages))]
-      : Array.from({ length: thumbnail ? 1 : document.numPages }, (_, index) => index + 1)
-    : [];
+  revealPage.current = navigatePage;
+  const navigateLink = useCallback((page: number) => revealPage.current(page), []);
+
+  function anchorZoom(clientX?: number, clientY?: number) {
+    const view = container.current;
+    const viewportBox = view?.getBoundingClientRect();
+    if (!view || !viewportBox || thumbnail) return;
+    const x = clientX ?? viewportBox.left + viewportBox.width / 2;
+    const y = clientY ?? viewportBox.top + viewportBox.height / 2;
+    const hit = view.ownerDocument
+      .elementFromPoint?.(x, y)
+      ?.closest<HTMLElement>("[data-pdf-page]");
+    const paper = hit && view.contains(hit) ? hit : pageElements.current[currentPage.current - 1];
+    const box = paper?.getBoundingClientRect();
+    if (!paper || !box?.width || !box.height) return;
+    zoomAnchor.current = {
+      page: paper,
+      clientX: x,
+      clientY: y,
+      x: Math.min(1, Math.max(0, (x - box.left) / box.width)),
+      y: Math.min(1, Math.max(0, (y - box.top) / box.height)),
+    };
+  }
+  saveLayoutAnchor.current = anchorZoom;
+
+  useEffect(() => {
+    if (!document || !findStarted) return;
+    let active = true;
+    let dispose: (() => void) | undefined;
+    setFindError(false);
+    void createPDFFind(document, {
+      current: () => currentPage.current,
+      go: (page) => revealPage.current(page, "instant"),
+    })
+      .then((engine) => {
+        if (!active) return engine.destroy();
+        const unsubscribe = engine.subscribe(({ current, total, pending }) => {
+          setFindStatus((old) => ({ current, total, pending: pending ?? old.pending }));
+        });
+        dispose = () => {
+          unsubscribe();
+          engine.destroy();
+        };
+        setFind(engine);
+      })
+      .catch(() => {
+        if (active) setFindError(true);
+      });
+    return () => {
+      active = false;
+      dispose?.();
+      setFind(undefined);
+    };
+  }, [document, findStarted]);
+  useEffect(() => {
+    if (findOpen) findInput.current?.focus();
+  }, [findOpen]);
+  useEffect(() => {
+    if (!find || !findOpen) return;
+    if (findQuery.trim()) find.find(findQuery.trim());
+    else {
+      find.close();
+      setFindStatus({ current: 0, total: 0, pending: false });
+    }
+  }, [find, findOpen, findQuery]);
+
+  function closeFind() {
+    find?.close();
+    setFindOpen(false);
+    container.current?.focus({ preventScroll: true });
+  }
+  function openFind() {
+    setFindStarted(true);
+    setFindOpen(true);
+    findInput.current?.focus();
+  }
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   function trackSelection() {
@@ -430,39 +565,42 @@ export default function ResourcePDFPreview({
             </Button>
           ) : null}
         </PreviewLeadingTools>
-        {!singlePage ? (
-          <PreviewPageControls page={page} count={document?.numPages ?? 0} onPage={navigatePage} />
-        ) : null}
+        {!thumbnail && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            tooltip={zh ? "查找 PDF" : "Find in PDF"}
+            aria-label={zh ? "查找 PDF" : "Find in PDF"}
+            aria-expanded={findOpen}
+            disabled={!document}
+            onClick={openFind}
+          >
+            <Search className="size-4" />
+          </Button>
+        )}
         <PreviewZoomControl
           label="PDF 缩放"
           value={zoom}
-          onChange={setZoom}
+          onChange={(value) => {
+            if (value === zoom) return;
+            if (!zoomAnchor.current) anchorZoom();
+            setZoom(value);
+          }}
           actualPercent={actualPercent}
           minPercent={30}
           maxPercent={800}
-          percentages={[30, 50, 100, 150, 200]}
+          percentages={[30, 50, 100, 200]}
           zoomCurve="pdf"
           zoomStops={PDF_ZOOM_STOPS}
-          onZoomAnchor={(clientX, clientY) => {
-            const target = container.current?.ownerDocument
-              .elementFromPoint?.(clientX, clientY)
-              ?.closest<HTMLElement>("[data-pdf-page]");
-            if (!target || !container.current?.contains(target)) return;
-            const box = target.getBoundingClientRect();
-            zoomAnchor.current = {
-              page: target,
-              clientX,
-              clientY,
-              x: (clientX - box.left) / box.width,
-              y: (clientY - box.top) / box.height,
-            };
-          }}
+          fitPage={false}
+          gestureRoot={container}
+          onZoomAnchor={anchorZoom}
         />
       </PreviewToolbar>
       <div
         className="za-document-workspace"
         ref={workspace}
-        data-workspace-pdf={singlePage || undefined}
+        data-pdf-workspace=""
         data-navigation-pinned={navigation}
         data-annotating={annotating}
         style={
@@ -472,7 +610,7 @@ export default function ResourcePDFPreview({
           } as React.CSSProperties
         }
       >
-        {!thumbnail && document ? (
+        {!thumbnail && document && document.numPages > 1 ? (
           <DocumentNavigation
             label="PDF 目录"
             pinned={navigation}
@@ -481,7 +619,7 @@ export default function ResourcePDFPreview({
             current={page}
             title={`${document.numPages} 页`}
           >
-            {Array.from({ length: Math.min(document.numPages, 80) }, (_, index) => (
+            {Array.from({ length: document.numPages }, (_, index) => (
               <button
                 type="button"
                 // biome-ignore lint/suspicious/noArrayIndexKey: Immutable PDF page numbers are stable identities.
@@ -497,67 +635,169 @@ export default function ResourcePDFPreview({
                   number={index + 1}
                   selected={false}
                   zoom="fit-width"
-                  pane={{ width: 124, height: 180 }}
+                  pane={THUMBNAIL_PANE}
                   root={workspace}
                   assertCurrent={assertCurrent}
+                  renderText={false}
+                  exactWidth
                 />
               </button>
             ))}
           </DocumentNavigation>
         ) : null}
+        {findOpen && document && (
+          // biome-ignore lint/a11y/useSemanticElements: The search role labels a form and works in older WebViews.
+          <form
+            className="za-pdf-find"
+            role="search"
+            aria-label={zh ? "PDF 查找" : "PDF search"}
+            onSubmit={(event) => event.preventDefault()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closeFind();
+              } else if (
+                event.key === "Enter" &&
+                !event.nativeEvent.isComposing &&
+                event.target === findInput.current
+              ) {
+                event.preventDefault();
+                if (findQuery.trim())
+                  find?.find(findQuery.trim(), event.shiftKey ? "previous" : "next");
+              }
+            }}
+          >
+            <Search className="size-4 shrink-0" />
+            <input
+              ref={findInput}
+              type="search"
+              aria-label={zh ? "查找文字" : "Find text"}
+              placeholder={zh ? "查找文字" : "Find text"}
+              maxLength={256}
+              value={findQuery}
+              onChange={(event) => {
+                setFindStatus({ current: 0, total: 0, pending: !!event.target.value.trim() });
+                setFindQuery(event.target.value);
+              }}
+            />
+            <span role="status">
+              {findError
+                ? zh
+                  ? "查找不可用"
+                  : "Search unavailable"
+                : findQuery.trim() &&
+                  (findStatus.pending || !find ? "…" : `${findStatus.current}/${findStatus.total}`)}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              tooltip={zh ? "上一个匹配" : "Previous match"}
+              aria-label={zh ? "上一个匹配" : "Previous match"}
+              disabled={!findStatus.total}
+              onClick={() => find?.find(findQuery.trim(), "previous")}
+            >
+              <ChevronRight className="size-4 rotate-180" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              tooltip={zh ? "下一个匹配" : "Next match"}
+              aria-label={zh ? "下一个匹配" : "Next match"}
+              disabled={!findStatus.total}
+              onClick={() => find?.find(findQuery.trim(), "next")}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              tooltip={zh ? "关闭查找" : "Close search"}
+              aria-label={zh ? "关闭查找" : "Close search"}
+              onClick={closeFind}
+            >
+              <X className="size-4" />
+            </Button>
+          </form>
+        )}
         <PreviewScrollArea
           ref={container}
           className="za-preview-pdf za-preview-frame-content"
           data-ready={painted || !!error}
           aria-label="PDF 阅读画布"
           aria-busy={!document && !error}
-          onScroll={() => {
-            if (!singlePage) trackPage();
-            trackSelection();
-          }}
+          onScroll={thumbnail ? undefined : trackViewport}
           tabIndex={0}
-          onKeyDown={(event) => previewPageKey(event, page, document?.numPages ?? 0, navigatePage)}
+          onKeyDown={(event) => {
+            if (
+              document &&
+              (event.ctrlKey || event.metaKey) &&
+              !event.shiftKey &&
+              !event.altKey &&
+              event.key.toLowerCase() === "f"
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              openFind();
+            } else if (event.key === "Escape" && findOpen && !event.defaultPrevented) {
+              event.preventDefault();
+              event.stopPropagation();
+              closeFind();
+            } else {
+              previewPageKey(event, page, document?.numPages ?? 0, navigatePage);
+            }
+          }}
         >
           {error ? (
             <PreviewUnavailable message={error} onDownload={onDownload} onRetry={onRetry} />
           ) : document ? (
-            visiblePages.map((number) => (
-              <PDFPage
-                key={number}
-                document={document}
-                number={number}
-                selected={page === number}
-                zoom={zoom}
-                cover={thumbnail}
-                pane={paperViewport}
-                onScale={singlePage || number === 1 ? setActualPercent : undefined}
-                root={container}
-                assertCurrent={assertCurrent}
-                onDownload={onDownload}
-                onRetry={onRetry}
-                annotating={annotating}
-                onSelection={setSelection}
-                workspace={workspace}
-                comments={markedComments}
-                activeSelection={selection}
-                onPainted={thumbnail || page === number ? markPainted : undefined}
-                hideLoading={!painted}
-                commentDestination={commentDestination}
-              />
-            ))
+            Array.from({ length: thumbnail ? 1 : document.numPages }, (_, index) => index + 1).map(
+              (number) => (
+                <PDFPage
+                  key={number}
+                  document={document}
+                  number={number}
+                  selected={thumbnail || Math.abs(page - number) <= 2}
+                  zoom={zoom}
+                  cover={thumbnail}
+                  pane={paperViewport}
+                  initialSize={
+                    (pageSizes?.pdf === document && pageSizes.values[number - 1]) || firstSize
+                  }
+                  onScale={page === number ? setActualPercent : undefined}
+                  root={container}
+                  assertCurrent={assertCurrent}
+                  onDownload={onDownload}
+                  onRetry={onRetry}
+                  annotating={annotating}
+                  onSelection={setSelection}
+                  workspace={workspace}
+                  comments={markedComments}
+                  onEditComment={editAtMarker}
+                  activeSelection={selection}
+                  onPainted={thumbnail || page === number ? markPainted : undefined}
+                  hideLoading={!painted}
+                  commentDestination={commentDestination}
+                  find={findOpen ? find : undefined}
+                  onLink={thumbnail ? undefined : navigateLink}
+                />
+              ),
+            )
           ) : null}
         </PreviewScrollArea>
-        {singlePage && document && !error && document.numPages > 1 ? (
-          <div className="za-pdf-floating-pages">
-            <PreviewPageControls
-              page={page}
-              count={document.numPages}
-              onPage={navigatePage}
-              inline
-              compact
-            />
-          </div>
-        ) : null}
+        {onRequestRevision && document && !thumbnail && !annotating && !selection && !findOpen && (
+          <PDFTextSelectionAction
+            viewport={container}
+            workspace={workspace}
+            pageCount={document.numPages}
+            zoom={zoom}
+            assertCurrent={assertCurrent}
+            onPick={setSelection}
+          />
+        )}
         {!painted && !error ? (
           <div className="za-preview-frame-pending" data-cover={!!thumbnail}>
             <PreviewLoading message="正在读取 PDF…" onCancel={thumbnail ? undefined : onCancel} />
@@ -566,12 +806,17 @@ export default function ResourcePDFPreview({
         {!thumbnail ? (
           <ResourceDocumentComments
             exitRef={annotationExit}
-            enabled={annotating}
+            enabled={annotating || !!selection}
             onEnabled={setAnnotating}
             selection={selection}
             onSelection={setSelection}
-            onNavigate={(id, comment) => {
+            editRef={editComment}
+            onNavigate={(id, comment, source) => {
               const target = Number(id.split("-")[2]);
+              if (source === "marker" && target === currentPage.current) {
+                trackViewport();
+                return;
+              }
               navigatePage(target);
               if (comment)
                 setCommentDestination((old) => ({ comment, request: (old?.request ?? 0) + 1 }));
@@ -586,7 +831,7 @@ export default function ResourcePDFPreview({
 }
 
 /** Continuous paper geometry with rasterization limited to pages near the viewport. */
-function PDFPage({
+const PDFPage = memo(function PDFPage({
   document,
   number,
   selected,
@@ -600,6 +845,7 @@ function PDFPage({
   onSelection,
   workspace,
   comments = NO_COMMENTS,
+  onEditComment,
   commentDestination,
   onScale,
   activeSelection,
@@ -607,18 +853,27 @@ function PDFPage({
   hideLoading,
   cover = false,
   renderText = true,
+  exactWidth = false,
+  initialSize = DEFAULT_PAGE,
+  find,
+  onLink,
 }: PreviewRecovery & {
   onPainted?: () => void;
   hideLoading?: boolean;
   onScale?: (percent: number) => void;
   activeSelection?: RevisionSelection | null;
   comments?: readonly DocumentRevisionComment[];
+  onEditComment?: (id: string) => void;
   commentDestination?: { comment: DocumentRevisionComment; request: number } | null;
   annotating?: boolean;
   onSelection?: (value: RevisionSelection) => void;
   workspace?: RefObject<HTMLDivElement | null>;
   cover?: boolean;
   renderText?: boolean;
+  exactWidth?: boolean;
+  initialSize?: typeof DEFAULT_PAGE;
+  find?: PDFFind;
+  onLink?: (page: number) => void;
   document: PDFDocumentProxy;
   number: number;
   selected: boolean;
@@ -630,15 +885,18 @@ function PDFPage({
   const text = useRef<HTMLDivElement>(null);
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const textLayer = useRef<TextLayer | null>(null);
   const logicalPage = useRef<{ width: number; height: number } | null>(null);
+  const [linkPage, setLinkPage] = useState<PDFPageProxy>();
   const [near, setNear] = useState(false);
-  const [size, setSize] = useState(DEFAULT_PAGE);
+  const [measuredSize, setSize] = useState<typeof DEFAULT_PAGE>();
+  const size = measuredSize ?? initialSize;
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [textRevision, setTextRevision] = useState(0);
   const navigatedRequest = useRef(0);
   const [marks, setMarks] = useState<
-    { key: string; left: number; top: number; width: number; height: number }[]
+    { comment: DocumentRevisionComment; regions: DocumentRegion[] }[]
   >([]);
   const drag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [lasso, setLasso] = useState<{
@@ -651,18 +909,24 @@ function PDFPage({
   useEffect(() => {
     if (!busy && enabled) onPainted?.();
   }, [busy, enabled, onPainted]);
-  const scale = cover
-    ? (pane.width || 168) / size.width
-    : pdfPageScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 });
+  const scale =
+    cover || exactWidth
+      ? (pane.width || 168) / size.width
+      : pdfPageScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 });
   useEffect(() => {
     onScale?.(scale * 100);
   }, [scale, onScale]);
   useEffect(() => {
     const element = holder.current;
-    if (!element || typeof IntersectionObserver === "undefined") return;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
     const preload = new IntersectionObserver(([entry]) => setNear(entry.isIntersecting), {
       root: root.current,
-      rootMargin: "600px 0px",
+      rootMargin: "200px 0px",
+      threshold: 0.01,
     });
     preload.observe(element);
     return () => {
@@ -672,7 +936,8 @@ function PDFPage({
   useEffect(() => {
     const element = canvas.current;
     if (!element || !enabled) return;
-    if (!element.width) setBusy(true);
+    const hasPaint = element.width > 0;
+    if (!hasPaint) setBusy(true);
     let active = true;
     let render: ReturnType<Awaited<ReturnType<PDFDocumentProxy["getPage"]>>["render"]> | null =
       null;
@@ -683,16 +948,19 @@ function PDFPage({
         assertCurrent();
         const base = pdfPage.getViewport({ scale: 96 / 72 });
         logicalPage.current = pdfPage.getViewport({ scale: 1 });
+        if (onLink) setLinkPage(pdfPage);
         setSize((old) =>
-          old.width === base.width && old.height === base.height
+          old?.width === base.width && old.height === base.height
             ? old
             : { width: base.width, height: base.height },
         );
-        const desiredScale = cover
-          ? (pane.width || 168) / base.width
-          : pdfPageScale(zoom, base, { width: pane.width || 640, height: pane.height || 800 });
+        const desiredScale =
+          cover || exactWidth
+            ? (pane.width || 168) / base.width
+            : pdfPageScale(zoom, base, { width: pane.width || 640, height: pane.height || 800 });
+        const pixelRatio = element.ownerDocument.defaultView?.devicePixelRatio || 1;
         const viewport = pdfPage.getViewport({
-          scale: (96 / 72) * boundedPreviewScale(desiredScale, base),
+          scale: (96 / 72) * boundedPreviewScale(desiredScale * pixelRatio, base),
         });
         const buffer = element.width ? element.ownerDocument.createElement("canvas") : element;
         buffer.width = Math.max(1, Math.floor(viewport.width));
@@ -716,21 +984,33 @@ function PDFPage({
         setBusy(false);
       } catch {
         if (!active) return;
-        if (busy) setError("此页未能渲染，请下载原件查看。");
+        if (!hasPaint) setError("此页未能渲染，请下载原件查看。");
         setBusy(false);
       }
     };
-    const delay = element.width && !busy ? setTimeout(() => void paint(), 120) : undefined;
+    const delay = hasPaint ? setTimeout(() => void paint(), 120) : undefined;
     if (delay === undefined) void paint();
     return () => {
       active = false;
       clearTimeout(delay);
       render?.cancel();
     };
-  }, [document, number, enabled, zoom, pane.width, pane.height, assertCurrent, renderText, cover]);
+  }, [
+    document,
+    number,
+    enabled,
+    zoom,
+    pane.width,
+    pane.height,
+    assertCurrent,
+    renderText,
+    cover,
+    exactWidth,
+    onLink,
+  ]);
   useEffect(() => {
     const element = text.current;
-    if (!element || !enabled || typeof TextLayer !== "function") return;
+    if (!renderText || !element || !enabled || typeof TextLayer !== "function") return;
     let active = true;
     let layer: TextLayer | undefined;
     void (async () => {
@@ -740,17 +1020,30 @@ function PDFPage({
       if (!active || content.items.length > 20000) return;
       assertCurrent();
       const viewport = page.getViewport({ scale: 96 / 72 });
-      element.style.setProperty("--total-scale-factor", String(96 / 72));
+      const unrotated = viewport.clone({ rotation: 0 });
+      element.style.setProperty("--total-scale-factor", String(viewport.scale * page.userUnit));
       layer = new TextLayer({ textContentSource: content, container: element, viewport });
+      // TextLayer sets viewer-specific rounded sizes. This reader lays out at exact paper size
+      // before applying the same zoom as the canvas, including when the page is rotated.
+      element.style.width = `${unrotated.width}px`;
+      element.style.height = `${unrotated.height}px`;
       await layer.render();
-      if (active) setTextRevision((old) => old + 1);
+      if (active) {
+        textLayer.current = layer;
+        setTextRevision((old) => old + 1);
+      }
     })().catch(() => {});
     return () => {
       active = false;
+      textLayer.current = null;
       layer?.cancel();
       element.replaceChildren();
     };
   }, [document, number, enabled, assertCurrent, renderText]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A re-created text layer needs a fresh search subscription.
+  useLayoutEffect(() => {
+    if (enabled && textLayer.current && find) return find.register(number - 1, textLayer.current);
+  }, [enabled, find, number, textRevision]);
   useEffect(() => {
     if (!enabled && canvas.current) {
       canvas.current.width = 0;
@@ -766,7 +1059,7 @@ function PDFPage({
       setMarks([]);
       return;
     }
-    const rectangles: typeof marks = [];
+    const positioned: typeof marks = [];
     for (const comment of comments) {
       if (comment.block !== `pdf-page-${number}`) continue;
       const range =
@@ -774,29 +1067,14 @@ function PDFPage({
           ? null
           : pdfTextRange(layer, comment.start, comment.end, comment.quote);
       const glyphs = range?.getClientRects?.();
-      if (!glyphs?.length && comment.region) {
-        rectangles.push({
-          key: comment.id,
-          left: comment.region.left * 100,
-          top: comment.region.top * 100,
-          width: comment.region.width * 100,
-          height: comment.region.height * 100,
-        });
-        continue;
-      }
-      if (!glyphs) continue;
-      for (const rect of Array.from(glyphs).slice(0, 128)) {
-        if (!rect.width || !rect.height || rectangles.length >= 512) continue;
-        rectangles.push({
-          key: `${comment.id}-${rectangles.length}`,
-          left: ((rect.left - box.left) / box.width) * 100,
-          top: ((rect.top - box.top) / box.height) * 100,
-          width: (rect.width / box.width) * 100,
-          height: (rect.height / box.height) * 100,
-        });
-      }
+      const regions = Array.from(glyphs ?? [])
+        .slice(0, 128)
+        .filter((rect) => rect.width && rect.height)
+        .map((rect) => normalizedPDFRegion(rect, box));
+      if (!regions.length && comment.region) regions.push(comment.region);
+      if (regions.length) positioned.push({ comment, regions });
     }
-    setMarks(rectangles);
+    setMarks(positioned);
   }, [comments, number, enabled, busy, textRevision]);
   useLayoutEffect(() => {
     if (
@@ -846,6 +1124,7 @@ function PDFPage({
           error ||
           !event.isPrimary ||
           event.button !== 0 ||
+          (event.target instanceof Element && !!event.target.closest("button")) ||
           event.shiftKey
         )
           return;
@@ -952,30 +1231,19 @@ function PDFPage({
       onMouseUp={(event) => {
         const pageSize = logicalPage.current;
         if (!annotating || busy || error || !onSelection || !text.current || !pageSize) return;
-        const selection = window.getSelection();
-        const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-        if (
-          !range ||
-          range.collapsed ||
-          !text.current.contains(range.startContainer) ||
-          !text.current.contains(range.endContainer)
-        )
-          return;
-        const prefix = window.document.createRange();
-        prefix.selectNodeContents(text.current);
-        prefix.setEnd(range.startContainer, range.startOffset);
-        const start = prefix.toString().length,
-          quote = range.toString().slice(0, 2000);
+        const selected = readPDFTextRange(text.current, text.current.ownerDocument.getSelection());
+        if (!selected) return;
+        const { range, start, end, quote } = selected;
         const rect = range.getBoundingClientRect(),
           box = workspace?.current?.getBoundingClientRect(),
           paper = event.currentTarget.getBoundingClientRect();
-        if (!quote.trim() || !box || !paper.width || !paper.height) return;
+        if (!box || !paper.width || !paper.height) return;
         event.stopPropagation();
         onSelection({
           id: `pdf-page-${number}`,
           page: number,
           start,
-          end: start + quote.length,
+          end,
           quote,
           region: normalizedPDFRegion(rect, paper),
           pdf: {
@@ -989,6 +1257,8 @@ function PDFPage({
         });
       }}
       data-pdf-page={number}
+      data-pdf-page-width={size.width * (72 / 96)}
+      data-pdf-page-height={size.height * (72 / 96)}
       aria-busy={(near || selected) && busy}
       style={{ width: size.width * scale, minHeight: size.height * scale }}
     >
@@ -1004,13 +1274,17 @@ function PDFPage({
         }}
       />
       {renderText && (
-        <div
-          ref={text}
-          className="za-pdf-text-layer"
-          style={{ width: size.width, height: size.height, transform: `scale(${scale})` }}
+        <div ref={text} className="za-pdf-text-layer" style={{ scale: String(scale) }} />
+      )}
+      {enabled && !annotating && onLink && linkPage && (
+        <PDFPageLinks
+          page={linkPage}
+          document={document}
+          onPage={onLink}
+          assertCurrent={assertCurrent}
         />
       )}
-      <div className="za-pdf-comment-marks" aria-hidden="true">
+      <div className="za-pdf-comment-marks">
         {lasso ? (
           <span
             className="za-pdf-region"
@@ -1028,22 +1302,44 @@ function PDFPage({
             }}
           />
         ) : null}
-        {marks.map((mark) => (
-          <span
-            key={mark.key}
-            data-note={
-              comments.find(
-                (comment) => mark.key === comment.id || mark.key.startsWith(`${comment.id}-`),
-              )?.comment
-            }
-            style={{
-              left: `${mark.left}%`,
-              top: `${mark.top}%`,
-              width: `${mark.width}%`,
-              height: `${mark.height}%`,
-            }}
-          />
-        ))}
+        {marks.map(({ comment, regions }, index) => {
+          const { left, top, width } = regions[0];
+          return (
+            <div key={comment.id}>
+              {regions.map((region, part) =>
+                region.width || region.height ? (
+                  <span
+                    // biome-ignore lint/suspicious/noArrayIndexKey: Fragments keep their order within this comment.
+                    key={part}
+                    aria-hidden="true"
+                    className="za-pdf-region"
+                    style={{
+                      left: `${region.left * 100}%`,
+                      top: `${region.top * 100}%`,
+                      width: `${region.width * 100}%`,
+                      height: `${region.height * 100}%`,
+                    }}
+                  />
+                ) : null,
+              )}
+              {onEditComment && (
+                <LabelTooltip
+                  label={comment.comment}
+                  contentClassName="za-slide-comment-preview"
+                  render={
+                    <button
+                      type="button"
+                      className="za-pdf-comment-pin"
+                      aria-label={`编辑第 ${number} 页批注 ${index + 1}`}
+                      style={{ left: `${(left + width) * 100}%`, top: `${top * 100}%` }}
+                      onClick={() => onEditComment(comment.id)}
+                    />
+                  }
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
       {error ? (
         <div className="za-preview-rendering">
@@ -1054,9 +1350,6 @@ function PDFPage({
           <PreviewLoading message={`正在渲染第 ${number} 页…`} />
         </div>
       ) : null}
-      <span className="za-preview-paper-number" aria-hidden="true">
-        {number}
-      </span>
     </div>
   );
-}
+});
