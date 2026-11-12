@@ -31,6 +31,9 @@ export type DesktopCloudHost = {
   initialActive?: boolean;
   onMountReady?: () => void;
   onMountError?: () => void;
+  nativeTitlebarInset?: boolean;
+  onHeaderTarget?: (element: HTMLElement | null) => void;
+  onWindowControlsTarget?: (element: HTMLElement | null) => void;
   getHandoffEnvironments?: () => ExecutionEnvironment[];
   sendWorkspaceHandoff?: (request: WorkspaceHandoff) => Promise<string | null>;
   clientPreferences?: () => Pick<AppSettings, "locale" | "theme">;

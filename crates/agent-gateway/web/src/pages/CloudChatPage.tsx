@@ -6100,6 +6100,13 @@ export function CloudChatPage({
   );
   const standaloneWorkspace = !!scheduleRoute || customizeOpen;
   const showTaskWorkspace = (!!scheduleRoute || previewTasks) && !accountSettingsOpen;
+  const desktopCloudWindow = !embeddedWorkbench && Boolean(desktopCloudHost?.onHeaderTarget);
+  const desktopCloudChrome =
+    desktopCloudWindow &&
+    !standaloneWorkspace &&
+    !accountSettingsOpen &&
+    !scheduledConversation &&
+    !workingInSpace;
   return (
     <AppErrorBoundary>
       <CloudDraftConflictDialog
@@ -6116,9 +6123,13 @@ export function CloudChatPage({
         }}
       />
       <FileDropBoundary
-        className={`${embeddedWorkbench ? "gateway-shell relative flex size-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background text-foreground" : GATEWAY_SHELL_CLASS} cloud-chat-shell`}
+        className={`${embeddedWorkbench || desktopCloudWindow ? "gateway-shell relative flex size-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background text-foreground" : GATEWAY_SHELL_CLASS} cloud-chat-shell`}
         data-embedded-task={embeddedTask || undefined}
         data-embedded-account={embeddedAccount || undefined}
+        data-desktop-cloud-window={desktopCloudWindow || undefined}
+        data-desktop-cloud-titlebar-inset={
+          (desktopCloudChrome && desktopCloudHost?.nativeTitlebarInset) || undefined
+        }
         data-workspace-view={workspaceView}
         coverage={embeddedWorkbench || scheduleRoute ? "local" : "viewport"}
         active={
@@ -6208,6 +6219,7 @@ export function CloudChatPage({
             >
               <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
               <CloudChatResourceWorkbench
+                headerPlacement={desktopCloudChrome ? "workspace" : "primary"}
                 header={
                   scheduledConversation ? (
                     taskChromeTarget && (
@@ -6234,7 +6246,9 @@ export function CloudChatPage({
                       <span title={spaceWorkTitle}>{spaceWorkTitle}</span>
                     </AppHeaderFrame>
                   ) : embeddedAccount && workspaceView === "library" ? undefined : workspaceView ===
-                      "library" && sidebar.isMobile ? (
+                      "library" &&
+                    sidebar.isMobile &&
+                    !desktopCloudChrome ? (
                     <header className="cloud-space-mobile-header">
                       <Button
                         variant="ghost"
@@ -6251,7 +6265,11 @@ export function CloudChatPage({
                   ) : (
                     <AppWorkbenchChrome
                       className={
-                        landing && !conversationId ? "cloud-header-landing" : "cloud-header-thread"
+                        desktopCloudChrome
+                          ? "desktop-cloud-header"
+                          : landing && !conversationId
+                            ? "cloud-header-landing"
+                            : "cloud-header-thread"
                       }
                       navigationMode={
                         !sidebar.isMobile && workspaceView === "chat" && !canSwitchPresentation
@@ -6275,6 +6293,13 @@ export function CloudChatPage({
                       }
                       leadingActions={
                         <>
+                          {desktopCloudChrome && (
+                            <div
+                              ref={desktopCloudHost?.onHeaderTarget}
+                              data-desktop-host-slot="header"
+                              className="flex h-full shrink-0 items-center"
+                            />
+                          )}
                           {sidebar.isMobile &&
                           workspaceView === "chat" &&
                           !canSwitchPresentation ? (
@@ -6378,6 +6403,15 @@ export function CloudChatPage({
                         }))
                       }
                       onOpenSidebar={() => setSidebarOpen(true)}
+                      windowControls={
+                        desktopCloudChrome && (
+                          <div
+                            ref={desktopCloudHost?.onWindowControlsTarget}
+                            data-desktop-host-slot="window"
+                            className="flex h-full shrink-0 items-center"
+                          />
+                        )
+                      }
                       preThemeActions={
                         !desktopCloudHost && onSwitch && workspaceView === "chat" ? (
                           <ExecutionEnvironmentSwitcher

@@ -1,6 +1,7 @@
 import { AppHeaderFrame } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DesktopCloudHost } from "@/lib/desktopRemoteHost";
 import { isMacOsTauri } from "../components/MacOsTitleBarSpacer";
 import { WindowsTitleBar } from "../components/WindowsTitleBar";
@@ -38,6 +39,8 @@ export function DesktopCloudWorkbench(props: Props) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
+  const [windowTarget, setWindowTarget] = useState<HTMLElement | null>(null);
   const { active, accountId, getHandoffEnvironments } = props;
   const handoffTargets = useMemo(() => getHandoffEnvironments?.() ?? [], [getHandoffEnvironments]);
   const currentHandoffTargets = useRef(handoffTargets);
@@ -57,6 +60,8 @@ export function DesktopCloudWorkbench(props: Props) {
     };
     setFailed(false);
     setReady(false);
+    setHeaderTarget(null);
+    setWindowTarget(null);
     void (async () => {
       const prepared = await loadDesktopRemoteRuntime();
       if (controller.signal.aborted) return;
@@ -75,6 +80,13 @@ export function DesktopCloudWorkbench(props: Props) {
       mounted.current = prepared.factory.createDesktopRemoteRuntime().mount(container.current, {
         ...host,
         initialActive: latest.current.active,
+        nativeTitlebarInset: isMacOsTauri(),
+        onHeaderTarget: (target) => {
+          if (!controller.signal.aborted && !mountFailed) setHeaderTarget(target);
+        },
+        onWindowControlsTarget: (target) => {
+          if (!controller.signal.aborted && !mountFailed) setWindowTarget(target);
+        },
         onMountReady: () => {
           if (!controller.signal.aborted && !mountFailed) setReady(true);
         },
@@ -113,6 +125,8 @@ export function DesktopCloudWorkbench(props: Props) {
     mounted.current?.setActive?.(active);
   }, [active, handoffTargets]);
 
+  const inCloudHeader = ready && headerTarget !== null && windowTarget !== null;
+
   return (
     <div
       hidden={!active}
@@ -120,15 +134,23 @@ export function DesktopCloudWorkbench(props: Props) {
       className={active ? "flex size-full min-h-0 flex-col" : "hidden"}
       data-desktop-cloud-workbench=""
     >
-      <AppHeaderFrame>
-        <div className="flex h-full items-center gap-3 px-3">
-          {isMacOsTauri() && <div aria-hidden="true" className="w-16 shrink-0" />}
-          {props.headerLeadingActions}
-          <div data-tauri-drag-region="" className="h-full min-w-0 flex-1" />
-          <WindowsTitleBar controlsOnly />
-        </div>
-      </AppHeaderFrame>
-      <div ref={container} className={ready ? "flex min-h-0 flex-1 flex-col" : "hidden"} />
+      {active &&
+        (inCloudHeader ? (
+          <>
+            {createPortal(props.headerLeadingActions, headerTarget)}
+            {createPortal(<WindowsTitleBar controlsOnly />, windowTarget)}
+          </>
+        ) : (
+          <AppHeaderFrame>
+            <div className="flex h-full items-center gap-3 px-4">
+              {isMacOsTauri() && <div aria-hidden="true" className="w-18 shrink-0" />}
+              {props.headerLeadingActions}
+              <div data-tauri-drag-region="" className="h-full min-w-0 flex-1" />
+              <WindowsTitleBar controlsOnly />
+            </div>
+          </AppHeaderFrame>
+        ))}
+      <div ref={container} className={ready ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"} />
       {!ready && (
         <div
           className="grid flex-1 place-items-center p-8 text-sm text-muted-foreground"

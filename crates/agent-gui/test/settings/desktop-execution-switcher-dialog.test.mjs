@@ -27,8 +27,12 @@ test("device confirmation uses the shared top-level modal outside header and com
   } };
   const click = (node) => act(async () => node.click());
   const open = async () => {
-    await click(header.querySelector("button[aria-expanded]"));
-    await click([...header.querySelectorAll("button")].find((button) => button.textContent.includes("Remote")));
+    const trigger = header.querySelector("button[aria-expanded]");
+    await click(trigger);
+    assert.equal(trigger.getAttribute("aria-expanded"), "true");
+    const menu = document.querySelector('[role="menu"]');
+    assert.ok(menu && !shell.contains(menu), "the menu escapes the clipped workbench");
+    await click([...menu.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent.includes("Remote")));
   };
   const button = (label) => [...document.querySelectorAll('[role="dialog"] button')].find((node) => node.textContent.trim() === label);
   try {

@@ -8,12 +8,11 @@ const switcherSource = readFileSync(
 );
 
 test("desktop execution menu opens below the trigger with compact left alignment", () => {
-  assert.match(switcherSource, /absolute left-0 top-full/);
-  assert.doesNotMatch(switcherSource, /absolute right-0/);
+  assert.match(switcherSource, /<DropdownMenuContent align="start"/);
   assert.match(switcherSource, /max-w-\[calc\(100vw-1rem\)\]/);
 });
 
 test("desktop execution switcher exposes its popup state", () => {
   assert.match(switcherSource, /aria-label=\{\s*text\(\s*`切换工作台，当前：\$\{label\}/);
-  assert.match(switcherSource, /aria-expanded=\{open\}/);
+  assert.match(switcherSource, /<DropdownMenuTrigger/);
 });

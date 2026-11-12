@@ -179,6 +179,18 @@ test("cloud connection failure leaves the desktop switcher available and retry k
   const surface = parent.querySelector("main");
   assert.ok(surface);
   assert.equal(surface.closest(".hidden"), null);
+  const chrome = surface.appendChild(document.createElement("header"));
+  const headerTarget = chrome.appendChild(document.createElement("div"));
+  const windowTarget = chrome.appendChild(document.createElement("div"));
+  await act(async () => {
+    mountHost.onHeaderTarget(headerTarget);
+    mountHost.onWindowControlsTarget(windowTarget);
+  });
+  assert.equal(parent.querySelector("[data-app-workbench-chrome]"), null);
+  assert.equal(headerTarget.querySelector("button").textContent, "Switch workbench");
+  await act(async () => mountHost.onHeaderTarget(null));
+  assert.match(parent.querySelector("[data-app-workbench-chrome]").textContent, /Switch workbench/);
+  await act(async () => mountHost.onHeaderTarget(headerTarget));
   assert.deepEqual(snapshots.at(-1), [true,offline]);
   await render([target]);
   assert.deepEqual(snapshots.at(-1), [true,[target]]);
@@ -190,5 +202,6 @@ test("cloud connection failure leaves the desktop switcher available and retry k
   assert.ok(surface.closest("[inert][hidden]"), "leaving cloud hides the entire account workbench");
   await render([target]);
   assert.equal(parent.querySelector("main"), surface, "returning to cloud restores the same runtime");
+  assert.equal(headerTarget.querySelector("button").textContent, "Switch workbench");
   assert.deepEqual(calls, {open:3,mount:2,dispose:1});
 });

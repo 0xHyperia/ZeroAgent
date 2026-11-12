@@ -318,6 +318,56 @@ html[data-zeroagent-platform="android"]
 .cloud-chat-shell {
   background: hsl(var(--settings-rail));
 }
+.cloud-chat-shell[data-desktop-cloud-window] {
+  --desktop-cloud-header-height: var(--app-header-height, 48px);
+}
+.cloud-chat-shell[data-desktop-cloud-window] .gateway-cloud-main .desktop-cloud-header {
+  --app-header-height: var(--desktop-cloud-header-height);
+}
+.desktop-cloud-header > header {
+  gap: 8px;
+}
+.cloud-chat-shell .desktop-cloud-header > header:has([data-windows-window-controls]) {
+  padding-inline-end: 0;
+}
+.desktop-cloud-header [data-app-header-navigation]:empty {
+  display: none;
+}
+.desktop-cloud-header:has(+ [data-reader-open="true"]) {
+  box-shadow: inset 0 -1px var(--za-workbench-border);
+}
+@media (min-width: 821px) {
+  .cloud-chat-shell[data-desktop-cloud-window] > [data-workbench-layout="page"] {
+    padding: 4px 4px 4px 0;
+  }
+  .cloud-chat-shell[data-desktop-cloud-titlebar-inset]
+    [data-workbench-layout="page"]
+    > .application-rail {
+    padding-top: var(--desktop-cloud-header-height);
+  }
+  .cloud-chat-shell[data-desktop-cloud-titlebar-inset]
+    .cloud-context-sidebar
+    > [data-slot="sidebar-inner"]
+    > [data-sidebar="header"] {
+    padding-top: var(--desktop-cloud-header-height);
+  }
+}
+.cloud-chat-shell[data-desktop-cloud-titlebar-inset]
+  .desktop-cloud-header:has([data-cloud-sidebar-open]:not(.hidden))
+  > header {
+  padding-inline-start: 84px;
+}
+.cloud-chat-shell[data-desktop-cloud-window] .desktop-cloud-header .cloud-mode-switch {
+  position: static;
+  width: 184px;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 184px;
+  transform: none;
+}
+.desktop-cloud-header [data-conversation-header] > .cloud-header-title-landing {
+  display: none;
+}
 .cloud-chat-shell:is([data-embedded-task], [data-embedded-account]),
 .cloud-chat-shell:is([data-embedded-task], [data-embedded-account]) > .app-workspace-shell {
   background: hsl(var(--background));

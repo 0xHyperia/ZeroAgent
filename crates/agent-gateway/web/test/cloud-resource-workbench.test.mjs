@@ -28,6 +28,32 @@ test("a workbench DOM node attached after the first effect still enables PC spli
   assert.ok(Math.abs(parseFloat(host.querySelector('.cloud-resource-workbench').style.getPropertyValue('--cloud-primary-width'))-1392*0.44)<1,"ordinary chat retains its own default split");
 });
 
+test("a workspace header remains available when the reader takes over the conversation canvas", async (t) => {
+  const env = await createWebDomTestEnv();
+  const { act, React, createRoot } = env;
+  const { CloudChatResourceWorkbench } = env.loadModule("src/components/cloudchat/CloudChatResourceWorkbench.tsx");
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  t.after(async () => { await act(async () => root.unmount()); host.remove(); env.cleanup(); });
+  const h = React.createElement;
+  const render = (open) => act(async () => root.render(h(CloudChatResourceWorkbench, {
+    open,
+    primaryVisible: true,
+    headerPlacement: "workspace",
+    header: h("button", null, "Switch workbench"),
+    primary: h("textarea", { defaultValue: "Device draft" }),
+  }, open ? "Reader" : null)));
+  await render(false);
+  const switcher = host.querySelector("button");
+  const draft = host.querySelector("textarea");
+  await render(true);
+  assert.ok(draft.closest("[inert][hidden]"));
+  assert.equal(host.querySelector("button"), switcher);
+  assert.equal(switcher.closest("[inert], [hidden]"), null);
+  await render(false);
+  assert.equal(host.querySelector("textarea"), draft);
+});
+
 test("reading expansion and actual-canvas resizing preserve the draft, resource and focus return", async (t) => {
   const icons = new Proxy({}, { get: () => () => null });
   const env = await createWebDomTestEnv({ mocks: {

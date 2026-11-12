@@ -21,6 +21,7 @@ export function ConversationReaderWorkbench(props: {
   readingScope?: string;
   defaultSplitRatio?: number;
   header?: ReactNode;
+  headerPlacement?: "primary" | "workspace";
   headerInFlow?: boolean;
   primary: ReactNode | ((readingOnly: boolean) => ReactNode);
   children: ReactNode;
@@ -69,6 +70,7 @@ export function ConversationReaderWorkbench(props: {
     if (!props.open) setExpanded(false);
   }, [props.open]);
   const readingOnly = props.open && (!props.primaryVisible || expanded || !canSplit);
+  const workspaceHeader = props.headerPlacement === "workspace";
   const usable = Math.max(1, area.width - 8);
   const currentSplit = splitPreview ?? split;
   const ratio = Math.max(
@@ -107,6 +109,7 @@ export function ConversationReaderWorkbench(props: {
             toggleExpanded: () => setExpanded((value) => !value),
           }}
         >
+          {workspaceHeader && props.header}
           <WorkbenchBody
             ref={setHost}
             className="cloud-resource-workbench"
@@ -121,7 +124,7 @@ export function ConversationReaderWorkbench(props: {
               hidden={!props.primaryVisible || readingOnly}
               inert={!props.primaryVisible || readingOnly}
             >
-              <div className="cloud-workspace-chrome">{props.header}</div>
+              {!workspaceHeader && <div className="cloud-workspace-chrome">{props.header}</div>}
               {typeof props.primary === "function" ? props.primary(readingOnly) : props.primary}
             </div>
             {props.open && !readingOnly ? (
