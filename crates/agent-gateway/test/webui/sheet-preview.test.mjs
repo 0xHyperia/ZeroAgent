@@ -13,7 +13,7 @@ async function modules(t, mocks = {}) {
 
 test("saved sheet ranges use rendered cell edges and clip at frozen rows and columns", async (t) => {
   const { env } = await modules(t);
-  const { measureSheetGrid, projectSheetRange } = env.loadModule(
+  const { measureSheetGrid, projectSheetRange, sheetRangeTopRight, spansSheetCells } = env.loadModule(
     "@liveagent/ui/components/resource-preview/sheetAnnotationGeometry.ts",
   );
   const viewport = document.createElement("div");
@@ -42,19 +42,39 @@ test("saved sheet ranges use rendered cell edges and clip at frozen rows and col
   rect(rowHeaders[1], 100, 85, 142, 138);
   rect(rowHeaders[2], 100, 138, 142, 181);
   const grid = measureSheetGrid(viewport, { row: 1, col: 1 });
-  assert.deepEqual(projectSheetRange(grid, {
+  const parts = projectSheetRange(grid, {
     start: { row: 0, col: 0 },
     end: { row: 2, col: 3 },
-  }), [
+  });
+  assert.deepEqual(parts, [
     { key: "true:true", left: 42, top: 20, width: 56, height: 28 },
     { key: "true:false", left: 98, top: 20, width: 137, height: 28 },
     { key: "false:true", left: 42, top: 48, width: 56, height: 83 },
     { key: "false:false", left: 98, top: 48, width: 137, height: 83 },
   ]);
+  assert.equal(sheetRangeTopRight(parts), parts[1], "the pin stays above the frozen-row seam");
+  const scrolled = projectSheetRange(grid, {
+    start: { row: 0, col: 0 },
+    end: { row: 2, col: 3 },
+  }, { x: 12, y: 11 });
+  assert.deepEqual(scrolled, [
+    parts[0],
+    { ...parts[1], width: 125 },
+    { ...parts[2], height: 72 },
+    { ...parts[3], width: 125, height: 72 },
+  ]);
+  assert.deepEqual(projectSheetRange(grid, {
+    start: { row: 1, col: 1 },
+    end: { row: 2, col: 3 },
+  }, { x: 0, y: 250 }), [], "cached ranges do not follow unrelated virtual rows");
   assert.deepEqual(projectSheetRange(grid, {
     start: { row: 30, col: 0 },
     end: { row: 32, col: 1 },
   }), []);
+  const merged = { start: { row: 0, col: 0 }, end: { row: 0, col: 2 } };
+  assert.equal(spansSheetCells(merged, [merged]), false);
+  assert.equal(spansSheetCells({ start: merged.start, end: merged.start }, [merged]), false);
+  assert.equal(spansSheetCells({ start: merged.start, end: { row: 1, col: 0 } }, [merged]), true);
 });
 
 test("styled workbook preflight bounds huge merge expansion and sparse row allocations", async t => {

@@ -16,6 +16,12 @@ import {
   X,
 } from "@liveagent/ui/components/IconSet";
 import {
+  formatBrowserAddress,
+  resolveBrowserAddress,
+  safeBrowserUrl,
+} from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
+import type { BrowserHistorySnapshot } from "@liveagent/ui/components/project-tools/workspaceBrowserHistory";
+import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
@@ -71,13 +77,11 @@ import {
   browserLoopbackAddress,
   displaySshLoopbackAddress,
 } from "./BrowserSshLoopbackMenu";
-import { formatBrowserAddress, resolveBrowserAddress, safeBrowserUrl } from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
 import {
   clampDeviceDimension,
   DEFAULT_DEVICE_VIEWPORT,
   fitDeviceViewport,
 } from "./browserDeviceViewport";
-import type { BrowserHistorySnapshot } from "@liveagent/ui/components/project-tools/workspaceBrowserHistory";
 import "./workbench-browser.css";
 import "./browser-chrome.css";
 import "./browser-annotation.css";
@@ -443,7 +447,7 @@ function contentBounds(node: HTMLElement): Bounds | null {
 }
 
 const nativeCoverSelector =
-  '[role="menu"], [role="listbox"], [role="dialog"], [data-slot="dialog-overlay"], [data-slot="sheet-backdrop"]';
+  '[role="menu"], [role="listbox"], [role="dialog"], [data-slot="dialog-overlay"], [data-slot="sheet-backdrop"], [data-workspace-tab-preview-card]';
 
 function decodeScreenshot(png: string): Blob {
   const binary = atob(png);

@@ -1,6 +1,16 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
-import { DiffSquare, Globe, Loader2, X } from "@liveagent/ui/components/IconSet";
+import {
+  Copy,
+  DiffSquare,
+  ExternalLink,
+  FilePenLine,
+  Globe,
+  Loader2,
+  Plus,
+  RefreshCw,
+  X,
+} from "@liveagent/ui/components/IconSet";
 import type {
   WorkspaceBrowserTools,
   WorkspaceFileChrome,
@@ -11,7 +21,7 @@ import {
   WorkspaceGitComparisonMenu,
 } from "@liveagent/ui/components/project-tools/WorkspaceFileDiff";
 import { Button } from "@liveagent/ui/components/ui/button";
-import { ContextMenuItem } from "@liveagent/ui/components/ui/context-menu";
+import { ContextMenuItem, ContextMenuSeparator } from "@liveagent/ui/components/ui/context-menu";
 import {
   Dialog,
   DialogActions,
@@ -23,7 +33,10 @@ import {
 import { Input } from "@liveagent/ui/components/ui/input";
 import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import type { WorkspaceFileEditorHandle } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
-import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
+import type {
+  WorkspaceDocumentRevision,
+  WorkspaceFileTabSnapshot,
+} from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import {
   WorkspaceFileEditor,
   WorkspaceFileReader,
@@ -45,11 +58,24 @@ import type { CodeMentionReference } from "@liveagent/ui/lib/chat/mentionReferen
 import type { GitClient } from "@liveagent/ui/lib/git/types";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import type { WorkspaceActivityClient } from "@liveagent/ui/lib/workspace-activity/types";
-import { type ComponentType, Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentType,
+  Suspense,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { gitReviewPreviewKind } from "./git-review/GitBinaryReviewPreview";
 import type { DesktopWorkspaceTab, useWorkspaceTabs, WorkspaceFileMode } from "./useWorkspaceTabs";
-import { WorkspaceFileHeader, workspaceFileName } from "./WorkspaceFileHeader";
+import {
+  WorkspaceFileHeader,
+  WorkspaceFileTabMenuItems,
+  workspaceFileName,
+} from "./WorkspaceFileHeader";
+import type { WorkspaceTabPreview } from "./WorkspaceTabHoverPreview";
 import type { BrowserHistorySnapshot } from "./workspaceBrowserHistory";
 
 export type WorkspaceBrowserPaneProps<Annotation> = {
@@ -71,6 +97,10 @@ export type WorkspaceBrowserPaneProps<Annotation> = {
 };
 
 type Resources = ReturnType<typeof useWorkspaceTabs>;
+type FileTabReader = {
+  read: () => WorkspaceFileTabSnapshot | undefined;
+  save: () => Promise<boolean>;
+};
 type DetachedAnnotationTarget = { scope: string; owner: string; tabId: string };
 
 type FileTabOptions = {
@@ -126,6 +156,14 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
     onError,
   } = options;
   const { locale, t } = useLocale();
+  const readers = useRef(new Map<string, FileTabReader>());
+  const currentView = useRef({ owner, scope, open, tabs: resources.view.tabs });
+  useLayoutEffect(() => {
+    currentView.current = { owner, scope, open, tabs: resources.view.tabs };
+    return () => {
+      currentView.current.open = false;
+    };
+  }, [open, owner, resources.view.tabs, scope]);
   const copy = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
   const [rename, setRename] = useState<{
     scope: string;
@@ -141,6 +179,20 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
       const onActivate = () => resources.activate(tab.id);
       if (tab.kind === "file") {
         const FileIcon = getFileTypeIcon(tab.request.path, "file");
+        const fileKey = JSON.stringify([owner, scope, tab.id]);
+        const readSnapshot = () => readers.current.get(fileKey)?.read();
+        const isCurrent = () => {
+          const view = currentView.current;
+          return (
+            view.open &&
+            view.owner === owner &&
+            view.scope === scope &&
+            view.tabs.some(
+              (entry) =>
+                entry.id === tab.id && entry.kind === "file" && entry.request.id === tab.request.id,
+            )
+          );
+        };
         return {
           id: tab.id,
           label: workspaceFileName(tab.request.path),
@@ -150,23 +202,31 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
           onKeepOpen: () => resources.keepFileOpen(tab.id),
           onActivate,
           onClose: () => resources.requestCloseFile(tab.id),
-          menuItems: (
-            <>
-              {tab.temporary && (
-                <ContextMenuItem onSelect={() => resources.keepFileOpen(tab.id)}>
-                  {copy("固定标签页", "Keep tab open")}
-                </ContextMenuItem>
-              )}
-              <ContextMenuItem
-                onSelect={() =>
-                  void copyTextToClipboard(
-                    workspaceImageAbsolutePathForCopy(tab.request.workdir, tab.request.path),
-                  )
+          onDiscardAndClose: () => resources.close(tab.id),
+          readPreview: (): WorkspaceTabPreview | undefined =>
+            isCurrent()
+              ? {
+                  kind: "file",
+                  path: workspaceImageAbsolutePathForCopy(tab.request.workdir, tab.request.path),
+                  dirty: tab.dirty,
+                  ...readSnapshot(),
                 }
-              >
-                {copy("复制文件路径", "Copy file path")}
-              </ContextMenuItem>
-            </>
+              : undefined,
+          menuItems: (
+            <WorkspaceFileTabMenuItems
+              request={tab.request}
+              nativeFileActions={options.nativeFileActions}
+              gitClient={
+                tab.request.projectPathKey === options.projectPathKey
+                  ? options.gitClient
+                  : undefined
+              }
+              onKeepOpen={tab.temporary ? () => resources.keepFileOpen(tab.id) : undefined}
+              readText={() => readSnapshot()?.text}
+              isCurrent={isCurrent}
+              beforeOpen={() => readers.current.get(fileKey)?.save() ?? Promise.resolve(true)}
+              onError={onError}
+            />
           ),
         };
       }
@@ -184,9 +244,11 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
         icon: <BrowserTabIcon dataUrl={tab.faviconDataUrl} />,
         onActivate,
         onClose: () => resources.close(tab.id),
+        readPreview: () => ({ kind: "browser", url: tab.url }),
         menuItems: (
           <>
             <ContextMenuItem onSelect={() => resources.openBrowser("", tab.id)}>
+              <Plus />
               {copy("在右侧新建标签", "New tab to the right")}
             </ContextMenuItem>
             <ContextMenuItem
@@ -195,6 +257,7 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
                 resources.updateBrowser(tab.id, { reloadToken: (tab.reloadToken ?? 0) + 1 }, scope)
               }
             >
+              <RefreshCw />
               {copy("重新加载", "Reload")}
             </ContextMenuItem>
             <ContextMenuItem
@@ -208,17 +271,26 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
                 )
               }
             >
-              {copy("复制标签", "Duplicate tab")}
+              <Copy />
+              {copy("复制标签", "Duplicate")}
             </ContextMenuItem>
-            <ContextMenuItem disabled={!tab.url} onSelect={() => void copyTextToClipboard(tab.url)}>
-              {copy("复制网址", "Copy URL")}
-            </ContextMenuItem>
-            <ContextMenuItem disabled={!tab.url} onSelect={runExternal}>
-              {copy("在系统浏览器中打开", "Open in system browser")}
-            </ContextMenuItem>
+            {tab.url && (
+              <>
+                <ContextMenuItem onSelect={() => void copyTextToClipboard(tab.url)}>
+                  <Copy />
+                  {copy("复制网址", "Copy URL")}
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={runExternal}>
+                  <ExternalLink />
+                  {copy("在外部浏览器中打开", "Open in external browser")}
+                </ContextMenuItem>
+              </>
+            )}
+            <ContextMenuSeparator />
             <ContextMenuItem
               onSelect={() => setRename({ scope, owner, id: tab.id, value: tab.customTitle ?? "" })}
             >
+              <FilePenLine />
               {copy("重命名", "Rename")}
             </ContextMenuItem>
           </>
@@ -284,6 +356,8 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
                   )
                 ) : (
                   <WorkspaceFileTabPane
+                    readers={readers.current}
+                    fileKey={JSON.stringify([owner, tabScope, tab.id])}
                     options={options}
                     tab={tab}
                     scope={tabScope}
@@ -364,12 +438,16 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
 }
 
 function WorkspaceFileTabPane({
+  readers,
+  fileKey,
   options,
   tab,
   scope,
   active,
   chrome,
 }: {
+  readers: Map<string, FileTabReader>;
+  fileKey: string;
   options: FileTabOptions;
   tab: Extract<DesktopWorkspaceTab, { kind: "file" }>;
   scope: string;
@@ -421,6 +499,23 @@ function WorkspaceFileTabPane({
     };
   }, [active, mode]);
   const editorHandle = useRef<WorkspaceFileEditorHandle>(null);
+  const readerSnapshot = useRef<WorkspaceFileTabSnapshot | undefined>(undefined);
+  const onTabPreviewChange = useCallback((snapshot: WorkspaceFileTabSnapshot | undefined) => {
+    readerSnapshot.current = snapshot;
+  }, []);
+  useLayoutEffect(() => {
+    readers.set(fileKey, {
+      read: () => {
+        const text = editorHandle.current?.readDraft();
+        if (text === undefined) return readerSnapshot.current;
+        return { ...readerSnapshot.current, text };
+      },
+      save: () => editorHandle.current?.saveForModeChange() ?? Promise.resolve(true),
+    });
+    return () => {
+      readers.delete(fileKey);
+    };
+  }, [fileKey, readers]);
   const [formatTools, setFormatTools] = useState<HTMLDivElement | null>(null);
   const [diffNavigation, setDiffNavigation] = useState<HTMLDivElement | null>(null);
   const [diffActions, setDiffActions] = useState<HTMLDivElement | null>(null);
@@ -585,6 +680,7 @@ function WorkspaceFileTabPane({
           >
             <WorkspaceFileReader
               tabbed
+              onTabPreviewChange={onTabPreviewChange}
               tabbedToolbarTarget={active && mode === "preview" ? formatTools : null}
               locale={locale}
               readingViewId={viewId}

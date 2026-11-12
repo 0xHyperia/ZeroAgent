@@ -59,6 +59,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -131,11 +132,14 @@ export type WorkspaceFilePreviewOverlayProps = {
   reader?: boolean;
   tabbed?: boolean;
   tabbedToolbarTarget?: HTMLElement | null;
+  onTabPreviewChange?: (snapshot: WorkspaceFileTabSnapshot | undefined) => void;
   markdownSelectionActions?: MarkdownSelectionActions;
   readingViewId?: string;
   onRequestRevision?: (revision: WorkspaceDocumentRevision) => Promise<boolean>;
   onOpenHTMLLink?: (link: WorkspaceHTMLLink) => void;
 };
+
+export type WorkspaceFileTabSnapshot = { sizeBytes?: number; text?: string; imageUrl?: string };
 
 type LoadedPreview = ReadWorkspacePreviewResponse & {
   blobUrl: string;
@@ -328,6 +332,19 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
   const currentProps = useRef(props);
   currentProps.current = props;
   const [preview, setPreview] = useState<LoadedPreview | null>(null);
+  const { onTabPreviewChange } = props;
+  useLayoutEffect(() => {
+    onTabPreviewChange?.(
+      preview
+        ? {
+            sizeBytes: preview.sizeBytes,
+            text: preview.text ?? undefined,
+            imageUrl: preview.kind === "image" ? preview.blobUrl : undefined,
+          }
+        : undefined,
+    );
+    return () => onTabPreviewChange?.(undefined);
+  }, [onTabPreviewChange, preview]);
   const [activeRequest, setActiveRequest] = useState<WorkspaceFilePreviewOpenRequest | null>(null);
   const [imageTransitionDirection, setImageTransitionDirection] =
     useState<ImagePreviewTransitionDirection>(0);

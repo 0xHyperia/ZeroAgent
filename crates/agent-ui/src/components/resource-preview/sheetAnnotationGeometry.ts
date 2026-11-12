@@ -30,7 +30,7 @@ function measureAxis(
     const start = (axis === "row" ? rect.top : rect.left) - origin;
     const end = (axis === "row" ? rect.bottom : rect.right) - origin;
     if (index < frozenCount) freezeEnd = Math.max(freezeEnd, end);
-    if (start < viewportEnd && end > headerEnd) cells.push({ index, start, end });
+    cells.push({ index, start, end });
   }
   return { cells, frozenCount, headerEnd, freezeEnd, viewportEnd };
 }
@@ -63,7 +63,7 @@ export function measureSheetGrid(viewport: HTMLElement, freeze: Freeze) {
 
 type SheetGrid = NonNullable<ReturnType<typeof measureSheetGrid>>;
 
-function projectAxis(axis: Axis, from: number, to: number) {
+function projectAxis(axis: Axis, from: number, to: number, scrollDelta: number) {
   const parts: { start: number; end: number; frozen: boolean }[] = [];
   for (const frozen of [true, false]) {
     const clipStart = frozen ? axis.headerEnd : axis.freezeEnd;
@@ -73,8 +73,9 @@ function projectAxis(axis: Axis, from: number, to: number) {
     for (const cell of axis.cells) {
       if (cell.index < axis.frozenCount !== frozen || cell.index < from || cell.index > to)
         continue;
-      start = Math.min(start, cell.start);
-      end = Math.max(end, cell.end);
+      const offset = frozen ? 0 : scrollDelta;
+      start = Math.min(start, cell.start - offset);
+      end = Math.max(end, cell.end - offset);
     }
     start = Math.max(start, clipStart);
     end = Math.min(end, clipEnd);
@@ -84,10 +85,14 @@ function projectAxis(axis: Axis, from: number, to: number) {
 }
 
 /** Each frozen quadrant is clipped separately so scrolled cells cannot cover frozen cells. */
-export function projectSheetRange(grid: SheetGrid | null, range: XlsxCellRange) {
+export function projectSheetRange(
+  grid: SheetGrid | null,
+  range: XlsxCellRange,
+  scrollDelta = { x: 0, y: 0 },
+) {
   if (!grid) return [];
-  const rows = projectAxis(grid.rows, range.start.row, range.end.row);
-  const cols = projectAxis(grid.cols, range.start.col, range.end.col);
+  const rows = projectAxis(grid.rows, range.start.row, range.end.row, scrollDelta.y);
+  const cols = projectAxis(grid.cols, range.start.col, range.end.col, scrollDelta.x);
   return rows.flatMap((row) =>
     cols.map((col) => ({
       key: `${row.frozen}:${col.frozen}`,
@@ -129,4 +134,27 @@ export function expandSheetRange(range: XlsxCellRange, merges: readonly XlsxCell
     if (next === current) return next;
     current = next;
   }
+}
+
+export function spansSheetCells(range: XlsxCellRange, merges: readonly XlsxCellRange[]) {
+  return (
+    (range.start.row !== range.end.row || range.start.col !== range.end.col) &&
+    !merges.some(
+      ({ start, end }) =>
+        start.row <= range.start.row &&
+        start.col <= range.start.col &&
+        end.row >= range.end.row &&
+        end.col >= range.end.col,
+    )
+  );
+}
+
+export function sheetRangeTopRight(parts: ReturnType<typeof projectSheetRange>) {
+  return parts.reduce<(typeof parts)[number] | undefined>((corner, part) => {
+    const right = part.left + part.width;
+    const previousRight = corner ? corner.left + corner.width : -Infinity;
+    return !corner || right > previousRight || (right === previousRight && part.top < corner.top)
+      ? part
+      : corner;
+  }, undefined);
 }

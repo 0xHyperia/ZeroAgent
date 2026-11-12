@@ -107,19 +107,28 @@ export function ResourceDocumentComments(props: {
   onEnabled: (enabled: boolean) => void;
   selection: RevisionSelection | null;
   onSelection: (selection: RevisionSelection | null) => void;
-  onNavigate: (block: string, comment?: DocumentRevisionComment) => void;
+  onNavigate: (block: string, comment?: DocumentRevisionComment, source?: "marker") => void;
   onMarks: (comments: readonly DocumentRevisionComment[]) => void;
   exitRef?: RefObject<(() => void) | null>;
-  editRef?: RefObject<((id: string) => void) | null>;
+  editRef?: RefObject<((id: string, source?: "marker") => void) | null>;
   dismissSelectionRef?: RefObject<(() => boolean) | null>;
   toolbarTarget?: HTMLElement | null;
   prepareEvidence?: (comments: readonly DocumentRevisionComment[]) => Promise<readonly File[]>;
   resolveSelectionBounds?: (selection: RevisionSelection) => RevisionSelectionBounds | undefined;
+  sheetSelection?: boolean;
 }) {
   const { onRequestRevision } = useContext(PreviewIdentityContext);
   const [comments, setComments] = usePreviewReadingState("documentComments", []);
   const [input, setInput] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const hasUncommittedInput = Boolean(
+    input.trim() &&
+      !(
+        props.sheetSelection &&
+        editing &&
+        comments.some((comment) => comment.id === editing && comment.comment === input.trim())
+      ),
+  );
   const editingSelection = useRef<RevisionSelection | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -191,12 +200,12 @@ export function ResourceDocumentComments(props: {
   const inputVisible = !!selection && selection.visible !== false && hasAnchor && props.enabled;
   const focusedKey = useRef("");
   useEffect(() => {
-    if (!key) focusedKey.current = "";
+    if (!key || (props.sheetSelection && !inputVisible)) focusedKey.current = "";
     if (inputVisible && inputRef.current && focusedKey.current !== key) {
       inputRef.current.focus({ preventScroll: true });
       focusedKey.current = key;
     }
-  }, [inputVisible, key]);
+  }, [inputVisible, key, props.sheetSelection]);
   function exit() {
     if (busy) return;
     if (comments.length || input.trim()) setConfirmDiscard(true);
@@ -215,14 +224,23 @@ export function ResourceDocumentComments(props: {
     const ref = props.dismissSelectionRef;
     if (!ref) return;
     ref.current = () => {
-      if (busy || input.trim()) return false;
+      if (busy || hasUncommittedInput) {
+        if (props.sheetSelection) inputRef.current?.focus({ preventScroll: true });
+        return false;
+      }
       props.onSelection(null);
       return true;
     };
     return () => {
       ref.current = null;
     };
-  }, [props.dismissSelectionRef, props.onSelection, busy, input]);
+  }, [
+    props.dismissSelectionRef,
+    props.onSelection,
+    props.sheetSelection,
+    busy,
+    hasUncommittedInput,
+  ]);
   useEffect(() => {
     props.onMarks(comments);
   }, [comments, props.onMarks]);
@@ -256,7 +274,14 @@ export function ResourceDocumentComments(props: {
     if (!editing) setIndex(comments.length);
   }
   async function send() {
-    if (!onRequestRevision || inFlight.current || busy || !comments.length) return;
+    if (
+      !onRequestRevision ||
+      inFlight.current ||
+      busy ||
+      !comments.length ||
+      (props.sheetSelection && hasUncommittedInput)
+    )
+      return;
     inFlight.current = true;
     setBusy(true);
     setError("");
@@ -276,9 +301,9 @@ export function ResourceDocumentComments(props: {
   }
   useEffect(() => {
     if (props.editRef)
-      props.editRef.current = (id) => {
+      props.editRef.current = (id, source) => {
         const item = comments.find((item) => item.id === id);
-        if (item && !busy) editItem(item);
+        if (item && !busy) editItem(item, source);
       };
     return () => {
       if (props.editRef) props.editRef.current = null;
@@ -286,15 +311,22 @@ export function ResourceDocumentComments(props: {
   });
   const current = comments[Math.min(index, comments.length - 1)];
   function move(direction: number) {
+    if (props.sheetSelection && props.selection && props.dismissSelectionRef?.current?.() === false)
+      return;
     const next = Math.max(0, Math.min(comments.length - 1, index + direction));
     setIndex(next);
     if (comments[next]) props.onNavigate(comments[next].block, comments[next]);
   }
-  function editItem(item: DocumentRevisionComment | undefined) {
-    if (!item || busy) return;
+  function editItem(item: DocumentRevisionComment | undefined, source?: "marker") {
+    if (
+      !item ||
+      busy ||
+      (props.sheetSelection && props.selection && props.dismissSelectionRef?.current?.() === false)
+    )
+      return;
     setIndex(comments.indexOf(item));
     setListSource(null);
-    props.onNavigate(item.block, item);
+    props.onNavigate(item.block, item, source);
     setEditing(item.id);
     setInput(item.comment);
     props.onEnabled(true);
@@ -432,11 +464,17 @@ export function ResourceDocumentComments(props: {
       {selection && inputVisible ? (
         <form
           className="za-document-comment-input"
-          style={{
-            left: resolveSelectionBounds ? position?.x : Math.max(16, selection.x),
-            top:
-              resolveSelectionBounds && position ? position.y + 8 : Math.max(72, selection.y + 8),
-          }}
+          style={
+            props.sheetSelection
+              ? undefined
+              : {
+                  left: resolveSelectionBounds ? position?.x : Math.max(16, selection.x),
+                  top:
+                    resolveSelectionBounds && position
+                      ? position.y + 8
+                      : Math.max(72, selection.y + 8),
+                }
+          }
           onSubmit={(event) => {
             event.preventDefault();
             add();
@@ -534,7 +572,7 @@ export function ResourceDocumentComments(props: {
           <Button
             className="za-document-comment-send"
             size="sm"
-            disabled={busy || !onRequestRevision}
+            disabled={busy || !onRequestRevision || (props.sheetSelection && hasUncommittedInput)}
             onClick={() => void send()}
           >
             {busy ? <span className="za-reader-button-spinner" /> : null}

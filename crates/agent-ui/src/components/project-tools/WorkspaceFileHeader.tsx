@@ -4,8 +4,12 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  ExternalLink,
+  FolderOpen,
   Github,
   MoreHorizontal,
+  Pin,
+  Save,
 } from "@liveagent/ui/components/IconSet";
 import type { FileTreeEntry } from "@liveagent/ui/components/project-tools/file-tree/model";
 import {
@@ -17,6 +21,13 @@ import {
   workspaceGitRelativePath,
 } from "@liveagent/ui/components/project-tools/workspaceGitPaths";
 import { Button } from "@liveagent/ui/components/ui/button";
+import {
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from "@liveagent/ui/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,6 +140,201 @@ function FileApplicationIcon({
 }
 
 const FILE_TOOLBAR_COMPACT_WIDTH = 625;
+
+export function WorkspaceFileTabMenuItems({
+  request,
+  gitClient,
+  nativeFileActions = true,
+  onKeepOpen,
+  readText,
+  isCurrent = () => true,
+  beforeOpen,
+  onError,
+}: {
+  request: WorkspaceFileRequest;
+  gitClient?: GitClient;
+  nativeFileActions?: boolean;
+  onKeepOpen?: () => void;
+  readText: () => string | undefined;
+  isCurrent?: () => boolean;
+  beforeOpen?: () => Promise<boolean>;
+  onError: (message: string) => void;
+}) {
+  const { locale } = useLocale();
+  const copy = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
+  const { path, workdir, remote, stagedAttachment, line, column } = request;
+  const native = nativeFileActions && !remote && !stagedAttachment;
+  const canCopyText = !isWorkspacePreviewPath(path) || isWorkspaceEditablePreviewPath(path);
+  const codeTools =
+    canCopyText &&
+    (isWorkspacePreviewPath(path) || resolveSourceLanguage(path) !== "plaintext") &&
+    !["csv", "tsv"].includes(workspacePathExtension(path));
+  const [applications, setApplications] = useState<FileApplications>();
+  const [editors, setEditors] = useState<string[]>([]);
+  const [github, setGithub] = useState("");
+  useEffect(() => {
+    if (!native) return;
+    let current = true;
+    void invokeFs<FileApplications>("fs_workspace_file_apps", { workdir, path }).then(
+      (result) => {
+        if (current) setApplications(result);
+      },
+      () => {},
+    );
+    if (codeTools)
+      void invokeFs<string[]>("fs_workspace_editor_targets", {}).then(
+        (result) => {
+          if (current) setEditors(result);
+        },
+        () => {},
+      );
+    if (gitClient)
+      void gitClient.status(workdir).then(
+        (result) => {
+          if (current) setGithub(fileRepositoryDetails(request, result)?.github ?? "");
+        },
+        () => {},
+      );
+    return () => {
+      current = false;
+    };
+  }, [codeTools, gitClient, native, path, request, workdir]);
+  const primary = applications?.defaultApplication ?? undefined;
+  const alternatives = applications?.alternatives ?? [];
+  const targets = WORKSPACE_OPEN_TARGETS.filter(
+    ({ id, label }) =>
+      editors.includes(id) &&
+      (line ||
+        ![primary, ...alternatives].some(
+          (item) => item && applicationDisplayKey(item.name) === applicationDisplayKey(label),
+        )),
+  );
+  const open = async (command: string, args?: Record<string, unknown>) => {
+    try {
+      if (!isCurrent()) return;
+      if (args?.mode !== "reveal" && (await beforeOpen?.()) === false) return;
+      if (isCurrent()) await invokeFs(command, { path, workdir, ...args });
+    } catch {
+      if (isCurrent()) onError(copy("无法完成文件操作", "Could not complete the file operation"));
+    }
+  };
+  const copyValue = async (content: () => string | Promise<string>, message: string) => {
+    try {
+      if (!isCurrent()) return;
+      const value = await content();
+      if (!isCurrent() || (await copyTextToClipboard(value))) return;
+    } catch {
+      // The path may have become inaccessible while the menu was open.
+    }
+    if (isCurrent()) onError(message);
+  };
+  return (
+    <>
+      {native && (
+        <>
+          <ContextMenuItem onSelect={() => open("fs_open_workspace_path", { mode: "open" })}>
+            <FileApplicationIcon application={primary} path={path} />
+            {primary
+              ? copy(`在 ${primary.name} 中打开`, `Open in ${primary.name}`)
+              : copy("在默认应用中打开", "Open in default app")}
+          </ContextMenuItem>
+          {(alternatives.length > 0 || targets.length > 0) && (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <ExternalLink />
+                {copy("打开方式", "Open with")}
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="za-workspace-compact-menu">
+                {alternatives.map((application) => (
+                  <ContextMenuItem
+                    key={application.id}
+                    onSelect={() =>
+                      open("fs_open_workspace_file_app", { application: application.id })
+                    }
+                  >
+                    <FileApplicationIcon application={application} path={path} />
+                    {application.name}
+                  </ContextMenuItem>
+                ))}
+                {targets.map(({ id, label, Icon }) => (
+                  <ContextMenuItem
+                    key={id}
+                    onSelect={() => open("fs_open_workspace_editor", { editor: id, line, column })}
+                  >
+                    <Icon className="size-4" />
+                    {label}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
+          {github && (
+            <ContextMenuItem
+              onSelect={() => {
+                if (isCurrent())
+                  void openUrl(github).catch(() => {
+                    if (isCurrent()) onError(copy("无法打开 GitHub", "Could not open GitHub"));
+                  });
+              }}
+            >
+              <Github />
+              {copy("在 GitHub 上打开", "Open in GitHub")}
+            </ContextMenuItem>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => open("fs_save_workspace_copy")}>
+            <Save />
+            {copy("另存为…", "Save as…")}
+          </ContextMenuItem>
+        </>
+      )}
+      <ContextMenuItem
+        onSelect={() =>
+          void copyValue(
+            () => workspaceImageAbsolutePathForCopy(workdir, path),
+            copy("无法复制文件路径", "Could not copy the file path"),
+          )
+        }
+      >
+        <Copy />
+        {copy("复制路径", "Copy path")}
+      </ContextMenuItem>
+      {(canCopyText || readText() !== undefined) && (
+        <ContextMenuItem
+          onSelect={() =>
+            void copyValue(
+              async () => {
+                const cached = readText();
+                if (cached !== undefined) return cached;
+                if (remote || stagedAttachment) throw new Error("File contents unavailable");
+                return (await localEditorFileIo.read(request)).content;
+              },
+              copy("无法复制文件内容", "Could not copy file contents"),
+            )
+          }
+        >
+          <Copy />
+          {copy("复制文件内容", "Copy file contents")}
+        </ContextMenuItem>
+      )}
+      {native && (
+        <ContextMenuItem onSelect={() => open("fs_open_workspace_path", { mode: "reveal" })}>
+          <FolderOpen />
+          {copy("打开所在文件夹", "Open containing folder")}
+        </ContextMenuItem>
+      )}
+      {onKeepOpen && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={onKeepOpen}>
+            <Pin />
+            {copy("固定标签页", "Keep tab open")}
+          </ContextMenuItem>
+        </>
+      )}
+    </>
+  );
+}
 
 function isWithinDirectory(path: string, directory: string) {
   const expectedPrefix = directory ? `${directory}/` : "";
