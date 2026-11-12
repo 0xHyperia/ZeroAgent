@@ -542,7 +542,6 @@ function WorkspaceFileTabPane({
       viewAction={viewAction}
       comparisonActions={mode === "diff" && <div ref={setDiffActions} className="empty:hidden" />}
       fileTree={chrome.tree}
-      floating={isPresentation && mode === "preview"}
       setFormatTools={setFormatTools}
       onOpenFile={openRelatedFile}
       onError={options.onError}

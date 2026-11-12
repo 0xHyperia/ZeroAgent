@@ -96,13 +96,14 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   const floatingTools = !!chrome;
   const logicalScroll = useRef(0);
   const previousScale = useRef(0);
+  const zoomPoint = useRef<{ x: number; y: number; screenX: number; screenY: number } | null>(null);
   const { container, viewport, sideInset } = usePreviewViewport();
   const navigationInset =
     navigation !== "closed" && viewport.width >= 600 ? READER_NAVIGATION_INSET : 0;
   const logicalWidth = pageWidth + 48;
   const scale =
     typeof zoom === "number"
-      ? zoom / 100
+      ? Math.max(10, Math.min(400, zoom)) / 100
       : Math.min(
           1,
           Math.max(1, (viewport.width || logicalWidth) - sideInset - navigationInset) /
@@ -207,11 +208,19 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   }, [container, scale, post, floatingTools]);
   useLayoutEffect(() => {
     const element = container.current;
+    const point = zoomPoint.current;
+    zoomPoint.current = null;
+    const rect = point && frame.current?.getBoundingClientRect();
     if (element && previousScale.current > 0 && previousScale.current !== scale) {
-      element.scrollTop = Math.max(
-        0,
-        logicalScroll.current * scale + (floatingTools ? 80 : 20 * scale),
-      );
+      if (point && rect) {
+        element.scrollLeft += rect.left + point.x * scale - point.screenX;
+        element.scrollTop += rect.top + point.y * scale - point.screenY;
+      } else {
+        element.scrollTop = Math.max(
+          0,
+          logicalScroll.current * scale + (floatingTools ? 80 : 20 * scale),
+        );
+      }
     }
     previousScale.current = scale;
   }, [container, scale, floatingTools]);
@@ -261,8 +270,35 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
         event.data.type === "zoom" &&
         Number.isFinite(event.data.delta) &&
         Math.abs(event.data.delta) <= 100
-      )
-        setZoom(nextReaderZoom(scale * 100, event.data.delta));
+      ) {
+        const { x, y } = event.data;
+        const rect = frame.current?.getBoundingClientRect();
+        if (
+          rect &&
+          Number.isFinite(x) &&
+          Number.isFinite(y) &&
+          x >= 0 &&
+          y >= 0 &&
+          x * scale <= rect.width &&
+          y * scale <= rect.height
+        ) {
+          zoomPoint.current = {
+            x,
+            y,
+            screenX: rect.left + x * scale,
+            screenY: rect.top + y * scale,
+          };
+        }
+        setZoom((current) =>
+          nextReaderZoom(
+            typeof current === "number" ? current : scale * 100,
+            event.data.delta,
+            400,
+            10,
+            "document",
+          ),
+        );
+      }
       if (event.data.type === "zoom-reset") setZoom("fit-width");
       if (event.data.type === "ready") {
         updateLayout();
@@ -451,6 +487,9 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
           value={zoom}
           onChange={setZoom}
           actualPercent={scale * 100}
+          minPercent={10}
+          zoomCurve="document"
+          percentages={[25, 50, 100, 200]}
           fitPage={false}
         />
       </PreviewToolbar>

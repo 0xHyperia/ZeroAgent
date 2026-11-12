@@ -52,6 +52,14 @@ import { usePreviewViewport } from "./usePreviewViewport";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerURL;
 const DEFAULT_PAGE = { width: 816, height: 1056 };
+const PDF_ZOOM_STOPS = [
+  30, 40, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500, 600, 700, 800,
+];
+function pdfPageScale(zoom: PreviewZoom, size: typeof DEFAULT_PAGE, pane: typeof DEFAULT_PAGE) {
+  return typeof zoom === "number"
+    ? Math.max(30, Math.min(800, zoom)) / 100
+    : previewScale(zoom, size, pane);
+}
 const NO_COMMENTS: readonly DocumentRevisionComment[] = [];
 
 function normalizedPDFRegion(rect: DocumentRegion, paper: DOMRect): DocumentRegion {
@@ -240,6 +248,13 @@ export default function ResourcePDFPreview({
   const markPainted = useCallback(() => setPainted(true), []);
   const [page, setPage] = usePreviewReadingState("pdfPage", 1);
   const [zoom, setZoom] = usePreviewReadingState("pdfZoom", "fit-width");
+  const zoomAnchor = useRef<{
+    page: HTMLElement;
+    x: number;
+    y: number;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
   const [error, setError] = useState("");
   const { container, viewport, sideInset } = usePreviewViewport();
   const paperViewport = {
@@ -320,6 +335,15 @@ export default function ResourcePDFPreview({
   }, [bytes, assertCurrent, setPage]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: paper geometry changes require restoring the visible page after reflow.
   useLayoutEffect(() => {
+    const anchor = zoomAnchor.current;
+    const view = container.current;
+    zoomAnchor.current = null;
+    if (anchor && view?.contains(anchor.page)) {
+      const rect = anchor.page.getBoundingClientRect();
+      view.scrollLeft += rect.left + anchor.x * rect.width - anchor.clientX;
+      view.scrollTop += rect.top + anchor.y * rect.height - anchor.clientY;
+      return;
+    }
     // A cover must never scroll its containing composer or file browser.
     if (!document || thumbnail || singlePage) return;
     // A narrower pane changes every paper's height. Retain the page, rather than
@@ -414,6 +438,25 @@ export default function ResourcePDFPreview({
           value={zoom}
           onChange={setZoom}
           actualPercent={actualPercent}
+          minPercent={30}
+          maxPercent={800}
+          percentages={[30, 50, 100, 150, 200]}
+          zoomCurve="pdf"
+          zoomStops={PDF_ZOOM_STOPS}
+          onZoomAnchor={(clientX, clientY) => {
+            const target = container.current?.ownerDocument
+              .elementFromPoint?.(clientX, clientY)
+              ?.closest<HTMLElement>("[data-pdf-page]");
+            if (!target || !container.current?.contains(target)) return;
+            const box = target.getBoundingClientRect();
+            zoomAnchor.current = {
+              page: target,
+              clientX,
+              clientY,
+              x: (clientX - box.left) / box.width,
+              y: (clientY - box.top) / box.height,
+            };
+          }}
         />
       </PreviewToolbar>
       <div
@@ -608,12 +651,9 @@ function PDFPage({
   useEffect(() => {
     if (!busy && enabled) onPainted?.();
   }, [busy, enabled, onPainted]);
-  const scale = boundedPreviewScale(
-    cover
-      ? (pane.width || 168) / size.width
-      : previewScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 }),
-    size,
-  );
+  const scale = cover
+    ? (pane.width || 168) / size.width
+    : pdfPageScale(zoom, size, { width: pane.width || 640, height: pane.height || 800 });
   useEffect(() => {
     onScale?.(scale * 100);
   }, [scale, onScale]);
@@ -632,66 +672,85 @@ function PDFPage({
   useEffect(() => {
     const element = canvas.current;
     if (!element || !enabled) return;
+    if (!element.width) setBusy(true);
     let active = true;
-    let layer: TextLayer | null = null;
-    const textElement = text.current;
-    textElement?.replaceChildren();
     let render: ReturnType<Awaited<ReturnType<PDFDocumentProxy["getPage"]>>["render"]> | null =
       null;
-    setBusy(true);
-    setError("");
-    void document
-      .getPage(number)
-      .then(async (pdfPage) => {
-        assertCurrent();
+    const paint = async () => {
+      try {
+        const pdfPage = await document.getPage(number);
         if (!active) return;
-        const units = 96 / 72,
-          base = pdfPage.getViewport({ scale: units });
+        assertCurrent();
+        const base = pdfPage.getViewport({ scale: 96 / 72 });
         logicalPage.current = pdfPage.getViewport({ scale: 1 });
         setSize((old) =>
           old.width === base.width && old.height === base.height
             ? old
             : { width: base.width, height: base.height },
         );
-        const safeScale = boundedPreviewScale(
-          previewScale(zoom, base, { width: pane.width || 640, height: pane.height || 800 }),
-          base,
-        );
-        const viewport = pdfPage.getViewport({ scale: units * safeScale });
-        element.width = Math.max(1, Math.floor(viewport.width));
-        element.height = Math.max(1, Math.floor(viewport.height));
+        const desiredScale = cover
+          ? (pane.width || 168) / base.width
+          : pdfPageScale(zoom, base, { width: pane.width || 640, height: pane.height || 800 });
+        const viewport = pdfPage.getViewport({
+          scale: (96 / 72) * boundedPreviewScale(desiredScale, base),
+        });
+        const buffer = element.width ? element.ownerDocument.createElement("canvas") : element;
+        buffer.width = Math.max(1, Math.floor(viewport.width));
+        buffer.height = Math.max(1, Math.floor(viewport.height));
         render = pdfPage.render({
-          canvas: element,
+          canvas: buffer,
           viewport,
           ...(renderText ? {} : { annotationMode: AnnotationMode.DISABLE }),
         });
         await render.promise;
+        if (!active) return;
         assertCurrent();
-        if (active) setBusy(false);
-        if (active && textElement && typeof TextLayer === "function") {
-          const content = await pdfPage.getTextContent();
-          if (!active) return;
-          assertCurrent();
-          if (content.items.length > 20000) return;
-          textElement.style.setProperty("--total-scale-factor", String(units * safeScale));
-          layer = new TextLayer({ textContentSource: content, container: textElement, viewport });
-          await layer.render();
-          if (active) setTextRevision((old) => old + 1);
+        if (buffer !== element) {
+          element.width = buffer.width;
+          element.height = buffer.height;
+          element.getContext("2d")?.drawImage(buffer, 0, 0);
+          buffer.width = 0;
+          buffer.height = 0;
         }
-      })
-      .catch(() => {
-        if (active) {
-          setError("此页未能渲染，请下载原件查看。");
-          setBusy(false);
-        }
-      });
+        setError("");
+        setBusy(false);
+      } catch {
+        if (!active) return;
+        if (busy) setError("此页未能渲染，请下载原件查看。");
+        setBusy(false);
+      }
+    };
+    const delay = element.width && !busy ? setTimeout(() => void paint(), 120) : undefined;
+    if (delay === undefined) void paint();
     return () => {
       active = false;
+      clearTimeout(delay);
       render?.cancel();
-      layer?.cancel();
-      textElement?.replaceChildren();
     };
-  }, [document, number, enabled, zoom, pane.width, pane.height, assertCurrent, renderText]);
+  }, [document, number, enabled, zoom, pane.width, pane.height, assertCurrent, renderText, cover]);
+  useEffect(() => {
+    const element = text.current;
+    if (!element || !enabled || typeof TextLayer !== "function") return;
+    let active = true;
+    let layer: TextLayer | undefined;
+    void (async () => {
+      const page = await document.getPage(number);
+      if (!active) return;
+      const content = await page.getTextContent();
+      if (!active || content.items.length > 20000) return;
+      assertCurrent();
+      const viewport = page.getViewport({ scale: 96 / 72 });
+      element.style.setProperty("--total-scale-factor", String(96 / 72));
+      layer = new TextLayer({ textContentSource: content, container: element, viewport });
+      await layer.render();
+      if (active) setTextRevision((old) => old + 1);
+    })().catch(() => {});
+    return () => {
+      active = false;
+      layer?.cancel();
+      element.replaceChildren();
+    };
+  }, [document, number, enabled, assertCurrent, renderText]);
   useEffect(() => {
     if (!enabled && canvas.current) {
       canvas.current.width = 0;
@@ -944,7 +1003,13 @@ function PDFPage({
           visibility: !busy && (near || selected) && !error ? "visible" : "hidden",
         }}
       />
-      {renderText && <div ref={text} className="za-pdf-text-layer" />}
+      {renderText && (
+        <div
+          ref={text}
+          className="za-pdf-text-layer"
+          style={{ width: size.width, height: size.height, transform: `scale(${scale})` }}
+        />
+      )}
       <div className="za-pdf-comment-marks" aria-hidden="true">
         {lasso ? (
           <span

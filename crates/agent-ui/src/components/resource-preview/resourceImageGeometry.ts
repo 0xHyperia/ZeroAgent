@@ -7,7 +7,7 @@ import {
 export type ImageView = { zoom: "fit-page" | number; rotation: number; x: number; y: number };
 export const initialImageView: ImageView = { zoom: "fit-page", rotation: 0, x: 0, y: 0 };
 export const imageScaleLimit = (scale: number) =>
-  Math.max(0.01, Math.min(8, Number.isFinite(scale) ? scale : 1));
+  Math.max(0.1, Math.min(4, Number.isFinite(scale) ? scale : 1));
 export function imageViewGeometry(
   size: ImageViewerSize,
   viewport: ImageViewerSize,

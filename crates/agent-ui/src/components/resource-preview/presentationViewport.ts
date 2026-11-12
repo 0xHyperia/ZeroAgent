@@ -2,6 +2,7 @@ import { type RefObject, useLayoutEffect, useRef } from "react";
 
 export type PresentationZoomAnchor = { x: number; y: number };
 type Size = { width: number; height: number };
+export type PresentationCamera = PresentationZoomAnchor & { scale: number };
 
 /** PowerPoint uses the original slide frame throughout both presentation views. */
 export function presentationGridGeometry(count: number, slide: Size) {
@@ -16,6 +17,100 @@ export function presentationGridGeometry(count: number, slide: Size) {
     width: columns * slide.width + (columns - 1) * gap,
     height: rows * (slide.height + labelHeight) + Math.max(0, rows - 1) * gap,
   };
+}
+
+export function presentationGridSlideCenter(
+  page: number,
+  slide: Size,
+  grid: ReturnType<typeof presentationGridGeometry>,
+) {
+  const index = page - 1;
+  return {
+    x: (index % grid.columns) * (slide.width + grid.gap) + slide.width / 2,
+    y:
+      Math.floor(index / grid.columns) * (slide.height + grid.labelHeight + grid.gap) +
+      grid.labelHeight +
+      slide.height / 2,
+  };
+}
+
+export function centerPresentationCamera(
+  view: Size,
+  point: PresentationZoomAnchor,
+  scale: number,
+  topInset = 0,
+  leftInset = 0,
+): PresentationCamera {
+  return {
+    x: (view.width + leftInset) / 2 - point.x * scale,
+    y: (view.height + topInset) / 2 - point.y * scale,
+    scale,
+  };
+}
+
+export function animatePresentationCamera(
+  from: PresentationCamera,
+  to: PresentationCamera,
+  anchor: PresentationZoomAnchor,
+  draw: (value: PresentationCamera, progress: number) => void,
+  done?: () => void,
+) {
+  const duration = 260;
+  let start: number | undefined;
+  let frame = requestAnimationFrame(tick);
+  function tick(time: number) {
+    start ??= time;
+    const progress = Math.max(0, Math.min(1, (time - start) / duration));
+    const eased = 1 - (1 - progress) ** 3;
+    const scale = from.scale * (to.scale / from.scale) ** eased;
+    const offset = (key: "x" | "y") =>
+      (from[key] + anchor[key] * from.scale) * (1 - eased) +
+      (to[key] + anchor[key] * to.scale) * eased -
+      anchor[key] * scale;
+    draw({ x: offset("x"), y: offset("y"), scale }, eased);
+    if (progress < 1) frame = requestAnimationFrame(tick);
+    else done?.();
+  }
+  return () => cancelAnimationFrame(frame);
+}
+
+export function bindPresentationPageWheel(
+  element: HTMLElement,
+  fits: () => boolean,
+  advance: (direction: number) => void,
+) {
+  let lastEvent = -Infinity;
+  let lastPage = -Infinity;
+  let direction = 0;
+  let accumulated = 0;
+  const wheel = (event: WheelEvent) => {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+    if (
+      !fits() ||
+      (event.target instanceof Element && event.target.closest("input,textarea,form,[role=menu]"))
+    ) {
+      accumulated = 0;
+      return;
+    }
+    if (event.shiftKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    const delta =
+      event.deltaY *
+      (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
+    if (event.timeStamp - lastEvent >= 200 || direction !== Math.sign(delta)) {
+      accumulated = 0;
+      lastPage = -Infinity;
+    }
+    lastEvent = event.timeStamp;
+    direction = Math.sign(delta);
+    accumulated += delta;
+    if (Math.abs(accumulated) < 40 || event.timeStamp - lastPage < 200) return;
+    accumulated = 0;
+    lastPage = event.timeStamp;
+    advance(direction);
+  };
+  element.addEventListener("wheel", wheel, { passive: false });
+  return () => element.removeEventListener("wheel", wheel);
 }
 
 export function usePresentationPlane(

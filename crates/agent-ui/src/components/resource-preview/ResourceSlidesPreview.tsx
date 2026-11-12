@@ -11,15 +11,10 @@ import {
 import { flushSync } from "react-dom";
 import { ChevronRight, LayoutGrid, PanelLeft, Play, SquareMousePointer, X } from "../IconSet";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
+import { LabelTooltip } from "../ui/label-tooltip";
 import { Popover, PopoverContent, PopoverTitle } from "../ui/popover";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import type { DocumentRegion } from "./docxReaderDocument";
-import {
-  presentationGridGeometry,
-  type PresentationZoomAnchor,
-  usePresentationPan,
-  usePresentationPlane,
-} from "./presentationViewport";
 import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewScrollArea } from "./PreviewScrollArea";
@@ -29,7 +24,17 @@ import {
   PreviewZoomControl,
   previewPageKey,
 } from "./PreviewToolbar";
-import { boundedPreviewScale } from "./previewGeometry";
+import {
+  animatePresentationCamera,
+  bindPresentationPageWheel,
+  centerPresentationCamera,
+  type PresentationCamera,
+  type PresentationZoomAnchor,
+  presentationGridGeometry,
+  presentationGridSlideCenter,
+  usePresentationPan,
+  usePresentationPlane,
+} from "./presentationViewport";
 import { createResourcePreviewWorker } from "./previewWorkerClient";
 import type { PreviewWorkerResult, SlideRevisionMetadata } from "./previewWorkerProtocol";
 import {
@@ -46,10 +51,14 @@ type SlidePoint = { x: number; y: number };
 type SlideElement = SlideRevisionMetadata["elements"][number];
 const SLIDE_COACHMARK = "zeroagent.reader.slides.annotation-intro";
 const SLIDE_DRAG_DISTANCE = 6;
+const SLIDE_FIT_MARGIN = 24;
+const SLIDE_PIXEL_GRID_SCALE = 6;
 type SlideAnnotation = {
   page: number;
   slide?: SlideRevisionMetadata;
+  aspectRatio: number;
   enabled: boolean;
+  interactive?: boolean;
   marks: readonly DocumentRevisionComment[];
   selection: RevisionSelection | null;
   candidate: RevisionSelection | null;
@@ -154,7 +163,9 @@ function slideElementOffset(
 function SlideAnnotationLayer({
   page,
   slide,
+  aspectRatio,
   enabled,
+  interactive = true,
   marks,
   selection,
   candidate,
@@ -195,7 +206,7 @@ function SlideAnnotationLayer({
   }
   function renderRegion(
     region: DocumentRegion,
-    state: "hover" | "area" | "candidate" | "selected" | "contained",
+    state: "hover" | "area" | "candidate" | "selected" | "contained" | "marked",
     rotation?: number,
     key?: string,
   ) {
@@ -216,7 +227,7 @@ function SlideAnnotationLayer({
       />
     );
   }
-  const chosen = selection?.page === page ? selection : candidate;
+  const chosen = interactive ? (selection ?? candidate) : null;
   const target = chosen?.target?.kind === "slide" ? chosen.target : undefined;
   const bounds = target?.element?.bounds ?? chosen?.region;
   const anchor = target?.point;
@@ -225,7 +236,7 @@ function SlideAnnotationLayer({
     : (slide?.elements.filter((element) => target?.elementIds?.includes(element.id)) ?? []);
   return (
     <>
-      {
+      {interactive && (
         <button
           ref={surface}
           type="button"
@@ -237,6 +248,7 @@ function SlideAnnotationLayer({
           }
           style={{ cursor: enabled ? COMMENT_CURSOR : hovered ? "pointer" : undefined }}
           data-slide-key-target=""
+          data-slide-annotation-surface={enabled ? "annotate" : "browse"}
           onPointerDown={(event) => {
             if (event.button !== 0 || !event.isPrimary) return;
             if (selection && !onDismissSelection()) return;
@@ -308,7 +320,7 @@ function SlideAnnotationLayer({
             }
           }}
         />
-      }
+      )}
       {enabled && area ? renderRegion(area, "area") : null}
       {bounds
         ? renderRegion(bounds, selection ? "selected" : "candidate", target?.element?.rotation)
@@ -324,6 +336,7 @@ function SlideAnnotationLayer({
           variant="outline"
           size="sm"
           className="za-slide-region-action"
+          data-slide-annotation-control=""
           data-below={bounds.top < 0.12}
           tooltip="提出修改请求"
           style={{
@@ -347,25 +360,50 @@ function SlideAnnotationLayer({
         </Button>
       ) : null}
       {marks.map((mark) => {
-        const point = mark.target?.kind === "slide" ? mark.target.point : undefined;
-        if (!point) return null;
+        const target = mark.target?.kind === "slide" ? mark.target : undefined;
+        const region = target?.element?.bounds ?? mark.region;
+        const rotation = target?.element?.rotation ?? 0;
+        const angle = (rotation * Math.PI) / 180;
+        const point =
+          region?.width && region.height
+            ? {
+                x:
+                  region.left +
+                  (region.width * (1 + Math.cos(angle))) / 2 +
+                  (region.height * Math.sin(angle)) / (2 * aspectRatio),
+                y:
+                  region.top +
+                  (region.height * (1 - Math.cos(angle))) / 2 +
+                  (region.width * Math.sin(angle) * aspectRatio) / 2,
+              }
+            : target?.point;
+        if (!point || selection?.id === mark.block) return null;
         return (
-          <Button
-            key={mark.id}
-            variant="ghost"
-            size="icon-sm"
-            className="absolute -translate-y-1/2 -translate-x-1/2 rounded-full hover:bg-transparent"
-            style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
-            aria-label="编辑幻灯片批注"
-            tooltip={mark.comment}
-            onClick={() => onEdit(mark.id)}
-          >
-            <span
-              aria-hidden="true"
-              className="size-6 bg-contain bg-center bg-no-repeat"
-              style={{ backgroundImage: COMMENT_PIN }}
+          <span key={mark.id}>
+            {region && renderRegion(region, "marked", rotation)}
+            <LabelTooltip
+              label={mark.comment}
+              side="top"
+              contentClassName="za-slide-comment-preview"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="za-slide-comment-pin"
+                  data-slide-annotation-control=""
+                  style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
+                  aria-label="编辑幻灯片批注"
+                  onClick={() => onEdit(mark.id)}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="size-6 bg-contain bg-center bg-no-repeat"
+                    style={{ backgroundImage: COMMENT_PIN }}
+                  />
+                </Button>
+              }
             />
-          </Button>
+          </span>
         );
       })}
     </>
@@ -536,6 +574,7 @@ export default function ResourceSlidesPreview(
   const [grid, setGrid] = usePreviewReadingState("slideGrid", false);
   const [gridZoom, setGridZoom] = useState<PreviewZoom>("fit-page");
   const [gridSelection, setGridSelection] = useState<number | null>(null);
+  const [gridAnnotationSlide, setGridAnnotationSlide] = useState<RenderedSlide>();
   const zoomAnchor = useRef<PresentationZoomAnchor | null>(null);
   const [presenting, setPresenting] = useState(false);
   const [playbackVisible, setPlaybackVisible] = useState(false);
@@ -565,7 +604,10 @@ export default function ResourceSlidesPreview(
   const [slideFrame, setSlideFrame] = useState<HTMLDivElement | null>(null);
   const gridRoot = useRef<HTMLDivElement>(null);
   const rail = useRef<HTMLElement>(null);
-  const [maxPercent, setMaxPercent] = useState<number>();
+  const gridEntry = useRef<{ page: number; frame?: DOMRect } | null>(null);
+  const gridExit = useRef<((page: number, done: () => void) => void) | null>(null);
+  const revealGridComment = useRef<((page: number, point: SlidePoint) => void) | null>(null);
+  const gridLeaving = useRef(false);
   const [actualPercent, setActualPercent] = useState(100);
   const client = useRef<ReturnType<typeof createResourcePreviewWorker> | null>(null);
   const slideCache = useRef<ReturnType<typeof createSlideCache> | null>(null);
@@ -575,15 +617,22 @@ export default function ResourceSlidesPreview(
   const registerEscapeHandler = useContext(PreviewToolbarMount)?.registerEscapeHandler;
   useLayoutEffect(() => {
     if (layout.current) {
-      setTopInset(Number.parseFloat(getComputedStyle(layout.current).getPropertyValue("--za-reader-top-inset")) || 0);
+      setTopInset(
+        Number.parseFloat(
+          getComputedStyle(layout.current).getPropertyValue("--za-reader-top-inset"),
+        ) || 0,
+      );
     }
   }, [layout, pane.width]);
 
   const gridSize = presentationGridGeometry(count, rendered ?? { width: 1600, height: 900 });
-  const gridFitScale = Math.min(
-    1,
-    Math.max(1, pane.width - 32) / Math.max(1, gridSize.width),
-    Math.max(1, pane.height - topInset - 32) / Math.max(1, gridSize.height),
+  const gridFitScale = Math.max(
+    0.02,
+    Math.min(
+      1,
+      Math.max(1, pane.width - 192) / Math.max(1, gridSize.width),
+      Math.max(1, pane.height - topInset - 192) / Math.max(1, gridSize.height),
+    ),
   );
   const gridScale = typeof gridZoom === "number" ? gridZoom / 100 : gridFitScale;
   useEffect(() => {
@@ -663,36 +712,120 @@ export default function ResourceSlidesPreview(
     }
   }
 
+  const leftInset = count ? (railPinned && !railOverlay ? 174 : 30) : 0;
+
+  useEffect(() => {
+    if (!grid || !includeAnnotations || gridSelection === null || gridSelection === rendered?.page)
+      return;
+    let active = true;
+    void slideCache.current
+      ?.read(gridSelection)
+      .then((result) => {
+        if (active) setGridAnnotationSlide(result);
+      })
+      .catch(() => {
+        if (active) setGridAnnotationSlide(undefined);
+      });
+    return () => {
+      active = false;
+    };
+  }, [grid, gridSelection, includeAnnotations, rendered]);
+
+  function selectGridPage(target: number | null) {
+    if (target === null && selection && !dismissSelectionRef.current?.()) return;
+    setGridSelection(target);
+    setCandidate(null);
+  }
+
+  function annotationForPage(number: number, interactive = true): SlideAnnotation | undefined {
+    if (!includeAnnotations) return;
+    const source =
+      rendered?.page === number
+        ? rendered
+        : gridAnnotationSlide?.page === number
+          ? gridAnnotationSlide
+          : undefined;
+    const pageMarks = marks.filter((mark) => mark.page === number);
+    interactive = interactive && !!source;
+    if (!interactive && !pageMarks.length) return;
+    return {
+      page: number,
+      slide: source?.revision,
+      aspectRatio: rendered ? rendered.width / rendered.height : 1,
+      enabled: annotating,
+      interactive,
+      marks: pageMarks,
+      selection: selection?.page === number ? selection : null,
+      candidate: candidate?.page === number ? candidate : null,
+      onCandidate: setCandidate,
+      onDismissSelection: () => dismissSelectionRef.current?.() ?? false,
+      onEdit: (id) => editRef.current?.(id),
+      onPick: (item) => {
+        assertCurrent();
+        setAnnotating(true);
+        setSelection(item);
+      },
+    };
+  }
+
+  function focusSlideCanvas() {
+    requestAnimationFrame(() => {
+      layout.current
+        ?.querySelector<HTMLElement>(".za-preview-slide-grid,.za-preview-slide-scroll")
+        ?.focus({ preventScroll: true });
+    });
+  }
+
   function toggleGrid() {
+    if (!rendered || gridLeaving.current) return;
     setCandidate(null);
     setRailHovered(false);
     zoomAnchor.current = null;
-    if (grid) {
-      let target = gridSelection ?? page;
-      const view = gridRoot.current;
-      if (view && gridZoom !== "fit-page") {
-        const viewport = view.getBoundingClientRect();
-        const x = viewport.left + viewport.width / 2;
-        const y = viewport.top + (viewport.height + topInset) / 2;
-        let nearest = Infinity;
-        for (const tile of view.querySelectorAll<HTMLElement>("[data-grid-slide]")) {
-          const rect = tile.querySelector(".za-preview-slide-cover")?.getBoundingClientRect();
-          if (!rect) continue;
-          const distance = Math.hypot(x - rect.left - rect.width / 2, y - rect.top - rect.height / 2);
-          if (distance >= nearest) continue;
-          nearest = distance;
-          target = Number(tile.dataset.gridSlide);
-        }
-      }
-      void navigate(target);
-    } else {
-      setGridZoom("fit-page");
+    if (!grid) {
+      const frame = slideFrame?.getBoundingClientRect();
+      gridEntry.current = { page, frame };
+      const entryScale = Math.min(64, Math.max(0.02, (pane.width - 96) / rendered.width / 2));
+      setGridZoom(pane.width ? entryScale * 100 : "fit-page");
       setGridSelection(page);
+      setGrid(true);
+      focusSlideCanvas();
+      return;
     }
-    setGrid(!grid);
-    requestAnimationFrame(() => {
-      layout.current?.querySelector<HTMLElement>(".za-preview-slide-grid,.za-preview-slide-scroll")?.focus({ preventScroll: true });
-    });
+    const view = gridRoot.current;
+    let target = gridSelection ?? page;
+    if (view?.clientWidth) {
+      const viewport = view.getBoundingClientRect();
+      const x = viewport.left + viewport.width / 2;
+      const y = viewport.top + (viewport.height + topInset) / 2;
+      let nearest = Infinity;
+      for (const tile of view.querySelectorAll<HTMLElement>("[data-grid-slide]")) {
+        const rect = tile.querySelector(".za-preview-slide-cover")?.getBoundingClientRect();
+        if (!rect) continue;
+        const distance = Math.hypot(x - rect.left - rect.width / 2, y - rect.top - rect.height / 2);
+        if (distance >= nearest) continue;
+        nearest = distance;
+        target = Number(tile.dataset.gridSlide);
+      }
+    }
+    const destinationZoom = pane.width
+      ? Math.max(
+          10,
+          Math.min(1600, ((pane.width - leftInset - 2 * SLIDE_FIT_MARGIN) / rendered.width) * 100),
+        )
+      : zoom;
+    gridLeaving.current = true;
+    const loading = navigate(target);
+    const finish = () => {
+      void loading.then(() => {
+        setZoom(destinationZoom);
+        gridLeaving.current = false;
+        setGrid(false);
+        focusSlideCanvas();
+      });
+    };
+    if (gridExit.current && typeof destinationZoom === "number") {
+      gridExit.current(target, finish);
+    } else finish();
   }
 
   const handleEscape = useCallback(() => {
@@ -709,7 +842,10 @@ export default function ResourceSlidesPreview(
     } else return false;
     return true;
   }, [annotating, candidate, grid, gridSelection, railHovered, selection]);
-  useLayoutEffect(() => registerEscapeHandler?.(handleEscape), [handleEscape, registerEscapeHandler]);
+  useLayoutEffect(
+    () => registerEscapeHandler?.(handleEscape),
+    [handleEscape, registerEscapeHandler],
+  );
 
   useEffect(() => {
     const cache = slideCache.current;
@@ -733,8 +869,21 @@ export default function ResourceSlidesPreview(
     }
   }
 
-  function toggleRail() {
+  function keepRailOpen() {
     clearTimeout(railLeave.current);
+    railLeave.current = undefined;
+  }
+
+  function closeHoveredRail() {
+    if (!railHovered || railLeave.current !== undefined) return;
+    railLeave.current = setTimeout(() => {
+      railLeave.current = undefined;
+      setRailHovered(false);
+    }, 120);
+  }
+
+  function toggleRail() {
+    keepRailOpen();
     setRailHovered(false);
     setOutline(!railOpen);
     requestAnimationFrame(() => {
@@ -757,6 +906,23 @@ export default function ResourceSlidesPreview(
   );
   const nextSlide = playableSlides.find((number) => number > page);
   const previousSlide = playableSlides.filter((number) => number < page).at(-1);
+  const playbackWheel = useRef<(direction: number) => void>(() => {});
+  playbackWheel.current = (direction) => {
+    const target = direction > 0 ? nextSlide : previousSlide;
+    if (target !== undefined) void navigate(target);
+  };
+  const unbindPlaybackWheel = useRef<(() => void) | null>(null);
+  const attachPlaybackSurface = useCallback((element: HTMLDivElement | null) => {
+    unbindPlaybackWheel.current?.();
+    presentationSurface.current = element;
+    unbindPlaybackWheel.current = element
+      ? bindPresentationPageWheel(
+          element,
+          () => true,
+          (direction) => playbackWheel.current(direction),
+        )
+      : null;
+  }, []);
   const revealPlayback = useCallback(() => {
     clearTimeout(playbackTimeout.current);
     setPlaybackVisible(true);
@@ -800,9 +966,15 @@ export default function ResourceSlidesPreview(
 
   const resolveSelectionBounds = useCallback(
     (item: RevisionSelection) => {
-      const frame = slideFrame;
+      const frame = grid
+        ? gridSelection === item.page
+          ? gridRoot.current?.querySelector<HTMLElement>(
+              `[data-grid-annotation-frame="${item.page}"]`,
+            )
+          : null
+        : slideFrame;
       const view = frame?.closest("[data-scroll-viewport]");
-      if (!frame || !view || grid || busy || page !== item.page || !item.region) return;
+      if (!frame || !view || (!grid && (busy || page !== item.page)) || !item.region) return;
       const area = frame.getBoundingClientRect();
       const viewport = view.getBoundingClientRect();
       const { left, top, width, height } = item.region;
@@ -816,7 +988,7 @@ export default function ResourceSlidesPreview(
       const target = new DOMRect(x, fieldY, width * area.width, 0);
       return { target, viewport, observe: frame };
     },
-    [busy, grid, page, slideFrame],
+    [busy, grid, gridSelection, page, slideFrame],
   );
   useEffect(() => {
     if (busy || grid || !slideFrame || pendingMark?.page !== page) return;
@@ -871,7 +1043,7 @@ export default function ResourceSlidesPreview(
                 setCandidate(null);
                 if (annotating) exitRef.current?.();
                 else {
-                  setGrid(false);
+                  if (grid && gridSelection === null) selectGridPage(page);
                   setAnnotating(true);
                 }
               }}
@@ -900,11 +1072,14 @@ export default function ResourceSlidesPreview(
             value={grid ? gridZoom : zoom}
             onChange={grid ? setGridZoom : setZoom}
             minPercent={grid ? 2 : 10}
-            maxPercent={grid ? 200 : maxPercent}
+            maxPercent={grid ? 6400 : 1600}
             actualPercent={grid ? gridScale * 100 : actualPercent}
-            percentages={grid ? [5, 10, 15, 25, 50, 75, 100, 150, 200] : undefined}
+            percentages={[25, 50, 100, 200]}
+            zoomCurve="camera"
             gestureRoot={layout}
-            onZoomAnchor={(x, y) => { zoomAnchor.current = { x, y }; }}
+            onZoomAnchor={(x, y) => {
+              zoomAnchor.current = { x, y };
+            }}
             windowFitLabel={grid ? "适应网格" : paneWidth >= 420 ? "适应窗口" : undefined}
             fitWidth={false}
           />
@@ -953,8 +1128,22 @@ export default function ResourceSlidesPreview(
       <div
         ref={layout}
         className="za-preview-slides-layout relative"
+        onPointerMove={(event) => {
+          if (
+            event.pointerType === "mouse" &&
+            event.target instanceof Element &&
+            !event.target.closest(".za-preview-slide-navigation")
+          )
+            closeHoveredRail();
+        }}
         onKeyDown={(event) => {
-          if (event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing || !handleEscape()) return;
+          if (
+            event.key !== "Escape" ||
+            event.defaultPrevented ||
+            event.nativeEvent.isComposing ||
+            !handleEscape()
+          )
+            return;
           event.preventDefault();
           event.stopPropagation();
         }}
@@ -964,11 +1153,9 @@ export default function ResourceSlidesPreview(
             className="za-preview-slide-navigation"
             data-open={railOpen}
             data-overlay={railOverlay}
-            onPointerEnter={() => clearTimeout(railLeave.current)}
+            onPointerEnter={keepRailOpen}
             onPointerLeave={(event) => {
-              if (event.pointerType !== "mouse") return;
-              clearTimeout(railLeave.current);
-              railLeave.current = setTimeout(() => setRailHovered(false), 120);
+              if (event.pointerType === "mouse") closeHoveredRail();
             }}
           >
             {!railOpen && (
@@ -1073,9 +1260,15 @@ export default function ResourceSlidesPreview(
             count={count}
             slide={rendered}
             scale={gridScale}
-            topInset={gridZoom === "fit-page" ? topInset : 0}
+            topInset={topInset}
+            leftInset={leftInset}
+            fit={gridZoom === "fit-page"}
+            entry={gridEntry}
+            exit={gridExit}
+            reveal={revealGridComment}
             selected={gridSelection}
-            onSelect={setGridSelection}
+            onSelect={selectGridPage}
+            annotationForPage={annotationForPage}
             anchor={zoomAnchor}
             worker={client.current}
             assertCurrent={assertCurrent}
@@ -1095,36 +1288,17 @@ export default function ResourceSlidesPreview(
             onPage={(target) => void navigate(target)}
             assertCurrent={assertCurrent}
             onError={setError}
-            onMaxPercent={setMaxPercent}
             onScale={setActualPercent}
             frameRef={setSlideFrame}
-            fitLeftInset={railPinned && !railOverlay ? 174 : 0}
+            fitLeftInset={leftInset}
             fitTopInset={topInset}
+            fitMargin={SLIDE_FIT_MARGIN}
             anchor={zoomAnchor}
             onBlankClick={() => {
               setCandidate(null);
               if (selection) dismissSelectionRef.current?.();
             }}
-            annotation={
-              includeAnnotations
-                ? {
-                    page,
-                    slide: rendered?.revision,
-                    enabled: annotating,
-                    marks: marks.filter((mark) => mark.page === page),
-                    selection,
-                    candidate,
-                    onCandidate: setCandidate,
-                    onDismissSelection: () => dismissSelectionRef.current?.() ?? false,
-                    onEdit: (id) => editRef.current?.(id),
-                    onPick: (item) => {
-                      assertCurrent();
-                      setAnnotating(true);
-                      setSelection(item);
-                    },
-                  }
-                : undefined
-            }
+            annotation={annotationForPage(page)}
           />
         )}
         {includeAnnotations && (
@@ -1141,7 +1315,12 @@ export default function ResourceSlidesPreview(
             resolveSelectionBounds={resolveSelectionBounds}
             onNavigate={(_block, comment) => {
               if (comment?.target?.kind !== "slide") return;
-              setGrid(false);
+              if (grid) {
+                const { slide, point } = comment.target;
+                selectGridPage(slide);
+                if (point) revealGridComment.current?.(slide, point);
+                return;
+              }
               setPendingMark(comment);
               void navigate(comment.target.slide);
             }}
@@ -1155,7 +1334,7 @@ export default function ResourceSlidesPreview(
         }}
       >
         <DialogContent
-          ref={presentationSurface}
+          ref={attachPlaybackSurface}
           initialFocus={presentationSurface}
           finalFocus={playTrigger}
           layout="lightbox"
@@ -1306,21 +1485,23 @@ function SlideThumbnail({
   worker,
   root,
   observe = true,
-  pixelLimit = 320,
+  vector = false,
+  currentURL,
   assertCurrent,
 }: {
   index: number;
   worker: ReturnType<typeof createResourcePreviewWorker> | null;
   root: import("react").RefObject<HTMLElement | null>;
   observe?: boolean;
-  pixelLimit?: number;
+  vector?: boolean;
+  currentURL?: string;
   assertCurrent: () => void;
 }) {
   const host = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
   const [url, setURL] = useState("");
   useEffect(() => {
-    if (!host.current || visible || !observe) return;
+    if (!host.current || currentURL || (visible && !vector) || !observe) return;
     if (typeof IntersectionObserver === "undefined") {
       setVisible(true);
       return;
@@ -1329,16 +1510,16 @@ function SlideThumbnail({
       ([entry]) => {
         if (entry.isIntersecting) {
           setVisible(true);
-          observer.disconnect();
-        }
+          if (!vector) observer.disconnect();
+        } else if (vector) setVisible(false);
       },
       { root: root.current, rootMargin: "160px" },
     );
     observer.observe(host.current);
     return () => observer.disconnect();
-  }, [root, visible, observe]);
+  }, [root, visible, observe, vector, currentURL]);
   useEffect(() => {
-    if (!visible || !worker) {
+    if (!visible || !worker || currentURL) {
       setURL("");
       return;
     }
@@ -1349,7 +1530,9 @@ function SlideThumbnail({
       .then(async (result) => {
         assertCurrent();
         if (!active || !result.svg) return;
-        const thumbnail = await rasterSlideThumbnail(result.svg, () => active, pixelLimit);
+        const thumbnail = vector
+          ? new Blob([safeSlide(result.svg).svg], { type: "image/svg+xml" })
+          : await rasterSlideThumbnail(result.svg, () => active, 320);
         assertCurrent();
         if (!active || !thumbnail) return;
         owned = URL.createObjectURL(thumbnail);
@@ -1362,16 +1545,36 @@ function SlideThumbnail({
       active = false;
       if (owned) URL.revokeObjectURL(owned);
     };
-  }, [index, worker, visible, assertCurrent, pixelLimit]);
+  }, [index, worker, visible, assertCurrent, vector, currentURL]);
   return (
     <span ref={host} className="za-preview-slide-cover" aria-hidden="true">
-      {url ? <img src={url} alt="" /> : <span className="za-preview-cover-placeholder" />}
+      {currentURL || url ? (
+        <img src={currentURL || url} alt="" />
+      ) : (
+        <span className="za-preview-cover-placeholder" />
+      )}
     </span>
   );
 }
 
 function SlideOverview({
-  root, viewport, count, slide, scale, topInset, selected, onSelect, anchor, worker, assertCurrent,
+  root,
+  viewport,
+  count,
+  slide,
+  scale,
+  topInset,
+  leftInset,
+  fit,
+  entry,
+  exit,
+  reveal,
+  selected,
+  onSelect,
+  annotationForPage,
+  anchor,
+  worker,
+  assertCurrent,
 }: {
   root: RefObject<HTMLDivElement | null>;
   viewport: { width: number; height: number };
@@ -1379,58 +1582,340 @@ function SlideOverview({
   slide: RenderedSlide;
   scale: number;
   topInset: number;
+  leftInset: number;
+  fit: boolean;
+  entry: RefObject<{ page: number; frame?: DOMRect } | null>;
+  exit: RefObject<((page: number, done: () => void) => void) | null>;
+  reveal: RefObject<((page: number, point: SlidePoint) => void) | null>;
   selected: number | null;
   onSelect: (page: number | null) => void;
+  annotationForPage: (page: number, interactive: boolean) => SlideAnnotation | undefined;
   anchor: RefObject<PresentationZoomAnchor | null>;
   worker: ReturnType<typeof createResourcePreviewWorker> | null;
   assertCurrent: () => void;
 }) {
   const grid = presentationGridGeometry(count, slide);
-  const width = grid.width * scale;
-  const height = grid.height * scale;
-  const plane = usePresentationPlane(root, viewport, { width, height }, { left: 0, top: topInset }, anchor);
-  usePresentationPan(root, true);
+  const world = useRef<HTMLDivElement>(null);
+  const camera = useRef<PresentationCamera | null>(null);
+  const cancelAnimation = useRef<(() => void) | null>(null);
+  const previous = useRef({ viewport, scale, fit });
+  const drag = useRef<{
+    pointer: number;
+    x: number;
+    y: number;
+    origin: PresentationCamera;
+    moved: boolean;
+  } | null>(null);
+  const dragged = useRef(false);
+
+  const draw = useCallback(
+    (next: PresentationCamera, opacity = 1) => {
+      camera.current = next;
+      if (!world.current) return;
+      world.current.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.scale})`;
+      world.current.style.setProperty("--za-grid-scale", String(next.scale));
+      world.current.style.setProperty("--za-grid-progress", String(opacity));
+      root.current?.dispatchEvent(new Event("scroll"));
+    },
+    [root],
+  );
+
+  useLayoutEffect(() => {
+    const view = root.current;
+    if (!view || !world.current || world.current.hasAttribute("data-leaving")) return;
+    const starting = entry.current;
+    const before = previous.current;
+    const current = camera.current;
+    const center = { x: grid.width / 2, y: grid.height / 2 };
+    const rect = view.getBoundingClientRect();
+    const pointer = anchor.current;
+    anchor.current = null;
+    previous.current = { viewport, scale, fit };
+    if (starting) {
+      entry.current = null;
+      const point = presentationGridSlideCenter(starting.page, slide, grid);
+      const to = centerPresentationCamera(viewport, fit ? center : point, scale, topInset);
+      const from = starting.frame;
+      if (!from?.width || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        draw(to);
+      } else {
+        const k = from.width / slide.width;
+        const source = {
+          x: from.left - rect.left - (point.x - slide.width / 2) * k,
+          y: from.top - rect.top - (point.y - slide.height / 2) * k,
+          scale: k,
+        };
+        world.current.dataset.transitionPage = String(starting.page);
+        draw(source, 0);
+        cancelAnimation.current = animatePresentationCamera(source, to, point, draw, () => {
+          if (world.current) delete world.current.dataset.transitionPage;
+          cancelAnimation.current = null;
+        });
+      }
+      return;
+    }
+    cancelAnimation.current?.();
+    cancelAnimation.current = null;
+    delete world.current.dataset.transitionPage;
+    if (!current || fit) {
+      draw(centerPresentationCamera(viewport, center, scale, topInset));
+      return;
+    }
+    const x = pointer ? pointer.x - rect.left : viewport.width / 2;
+    const y = pointer ? pointer.y - rect.top : (viewport.height + topInset) / 2;
+    const oldX = pointer ? x : before.viewport.width / 2;
+    const oldY = pointer ? y : (before.viewport.height + topInset) / 2;
+    draw({
+      x: x - ((oldX - current.x) / current.scale) * scale,
+      y: y - ((oldY - current.y) / current.scale) * scale,
+      scale,
+    });
+  }, [
+    anchor,
+    draw,
+    entry,
+    fit,
+    grid.width,
+    grid.height,
+    root,
+    scale,
+    slide.width,
+    slide.height,
+    topInset,
+    viewport,
+  ]);
+
+  useLayoutEffect(() => {
+    exit.current = (page, done) => {
+      const current = camera.current;
+      const layer = world.current;
+      cancelAnimation.current?.();
+      cancelAnimation.current = null;
+      if (
+        !current ||
+        !layer ||
+        !viewport.width ||
+        !viewport.height ||
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      ) {
+        done();
+        return;
+      }
+      const point = presentationGridSlideCenter(page, slide, grid);
+      const widthScale = Math.max(
+        0.1,
+        Math.min(16, (viewport.width - leftInset - 2 * SLIDE_FIT_MARGIN) / slide.width),
+      );
+      const destination = centerPresentationCamera(
+        viewport,
+        point,
+        widthScale,
+        topInset,
+        leftInset,
+      );
+      layer.dataset.transitionPage = String(page);
+      layer.dataset.leaving = "";
+      layer.querySelector("[data-transition-focus]")?.removeAttribute("data-transition-focus");
+      layer.querySelector(`[data-grid-slide="${page}"]`)?.setAttribute("data-transition-focus", "");
+      cancelAnimation.current = animatePresentationCamera(
+        current,
+        destination,
+        point,
+        (next, progress) => draw(next, 1 - progress),
+        done,
+      );
+    };
+    return () => {
+      exit.current = null;
+    };
+  });
+  useLayoutEffect(() => {
+    reveal.current = (page, point) => {
+      const current = camera.current;
+      if (!current) return;
+      const center = presentationGridSlideCenter(page, slide, grid);
+      const x = center.x + (point.x - 0.5) * slide.width;
+      const y = center.y + (point.y - 0.5) * slide.height;
+      const px = current.x + x * current.scale;
+      const py = current.y + y * current.scale;
+      if (
+        px >= 24 &&
+        px <= viewport.width - 24 &&
+        py >= topInset + 24 &&
+        py <= viewport.height - 100
+      )
+        return;
+      cancelAnimation.current?.();
+      if (world.current) delete world.current.dataset.transitionPage;
+      draw(centerPresentationCamera(viewport, { x, y }, current.scale, topInset));
+    };
+    return () => {
+      reveal.current = null;
+    };
+  });
+  useLayoutEffect(() => () => cancelAnimation.current?.(), []);
+  useLayoutEffect(() => {
+    const element = root.current;
+    if (!element) return;
+    const pan = (event: WheelEvent) => {
+      const current = camera.current;
+      if (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.defaultPrevented ||
+        !current ||
+        world.current?.hasAttribute("data-leaving")
+      )
+        return;
+      event.preventDefault();
+      cancelAnimation.current?.();
+      if (world.current) delete world.current.dataset.transitionPage;
+      const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1;
+      draw({
+        ...current,
+        x: current.x - (event.shiftKey ? event.deltaY : event.deltaX) * factor,
+        y: current.y - (event.shiftKey ? 0 : event.deltaY) * factor,
+      });
+    };
+    element.addEventListener("wheel", pan, { passive: false });
+    return () => element.removeEventListener("wheel", pan);
+  }, [draw, root]);
+
   return (
-    <PreviewScrollArea
+    <div
       ref={root}
       className="za-preview-slide-grid"
+      role="region"
       aria-label="幻灯片网格"
-      tabIndex={0}
+      data-scroll-viewport=""
+      tabIndex={-1}
+      onPointerDown={(event) => {
+        dragged.current = false;
+        if (!event.isPrimary) {
+          drag.current = null;
+          delete event.currentTarget.dataset.panning;
+          return;
+        }
+        if (
+          (event.button !== 0 && event.button !== 1) ||
+          !camera.current ||
+          world.current?.hasAttribute("data-leaving")
+        )
+          return;
+        if (
+          event.button === 0 &&
+          event.target instanceof Element &&
+          event.target.closest(
+            '[data-slide-annotation-surface="annotate"],[data-slide-annotation-control]',
+          )
+        )
+          return;
+        if (event.button === 1) event.preventDefault();
+        drag.current = {
+          pointer: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          origin: camera.current,
+          moved: false,
+        };
+      }}
+      onPointerMove={(event) => {
+        const gesture = drag.current;
+        if (gesture?.pointer !== event.pointerId) return;
+        const dx = event.clientX - gesture.x,
+          dy = event.clientY - gesture.y;
+        if (!gesture.moved && Math.hypot(dx, dy) < 5) return;
+        if (!gesture.moved) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          event.currentTarget.dataset.panning = "";
+          cancelAnimation.current?.();
+          if (world.current) delete world.current.dataset.transitionPage;
+          gesture.moved = true;
+          dragged.current = true;
+        }
+        draw({ ...gesture.origin, x: gesture.origin.x + dx, y: gesture.origin.y + dy });
+      }}
+      onPointerUp={(event) => {
+        drag.current = null;
+        delete event.currentTarget.dataset.panning;
+      }}
+      onPointerCancel={(event) => {
+        drag.current = null;
+        delete event.currentTarget.dataset.panning;
+      }}
+      onClickCapture={(event) => {
+        if (dragged.current && event.detail > 0) {
+          event.stopPropagation();
+          dragged.current = false;
+        }
+      }}
       onClick={(event) => {
-        if (event.target instanceof Element && !event.target.closest("[data-grid-slide]")) onSelect(null);
+        if (event.target instanceof Element && !event.target.closest("[data-grid-slide]"))
+          onSelect(null);
       }}
     >
-      <div className="za-preview-slide-plane" style={{ width: plane.width, height: plane.height }}>
-        <div
-          className="za-preview-slide-grid-pages"
-          style={{
-            left: plane.left, top: plane.top, width, height,
-            gap: grid.gap * scale,
-            gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))`,
-            gridAutoRows: (slide.height + grid.labelHeight) * scale,
-          }}
-        >
-          {Array.from({ length: count }, (_, index) => index + 1).map((number) => (
-            <button
-              type="button"
+      <div
+        ref={world}
+        className="za-preview-slide-grid-pages"
+        style={{
+          width: grid.width,
+          height: grid.height,
+          gap: grid.gap,
+          gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))`,
+          gridAutoRows: slide.height + grid.labelHeight,
+        }}
+      >
+        {Array.from({ length: count }, (_, index) => index + 1).map((number) => {
+          const active = number === selected;
+          const annotation = annotationForPage(number, active);
+          return (
+            <div
               key={number}
               data-grid-slide={number}
-              aria-label={`选中第 ${number} 页`}
-              aria-pressed={number === selected}
-              onClick={() => onSelect(number)}
+              data-transition-focus={entry.current?.page === number || active ? "" : undefined}
             >
-              <span className="za-preview-grid-number" style={{
-                height: grid.labelHeight * scale,
-                fontSize: Math.min(16, Math.max(7, 48 * scale)),
-              }}>
-                {number}
+              <span className="za-preview-grid-number" style={{ height: grid.labelHeight }}>
+                <span>{number}</span>
               </span>
-              <SlideThumbnail index={number - 1} worker={worker} root={root} pixelLimit={960} assertCurrent={assertCurrent} />
-            </button>
-          ))}
-        </div>
+              <div className="za-preview-grid-frame" data-grid-annotation-frame={number}>
+                <SlideThumbnail
+                  index={number - 1}
+                  worker={worker}
+                  root={root}
+                  vector
+                  currentURL={number === slide.page ? slide.url : undefined}
+                  assertCurrent={assertCurrent}
+                />
+                <button
+                  type="button"
+                  className="za-preview-grid-select"
+                  aria-label={`选中第 ${number} 页`}
+                  aria-pressed={active}
+                  tabIndex={annotation?.interactive ? -1 : 0}
+                  onClick={(event) => {
+                    onSelect(number);
+                    if (event.detail === 0 && annotationForPage(number, true)) {
+                      const tile = event.currentTarget.parentElement;
+                      requestAnimationFrame(() => {
+                        tile
+                          ?.querySelector<HTMLElement>("[data-slide-annotation-surface]")
+                          ?.focus({ preventScroll: true });
+                      });
+                    }
+                  }}
+                />
+                {annotation && (
+                  <SlideAnnotationLayer
+                    key={String(annotation.enabled && annotation.interactive)}
+                    {...annotation}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </PreviewScrollArea>
+    </div>
   );
 }
 
@@ -1449,13 +1934,13 @@ function SlideImage({
   onBlankClick,
   assertCurrent,
   onError,
-  onMaxPercent,
   onScale,
   frameRef,
   annotation,
   presentation,
   fitLeftInset = 0,
   fitTopInset = 0,
+  fitMargin = 0,
   anchor,
 }: PreviewRecovery & {
   image?: RenderedSlide;
@@ -1470,32 +1955,59 @@ function SlideImage({
   onBlankClick?: () => void;
   assertCurrent: () => void;
   onError: (message: string) => void;
-  onMaxPercent?: (percent: number) => void;
   onScale?: (percent: number) => void;
   frameRef?: RefCallback<HTMLDivElement>;
   annotation?: SlideAnnotation;
   presentation?: boolean;
   fitLeftInset?: number;
   fitTopInset?: number;
+  fitMargin?: number;
   anchor?: RefObject<PresentationZoomAnchor | null>;
 }) {
   const { container, viewport } = usePreviewViewport();
   usePresentationPan(container, false);
-  useEffect(() => {
-    if (image) onMaxPercent?.(boundedPreviewScale(4, image) * 100);
-  }, [image, onMaxPercent]);
   const fit = typeof zoom !== "number";
-  const scale = image ? boundedPreviewScale(
-    fit ? Math.min(
-      Math.max(1, (viewport.width || 640) - fitLeftInset) / image.width,
-      Math.max(1, (viewport.height || 480) - fitTopInset) / image.height,
-    ) : zoom / 100,
-    image,
-  ) : 1;
-  const plane = usePresentationPlane(container, viewport, {
-    width: (image?.width ?? 0) * scale,
-    height: (image?.height ?? 0) * scale,
-  }, { left: fit ? fitLeftInset : 0, top: fit ? fitTopInset : 0 }, anchor);
+  const scale = image
+    ? fit
+      ? Math.min(
+          Math.max(1, (viewport.width || 640) - fitLeftInset - 2 * fitMargin) / image.width,
+          Math.max(1, (viewport.height || 480) - fitTopInset - 2 * fitMargin) / image.height,
+        )
+      : Math.max(0.1, Math.min(16, zoom / 100))
+    : 1;
+  const wheelState = useRef({ image, page, count, onPage, scale });
+  wheelState.current = { image, page, count, onPage, scale };
+  useLayoutEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    return bindPresentationPageWheel(
+      element,
+      () => {
+        const state = wheelState.current;
+        return (
+          !!state.onPage &&
+          !!state.image &&
+          state.image.width * state.scale <= element.clientWidth + 0.5 &&
+          state.image.height * state.scale <= element.clientHeight + 0.5
+        );
+      },
+      (direction) => {
+        const state = wheelState.current;
+        const target = state.page + direction;
+        if (target >= 1 && target <= state.count) state.onPage?.(target);
+      },
+    );
+  }, [container]);
+  const plane = usePresentationPlane(
+    container,
+    viewport,
+    {
+      width: (image?.width ?? 0) * scale,
+      height: (image?.height ?? 0) * scale,
+    },
+    { left: fit ? fitLeftInset : 0, top: fit ? fitTopInset : 0 },
+    anchor,
+  );
   useEffect(() => {
     onScale?.(scale * 100);
   }, [scale, onScale]);
@@ -1549,8 +2061,15 @@ function SlideImage({
           onCancel={onCancel}
         />
       ) : (
-        <div className="za-preview-slide-plane" style={{ width: plane.width, height: plane.height }}>
-          <div ref={frameRef} data-slide-frame="" style={{ position: "absolute", left: plane.left, top: plane.top }}>
+        <div
+          className="za-preview-slide-plane"
+          style={{ width: plane.width, height: plane.height }}
+        >
+          <div
+            ref={frameRef}
+            data-slide-frame=""
+            style={{ position: "absolute", left: plane.left, top: plane.top }}
+          >
             <img
               src={image.url}
               alt={`${name} · 第 ${image.page} 页`}
@@ -1570,9 +2089,21 @@ function SlideImage({
               onError={() => onError("此页未能显示，请下载原件查看。")}
             />
             {annotation && image.page === page && (
-              <SlideAnnotationLayer key={`${page}:${annotation.enabled}`} {...annotation} />
+              <div className="za-preview-slide-annotations">
+                <SlideAnnotationLayer key={`${page}:${annotation.enabled}`} {...annotation} />
+              </div>
             )}
           </div>
+          {!presentation && scale >= SLIDE_PIXEL_GRID_SCALE && (
+            <div
+              aria-hidden="true"
+              className="za-preview-slide-pixel-grid"
+              style={{
+                backgroundSize: `${scale}px ${scale}px`,
+                backgroundPosition: `${plane.left}px ${plane.top}px`,
+              }}
+            />
+          )}
         </div>
       )}
     </PreviewScrollArea>

@@ -86,6 +86,8 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
       send({
         type: "zoom",
         delta: Math.max(-100, Math.min(100, event.deltaY * (event.deltaMode === 1 ? 16 : 1))),
+        x: event.clientX,
+        y: event.clientY,
       });
     },
     { passive: false },
@@ -101,7 +103,7 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
     send(
       event.key === "0"
         ? { type: "zoom-reset" }
-        : { type: "zoom", delta: event.key === "-" ? 60 : -60 },
+        : { type: "zoom", delta: event.key === "-" ? 18 : -18 },
     );
   });
   let pinchDistance = 0;
@@ -130,7 +132,9 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
       if (distance > 0)
         send({
           type: "zoom",
-          delta: Math.max(-100, Math.min(100, Math.log(pinchDistance / distance) / 0.003)),
+          delta: Math.max(-100, Math.min(100, Math.log(pinchDistance / distance) / 0.01)),
+          x: (event.touches[0].clientX + event.touches[1].clientX) / 2,
+          y: (event.touches[0].clientY + event.touches[1].clientY) / 2,
         });
       pinchDistance = distance;
     },

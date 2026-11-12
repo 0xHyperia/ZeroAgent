@@ -216,7 +216,8 @@ test("PDF page rendering ignores an older page resolution after a newer jump and
   assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready,"true");
   assert.equal(app.host.querySelector(".za-preview-frame-pending"),null);
   await app.zoom("PDF 缩放",200);
-  assert.equal(renders.at(-1).width,1600);
+  assert.equal(app.host.querySelector('[aria-label="PDF 第 1 页"]').style.visibility,"visible");
+  await app.wait(()=>renders.at(-1).width===1600);
   await app.key(await app.input("页码","1"),"Enter");assert.equal(app.host.querySelector(".za-preview-pdf").getAttribute("aria-busy"),"false");
   await app.key(await app.input("页码","3"),"Enter");await app.key(await app.input("页码","2"),"Enter");
   await app.env.act(async()=>{pending.get(2)();await flush();});assert.equal(app.host.querySelector('[aria-label="PDF 第 2 页"]').style.visibility,"visible");
@@ -287,8 +288,8 @@ test("PPT rapid page jumps preserve only the newest result while navigation stay
   await app.env.act(async()=>{pending.get(2)();await flush();});await app.wait(()=>!!app.host.querySelector("img"));
   await app.env.act(async()=>{pending.get(3)();await flush();});assert.match(app.host.querySelector("img").alt,/第 2 页/);
   await app.key(canvas,"ArrowLeft");assert.equal(canvas.querySelector("img").src,firstURL);
-  await app.zoom("幻灯片缩放",300);
-  assert.equal(parseFloat(app.host.querySelector("img").style.width),4096);assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"256%");
+  await app.zoom("幻灯片缩放",200);
+  assert.equal(parseFloat(app.host.querySelector("img").style.width),3200);assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"200%");
 });
 
 test("read-only sheet snapshots restore a reopened immutable resource and retire on descriptor or account changes",async t=>{
@@ -301,10 +302,10 @@ test("read-only sheet snapshots restore a reopened immutable resource and retire
   await app.wait(()=>!!app.host.querySelector("table"));await app.input("定位单元格","B2");
   await app.env.act(async()=>{app.host.querySelector('.za-sheet-formula-bar form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await flush();});
   assert.equal(app.host.querySelector('[data-cell="B2"]').getAttribute("aria-selected"),"true");
-  await app.zoom("表格缩放",150);
+  await app.zoom("表格缩放",200);
   assert.equal(app.host.querySelector('[role="grid"]').getAttribute("aria-readonly"),"true");assert.equal(app.host.querySelector("[contenteditable]"),null);
   await render("account-a",false);await render();
-  assert.equal(app.host.querySelector('.za-preview-sheets [aria-pressed="true"]').textContent,"实际");assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"B2");assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"150%");assert.equal(app.host.querySelector('input[aria-label="公式栏"]').value,"120");
+  assert.equal(app.host.querySelector('.za-preview-sheets [aria-pressed="true"]').textContent,"实际");assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"B2");assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"200%");assert.equal(app.host.querySelector('input[aria-label="公式栏"]').value,"120");
   assert.ok(requests.some(item=>item.type==="sheet"&&item.name==="实际"));
   await render("account-a",true,{...resource,name:"另一名称.xlsx"});assert.equal(app.host.querySelector('input[aria-label="定位单元格"]').value,"A1");
   await render("account-b");assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"100%");
@@ -320,19 +321,19 @@ test("slide grid, presentation keyboard and return preserve the reader page and 
  const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceSlidesPreview.tsx").default;
  await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),name:"deck.pptx",assertCurrent(){}}));
  await app.wait(()=>!!app.host.querySelector("img"));
- await app.zoom("幻灯片缩放",75);
+ await app.zoom("幻灯片缩放",100);
  await app.env.act(async()=>app.host.querySelector('button[aria-label="网格视图"]').click());
  const grid=app.host.querySelector('.za-preview-slide-grid');
  const gridPages=grid.querySelector('.za-preview-slide-grid-pages');
  assert.equal(grid.querySelectorAll('button').length,4);
  assert.equal(gridPages.style.gridTemplateColumns,"repeat(4, minmax(0, 1fr))");
- const fitWidth=parseFloat(gridPages.style.width);
+ const fitTransform=gridPages.style.transform;
  await app.zoom("幻灯片缩放",50);
- assert.equal(parseFloat(gridPages.style.width),3380);
- assert.ok(parseFloat(gridPages.style.width)>fitWidth);
+ assert.equal(parseFloat(gridPages.style.width),6760);
+ assert.match(gridPages.style.transform,/scale\(0\.5\)$/);
  await app.env.act(async()=>{app.host.querySelector('button[aria-label="幻灯片缩放"]').click();await flush();});
  await app.env.act(async()=>{[...document.querySelectorAll('[role="menuitemradio"]')].find(el=>el.textContent==="适应网格").click();await flush();});
- assert.equal(parseFloat(gridPages.style.width),fitWidth);
+ assert.equal(gridPages.style.transform,fitTransform);
  const tile=grid.querySelector('button[aria-label="选中第 2 页"]');
  await app.env.act(async()=>{tile.click();await flush();});
  assert.equal(tile.getAttribute("aria-pressed"),"true");
@@ -343,7 +344,7 @@ test("slide grid, presentation keyboard and return preserve the reader page and 
  await app.env.act(async()=>tile.click());
  await app.env.act(async()=>{app.host.querySelector('button[aria-label="网格视图"]').click();await flush();});
  await app.wait(()=>/第 2 页/.test(app.host.querySelector('img')?.alt??""));
- assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"75%");
+ assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"100%");
  const play=app.host.querySelector('button[aria-label="播放幻灯片"]');
  play.focus();
  await app.env.act(async()=>{play.click();await flush();});
@@ -419,6 +420,36 @@ test("reader zoom consumes only modified gestures inside its own surface and rel
  const key=new window.KeyboardEvent('keydown',{key:'0',ctrlKey:true,bubbles:true,cancelable:true});surface.dispatchEvent(key);assert.equal(key.defaultPrevented,true);assert.equal(changes.at(-1),'fit-width');
  const field=surface.appendChild(document.createElement('input'));const typing=new window.KeyboardEvent('keydown',{key:'=',ctrlKey:true,bubbles:true,cancelable:true});field.dispatchEvent(typing);assert.equal(typing.defaultPrevented,false);
  dispose();assert.equal(wheel(surface,true),false);
+});
+
+test("presentation wheel accumulates vertical movement, ignores zoom gestures and yields to overflow", async (t) => {
+  const app = await setup(t);
+  const { bindPresentationPageWheel } = app.env.loadModule("@liveagent/ui/components/resource-preview/presentationViewport.ts");
+  const { nextReaderZoom } = app.env.loadModule("@liveagent/ui/components/resource-preview/readerZoom.ts");
+  const view = app.host.appendChild(document.createElement("div"));
+  const pages = [];
+  let fits = true;
+  const cleanup = bindPresentationPageWheel(view, () => fits, (direction) => pages.push(direction));
+  function wheel(timeStamp, init) {
+    const event = new window.WheelEvent("wheel", { bubbles: true, cancelable: true, ...init });
+    Object.defineProperty(event, "timeStamp", { value: timeStamp });
+    view.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+  assert.equal(wheel(10, { deltaY: 20 }), true);
+  assert.deepEqual(pages, []);
+  assert.equal(wheel(20, { deltaY: 21 }), true);
+  assert.equal(wheel(30, { deltaY: 80 }), true);
+  assert.deepEqual(pages, [1]);
+  assert.equal(wheel(50, { deltaY: -3, deltaMode: 1 }), true);
+  assert.equal(wheel(60, { deltaY: -80, ctrlKey: true }), false);
+  fits = false;
+  assert.equal(wheel(70, { deltaY: 60 }), false);
+  assert.deepEqual(pages, [1, -1]);
+  cleanup();
+  assert.equal(nextReaderZoom(100, -50, 1600, 10, "camera"), 200);
+  assert.equal(nextReaderZoom(100, -80, 800, 30, "pdf"), 100 * Math.exp(0.1));
+  assert.equal(nextReaderZoom(100, -10, 400, 10, "document"), 100 * Math.exp(0.1));
 });
 
 test("reader pinch survives React zoom updates and leaves ordinary touch scrolling alone",async t=>{

@@ -441,7 +441,6 @@ export function WorkspaceFileHeader({
   viewAction,
   comparisonActions,
   fileTree,
-  floating,
   setFormatTools,
   onOpenFile,
   onError,
@@ -456,7 +455,6 @@ export function WorkspaceFileHeader({
   viewAction?: ReactNode;
   comparisonActions?: ReactNode;
   fileTree?: { open: boolean; toggle: () => void };
-  floating?: boolean;
   setFormatTools: (element: HTMLDivElement | null) => void;
   onOpenFile: (path: string) => void;
   onError: (message: string) => void;
@@ -787,7 +785,6 @@ export function WorkspaceFileHeader({
       ref={header}
       className="za-workspace-file-header"
       data-desktop-workspace-file-header=""
-      data-floating-presentation-header={floating || undefined}
       data-comparison={comparing || undefined}
     >
       <WorkspaceBreadcrumbs request={request} active={active} onOpenFile={onOpenFile} />

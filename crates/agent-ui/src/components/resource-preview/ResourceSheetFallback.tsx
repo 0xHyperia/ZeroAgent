@@ -68,6 +68,7 @@ export default function ResourceSheetFallback(
   const touch = useRef<{ id: number; x: number; y: number } | null>(null);
   const moving = useRef<Position | null>(null);
   const pendingZoom = useRef<{ left: number; top: number } | null>(null);
+  const zoomPoint = useRef<{ x: number; y: number } | null>(null);
   const id = useId();
   const { bytes, assertCurrent, thumbnail } = props;
   useEffect(() => {
@@ -417,13 +418,24 @@ export default function ResourceSheetFallback(
           value={zoom * 100}
           fitPage={false}
           fitWidth={false}
-          percentages={[25, 50, 75, 100, 125, 150, 200]}
+          zoomCurve="camera"
+          percentages={[25, 50, 100, 200]}
+          onZoomAnchor={(x, y) => {
+            const rect = scroll.current?.getBoundingClientRect();
+            if (rect)
+              zoomPoint.current = {
+                x: Math.max(0, x - rect.left - SHEET_HEADER.width),
+                y: Math.max(0, y - rect.top - SHEET_HEADER.height),
+              };
+          }}
           onChange={(value) => {
             const next = typeof value === "number" ? value / 100 : 1;
+            const point = zoomPoint.current ?? { x: 0, y: 0 };
+            zoomPoint.current = null;
             if (next === zoom) return;
             pendingZoom.current = {
-              left: (view.left * next) / zoom,
-              top: (view.top * next) / zoom,
+              left: ((view.left + point.x) * next) / zoom - point.x,
+              top: ((view.top + point.y) * next) / zoom - point.y,
             };
             setZoom(next);
           }}

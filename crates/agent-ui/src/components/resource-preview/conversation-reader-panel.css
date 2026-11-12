@@ -154,8 +154,12 @@
 .cloud-resource-reader[data-workspace-tab-reader] .za-reader-stage {
   --za-reader-top-inset: 8px;
 }
-.cloud-resource-reader[data-workspace-tab-reader] .za-reader-stage:has(.za-preview-slides-layout) {
-  --za-reader-top-inset: 48px;
+.cloud-resource-reader:has(.za-preview-slides-layout) > .cloud-reader-header {
+  position: relative;
+  background: var(--za-surface);
+}
+.cloud-resource-reader .za-reader-stage:has(.za-preview-slides-layout) {
+  --za-reader-top-inset: 0px;
 }
 .cloud-resource-reader
   :is(.za-docx-zoom-viewport, .za-preview-pdf, .za-preview-media, .za-preview-markdown) {

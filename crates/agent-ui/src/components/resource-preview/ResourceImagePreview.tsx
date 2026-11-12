@@ -27,6 +27,7 @@ import { PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewDock } from "./PreviewDock";
 import { PreviewLoading } from "./PreviewFeedback";
 import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
+import { nextReaderZoom } from "./readerZoom";
 import {
   boundImageView,
   type ImageView,
@@ -178,6 +179,8 @@ function ImageCanvas(props: Props) {
         y: clientY - rect.top - top - latest.current.geometry.viewport.height / 2,
       };
     };
+    let wheelFrame: number | null = null;
+    let pending: { percent: number; x: number; y: number } | null = null;
     const wheel = (event: WheelEvent) => {
       if (
         event.defaultPrevented ||
@@ -194,12 +197,24 @@ function ImageCanvas(props: Props) {
         event.preventDefault();
         event.stopPropagation();
         settleMotion();
-        zoom(
-          latest.current.scale *
-            Math.exp(-Math.max(-120, Math.min(120, event.deltaY * factor)) * 0.003) *
-            100,
-          anchor(event.clientX, event.clientY),
-        );
+        pending = {
+          percent: nextReaderZoom(
+            pending?.percent ?? latest.current.scale * 100,
+            event.deltaY,
+            400,
+            10,
+            "document",
+            event.deltaMode,
+          ),
+          x: event.clientX,
+          y: event.clientY,
+        };
+        wheelFrame ??= requestAnimationFrame(() => {
+          wheelFrame = null;
+          const next = pending;
+          pending = null;
+          if (next) zoom(next.percent, anchor(next.x, next.y));
+        });
       } else if (latest.current.scale > latest.current.geometry.fit + 0.001) {
         event.preventDefault();
         settleMotion();
@@ -212,6 +227,7 @@ function ImageCanvas(props: Props) {
     };
     element.addEventListener("wheel", wheel, { passive: false });
     return () => {
+      if (wheelFrame !== null) cancelAnimationFrame(wheelFrame);
       element.removeEventListener("wheel", wheel);
       if (movingTimer.current) clearTimeout(movingTimer.current);
       pointers.current.clear();
@@ -369,10 +385,9 @@ function ImageCanvas(props: Props) {
           value={bounded.zoom}
           fitWidth={false}
           actualPercent={scale * 100}
-          maxPercent={800}
-          percentages={
-            props.conversation ? [25, 50, 100, 150, 200] : [25, 50, 75, 100, 150, 200, 400, 800]
-          }
+          maxPercent={400}
+          zoomCurve="document"
+          percentages={[25, 50, 100, 150, 200]}
           gestures={false}
           onChange={(next) => zoom(typeof next === "number" ? next : "fit-page")}
         />

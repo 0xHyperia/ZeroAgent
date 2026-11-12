@@ -127,6 +127,16 @@ function StyledSheet({
   const rangeName = controller.selectedRangeAddress || controller.activeCellAddress || "A1";
   const sheetName = controller.activeSheet?.name ?? "";
   const zoom = controller.zoomScale;
+  const zoomPoint = useRef<{ x: number; y: number } | null>(null);
+  const zoomScroll = useRef<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const target = zoomScroll.current;
+    const view = viewport.current;
+    if (!view || !target) return;
+    zoomScroll.current = null;
+    view.scrollLeft = target.left;
+    view.scrollTop = target.top;
+  }, [zoom]);
   const highlightComments = useCallback(
     (name: string, comments: readonly DocumentRevisionComment[]) => {
       const ranges = comments.flatMap(({ target }) =>
@@ -463,10 +473,25 @@ function StyledSheet({
           fitPage={false}
           fitWidth={false}
           maxPercent={400}
-          percentages={[25, 50, 75, 100, 125, 150, 200]}
+          zoomCurve="camera"
+          percentages={[25, 50, 100, 200]}
+          onZoomAnchor={(x, y) => {
+            const rect = viewport.current?.getBoundingClientRect();
+            if (rect) zoomPoint.current = { x: x - rect.left, y: y - rect.top };
+          }}
           onChange={(value) => {
             props.assertCurrent();
-            controller.setZoomScale(typeof value === "number" ? value : 100);
+            const next = typeof value === "number" ? value : 100;
+            const view = viewport.current;
+            const point = zoomPoint.current;
+            zoomPoint.current = null;
+            if (next !== zoom && view && point) {
+              zoomScroll.current = {
+                left: ((view.scrollLeft + point.x) * next) / zoom - point.x,
+                top: ((view.scrollTop + point.y) * next) / zoom - point.y,
+              };
+            }
+            controller.setZoomScale(next);
           }}
         />
       </PreviewToolbar>

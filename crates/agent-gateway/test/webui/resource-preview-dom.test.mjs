@@ -175,8 +175,8 @@ test("compatible spreadsheet coordinates, zoom and worksheet switching use one r
   assert.equal(app.host.querySelectorAll(".za-preview-toolbar").length,1);
   assert.equal(app.host.querySelector('[role="grid"]').getAttribute("aria-colcount"),"28");
   assert.ok(app.host.querySelector(".za-sheet-canvas"));
-  await chooseZoom(app,"表格缩放","150%");
-  assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"150%");
+  await chooseZoom(app,"表格缩放","200%");
+  assert.equal(app.host.querySelector('button[aria-label="表格缩放"]').textContent,"200%");
   await app.click("空表");
   assert.deepEqual(requests,["sheet-source","sheet","sheet"]);
   assert.match(app.host.querySelector('[role="grid"]').getAttribute("aria-label"),/空表/);
@@ -204,7 +204,7 @@ test("slides fit both pane dimensions and keep page navigation after zooming", a
   assert.equal(app.host.querySelector("img").dataset.ready,"true");
   assert.equal(app.host.querySelector(".za-preview-frame-pending"),null);
   const fittedWidth=parseFloat(app.host.querySelector("img").style.width);
-  assert.ok(Math.abs(fittedWidth-300*16/9)<0.01);
+  assert.ok(Math.abs(fittedWidth-(300-48)*16/9)<0.01);
   await chooseZoom(app,"幻灯片缩放","200%");
   assert.equal(parseFloat(app.host.querySelector("img").style.width),3200);
   await app.env.act(async()=>{app.host.querySelector('.za-preview-slide-scroll').dispatchEvent(new window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));await flush();});

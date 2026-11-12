@@ -20,7 +20,7 @@ import {
 } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewToolbarMount } from "./PreviewChrome";
-import { bindReaderZoom } from "./readerZoom";
+import { bindReaderZoom, type ReaderZoomCurve } from "./readerZoom";
 import type { PreviewZoom } from "./readingSession";
 
 /** Reading tools are local presentation state; the host still owns all file actions. */
@@ -168,6 +168,8 @@ export function PreviewZoomControl({
   fitWidth = true,
   windowFitLabel,
   onZoomAnchor,
+  zoomCurve,
+  zoomStops,
   percentages = [25, 50, 75, 100, 125, 150, 200, 300],
 }: {
   label: string;
@@ -183,6 +185,8 @@ export function PreviewZoomControl({
   fitWidth?: boolean;
   windowFitLabel?: string;
   onZoomAnchor?: (x: number, y: number) => void;
+  zoomCurve?: ReaderZoomCurve;
+  zoomStops?: readonly number[];
   percentages?: number[];
 }) {
   const { locale } = useLocale();
@@ -206,9 +210,17 @@ export function PreviewZoomControl({
       },
       maxPercent ?? 400,
       (next) => latest.current.onChange(next === "fit-width" && !fitWidth ? "fit-page" : next),
-      { minimum: minPercent, onAnchor: (x, y) => latest.current.onZoomAnchor?.(x, y) },
+      {
+        minimum: minPercent,
+        curve: zoomCurve,
+        snap: zoomStops,
+        frameUpdates: !!zoomCurve,
+        onAnchor: (x, y) => latest.current.onZoomAnchor?.(x, y),
+      },
     );
-  }, [maxPercent, minPercent, gestures, gestureRoot, fitWidth]);
+  }, [maxPercent, minPercent, gestures, gestureRoot, fitWidth, zoomCurve, zoomStops]);
+  const displayedPercent = typeof value === "number" ? Math.min(value, maxPercent ?? value) : 0;
+  const precision = zoomCurve ? 1 : 10;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -220,7 +232,7 @@ export function PreviewZoomControl({
           : typeof value !== "number" && actualPercent !== undefined
             ? `${Math.round(actualPercent)}%`
             : typeof value === "number"
-              ? `${Math.round(Math.min(value, maxPercent ?? value) * 10) / 10}%`
+              ? `${Math.round(displayedPercent * precision) / precision}%`
               : value === "fit-page"
                 ? zh
                   ? "适合窗口"
