@@ -98,6 +98,7 @@ export type RevisionSelectionBounds = {
   target: DOMRectReadOnly;
   viewport: DOMRectReadOnly;
   observe?: Element;
+  align?: "end";
 };
 
 /** Explicit submission only. Host supplies immutable resource authority and the normal send path. */
@@ -159,7 +160,7 @@ export function ResourceDocumentComments(props: {
       const bounds = resolveSelectionBounds(selection);
       const area = root.getBoundingClientRect();
       if (!bounds) return setPosition(null);
-      const { target, viewport } = bounds;
+      const { target, viewport, align } = bounds;
       if (
         target.right < viewport.left ||
         target.left > viewport.right ||
@@ -168,7 +169,8 @@ export function ResourceDocumentComments(props: {
       )
         return setPosition(null);
       const width = Math.min(360, area.width - 24);
-      const x = Math.max(12, Math.min(target.left - area.left, area.width - width - 12));
+      const left = align === "end" ? target.right - width : target.left;
+      const x = Math.max(12, Math.min(left - area.left, area.width - width - 12));
       const bottom = Math.min(target.bottom, viewport.bottom) - area.top;
       const y = Math.max(8, Math.min(bottom, area.height - 64));
       setPosition((previous) => (previous?.x === x && previous.y === y ? previous : { x, y }));

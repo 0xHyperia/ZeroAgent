@@ -1,4 +1,11 @@
-import { Copy, Download, Maximize2, MoreHorizontal, X } from "@liveagent/ui/components/IconSet";
+import {
+  ChevronRight,
+  Copy,
+  Download,
+  Maximize2,
+  MoreHorizontal,
+  X,
+} from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { useEffect, useId, useRef, useState } from "react";
 import { parseMermaidViewBox } from "../../lib/mermaidViewBox";
@@ -8,10 +15,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { TooltipButton } from "../ui/tooltip-button";
 import { MermaidDiagram, useMermaidSvg } from "./MermaidDiagram";
+import { mermaidAccents, setMermaidAccent, useMermaidAccent } from "./MermaidTheme";
 import "./markdown-mermaid.css";
 
 type DiagramResult = ReturnType<typeof useMermaidSvg>;
@@ -52,7 +65,7 @@ function DiagramResultView({
   );
 }
 
-async function downloadDiagram(svg: string, assertCurrent?: () => void) {
+async function downloadDiagram(svg: string, background: string, assertCurrent?: () => void) {
   await document.fonts?.ready;
   const element = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
   const bounds = parseMermaidViewBox(element.getAttribute("viewBox"));
@@ -81,7 +94,7 @@ async function downloadDiagram(svg: string, assertCurrent?: () => void) {
     canvas.height = height;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas unavailable");
-    context.fillStyle = document.documentElement.classList.contains("dark") ? "#212121" : "#ffffff";
+    context.fillStyle = background;
     context.fillRect(0, 0, width, height);
     context.drawImage(image, 0, 0, width, height);
     const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
@@ -113,7 +126,7 @@ function DiagramFullscreen({
   id: string;
   allowEdit: boolean;
   startEditing: boolean;
-  onDownload: (svg: string) => void;
+  onDownload: (svg: string, background: string) => void;
   downloadFailed: boolean;
   onClose: () => void;
 }) {
@@ -161,7 +174,7 @@ function DiagramFullscreen({
               aria-label={t("chat.markdown.streamdown.downloadImage")}
               tooltip={t("chat.markdown.streamdown.downloadImage")}
               tooltipSide="bottom"
-              onClick={() => result.svg && onDownload(result.svg)}
+              onClick={() => result.svg && onDownload(result.svg, result.background)}
             >
               <Download className="size-4" />
             </TooltipButton>
@@ -186,7 +199,10 @@ function DiagramFullscreen({
             {t("chat.markdown.mermaidActionFailed")}
           </p>
         )}
-        <div className="za-mermaid-fullscreen-stage">
+        <div
+          className="za-mermaid-fullscreen-stage"
+          style={{ backgroundColor: result?.background }}
+        >
           {editing ? (
             <textarea
               ref={editorRef}
@@ -220,6 +236,7 @@ export function MarkdownMermaidBlock({
   assertCurrent?: () => void;
 }) {
   const { t } = useLocale();
+  const accent = useMermaidAccent();
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const blockRef = useRef<HTMLDivElement>(null);
   const expandRef = useRef<HTMLButtonElement>(null);
@@ -292,7 +309,9 @@ export function MarkdownMermaidBlock({
               </DropdownMenuItem>
               {svg && (
                 <DropdownMenuItem
-                  onClick={() => void run(() => downloadDiagram(svg, assertCurrent))}
+                  onClick={() =>
+                    void run(() => downloadDiagram(svg, result.background, assertCurrent))
+                  }
                 >
                   <Download className="mr-2 size-4" />
                   {t("chat.markdown.streamdown.downloadImage")}
@@ -303,6 +322,21 @@ export function MarkdownMermaidBlock({
                   {t("chat.markdown.mermaidEditCode")}
                 </DropdownMenuItem>
               )}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="justify-between gap-2">
+                  {t("chat.markdown.mermaidAccent")}
+                  <ChevronRight className="size-4" />
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-32">
+                  <DropdownMenuRadioGroup value={accent} onValueChange={setMermaidAccent}>
+                    {mermaidAccents.map((color) => (
+                      <DropdownMenuRadioItem key={color} value={color} closeOnClick>
+                        {t(`chat.markdown.mermaidAccent.${color}`)}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             </DropdownMenuContent>
           </DropdownMenu>
           <TooltipButton
@@ -329,7 +363,9 @@ export function MarkdownMermaidBlock({
           id={`mermaid-fullscreen-${id}`}
           allowEdit={allowEdit}
           startEditing={expanded === "source"}
-          onDownload={(value) => void run(() => downloadDiagram(value, assertCurrent))}
+          onDownload={(value, background) =>
+            void run(() => downloadDiagram(value, background, assertCurrent))
+          }
           downloadFailed={feedback === "failed"}
           onClose={() => {
             setExpanded(null);

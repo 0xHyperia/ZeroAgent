@@ -94,6 +94,32 @@ test("desktop file-tree clicks preview a file and double click keeps it", () => 
   ]);
 });
 
+test("keyboard and synthesized activation also open a temporary file tab", () => {
+  const { tree, calls } = renderRow({ transientFiles: true });
+  const row = {};
+  tree.props.onClick({ detail: 0 });
+  for (const key of ["Enter", " "]) {
+    let prevented = false;
+    tree.props.onKeyDown({
+      key,
+      currentTarget: row,
+      target: row,
+      preventDefault() {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, true);
+  }
+  assert.deepEqual(calls, [
+    ["select", "assets/preview.png"],
+    ["open", "assets/preview.png", true],
+    ["select", "assets/preview.png"],
+    ["open", "assets/preview.png", true],
+    ["select", "assets/preview.png"],
+    ["open", "assets/preview.png", true],
+  ]);
+});
+
 test("workspace file tree expands directories with one click", () => {
   const { tree, calls } = renderRow({
     path: "assets",

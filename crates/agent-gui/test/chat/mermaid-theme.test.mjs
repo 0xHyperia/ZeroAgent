@@ -13,7 +13,7 @@ const mermaid = {
   render(id, chart) {
     const theme = config.darkMode ? "dark" : "default";
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" data-theme="${theme}"><text>${theme}</text></svg>`;
-    const job = { id, chart, theme };
+    const job = { id, chart, theme, config };
     renders.push(job);
     return deferRenders
       ? new Promise((resolve) => { job.complete = () => resolve({ svg }); })
@@ -26,7 +26,7 @@ const env = await createDomTestEnv({ mocks: {
   "remark-breaks": { __esModule: true, default: remarkBreaks },
   "./loadMermaid": {
     loadMermaid: async () => ({ default: mermaid }),
-    loadMermaidElk: async () => ({ default: [] }),
+    loadMermaidElk: async () => ({ default: [{ name: "elk", loader: async () => ({}) }] }),
   },
   "@streamdown/code": { code: undefined },
   "@streamdown/math": { math: undefined },
@@ -38,6 +38,7 @@ const env = await createDomTestEnv({ mocks: {
 const { React, act, createRoot } = env;
 const { Markdown } = env.loadModule("@liveagent/ui/components/Markdown.tsx");
 const { MarkdownMermaidBlock } = env.loadModule("@liveagent/ui/components/markdown/MarkdownMermaidBlock.tsx");
+const { createMermaidConfig, mermaidAccents, setMermaidAccent } = env.loadModule("@liveagent/ui/components/markdown/MermaidTheme.tsx");
 const previousParser = globalThis.DOMParser;
 const previousSerializer = globalThis.XMLSerializer;
 globalThis.XMLSerializer = window.XMLSerializer;
@@ -193,9 +194,56 @@ test("author configuration and diagram clicks cannot override the renderer", asy
     await eventually(() => inlineSvg());
     const renderedSource = renders.at(-1).chart;
     assert.match(renderedSource, /title: "Preview title"/);
-    assert.match(renderedSource, /layout: elk/);
+    assert.match(renderedSource, /layout: zeroagent-flowchart/);
     assert.doesNotMatch(renderedSource, /securityLevel|themeCSS|\bclick\b/);
   } finally {
     await cleanup();
+  }
+});
+
+test("diagram families share the accent order and retain appearance-specific colors", () => {
+  for (const dark of [false, true]) {
+    for (const accent of mermaidAccents) {
+      const paint = createMermaidConfig(dark, accent).themeVariables;
+      assert.equal(paint.background, dark ? "#181818" : "#ffffff");
+      assert.notEqual(paint.flowchartNodeColor, paint.flowchartDecisionColor);
+      assert.equal(paint.pie1, paint.git0);
+      assert.equal(paint.pie1, paint.xyChart.plotColorPalette.split(",")[0]);
+      assert.equal(paint.pie1, paint.pie7);
+      assert.notEqual(paint.pie1, paint.pie2);
+    }
+  }
+  const paint = createMermaidConfig(false, "auto").themeVariables;
+  assert.deepEqual([paint.actorBkg, paint.actorBorder, paint.noteBkgColor, paint.noteBorderColor],
+    ["#e3edfe", "#a7c5fa", "#ffffff", "#bbe3c0"]);
+  assert.equal(paint.flowchartNodeColor, "#f3f3f3");
+  assert.equal(paint.flowchartEdgeLabelColor, "#fcfcfc");
+  assert.equal(createMermaidConfig(true, "auto").themeVariables.flowchartNodeColor, "#181818");
+  assert.equal(createMermaidConfig(false, "blue").themeVariables.flowchartNodeColor, "#e5f3ff");
+});
+
+test("changing accent updates mounted diagrams and allows only author paint overrides", async () => {
+  await setDark(false);
+  const source = [
+    `%%{init: ${JSON.stringify({
+      theme: "base",
+      themeVariables: { sequenceNumberColor: "#123456" },
+      themeCSS: ".node.custom rect { fill:#abc; stroke:url(https://example.invalid); opacity:0 } body { fill:#f00 }",
+    })}}%%`,
+    "sequenceDiagram\nautonumber\nAlice->>Bob: Hello",
+  ].join("\n");
+  const cleanup = await mount(React.createElement(MarkdownMermaidBlock, { chart: source }));
+  try {
+    await eventually(() => inlineSvg());
+    const before = renders.at(-1);
+    assert.equal(before.config.themeVariables.sequenceNumberColor, "#123456");
+    assert.equal(before.config.themeCSS, ".node.custom rect{fill:#abc}");
+    assert.equal(before.config.securityLevel, "strict");
+    await act(async () => setMermaidAccent("green"));
+    await eventually(() => renders.at(-1)?.config.themeVariables.pie1 === "#6bc67f");
+    assert.equal(renders.at(-1).config.themeVariables.sequenceNumberColor, "#123456");
+  } finally {
+    await cleanup();
+    setMermaidAccent("auto");
   }
 });

@@ -22,16 +22,22 @@ type Viewport = { zoom: number; viewBox: MermaidViewBox };
 
 export function useMermaidSvg(chart: string, id: string, enabled: boolean) {
   const config = useMermaidConfig();
-  const [result, setResult] = useState<{ chart: string; svg?: string; error?: true }>();
+  const [result, setResult] = useState<{
+    chart: string;
+    background: string;
+    svg?: string;
+    error?: true;
+  }>();
   useEffect(() => {
     if (!enabled) return;
     let current = true;
+    const background = String(config.themeVariables?.background ?? "#ffffff");
     void renderMermaid(id, chart, config)
       .then((svg) => {
-        if (current && svg) setResult({ chart, svg });
+        if (current && svg) setResult({ chart, svg, background });
       })
       .catch(() => {
-        if (current) setResult({ chart, error: true });
+        if (current) setResult({ chart, background, error: true });
       });
     return () => {
       current = false;

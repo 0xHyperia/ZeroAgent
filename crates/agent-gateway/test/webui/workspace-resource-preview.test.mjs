@@ -77,7 +77,7 @@ test("the conversation reader submits the displayed document snapshot and retire
   await app.render(request(2, legacy.path));
   await app.env.waitFor(() => previewProps?.resource.name === legacy.path);
   assert.equal(previewProps.onRequestRevision, undefined);
-  assert.throws(() => submit(comments), { name: "AbortError" });
+  await assert.rejects(() => submit(comments), { name: "AbortError" });
   assert.throws(submissions[0].assertCurrent, { name: "AbortError" });
   assert.equal(submissions.length, 1);
 });

@@ -64,13 +64,13 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
   } = props;
   const { t } = useLocale();
   const TypeIcon = getFileTypeIcon(path, kind, { expanded });
-  const activateRow = (temporary = false) => {
+  const activateRow = () => {
     onSelect(path);
     if (kind === "dir") {
       onToggle(path, expanded);
       return;
     }
-    if (transientFiles) onOpen(path, temporary);
+    if (transientFiles) onOpen(path, true);
     else onOpen(path);
   };
   return (
@@ -99,8 +99,7 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
       onDragStart={(event) => onDragStart?.(event, path, kind)}
       onDragEnd={onDragEnd}
       onClick={(event) => {
-        if (!transientFiles || kind === "dir" || event.detail < 2)
-          activateRow(transientFiles && event.detail === 1);
+        if (!transientFiles || kind === "dir" || event.detail < 2) activateRow();
       }}
       onDoubleClick={transientFiles && kind === "file" ? () => onOpen(path, false) : undefined}
       onKeyDown={(event) => {

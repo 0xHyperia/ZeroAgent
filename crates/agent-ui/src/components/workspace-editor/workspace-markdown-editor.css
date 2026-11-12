@@ -146,6 +146,7 @@
 }
 
 .za-md-mermaid-widget {
+  display: flow-root;
   min-inline-size: 0;
   white-space: normal;
 }

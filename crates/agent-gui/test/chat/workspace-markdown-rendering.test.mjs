@@ -119,3 +119,83 @@ test("editable Markdown renders tables, code fences and Mermaid without modifyin
     env.cleanup();
   }
 });
+
+test("Markdown editor commands preserve the selection and reject a paste after leaving the file", async () => {
+  const copied = [];
+  const errors = [];
+  let copySucceeds = true;
+  const env = await createDomTestEnv({
+    mocks: {
+      "../../lib/shared/clipboard": {
+        copyTextToClipboard: async (text) => {
+          if (copySucceeds) copied.push(text);
+          return copySucceeds;
+        },
+      },
+      "../ui/toast-manager": { toast: { error: (message) => errors.push(message) } },
+    },
+  });
+  const previousWindow = globalThis.Window;
+  globalThis.Window = window.Window;
+  window.Range.prototype.getClientRects = () => [];
+  window.Range.prototype.getBoundingClientRect = () => new window.DOMRect();
+  const { React, act, createRoot, loadModule } = env;
+  const { default: Editor } = loadModule(
+    "@liveagent/ui/components/workspace-editor/WorkspaceMarkdownEditor.tsx",
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const handle = React.createRef();
+  const props = {
+    handle,
+    active: true,
+    mode: "preview",
+    readOnly: false,
+    theme: "light",
+    value: "# Heading\r\nBody\r\nLast line",
+    onChange() {},
+    onHistory() {},
+    onSave() {},
+  };
+
+  try {
+    await act(async () => root.render(React.createElement(Editor, props)));
+    const editor = handle.current;
+    await act(async () => editor.revealLine(2, 1, 2));
+    assert.deepEqual(editor.selectedLines(), { startLine: 2, endLine: 2 });
+    copySucceeds = false;
+    await act(async () => editor.copySelection(true));
+    await act(async () => editor.pasteSelection(async () => null));
+    assert.equal(errors.length, 2);
+    assert.equal(editor.getValue(), props.value);
+    copySucceeds = true;
+    await act(async () => editor.copySelection(true));
+    assert.deepEqual(copied, ["Body"]);
+    assert.equal(editor.getValue(), "# Heading\r\n\r\nLast line");
+    await act(async () => editor.undo());
+    assert.equal(editor.getValue(), props.value);
+    await act(async () => editor.redo());
+    assert.equal(editor.getValue(), "# Heading\r\n\r\nLast line");
+    await act(async () => editor.pasteSelection(async () => "New\r\nbody"));
+    assert.equal(editor.getValue(), "# Heading\r\nNew\r\nbody\r\nLast line");
+
+    let finishRead;
+    const pendingPaste = editor.pasteSelection(
+      () => new Promise((resolve) => { finishRead = resolve; }),
+    );
+    await act(async () =>
+      root.render(React.createElement(Editor, { ...props, active: false, value: editor.getValue() })),
+    );
+    await act(async () => {
+      finishRead("stale");
+      await pendingPaste;
+    });
+    assert.equal(editor.getValue(), "# Heading\r\nNew\r\nbody\r\nLast line");
+  } finally {
+    await act(async () => root.unmount());
+    if (previousWindow === undefined) delete globalThis.Window;
+    else globalThis.Window = previousWindow;
+    env.cleanup();
+  }
+});

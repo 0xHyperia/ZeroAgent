@@ -151,15 +151,22 @@ export function useWorkspaceTabPresentation<Annotation>(options: WorkspaceTabOpt
           onActivate,
           onClose: () => resources.requestCloseFile(tab.id),
           menuItems: (
-            <ContextMenuItem
-              onSelect={() =>
-                void copyTextToClipboard(
-                  workspaceImageAbsolutePathForCopy(tab.request.workdir, tab.request.path),
-                )
-              }
-            >
-              {copy("复制文件路径", "Copy file path")}
-            </ContextMenuItem>
+            <>
+              {tab.temporary && (
+                <ContextMenuItem onSelect={() => resources.keepFileOpen(tab.id)}>
+                  {copy("固定标签页", "Keep tab open")}
+                </ContextMenuItem>
+              )}
+              <ContextMenuItem
+                onSelect={() =>
+                  void copyTextToClipboard(
+                    workspaceImageAbsolutePathForCopy(tab.request.workdir, tab.request.path),
+                  )
+                }
+              >
+                {copy("复制文件路径", "Copy file path")}
+              </ContextMenuItem>
+            </>
           ),
         };
       }

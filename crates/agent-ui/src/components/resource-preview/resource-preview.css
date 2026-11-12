@@ -2291,6 +2291,74 @@
 .za-sheet-engine-content {
   min-height: 100%;
 }
+.za-sheet-engine .za-sheet-engine-scroll {
+  isolation: isolate;
+}
+.za-sheet-comments-slot:empty {
+  display: none;
+}
+.za-sheet-engine[data-sheet-annotation-mode] [data-xlsx-cell] {
+  cursor: var(--za-sheet-comment-cursor);
+}
+.za-sheet-engine[data-sheet-own-selection] [data-xlsx-selection-overlay],
+.za-sheet-engine .za-sheet-navigation-highlight {
+  visibility: hidden !important;
+}
+.za-sheet-annotations {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.za-sheet-range-outline {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed #3578ed;
+  background: #3578ed19;
+}
+.za-sheet-range-outline[data-state="candidate"] {
+  border-style: solid;
+}
+.za-sheet-comment-pin,
+.za-sheet-range-action {
+  position: absolute;
+  z-index: 1;
+  pointer-events: auto;
+}
+.za-sheet-comment-pin {
+  translate: -75% -40%;
+  border-radius: 50%;
+}
+.za-sheet-comment-pin > span {
+  width: 24px;
+  height: 24px;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+.za-sheet-comment-pin:hover {
+  background: transparent;
+}
+.za-sheet-range-action {
+  translate: -50% calc(-100% - 6px);
+  white-space: nowrap;
+  border-radius: 10px;
+  background: hsl(var(--popover));
+  box-shadow: 0 2px 10px #0002;
+  animation: za-slide-comment-appear 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.za-sheet-range-action[data-below="true"] {
+  translate: -50% 6px;
+}
+.za-sheet-engine .za-document-comment-input {
+  animation: za-slide-comment-appear 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-sheet-range-action,
+  .za-sheet-engine .za-document-comment-input {
+    animation: none;
+  }
+}
 .za-sheet-cover-engine {
   position: absolute;
   transform-origin: top left;

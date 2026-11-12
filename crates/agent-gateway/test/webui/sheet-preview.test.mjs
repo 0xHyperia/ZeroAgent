@@ -11,6 +11,52 @@ async function modules(t, mocks = {}) {
   return { env, ...env.loadModule("@liveagent/ui/components/resource-preview/sheetModel.ts") };
 }
 
+test("saved sheet ranges use rendered cell edges and clip at frozen rows and columns", async (t) => {
+  const { env } = await modules(t);
+  const { measureSheetGrid, projectSheetRange } = env.loadModule(
+    "@liveagent/ui/components/resource-preview/sheetAnnotationGeometry.ts",
+  );
+  const viewport = document.createElement("div");
+  viewport.innerHTML = `
+    <table>
+      <thead><tr><th></th><th data-xlsx-col-header="0"></th>
+        <th data-xlsx-col-header="1"></th><th data-xlsx-col-header="3"></th></tr></thead>
+      <tbody><tr data-xlsx-row="0"><td></td></tr>
+        <tr data-xlsx-row="1"><td></td></tr><tr data-xlsx-row="2"><td></td></tr></tbody>
+    </table>`;
+  Object.defineProperties(viewport, {
+    clientWidth: { value: 350 },
+    clientHeight: { value: 230 },
+  });
+  function rect(element, left, top, right, bottom) {
+    element.getBoundingClientRect = () => ({ left, top, right, bottom });
+  }
+  rect(viewport, 100, 50, 450, 280);
+  const headers = viewport.querySelectorAll("th");
+  rect(headers[0], 100, 50, 142, 70);
+  rect(headers[1], 142, 50, 198, 70);
+  rect(headers[2], 170, 50, 241, 70);
+  rect(headers[3], 241, 50, 335, 70);
+  const rowHeaders = viewport.querySelectorAll("tbody td");
+  rect(rowHeaders[0], 100, 70, 142, 98);
+  rect(rowHeaders[1], 100, 85, 142, 138);
+  rect(rowHeaders[2], 100, 138, 142, 181);
+  const grid = measureSheetGrid(viewport, { row: 1, col: 1 });
+  assert.deepEqual(projectSheetRange(grid, {
+    start: { row: 0, col: 0 },
+    end: { row: 2, col: 3 },
+  }), [
+    { key: "true:true", left: 42, top: 20, width: 56, height: 28 },
+    { key: "true:false", left: 98, top: 20, width: 137, height: 28 },
+    { key: "false:true", left: 42, top: 48, width: 56, height: 83 },
+    { key: "false:false", left: 98, top: 48, width: 137, height: 83 },
+  ]);
+  assert.deepEqual(projectSheetRange(grid, {
+    start: { row: 30, col: 0 },
+    end: { row: 32, col: 1 },
+  }), []);
+});
+
 test("styled workbook preflight bounds huge merge expansion and sparse row allocations", async t => {
   const {env} = await modules(t);
   const {canReadStyledWorkbook} = env.loadModule("@liveagent/ui/components/resource-preview/sheetArchive.ts");

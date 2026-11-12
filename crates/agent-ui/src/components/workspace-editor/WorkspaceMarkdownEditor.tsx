@@ -4,6 +4,7 @@ import {
   historyKeymap,
   redo,
   redoDepth,
+  selectAll,
   undo,
   undoDepth,
 } from "@codemirror/commands";
@@ -42,6 +43,7 @@ import {
   type MarkdownToolbarSelection,
 } from "../resource-preview/MarkdownSelectionToolbar";
 import type { MarkdownSelectionActions } from "../resource-preview/PreviewChrome";
+import { toast } from "../ui/toast-manager";
 import { TooltipButton } from "../ui/tooltip-button";
 import {
   markdownSelectionEditField,
@@ -60,10 +62,15 @@ import "./workspace-markdown-editor.css";
 
 export type WorkspaceMarkdownEditorHandle = {
   getValue: () => string;
-  find: () => void;
+  focus: () => void;
+  find: (replace?: boolean) => void;
   revealLine: (line: number, column?: number, endLine?: number) => void;
   undo: () => void;
   redo: () => void;
+  selectAll: () => void;
+  selectedLines: () => { startLine: number; endLine: number } | undefined;
+  copySelection: (cut?: boolean) => Promise<void>;
+  pasteSelection: (read: () => Promise<string | null>) => Promise<void>;
 };
 
 const inlineMarker = new Set(["EmphasisMark", "StrikethroughMark"]);
@@ -502,9 +509,18 @@ export default function WorkspaceMarkdownEditor(props: Props) {
     props.handle,
     () => ({
       getValue: () => content.current,
-      find: () => {
+      focus: () => {
+        if (current.current.active) editor.current?.focus();
+      },
+      find: (replace) => {
         const view = editor.current;
-        if (view) openSearchPanel(view);
+        if (!view || !current.current.active) return;
+        openSearchPanel(view);
+        const field = view.dom.querySelector<HTMLInputElement>(
+          `.cm-search input[name="${replace ? "replace" : "search"}"]`,
+        );
+        field?.focus();
+        field?.select();
       },
       revealLine: (requestedLine, column, endLine) => {
         const view = editor.current;
@@ -529,8 +545,78 @@ export default function WorkspaceMarkdownEditor(props: Props) {
         const view = editor.current;
         if (view) redo(view);
       },
+      selectAll: () => {
+        const view = editor.current;
+        if (view) selectAll(view);
+      },
+      selectedLines: () => {
+        const view = editor.current;
+        if (!view) return;
+        const { doc, selection } = view.state;
+        const { from, to } = selection.main;
+        return {
+          startLine: doc.lineAt(from).number,
+          endLine: doc.lineAt(Math.max(from, to - 1)).number,
+        };
+      },
+      copySelection: async (cut) => {
+        const view = editor.current;
+        if (!view) return;
+        const { doc, selection } = view.state;
+        const { empty, from, to } = selection.main;
+        const line = doc.lineAt(from);
+        const text = empty ? line.text : view.state.sliceDoc(from, to);
+        if (!(await copyTextToClipboard(text))) {
+          if (editor.current === view && current.current.active) {
+            toast.error(zh ? "无法写入剪贴板。" : "Could not write to the clipboard.");
+          }
+          return;
+        }
+        if (!cut) return;
+        if (
+          editor.current !== view ||
+          !current.current.active ||
+          view.state.readOnly ||
+          view.state.doc !== doc ||
+          !view.state.selection.eq(selection)
+        )
+          return;
+        view.dispatch({
+          changes: empty
+            ? { from: line.from, to: Math.min(doc.length, line.to + 1) }
+            : { from, to },
+          scrollIntoView: true,
+          userEvent: "delete.cut",
+        });
+      },
+      pasteSelection: async (read) => {
+        const view = editor.current;
+        if (!view || view.state.readOnly) return;
+        const { doc, selection } = view.state;
+        const text = await read();
+        if (
+          editor.current !== view ||
+          !current.current.active ||
+          view.state.readOnly ||
+          view.state.doc !== doc ||
+          !view.state.selection.eq(selection)
+        )
+          return;
+        if (text === null) {
+          toast.error(
+            zh
+              ? "无法读取剪贴板，请使用粘贴快捷键。"
+              : "Could not read the clipboard. Use the paste shortcut.",
+          );
+        } else if (text) {
+          view.dispatch(view.state.replaceSelection(text), {
+            scrollIntoView: true,
+            userEvent: "input.paste",
+          });
+        }
+      },
     }),
-    [],
+    [zh],
   );
 
   const getSelection = (): MarkdownToolbarSelection | null => {

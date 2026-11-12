@@ -119,6 +119,8 @@ type EditorContextMenuState = {
   y: number;
 };
 
+type MarkdownMenuCommand = "undo" | "redo" | "selectAll" | "cut" | "copy";
+
 const EDITOR_OVERLAY_ANIMATION_MS = 180;
 
 export type WorkspaceFileEditorHandle = {
@@ -659,25 +661,65 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   }, [closeTabNow, dirtyTabs, finishClose, pendingDialog, reloadTab, saveTab]);
 
   const showFind = useCallback(() => {
+    if (markdownEditorRef.current) {
+      markdownEditorRef.current.find();
+      return;
+    }
     editorRef.current?.focus();
     editorRef.current?.trigger("toolbar", "actions.find", null);
   }, []);
 
   const showReplace = useCallback(() => {
+    if (markdownEditorRef.current) {
+      markdownEditorRef.current.find(true);
+      return;
+    }
     editorRef.current?.focus();
     editorRef.current?.trigger("toolbar", "editor.action.startFindReplaceAction", null);
   }, []);
 
-  const runEditorCommand = useCallback((commandId: string) => {
+  const showSearchFromContextMenu = (replace: boolean) => {
     setContextMenu(null);
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.focus();
-    editor.trigger("contextMenu", commandId, null);
-  }, []);
+    const markdownEditor = markdownEditorRef.current;
+    if (markdownEditor) {
+      // The menu holds focus until it unmounts.
+      requestAnimationFrame(() => markdownEditor.find(replace));
+    } else if (replace) {
+      showReplace();
+    } else {
+      showFind();
+    }
+  };
+
+  const runEditorCommand = useCallback(
+    (commandId: string, markdownCommand: MarkdownMenuCommand) => {
+      setContextMenu(null);
+      const markdownEditor = markdownEditorRef.current;
+      if (markdownEditor) {
+        markdownEditor.focus();
+        if (markdownCommand === "copy" || markdownCommand === "cut") {
+          void markdownEditor.copySelection(markdownCommand === "cut");
+        } else {
+          markdownEditor[markdownCommand]();
+        }
+        return;
+      }
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.focus();
+      editor.trigger("contextMenu", commandId, null);
+    },
+    [],
+  );
 
   const pasteClipboardIntoEditor = useCallback(() => {
     setContextMenu(null);
+    const markdownEditor = markdownEditorRef.current;
+    if (markdownEditor) {
+      markdownEditor.focus();
+      void markdownEditor.pasteSelection(readWorkspaceClipboardText);
+      return;
+    }
     const editor = editorRef.current;
     if (!editor) return;
     editor.focus();
@@ -696,21 +738,23 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   // 选区扩展到整行后作为代码引用（仅路径+行号）交给输入框；空选区退化为光标所在行。
   const insertSelectionAsCodeMention = useCallback(() => {
     setContextMenu(null);
-    const editor = editorRef.current;
     const tab = activeTab;
-    if (!editor || !tab || tab.remote || !onInsertCodeMention) return;
-    const selection = editor.getSelection();
-    if (!selection) return;
-    const startLine = selection.startLineNumber;
-    const endLine =
+    if (!tab || tab.remote || !onInsertCodeMention) return;
+    let lines = markdownEditorRef.current?.selectedLines();
+    if (!lines) {
+      const selection = editorRef.current?.getSelection();
+      if (!selection) return;
+      const startLine = selection.startLineNumber;
       // A selection ending at column 1 stops visually at the previous line.
-      selection.endLineNumber > startLine && selection.endColumn === 1
-        ? selection.endLineNumber - 1
-        : selection.endLineNumber;
+      const endLine =
+        selection.endLineNumber > startLine && selection.endColumn === 1
+          ? selection.endLineNumber - 1
+          : selection.endLineNumber;
+      lines = { startLine, endLine };
+    }
     const reference = createCodeMentionReference({
       path: tab.path,
-      startLine,
-      endLine,
+      ...lines,
     });
     if (!reference) return;
     onInsertCodeMention(reference);
@@ -718,10 +762,20 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
 
   const openEditorContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (!activeTab || pendingDialog) return;
+      if (!isOpen || !activeTab || pendingDialog || event.defaultPrevented) return;
+      if (markdownMode) {
+        const target = event.target;
+        if (
+          !(target instanceof Element) ||
+          !target.closest(".cm-content") ||
+          target.closest("button, input, textarea, .za-md-mermaid-widget")
+        )
+          return;
+      }
       event.preventDefault();
       event.stopPropagation();
-      editorRef.current?.focus();
+      if (markdownMode) markdownEditorRef.current?.focus();
+      else editorRef.current?.focus();
 
       const rect = overlayRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -731,7 +785,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
         y: event.clientY - rect.top,
       });
     },
-    [activeTab, pendingDialog],
+    [activeTab, isOpen, markdownMode, pendingDialog],
   );
 
   useEffect(() => {
@@ -744,6 +798,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
 
   useEffect(() => {
     if (isOpen && closeAnimationTimeoutRef.current !== null) return;
+    if (!isOpen) setContextMenu(null);
     setIsVisible(isOpen);
   }, [isOpen]);
 
@@ -894,10 +949,21 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   ]);
 
   useEffect(() => {
+    if (!isOpen || !contextMenu) return;
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu(null);
+      const markdownEditor = markdownEditorRef.current;
+      if (markdownEditor) requestAnimationFrame(markdownEditor.focus);
+    };
+    window.addEventListener("keydown", dismissOnEscape, true);
+    return () => window.removeEventListener("keydown", dismissOnEscape, true);
+  }, [contextMenu, isOpen]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setContextMenu(null);
-      }
       if (!isOpen || event.defaultPrevented) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
       const currentKey = activeKeyRef.current;
@@ -960,11 +1026,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
           <Save className="size-4" />
         )}
       </IconButton>
-      <IconButton
-        label={t("workspaceEditor.find")}
-        disabled={!activeTab}
-        onClick={() => (markdownMode ? markdownEditorRef.current?.find() : showFind())}
-      >
+      <IconButton label={t("workspaceEditor.find")} disabled={!activeTab} onClick={showFind}>
         <Search className="size-4" />
       </IconButton>
       {!markdownMode && (
@@ -1203,26 +1265,26 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
             icon={Undo2}
             label={t("workspaceEditor.context.undo")}
             shortcut={contextMenuShortcuts.undo}
-            onClick={() => runEditorCommand("undo")}
+            onClick={() => runEditorCommand("undo", "undo")}
           />
           <ContextMenuItem
             icon={Redo2}
             label={t("workspaceEditor.context.redo")}
             shortcut={contextMenuShortcuts.redo}
-            onClick={() => runEditorCommand("redo")}
+            onClick={() => runEditorCommand("redo", "redo")}
           />
           <ContextMenuSeparator />
           <ContextMenuItem
             icon={Scissors}
             label={t("workspaceEditor.context.cut")}
             shortcut={contextMenuShortcuts.cut}
-            onClick={() => runEditorCommand("editor.action.clipboardCutAction")}
+            onClick={() => runEditorCommand("editor.action.clipboardCutAction", "cut")}
           />
           <ContextMenuItem
             icon={Copy}
             label={t("workspaceEditor.context.copy")}
             shortcut={contextMenuShortcuts.copy}
-            onClick={() => runEditorCommand("editor.action.clipboardCopyAction")}
+            onClick={() => runEditorCommand("editor.action.clipboardCopyAction", "copy")}
           />
           <ContextMenuItem
             icon={ClipboardPaste}
@@ -1235,7 +1297,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
             icon={TextSelect}
             label={t("workspaceEditor.context.selectAll")}
             shortcut={contextMenuShortcuts.selectAll}
-            onClick={() => runEditorCommand("editor.action.selectAll")}
+            onClick={() => runEditorCommand("editor.action.selectAll", "selectAll")}
           />
           {onInsertCodeMention && !activeTab?.remote ? (
             <>
@@ -1252,19 +1314,13 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
             icon={Search}
             label={t("workspaceEditor.find")}
             shortcut={contextMenuShortcuts.find}
-            onClick={() => {
-              setContextMenu(null);
-              showFind();
-            }}
+            onClick={() => showSearchFromContextMenu(false)}
           />
           <ContextMenuItem
             icon={Replace}
             label={t("workspaceEditor.replace")}
             shortcut={contextMenuShortcuts.replace}
-            onClick={() => {
-              setContextMenu(null);
-              showReplace();
-            }}
+            onClick={() => showSearchFromContextMenu(true)}
           />
         </ContextMenuPopup>
       ) : null}

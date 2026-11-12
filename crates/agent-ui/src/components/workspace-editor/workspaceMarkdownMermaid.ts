@@ -9,6 +9,7 @@ export function workspaceMarkdownMermaid(
   unmount: (element: HTMLElement) => void,
 ) {
   let nextId = 0;
+  const observers = new WeakMap<HTMLElement, ResizeObserver>();
 
   class DiagramWidget extends WidgetType {
     constructor(readonly chart: string) {
@@ -26,11 +27,17 @@ export function workspaceMarkdownMermaid(
     toDOM(view: EditorView) {
       const element = view.dom.ownerDocument.createElement("div");
       element.className = "za-md-mermaid-widget";
+      // React can change the widget's size after CodeMirror has measured the document.
+      const observer = new ResizeObserver(() => view.requestMeasure());
+      observer.observe(element);
+      observers.set(element, observer);
       mount({ id: nextId++, element, chart: this.chart });
       return element;
     }
 
     destroy(element: HTMLElement) {
+      observers.get(element)?.disconnect();
+      observers.delete(element);
       unmount(element);
     }
   }

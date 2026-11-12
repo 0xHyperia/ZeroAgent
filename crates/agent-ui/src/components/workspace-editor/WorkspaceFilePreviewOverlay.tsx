@@ -480,6 +480,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
   // The request comes from the workspace file tree and retains its full logical path.
   const activePath = activePreviewRequest?.path ?? preview?.path ?? "";
   const kind = preview?.kind ?? (activePath ? getWorkspacePreviewKind(activePath) : null) ?? "text";
+  const spreadsheet = kind === "spreadsheet";
   const PreviewIcon = getPreviewIcon(kind);
   const imagePaths = useMemo(
     () =>
@@ -569,7 +570,10 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
             workspacePath && workspaceGitRelativePath(workdir, workspacePath)
               ? workspacePath
               : undefined;
-          const watch = currentPreview.kind === "presentation" ? new AbortController() : null;
+          const watch =
+            currentPreview.kind === "presentation" || currentPreview.kind === "spreadsheet"
+              ? new AbortController()
+              : null;
           if (watch) {
             revisionWatch.current?.abort();
             revisionWatch.current = watch;
@@ -753,9 +757,13 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
                   ? locale === "zh-CN"
                     ? "未能停止修改"
                     : "Could not stop editing"
-                  : locale === "zh-CN"
-                    ? "正在修改演示文稿…"
-                    : "Updating presentation…"}
+                  : spreadsheet
+                    ? locale === "zh-CN"
+                      ? "正在修改表格…"
+                      : "Updating spreadsheet…"
+                    : locale === "zh-CN"
+                      ? "正在修改演示文稿…"
+                      : "Updating presentation…"}
             </span>
             {revisionStop && (
               <TooltipButton
@@ -763,7 +771,15 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
                 size="sm"
                 className="za-reader-revision-stop"
                 disabled={stopState === "stopping"}
-                aria-label={locale === "zh-CN" ? "停止修改演示文稿" : "Stop editing presentation"}
+                aria-label={
+                  spreadsheet
+                    ? locale === "zh-CN"
+                      ? "停止修改表格"
+                      : "Stop editing spreadsheet"
+                    : locale === "zh-CN"
+                      ? "停止修改演示文稿"
+                      : "Stop editing presentation"
+                }
                 onClick={async () => {
                   const watch = revisionWatch.current;
                   setStopState("stopping");

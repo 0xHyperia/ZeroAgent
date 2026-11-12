@@ -21,6 +21,7 @@ import {
 
 type UseRightDockProjectTabsOptions = {
   backgroundTasksVisible: boolean;
+  integratedFileTree: boolean;
   leasedTools?: ReadonlySet<RightDockLeasedToolKind>;
   localSessions: TerminalSession[];
   projectPathKey: string;
@@ -35,6 +36,7 @@ type UseRightDockProjectTabsOptions = {
 export function useRightDockProjectTabs(options: UseRightDockProjectTabsOptions) {
   const {
     backgroundTasksVisible,
+    integratedFileTree,
     leasedTools,
     localSessions,
     onProjectStateChange,
@@ -52,6 +54,7 @@ export function useRightDockProjectTabs(options: UseRightDockProjectTabsOptions)
     () =>
       getRightDockVisibleTabs({
         backgroundTasksVisible,
+        integratedFileTree,
         leasedTools,
         localSessions,
         projectPathKey,
@@ -60,6 +63,7 @@ export function useRightDockProjectTabs(options: UseRightDockProjectTabsOptions)
       }),
     [
       backgroundTasksVisible,
+      integratedFileTree,
       leasedTools,
       localSessions,
       projectPathKey,
@@ -118,9 +122,17 @@ export function useRightDockProjectTabs(options: UseRightDockProjectTabsOptions)
   const closeToolTab = useCallback(
     (kind: RightDockSingletonTabKind) => {
       const fallback = rightDockNeighborTabId(orderedProjectTabIds, rightDockSingletonTabId(kind));
-      onProjectStateChange((current) => closeRightDockToolTabState(current, kind, fallback));
+      // The workspace tree can remain visible without an open file picker tab.
+      onProjectStateChange((current) =>
+        closeRightDockToolTabState(
+          current,
+          kind,
+          fallback,
+          integratedFileTree && kind === "fileTree",
+        ),
+      );
     },
-    [onProjectStateChange, orderedProjectTabIds],
+    [integratedFileTree, onProjectStateChange, orderedProjectTabIds],
   );
 
   // Reorders are user gestures, so they double as the lazy GC point for dead

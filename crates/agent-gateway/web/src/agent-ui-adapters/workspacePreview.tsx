@@ -1,8 +1,12 @@
 export const supportsExternalWorkspaceOpen = false;
 export const workspaceOverlayStackClassName = "z-40";
 
-export async function readWorkspaceClipboardText() {
-  return null;
+export async function readWorkspaceClipboardText(): Promise<string | null> {
+  try {
+    return (await navigator.clipboard?.readText()) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function base64ToBytes(data: string) {

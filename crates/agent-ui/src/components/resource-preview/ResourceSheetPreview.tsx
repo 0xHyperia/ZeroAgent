@@ -2,13 +2,23 @@ import {
   parseXlsxRange,
   setWasmSource,
   useXlsxViewerController,
+  type XlsxCellRange,
   type XlsxScrollerRenderProps,
   XlsxViewer,
 } from "@extend-ai/react-xlsx";
 import wasmURL from "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url";
-import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import FunctionIcon from "~icons/gravity-ui/function";
 import { SquareMousePointer } from "../IconSet";
+import { LabelTooltip } from "../ui/label-tooltip";
 import { ScrollArea } from "../ui/scroll-area";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import { PreviewIdentityContext } from "./PreviewChrome";
@@ -23,7 +33,9 @@ import {
   type RevisionSelection,
 } from "./ResourceDocumentComments";
 import ResourceSheetFallback from "./ResourceSheetFallback";
+import { COMMENT_CURSOR, COMMENT_PIN } from "./readerInteraction";
 import { usePreviewReadingState } from "./readingSession";
+import { expandSheetRange, measureSheetGrid, projectSheetRange } from "./sheetAnnotationGeometry";
 
 // Vite emits the version-pinned WASM next to the application, including remote-device builds.
 setWasmSource(wasmURL);
@@ -37,6 +49,12 @@ function sheetCellAt(target: Element | null) {
 
 function addressAt(row: number, col: number) {
   return `${sheetColumnName(col)}${row + 1}`;
+}
+
+function rangeAddress({ start, end }: XlsxCellRange) {
+  const first = addressAt(start.row, start.col);
+  const last = addressAt(end.row, end.col);
+  return first === last ? first : `${first}:${last}`;
 }
 
 type SheetProps = PreviewRecovery & {
@@ -112,11 +130,18 @@ function StyledSheet({
   const { onRequestRevision } = useContext(PreviewIdentityContext);
   const [annotating, setAnnotating] = useState(false);
   const [selection, setSelection] = useState<RevisionSelection | null>(null);
+  const [candidate, setCandidate] = useState<RevisionSelection | null>(null);
   const [marks, setMarks] = useState<readonly DocumentRevisionComment[]>([]);
+  const [commentsToolbar, setCommentsToolbar] = useState<HTMLSpanElement | null>(null);
   const exitRef = useRef<(() => void) | null>(null);
-  const pointer = useRef<{ id: number; cell: NonNullable<ReturnType<typeof sheetCellAt>> } | null>(
-    null,
-  );
+  const editRef = useRef<((id: string) => void) | null>(null);
+  const dismissSelectionRef = useRef<(() => boolean) | null>(null);
+  const pointer = useRef<{
+    id: number;
+    cell: NonNullable<ReturnType<typeof sheetCellAt>>;
+    sheet: string;
+    extend: boolean;
+  } | null>(null);
   const pending = useRef<Extract<DocumentRevisionTarget, { kind: "sheet" }> | null>(null);
 
   const [coverWidth, setCoverWidth] = useState(160);
@@ -137,20 +162,52 @@ function StyledSheet({
     view.scrollLeft = target.left;
     view.scrollTop = target.top;
   }, [zoom]);
-  const highlightComments = useCallback(
-    (name: string, comments: readonly DocumentRevisionComment[]) => {
-      const ranges = comments.flatMap(({ target }) =>
-        target?.kind === "sheet" && target.sheet === name ? [target.range] : [],
-      );
-      if (ranges.length) latest.current.highlightRanges(ranges, { autoScroll: false });
-      else latest.current.clearHighlightedRanges();
-    },
-    [],
-  );
+  const freeze = controller.activeSheet?.freezePanes;
+  const frozenColumns = freeze?.col ?? 0;
+  const frozenRows = freeze?.row ?? 0;
+  const [grid, setGrid] = useState<ReturnType<typeof measureSheetGrid>>(null);
+  const needsGeometry = Boolean(selection || candidate || marks.length);
+  useLayoutEffect(() => {
+    const view = viewport.current;
+    if (!view || !needsGeometry || busy) return;
+    let scheduled = 0;
+    let signature = "";
+    const measure = () => {
+      scheduled = 0;
+      const next = measureSheetGrid(view, { row: frozenRows, col: frozenColumns });
+      const key = JSON.stringify(next);
+      if (signature !== key) {
+        signature = key;
+        setGrid(next);
+      }
+    };
+    const schedule = () => {
+      if (!scheduled) scheduled = requestAnimationFrame(measure);
+    };
+    const resize = new ResizeObserver(schedule);
+    resize.observe(view);
+    const content = view.firstElementChild;
+    if (content) resize.observe(content);
+    const table = view.querySelector("table");
+    if (table) resize.observe(table);
+    // Virtual rows and columns can mount after the scroll event.
+    const mutations = new MutationObserver(schedule);
+    mutations.observe(view, { childList: true, subtree: true });
+    view.addEventListener("scroll", schedule, { passive: true });
+    measure();
+    return () => {
+      view.removeEventListener("scroll", schedule);
+      resize.disconnect();
+      mutations.disconnect();
+      if (scheduled) cancelAnimationFrame(scheduled);
+    };
+  }, [busy, frozenColumns, frozenRows, needsGeometry, sheetName, zoom]);
 
-  useEffect(() => {
-    if (!busy && !thumbnail && onRequestRevision) highlightComments(sheetName, marks);
-  }, [busy, highlightComments, marks, onRequestRevision, sheetName, thumbnail]);
+  const projectTarget = (target: DocumentRevisionTarget | undefined) => {
+    if (target?.kind !== "sheet" || target.sheet !== sheetName) return [];
+    const parsed = parseXlsxRange(target.range);
+    return parsed?.kind === "cells" ? projectSheetRange(grid, parsed.range) : [];
+  };
 
   const resolveSelectionBounds = useCallback(
     (item: RevisionSelection) => {
@@ -158,38 +215,40 @@ function StyledSheet({
       if (!view || item.target?.kind !== "sheet" || item.target.sheet !== sheetName) return;
       const parsed = parseXlsxRange(item.target.range);
       if (parsed?.kind !== "cells") return;
-      const getCell = ({ row, col }: typeof parsed.range.start) =>
-        view.querySelector(`[data-xlsx-cell="${row}:${col}"]`);
-      const start = getCell(parsed.range.start);
-      const end = getCell(parsed.range.end);
-      const first = start?.getBoundingClientRect();
-      const last = end?.getBoundingClientRect();
-      const target =
-        first && last
-          ? new DOMRect(first.left, first.top, last.right - first.left, last.bottom - first.top)
-          : (first ?? last);
-      if (target)
-        return {
-          target,
-          viewport: view.getBoundingClientRect(),
-          observe: start ?? end ?? undefined,
-        };
+      const bounds = projectSheetRange(grid, parsed.range).at(-1);
+      if (!bounds) return;
+      const viewportBounds = view.getBoundingClientRect();
+      return {
+        target: new DOMRect(
+          viewportBounds.left + bounds.left,
+          viewportBounds.top + bounds.top,
+          bounds.width,
+          bounds.height,
+        ),
+        viewport: viewportBounds,
+        align: "end" as const,
+      };
     },
-    [sheetName],
+    [grid, sheetName],
   );
 
   const addSelection = useCallback(
-    (selected?: { range: string; anchor: string }) => {
+    (edit: boolean, selected?: { range: XlsxCellRange; anchor: string }) => {
       const active = latest.current;
       const sheet = active.activeSheet?.name;
-      const range = selected?.range || active.selectedRangeAddress || active.activeCellAddress;
-      const parsed = range ? parseXlsxRange(range) : null;
-      if (!sheet || !range || parsed?.kind !== "cells") return;
+      const base =
+        selected?.range ??
+        active.selection ??
+        (active.activeCell ? { start: active.activeCell, end: active.activeCell } : null);
+      if (!sheet || !base || (edit && dismissSelectionRef.current?.() === false)) return;
       props.assertCurrent();
-      if (selected?.range && active.selectedRangeAddress !== selected.range)
-        active.selectRange(parsed.range);
-      const quote = range.includes(":") ? "" : active.selectedValue.slice(0, 500);
-      setSelection({
+      const bounds = expandSheetRange(base, active.activeSheet?.mergedRanges ?? []);
+      const range = rangeAddress(bounds);
+      const quote =
+        !range.includes(":") && range === active.activeCellAddress
+          ? active.selectedValue.slice(0, 500)
+          : "";
+      const next: RevisionSelection = {
         id: JSON.stringify(["sheet", sheet, range]),
         page: active.activeSheetIndex + 1,
         start: 0,
@@ -203,10 +262,24 @@ function StyledSheet({
           range,
           anchor: selected?.anchor ?? active.activeCellAddress ?? undefined,
         },
-      });
+      };
+      if (edit) {
+        active.selectRange(bounds);
+        setSelection(next);
+      } else setCandidate(next);
     },
     [props.assertCurrent],
   );
+
+  const changeAnnotationMode = useCallback((enabled: boolean) => {
+    setCandidate(null);
+    setAnnotating(enabled);
+    if (!enabled) {
+      latest.current.clearSelection();
+      latest.current.clearHighlightedRanges();
+      viewport.current?.focus({ preventScroll: true });
+    }
+  }, []);
 
   // Reset only on a new immutable byte source; host account/lease changes unmount the reader.
   useEffect(() => {
@@ -289,29 +362,45 @@ function StyledSheet({
             onPointerDownCapture: (event) => {
               rest.onPointerDownCapture?.(event);
               if (
-                !annotating ||
+                !onRequestRevision ||
                 !event.isPrimary ||
                 event.button !== 0 ||
                 !(event.target instanceof Element)
               )
                 return;
               const cell = sheetCellAt(event.target);
-              if (cell) pointer.current = { id: event.pointerId, cell };
+              setCandidate(null);
+              if (cell) {
+                pointer.current = {
+                  id: event.pointerId,
+                  cell,
+                  sheet: latest.current.activeSheet?.name ?? "",
+                  extend: event.shiftKey,
+                };
+              } else if (annotating) dismissSelectionRef.current?.();
             },
             onPointerUpCapture: (event) => {
               rest.onPointerUpCapture?.(event);
-              if (pointer.current?.id !== event.pointerId) return;
-              const start = pointer.current.cell;
+              const gesture = pointer.current;
+              if (gesture?.id !== event.pointerId) return;
               pointer.current = null;
+              const start = gesture.cell;
               const end = sheetCellAt(document.elementFromPoint(event.clientX, event.clientY));
-              if (!end || (start.row === end.row && start.col === end.col)) {
-                requestAnimationFrame(() => addSelection());
-                return;
-              }
-              const first = addressAt(Math.min(start.row, end.row), Math.min(start.col, end.col));
-              const last = addressAt(Math.max(start.row, end.row), Math.max(start.col, end.col));
-              const anchor = addressAt(start.row, start.col);
-              requestAnimationFrame(() => addSelection({ range: `${first}:${last}`, anchor }));
+              if (!end) return;
+              requestAnimationFrame(() => {
+                if (!viewport.current || latest.current.activeSheet?.name !== gesture.sheet) return;
+                if (gesture.extend) {
+                  addSelection(annotating);
+                  return;
+                }
+                addSelection(annotating, {
+                  range: {
+                    start: { row: Math.min(start.row, end.row), col: Math.min(start.col, end.col) },
+                    end: { row: Math.max(start.row, end.row), col: Math.max(start.col, end.col) },
+                  },
+                  anchor: addressAt(start.row, start.col),
+                });
+              });
             },
             onPointerCancel: (event) => {
               rest.onPointerCancel?.(event);
@@ -322,7 +411,15 @@ function StyledSheet({
               if (annotating && event.key === "Enter" && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 event.stopPropagation();
-                addSelection();
+                addSelection(true);
+              } else if (event.key === "Escape" && (candidate || annotating)) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (selection) dismissSelectionRef.current?.();
+                else if (annotating) exitRef.current?.();
+                setCandidate(null);
+              } else if (event.key.startsWith("Arrow")) {
+                setCandidate(null);
               }
             },
           }}
@@ -331,7 +428,14 @@ function StyledSheet({
         </ScrollArea>
       );
     },
-    [addSelection, annotating, props.name],
+    [
+      addSelection,
+      annotating,
+      Boolean(candidate),
+      onRequestRevision,
+      props.name,
+      Boolean(selection),
+    ],
   );
 
   const selectCommentRange = useCallback(
@@ -341,9 +445,8 @@ function StyledSheet({
       const active = latest.current;
       active.selectRange(parsed.range);
       active.highlightRanges(target.range, { autoScroll: true });
-      requestAnimationFrame(() => highlightComments(target.sheet, marks));
     },
-    [highlightComments, marks],
+    [],
   );
 
   useEffect(() => {
@@ -354,10 +457,13 @@ function StyledSheet({
   }, [selectCommentRange, sheetName]);
 
   const navigate = (index: number) => {
+    if (selection && dismissSelectionRef.current?.() === false) return;
     props.assertCurrent();
+    pending.current = null;
     controller.setActiveTabIndex(index);
     controller.clearSelection();
     setSelection(null);
+    setCandidate(null);
     setNotice("");
     if (viewport.current) {
       viewport.current.scrollTop = 0;
@@ -375,10 +481,7 @@ function StyledSheet({
     setNotice("");
     // Navigation uses the engine's merged/hidden/frozen geometry and retains the actual selection.
     controller.highlightRanges(coordinate, { autoScroll: true });
-    requestAnimationFrame(() => {
-      highlightComments(sheetName, marks);
-      viewport.current?.focus({ preventScroll: true });
-    });
+    viewport.current?.focus({ preventScroll: true });
   };
   const feedback = <PreviewLoading message="正在读取工作表…" onCancel={props.onCancel} />;
   useEffect(() => {
@@ -407,6 +510,7 @@ function StyledSheet({
       isDark={false}
       showImages
       enableContextMenu={false}
+      highlightClassName="za-sheet-navigation-highlight"
       renderTableHeaderMenu={() => null}
       enableCanvasSelectionAnimation={!thumbnail}
       enableGestureZoom={false}
@@ -445,6 +549,9 @@ function StyledSheet({
       </div>
     );
   }
+  const activeOutline = projectTarget((selection ?? candidate)?.target);
+  const candidateAnchor = candidate ? activeOutline.at(-1) : undefined;
+  const candidateBelow = !!candidateAnchor && candidateAnchor.top < 44;
   return (
     <>
       <PreviewToolbar label="表格">
@@ -459,12 +566,15 @@ function StyledSheet({
               disabled={busy || controller.activeTab?.kind !== "sheet"}
               onClick={() => {
                 if (annotating) exitRef.current?.();
-                else setAnnotating(true);
+                else changeAnnotationMode(true);
               }}
             >
               <SquareMousePointer className="size-4" />
               请求修改
             </Button>
+          )}
+          {onRequestRevision && (
+            <span ref={setCommentsToolbar} className="za-sheet-comments-slot" />
           )}
         </PreviewLeadingTools>
         <PreviewZoomControl
@@ -535,15 +645,116 @@ function StyledSheet({
           {notice}
         </p>
       ) : null}
-      <div className="za-sheet-engine relative" aria-busy={busy}>
+      <div
+        className="za-sheet-engine relative"
+        aria-busy={busy}
+        data-sheet-annotation-mode={annotating || undefined}
+        data-sheet-own-selection={
+          !!candidate ||
+          !!selection ||
+          marks.some(
+            (item) =>
+              item.target?.kind === "sheet" &&
+              item.target.sheet === sheetName &&
+              item.target.range === rangeName,
+          ) ||
+          undefined
+        }
+        style={
+          annotating
+            ? ({ "--za-sheet-comment-cursor": COMMENT_CURSOR } as CSSProperties)
+            : undefined
+        }
+      >
         {viewer}
+        {onRequestRevision && !busy && (
+          <div className="za-sheet-annotations">
+            {marks.map((mark) => {
+              if (mark.block === selection?.id) return null;
+              const parts = projectTarget(mark.target);
+              const anchor = parts.at(-1);
+              if (!anchor) return null;
+              return (
+                <div key={mark.id} data-sheet-comment={mark.id}>
+                  {parts.map(({ key, ...style }) => (
+                    <span
+                      aria-hidden="true"
+                      className="za-sheet-range-outline"
+                      key={key}
+                      style={style}
+                    />
+                  ))}
+                  <LabelTooltip
+                    label={mark.comment}
+                    side="top"
+                    contentClassName="za-slide-comment-preview"
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`编辑表格批注 ${mark.target?.kind === "sheet" ? mark.target.range : ""}`}
+                        className="za-sheet-comment-pin"
+                        style={{ left: anchor.left + anchor.width, top: anchor.top }}
+                        onClick={() => {
+                          if (!selection || dismissSelectionRef.current?.())
+                            editRef.current?.(mark.id);
+                        }}
+                      >
+                        <span aria-hidden="true" style={{ backgroundImage: COMMENT_PIN }} />
+                      </Button>
+                    }
+                  />
+                </div>
+              );
+            })}
+            {activeOutline.map(({ key, ...style }) => (
+              <span
+                aria-hidden="true"
+                className="za-sheet-range-outline"
+                data-state={selection ? "draft" : "candidate"}
+                key={key}
+                style={style}
+              />
+            ))}
+            {candidate && candidateAnchor && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="za-sheet-range-action"
+                data-below={candidateBelow}
+                style={{
+                  left: `clamp(76px, ${candidateAnchor.left + candidateAnchor.width / 2}px, calc(100% - 76px))`,
+                  top: candidateBelow
+                    ? candidateAnchor.top + candidateAnchor.height
+                    : candidateAnchor.top,
+                }}
+                onClick={() => {
+                  changeAnnotationMode(true);
+                  setSelection(candidate);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  event.stopPropagation();
+                  setCandidate(null);
+                  viewport.current?.focus({ preventScroll: true });
+                }}
+              >
+                <SquareMousePointer className="size-4" />
+                提出修改请求
+              </Button>
+            )}
+          </div>
+        )}
         {onRequestRevision && (
           <ResourceDocumentComments
             enabled={annotating}
-            onEnabled={setAnnotating}
+            onEnabled={changeAnnotationMode}
             selection={selection}
             onSelection={setSelection}
             exitRef={exitRef}
+            editRef={editRef}
+            dismissSelectionRef={dismissSelectionRef}
+            toolbarTarget={commentsToolbar}
             onMarks={setMarks}
             resolveSelectionBounds={resolveSelectionBounds}
             onNavigate={(_block, comment) => {

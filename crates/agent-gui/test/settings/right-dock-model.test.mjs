@@ -362,6 +362,36 @@ test("closeRightDockToolTabState removes the tool and reassigns activeTabId only
   assert.equal(rightDockModel.closeRightDockToolTabState(closedActive, "gitReview", null), closedActive);
 });
 
+test("the integrated file picker closes independently of file tree selection and filtering", () => {
+  const options = {
+    backgroundTasksVisible: false,
+    integratedFileTree: true,
+    localSessions: [],
+    projectPathKey: "/workspace/app",
+    tunnelAvailable: false,
+  };
+  const opened = settings.openRightDockToolTabState(
+    settings.normalizeRightDockProjectState({}),
+    "fileTree",
+  );
+  const filtered = settings.patchRightDockFileTreeState(opened, {
+    query: "notes",
+    expandedPaths: ["docs"],
+  });
+  const closed = rightDockModel.closeRightDockToolTabState(filtered, "fileTree", null, true);
+  const selected = settings.patchRightDockFileTreeState(closed, { selectedPath: "docs/notes.md" });
+  assert.deepEqual(rightDockModel.getRightDockVisibleTabs({ ...options, projectState: selected }), []);
+  assert.equal(selected.activeTabId, undefined);
+  assert.equal(settings.readRightDockFileTreeState(selected).query, "notes");
+  assert.deepEqual(settings.readRightDockFileTreeState(selected).expandedPaths, ["docs"]);
+  assert.equal(settings.readRightDockFileTreeState(selected).selectedPath, "docs/notes.md");
+
+  const reopened = settings.openRightDockToolTabState(selected, "fileTree");
+  assert.deepEqual(rightDockModel.getRightDockVisibleTabs({ ...options, projectState: reopened }), [
+    { id: RIGHT_DOCK_TAB_IDS.fileTree, kind: "fileTree" },
+  ]);
+});
+
 describe("tab drag engine", () => {
   // a: [0,80) b: [84,244) (wide) c: [248,308)
   const slots = [

@@ -134,6 +134,7 @@ export function rightDockTabRequiresProject(kind: RightDockSingletonTabKind) {
 
 export function getRightDockVisibleTabs(options: {
   backgroundTasksVisible: boolean;
+  integratedFileTree?: boolean;
   /** Tools whose surface lives in a workbench pane: no dock tab for them. */
   leasedTools?: ReadonlySet<RightDockLeasedToolKind>;
   localSessions: TerminalSession[];
@@ -143,6 +144,7 @@ export function getRightDockVisibleTabs(options: {
 }) {
   const {
     backgroundTasksVisible,
+    integratedFileTree,
     leasedTools = NO_LEASED_RIGHT_DOCK_TOOLS,
     localSessions,
     projectPathKey,
@@ -157,6 +159,12 @@ export function getRightDockVisibleTabs(options: {
   for (const kind of RIGHT_DOCK_SINGLETON_TAB_KINDS) {
     if (leasedTools.has(kind)) continue;
     if (!projectState.tools[kind]) continue;
+    if (
+      kind === "fileTree" &&
+      integratedFileTree &&
+      !projectState.tabOrder.includes(FILE_TREE_TAB_ID)
+    )
+      continue;
     if (kind === "tunnel" && !tunnelAvailable) continue;
     if (rightDockTabRequiresProject(kind) && !projectPathKey) continue;
     nextTabs.push({ id: rightDockSingletonTabId(kind), kind });
@@ -308,11 +316,12 @@ export function closeRightDockToolTabState(
   state: RightDockProjectState,
   kind: RightDockSingletonTabKind,
   fallbackActiveTabId: string | null,
+  retainToolState = false,
 ): RightDockProjectState {
   if (!state.tools[kind]) return state;
   const tabId = rightDockSingletonTabId(kind);
   const tools = { ...state.tools };
-  delete tools[kind];
+  if (!retainToolState) delete tools[kind];
   const activeTabId =
     state.activeTabId === tabId ? (fallbackActiveTabId ?? undefined) : state.activeTabId;
   return {

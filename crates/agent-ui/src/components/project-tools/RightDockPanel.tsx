@@ -679,6 +679,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     tunnelInitialized,
   } = useRightDockProjectTabs({
     backgroundTasksVisible,
+    integratedFileTree: Boolean(workspace),
     leasedTools,
     localSessions,
     onProjectStateChange,
@@ -858,6 +859,25 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   }, []);
 
   const openWorkspaceDiff = workspace?.onOpenDiff;
+  const filePicker = Boolean(
+    workspace && !workspace.activeTabId && currentActiveTab === "fileTree",
+  );
+  const openFileFromTree = useCallback(
+    (path: string, imagePaths?: string[], temporary?: boolean) => {
+      if (!onOpenFile) return;
+      onOpenFile(path, imagePaths, temporary);
+      if (filePicker) closeToolTab("fileTree");
+    },
+    [closeToolTab, filePicker, onOpenFile],
+  );
+  const openDiffFromTree = useCallback(
+    (path: string, temporary?: boolean) => {
+      if (!openWorkspaceDiff || gitDisabledMessage) return;
+      openWorkspaceDiff(path, temporary);
+      if (filePicker) closeToolTab("fileTree");
+    },
+    [closeToolTab, filePicker, gitDisabledMessage, openWorkspaceDiff],
+  );
   const reviewFileJumpRef = useRef<((path: string) => void) | null>(null);
   const [reviewState, setReviewState] = useState<{
     view: string;
@@ -915,7 +935,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
         onInitializedChange: setFileTreeInitialized,
         onStateChange: onFileTreeStateChange,
         onInsertFileMention,
-        onOpenFile,
+        onOpenFile: onOpenFile && openFileFromTree,
         onRevealInFileTree: revealPathInFileTree,
       },
       git: {
@@ -983,6 +1003,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       onInsertGitFileMention,
       onOpenWorkspaceTree,
       onOpenFile,
+      openFileFromTree,
       onOpenSshSession,
       onSshProjectHostIdsChange,
       openExternal,
@@ -1017,9 +1038,6 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       sshTunnel: sshTunnelInitialized,
     }),
     [fileTreeInitialized, gitReviewInitialized, sshTunnelInitialized, tunnelInitialized],
-  );
-  const filePicker = Boolean(
-    workspace && !workspace.activeTabId && currentActiveTab === "fileTree",
   );
   const reviewTree = Boolean(
     workspace && !workspace.activeTabId && currentActiveTab === "gitReview" && gitClient,
@@ -1406,9 +1424,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                     conversationId={comparisonConversationId}
                     onOpenReview={() => startToolTab("gitReview")}
                     onOpenDiff={
-                      reviewTree
-                        ? (path) => reviewFileJumpRef.current?.(path)
-                        : workspace.onOpenDiff
+                      reviewTree ? (path) => reviewFileJumpRef.current?.(path) : openDiffFromTree
                     }
                   />
                 </WorkspaceNavigationSplit>
