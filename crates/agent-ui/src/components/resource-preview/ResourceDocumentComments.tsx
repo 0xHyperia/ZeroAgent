@@ -1,7 +1,6 @@
 import { type RefObject, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Check,
   ChevronDown,
   ChevronUp,
   GripVertical,
@@ -27,6 +26,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { TooltipButton } from "../ui/tooltip-button";
+import { DocumentCommentEditor } from "./DocumentCommentEditor";
 import type {
   DocumentPageGeometry,
   DocumentRegion,
@@ -82,9 +82,12 @@ export type RevisionSelection = DocumentSelection & {
   visible?: boolean;
   target?: DocumentRevisionTarget;
   pdf?: PdfRevisionTarget;
+  editingCommentId?: string;
 };
 function selectionKey(value: RevisionSelection | null) {
-  return value ? JSON.stringify([value.id, value.start, value.end, value.region]) : "";
+  return value
+    ? JSON.stringify([value.id, value.start, value.end, value.region, value.editingCommentId])
+    : "";
 }
 
 export function documentRevisionLocation(item: Pick<DocumentRevisionComment, "target" | "page">) {
@@ -121,45 +124,29 @@ export function ResourceDocumentComments(props: {
   const [comments, setComments] = usePreviewReadingState("documentComments", []);
   const [input, setInput] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
-  const hasUncommittedInput = Boolean(
-    input.trim() &&
-      !(
-        props.sheetSelection &&
-        editing &&
-        comments.some((comment) => comment.id === editing && comment.comment === input.trim())
-      ),
-  );
+  const editedItem = editing ? comments.find((comment) => comment.id === editing) : undefined;
+  const hasUncommittedInput = editedItem ? input !== editedItem.comment : !!input.trim();
+  const [confirmDismiss, setConfirmDismiss] = useState(false);
   const editingSelection = useRef<RevisionSelection | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLFormElement>(null);
+  const { selection, resolveSelectionBounds } = props;
   useEffect(() => {
-    if (props.selection) {
-      if (selectionKey(props.selection) !== selectionKey(editingSelection.current)) {
-        const existing = comments.find(
-          (item) =>
-            (props.selection?.kind === "image" &&
-              item.kind === "image" &&
-              item.block === props.selection.id) ||
-            selectionKey({ ...item, id: item.block, x: 0, y: 0 }) === selectionKey(props.selection),
-        );
-        setEditing(existing?.id ?? null);
-        setInput(existing?.comment ?? "");
-      }
-      editingSelection.current = props.selection;
-    } else {
-      editingSelection.current = null;
+    if (selectionKey(selection) !== selectionKey(editingSelection.current)) {
       setEditing(null);
       setInput("");
+      setConfirmDismiss(false);
     }
-  }, [props.selection, comments]);
+    editingSelection.current = selection;
+  }, [selection]);
   const [index, setIndex] = useState(0);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [listSource, setListSource] = useState<"toolbar" | "queue" | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const floating = useReaderFloatingPosition(props.enabled || comments.length > 0);
+  const floating = useReaderFloatingPosition(props.enabled || !!selection || comments.length > 0);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const { selection, resolveSelectionBounds } = props;
   const overlay = floating.root;
   useLayoutEffect(() => {
     const root = overlay.current;
@@ -177,11 +164,23 @@ export function ResourceDocumentComments(props: {
         target.top > viewport.bottom
       )
         return setPosition(null);
-      const width = Math.min(360, area.width - 24);
+      const form = editorRef.current;
+      const width = form?.offsetWidth ?? 294;
       const left = align === "end" ? target.right - width : target.left;
       const x = Math.max(12, Math.min(left - area.left, area.width - width - 12));
-      const bottom = Math.min(target.bottom, viewport.bottom) - area.top;
-      const y = Math.max(8, Math.min(bottom, area.height - 64));
+      const height = form?.offsetHeight || 48;
+      const viewportTop = Math.max(8, viewport.top - area.top + 8);
+      const viewportBottom = Math.min(area.bottom, viewport.bottom) - area.top - 8;
+      const below = Math.min(target.bottom, viewport.bottom) - area.top + 8;
+      const above = target.top - area.top - height - 8;
+      const y = Math.max(
+        viewportTop,
+        below + height <= viewportBottom
+          ? below
+          : above >= viewportTop
+            ? above
+            : viewportBottom - height,
+      );
       setPosition((previous) => (previous?.x === x && previous.y === y ? previous : { x, y }));
     };
     update();
@@ -189,20 +188,31 @@ export function ResourceDocumentComments(props: {
     observer.observe(root);
     const target = resolveSelectionBounds(selection)?.observe;
     if (target) observer.observe(target);
-    parent?.addEventListener("scroll", update, true);
+    if (editorRef.current) observer.observe(editorRef.current);
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        update();
+      });
+    };
+    parent?.addEventListener("scroll", onScroll, true);
     return () => {
       observer.disconnect();
-      parent?.removeEventListener("scroll", update, true);
+      cancelAnimationFrame(frame);
+      parent?.removeEventListener("scroll", onScroll, true);
     };
   }, [overlay, selection, resolveSelectionBounds]);
-  const key = selectionKey(selection);
+  const key = selection?.editingCommentId ?? selectionKey(selection);
   const hasAnchor = !resolveSelectionBounds || !!position;
-  const inputVisible = !!selection && selection.visible !== false && hasAnchor && props.enabled;
+  const inputVisible = !!selection && selection.visible !== false && hasAnchor;
   const focusedKey = useRef("");
   useEffect(() => {
     if (!key || (props.sheetSelection && !inputVisible)) focusedKey.current = "";
-    if (inputVisible && inputRef.current && focusedKey.current !== key) {
-      inputRef.current.focus({ preventScroll: true });
+    const field = inputRef.current;
+    if (inputVisible && field && focusedKey.current !== key) {
+      field.focus({ preventScroll: true });
       focusedKey.current = key;
     }
   }, [inputVisible, key, props.sheetSelection]);
@@ -215,19 +225,24 @@ export function ResourceDocumentComments(props: {
     }
   }
   useEffect(() => {
-    if (props.exitRef) props.exitRef.current = exit;
+    const ref = props.exitRef;
+    if (!ref) return;
+    ref.current = exit;
     return () => {
-      if (props.exitRef) props.exitRef.current = null;
+      ref.current = null;
     };
   });
   useEffect(() => {
     const ref = props.dismissSelectionRef;
     if (!ref) return;
     ref.current = () => {
-      if (busy || hasUncommittedInput) {
-        if (props.sheetSelection) inputRef.current?.focus({ preventScroll: true });
+      if (busy || inFlight.current) return false;
+      if (hasUncommittedInput && !confirmDismiss) {
+        setConfirmDismiss(true);
+        inputRef.current?.focus({ preventScroll: true });
         return false;
       }
+      if (!selection) return true;
       props.onSelection(null);
       return true;
     };
@@ -237,9 +252,10 @@ export function ResourceDocumentComments(props: {
   }, [
     props.dismissSelectionRef,
     props.onSelection,
-    props.sheetSelection,
     busy,
     hasUncommittedInput,
+    confirmDismiss,
+    selection,
   ]);
   useEffect(() => {
     props.onMarks(comments);
@@ -247,47 +263,58 @@ export function ResourceDocumentComments(props: {
   function publish(next: DocumentRevisionComment[]) {
     setComments(next);
   }
-  function add() {
+  const canSave =
+    !!input.trim() && (editedItem ? input.trim() !== editedItem.comment : comments.length < 20);
+  function add(sendBatch = false) {
     const selection = props.selection;
-    if (busy || !selection || !input.trim() || (!editing && comments.length >= 20)) return;
-    const item = {
-      id: editing ?? crypto.randomUUID(),
-      page: selection.page,
-      block: selection.id,
-      start: selection.start,
-      end: selection.end,
-      quote: selection.quote,
-      comment: input.trim().slice(0, 2000),
-      ...(selection.kind ? { kind: selection.kind } : {}),
-      ...(selection.region ? { region: selection.region } : {}),
-      ...(selection.anchors ? { anchors: selection.anchors } : {}),
-      ...(selection.target ? { target: selection.target } : {}),
-      ...(selection.pdf ? { pdf: selection.pdf } : {}),
-      ...(selection.document ? { document: selection.document } : {}),
-    };
-    publish(
-      editing ? comments.map((old) => (old.id === editing ? item : old)) : [...comments, item],
-    );
+    if (busy || inFlight.current || !selection) return;
+    if (!canSave) {
+      if (sendBatch && editedItem && !hasUncommittedInput) void send(comments);
+      return;
+    }
+    const item = editedItem
+      ? { ...editedItem, comment: input.trim() }
+      : {
+          id: crypto.randomUUID(),
+          page: selection.page,
+          block: selection.id,
+          start: selection.start,
+          end: selection.end,
+          quote: selection.quote,
+          comment: input.trim().slice(0, 2000),
+          ...(selection.kind ? { kind: selection.kind } : {}),
+          ...(selection.region ? { region: selection.region } : {}),
+          ...(selection.anchors ? { anchors: selection.anchors } : {}),
+          ...(selection.target ? { target: selection.target } : {}),
+          ...(selection.pdf ? { pdf: selection.pdf } : {}),
+          ...(selection.document ? { document: selection.document } : {}),
+        };
+    const next = editing
+      ? comments.map((old) => (old.id === editing ? item : old))
+      : [...comments, item];
+    publish(next);
     setEditing(null);
     props.onSelection(null);
     setInput("");
     if (!editing) setIndex(comments.length);
+    if (sendBatch) void send(next);
   }
-  async function send() {
+  async function send(confirmedBatch?: readonly DocumentRevisionComment[]) {
+    const batch = confirmedBatch ?? comments;
     if (
       !onRequestRevision ||
       inFlight.current ||
       busy ||
-      !comments.length ||
-      (props.sheetSelection && hasUncommittedInput)
+      !batch.length ||
+      (!confirmedBatch && hasUncommittedInput)
     )
       return;
     inFlight.current = true;
     setBusy(true);
     setError("");
     try {
-      const evidence = await props.prepareEvidence?.(comments);
-      if (await onRequestRevision(comments, evidence)) {
+      const evidence = await props.prepareEvidence?.(batch);
+      if (await onRequestRevision(batch, evidence)) {
         publish([]);
         props.onSelection(null);
         props.onEnabled(false);
@@ -311,8 +338,7 @@ export function ResourceDocumentComments(props: {
   });
   const current = comments[Math.min(index, comments.length - 1)];
   function move(direction: number) {
-    if (props.sheetSelection && props.selection && props.dismissSelectionRef?.current?.() === false)
-      return;
+    if (selection && props.dismissSelectionRef?.current?.() === false) return;
     const next = Math.max(0, Math.min(comments.length - 1, index + direction));
     setIndex(next);
     if (comments[next]) props.onNavigate(comments[next].block, comments[next]);
@@ -321,7 +347,8 @@ export function ResourceDocumentComments(props: {
     if (
       !item ||
       busy ||
-      (props.sheetSelection && props.selection && props.dismissSelectionRef?.current?.() === false)
+      inFlight.current ||
+      (props.selection && props.dismissSelectionRef?.current?.() === false)
     )
       return;
     setIndex(comments.indexOf(item));
@@ -329,8 +356,8 @@ export function ResourceDocumentComments(props: {
     props.onNavigate(item.block, item, source);
     setEditing(item.id);
     setInput(item.comment);
-    props.onEnabled(true);
-    const selection = {
+    setConfirmDismiss(false);
+    const selection: RevisionSelection = {
       id: item.block,
       page: item.page,
       start: item.start,
@@ -344,6 +371,7 @@ export function ResourceDocumentComments(props: {
       target: item.target,
       pdf: item.pdf,
       document: item.document,
+      editingCommentId: item.id,
     };
     editingSelection.current = selection;
     props.onSelection(selection);
@@ -403,6 +431,7 @@ export function ResourceDocumentComments(props: {
                   disabled={busy}
                   aria-label={`定位第 ${itemIndex + 1} 条批注，${documentRevisionLocation(item)}`}
                   onClick={() => {
+                    if (selection && props.dismissSelectionRef?.current?.() === false) return;
                     setIndex(itemIndex);
                     props.onNavigate(item.block, item);
                     setListSource(null);
@@ -444,7 +473,7 @@ export function ResourceDocumentComments(props: {
   const toolbarReview = props.toolbarTarget
     ? createPortal(reviewList("toolbar"), props.toolbarTarget)
     : null;
-  if (!props.enabled && !comments.length) return toolbarReview;
+  if (!props.enabled && !selection && !comments.length) return toolbarReview;
   return (
     <fieldset
       ref={floating.root}
@@ -452,53 +481,48 @@ export function ResourceDocumentComments(props: {
       aria-label="文档批注"
       disabled={busy}
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (
+          event.key === "Escape" &&
+          !event.defaultPrevented &&
+          selection &&
+          !event.nativeEvent.isComposing &&
+          editorRef.current?.contains(event.target as Node)
+        ) {
           event.preventDefault();
           event.stopPropagation();
-          if (props.dismissSelectionRef) props.dismissSelectionRef.current?.();
-          else props.onSelection(null);
+          if (props.dismissSelectionRef) {
+            if (!event.repeat) props.dismissSelectionRef.current?.();
+          } else props.onSelection(null);
         }
       }}
     >
       {toolbarReview}
-      {selection && inputVisible ? (
-        <form
-          className="za-document-comment-input"
-          style={
-            props.sheetSelection
-              ? undefined
-              : {
-                  left: resolveSelectionBounds ? position?.x : Math.max(16, selection.x),
-                  top:
-                    resolveSelectionBounds && position
-                      ? position.y + 8
-                      : Math.max(72, selection.y + 8),
-                }
+      {selection ? (
+        <DocumentCommentEditor
+          formRef={editorRef}
+          inputRef={inputRef}
+          position={
+            inputVisible
+              ? resolveSelectionBounds
+                ? position
+                : props.sheetSelection
+                  ? undefined
+                  : { x: Math.max(16, selection.x), y: Math.max(72, selection.y + 8) }
+              : null
           }
-          onSubmit={(event) => {
-            event.preventDefault();
-            add();
+          value={input}
+          editing={!!editedItem}
+          canSave={canSave}
+          canSend={!!onRequestRevision && (canSave || (!!editedItem && !hasUncommittedInput))}
+          confirmDismiss={confirmDismiss}
+          onChange={(value) => {
+            setInput(value);
+            setConfirmDismiss(false);
           }}
-        >
-          <div className="za-document-comment-field">
-            <input
-              ref={inputRef}
-              aria-label="修改建议"
-              placeholder="描述更改或提出问题"
-              value={input}
-              maxLength={2000}
-              onChange={(event) => setInput(event.target.value)}
-            />
-            <Button
-              type="submit"
-              size="icon-sm"
-              disabled={!input.trim() || (!editing && comments.length >= 20)}
-              aria-label="添加批注"
-            >
-              <Check className="size-4" />
-            </Button>
-          </div>
-        </form>
+          onSave={add}
+          onCancel={() => props.onSelection(null)}
+          onDelete={() => removeItem(editedItem)}
+        />
       ) : null}
       <div ref={floating.bar} className="za-document-comment-queue" style={floating.style}>
         <button
@@ -572,7 +596,7 @@ export function ResourceDocumentComments(props: {
           <Button
             className="za-document-comment-send"
             size="sm"
-            disabled={busy || !onRequestRevision || (props.sheetSelection && hasUncommittedInput)}
+            disabled={busy || !onRequestRevision || hasUncommittedInput}
             onClick={() => void send()}
           >
             {busy ? <span className="za-reader-button-spinner" /> : null}

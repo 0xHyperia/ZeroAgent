@@ -29,6 +29,8 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   let viewportTop = 0;
   let viewportHeight = innerHeight;
   let lastHeight = 0;
+  let editing = false;
+  let editingCommentId = "";
   let tracked: { id: string; page: number; region?: DocumentRegion } | null = null;
   const position = () => {
     if (!tracked) return;
@@ -152,23 +154,24 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   tip.className = "za-reader-comment-tip";
   tip.setAttribute("role", "tooltip");
   const hideTip = () => tip.remove();
+  const savedAnnotationAt = (event: MouseEvent, target: Element) =>
+    [...document.querySelectorAll<HTMLElement>(".za-reader-saved-region")].find((element) => {
+      const rect = element.getBoundingClientRect();
+      return (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right + 12 &&
+        event.clientY >= rect.top - 12 &&
+        event.clientY <= rect.bottom
+      );
+    }) ?? target.closest("[data-commented]");
   document.addEventListener("pointermove", (event) => {
     if (drag || !(event.target instanceof Element)) {
       hideTip();
       return;
     }
-    const marked =
-      [...document.querySelectorAll<HTMLElement>(".za-reader-saved-region")].find((element) => {
-        const rect = element.getBoundingClientRect();
-        return (
-          event.clientX >= rect.left &&
-          event.clientX <= rect.right + 12 &&
-          event.clientY >= rect.top - 12 &&
-          event.clientY <= rect.bottom
-        );
-      }) ?? event.target.closest("[data-commented]");
+    const marked = savedAnnotationAt(event, event.target);
     const note = marked ? notes.get(marked) : "";
-    if (!note || !marked) {
+    if (!note || !marked || noteIds.get(marked) === editingCommentId) {
       hideTip();
       return;
     }
@@ -180,7 +183,15 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   });
   document.addEventListener("pointerleave", hideTip);
   const choose = (event: MouseEvent, target = event.target) => {
-    if (!enabled || !(target instanceof Element)) return;
+    if (!enabled || !canModify || !(target instanceof Element)) return;
+    const range = getSelection()?.rangeCount ? getSelection()?.getRangeAt(0) : null;
+    const saved = savedAnnotationAt(event, target);
+    const savedId = saved && noteIds.get(saved);
+    if (savedId) {
+      hideTip();
+      send({ type: "edit-comment", id: savedId });
+      return;
+    }
     const block = target.closest<HTMLElement>("[data-reader-block]");
     if (!block) {
       const page = target.closest<HTMLElement>("[data-reader-page]");
@@ -204,12 +215,6 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
       });
       return;
     }
-    const savedId = noteIds.get(block);
-    if (savedId) {
-      send({ type: "edit-comment", id: savedId });
-      return;
-    }
-    const range = getSelection()?.rangeCount ? getSelection()?.getRangeAt(0) : null;
     // Never replace a cross-paragraph selection with an unrelated whole block.
     if (
       range &&
@@ -258,6 +263,14 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   // Ordinary reading keeps text selection intact; only embedded images expose this shortcut.
   document.addEventListener("click", (event) => {
     if (enabled || !canModify || !(event.target instanceof Element)) return;
+    const mark = savedAnnotationAt(event, event.target);
+    const id = mark && noteIds.get(mark);
+    if (id && getSelection()?.isCollapsed !== false) {
+      hideTip();
+      send({ type: "edit-comment", id });
+      return;
+    }
+    if (editing) return;
     const image = event.target.closest<HTMLElement>('[data-reader-kind="image"]');
     if (!image) {
       tracked = null;
@@ -291,7 +304,10 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
     });
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !enabled) send({ type: "image-shortcut-clear" });
+    if (event.key === "Escape" && canModify && !event.isComposing && (enabled || tracked)) {
+      event.preventDefault();
+      if (!event.repeat) send({ type: "annotation-escape" });
+    }
     if (
       (event.ctrlKey || event.metaKey) &&
       event.shiftKey &&
@@ -338,22 +354,6 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
     if (!current) return;
     handledPointer = true;
     if (!current.moved) {
-      const saved = [...document.querySelectorAll<HTMLElement>(".za-reader-saved-region")].find(
-        (element) => {
-          const rect = element.getBoundingClientRect();
-          return (
-            event.clientX >= rect.left &&
-            event.clientX <= rect.right + 12 &&
-            event.clientY >= rect.top - 12 &&
-            event.clientY <= rect.bottom
-          );
-        },
-      );
-      const id = saved && noteIds.get(saved);
-      if (id) {
-        send({ type: "edit-comment", id });
-        return;
-      }
       choose(event, current.target);
       return;
     }
@@ -401,7 +401,7 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
   });
   document.addEventListener("mouseup", (event) => {
     if (handledPointer) handledPointer = false;
-    else choose(event);
+    else if (event.button === 0) choose(event);
   });
   document.addEventListener("keydown", (event) => {
     if (
@@ -475,6 +475,9 @@ function readerBridge(token: string, validRegion: typeof validDocumentRegion) {
       });
     }
     if (message.type === "track") {
+      editing = message.editing === true;
+      editingCommentId = typeof message.commentId === "string" ? message.commentId : "";
+      if (editing) hideTip();
       tracked =
         /^za-reader-(?:page|block)-\d+$/.test(message.id) &&
         Number.isSafeInteger(message.page) &&

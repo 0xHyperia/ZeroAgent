@@ -22,7 +22,7 @@ import FunctionIcon from "~icons/gravity-ui/function";
 import { SquareMousePointer } from "../IconSet";
 import { ScrollArea } from "../ui/scroll-area";
 import { TooltipButton as Button } from "../ui/tooltip-button";
-import { PreviewIdentityContext } from "./PreviewChrome";
+import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewLoading, type PreviewRecovery, PreviewUnavailable } from "./PreviewFeedback";
 import { PreviewLeadingTools, PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
 import { sheetColumnName } from "./previewGeometry";
@@ -126,7 +126,7 @@ function StyledSheet({
   const { onRequestRevision } = useContext(PreviewIdentityContext);
   const [annotating, setAnnotating] = useState(false);
   const [selection, setSelection] = useState<RevisionSelection | null>(null);
-  const draft = annotating ? selection : null;
+  const draft = selection;
   const hasDraft = Boolean(draft);
   const [candidate, setCandidate] = useState<SheetRevisionCandidate | null>(null);
   const [marks, setMarks] = useState<readonly DocumentRevisionComment[]>([]);
@@ -236,6 +236,26 @@ function StyledSheet({
     setCandidate(null);
     setAnnotating(enabled);
   }, []);
+  const selectComment = useCallback((next: RevisionSelection | null) => {
+    if (!next && document.activeElement?.closest(".za-document-comment-editor")) {
+      viewport.current?.focus({ preventScroll: true });
+    }
+    setSelection(next);
+  }, []);
+  const handleEscape = useCallback(() => {
+    if (hasDraft) dismissSelectionRef.current?.();
+    else if (annotating) changeAnnotationMode(false);
+    else if (!candidate && !selectionFrame.current) return false;
+    cancelAnimationFrame(selectionFrame.current);
+    selectionFrame.current = 0;
+    setCandidate(null);
+    return true;
+  }, [annotating, candidate, changeAnnotationMode, hasDraft]);
+  const registerEscape = useContext(PreviewToolbarMount)?.registerEscapeHandler;
+  useLayoutEffect(
+    () => (hasDraft || annotating || candidate ? registerEscape?.(handleEscape) : undefined),
+    [annotating, candidate, handleEscape, hasDraft, registerEscape],
+  );
   const requestCandidate = useCallback(() => {
     if (!candidate || dismissSelectionRef.current?.() === false) return;
     props.assertCurrent();
@@ -408,15 +428,13 @@ function StyledSheet({
                   requestCandidate();
                 } else if (
                   event.key === "Escape" &&
-                  (candidate || annotating || selectionFrame.current)
+                  !event.defaultPrevented &&
+                  !event.nativeEvent.isComposing &&
+                  (hasDraft || candidate || annotating || selectionFrame.current)
                 ) {
                   event.preventDefault();
                   event.stopPropagation();
-                  cancelAnimationFrame(selectionFrame.current);
-                  selectionFrame.current = 0;
-                  if (hasDraft) dismissSelectionRef.current?.();
-                  else if (annotating) changeAnnotationMode(false);
-                  setCandidate(null);
+                  if (!event.repeat) handleEscape();
                 } else if (event.key.startsWith("Arrow")) {
                   setCandidate(null);
                 }
@@ -466,7 +484,7 @@ function StyledSheet({
       annotating,
       busy,
       candidate,
-      changeAnnotationMode,
+      handleEscape,
       draft,
       hasDraft,
       marks,
@@ -713,7 +731,7 @@ function StyledSheet({
             enabled={annotating}
             onEnabled={changeAnnotationMode}
             selection={selection}
-            onSelection={setSelection}
+            onSelection={selectComment}
             editRef={editRef}
             dismissSelectionRef={dismissSelectionRef}
             toolbarTarget={commentsToolbar}

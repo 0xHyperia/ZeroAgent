@@ -377,7 +377,7 @@ function SlideAnnotationLayer({
                   (region.width * Math.sin(angle) * aspectRatio) / 2,
               }
             : target?.point;
-        if (!point || selection?.id === mark.block) return null;
+        if (!point || selection?.editingCommentId === mark.id) return null;
         return (
           <span key={mark.id}>
             {region && renderRegion(region, "marked", rotation)}
@@ -598,8 +598,7 @@ export default function ResourceSlidesPreview(
       return true;
     }
   });
-  const exitRef = useRef<(() => void) | null>(null);
-  const editRef = useRef<((id: string) => void) | null>(null);
+  const editRef = useRef<((id: string, source?: "marker") => void) | null>(null);
   const dismissSelectionRef = useRef<(() => boolean) | null>(null);
   const [slideFrame, setSlideFrame] = useState<HTMLDivElement | null>(null);
   const gridRoot = useRef<HTMLDivElement>(null);
@@ -759,7 +758,7 @@ export default function ResourceSlidesPreview(
       candidate: candidate?.page === number ? candidate : null,
       onCandidate: setCandidate,
       onDismissSelection: () => dismissSelectionRef.current?.() ?? false,
-      onEdit: (id) => editRef.current?.(id),
+      onEdit: (id) => editRef.current?.(id, "marker"),
       onPick: (item) => {
         assertCurrent();
         setAnnotating(true);
@@ -834,7 +833,7 @@ export default function ResourceSlidesPreview(
     } else if (candidate) {
       setCandidate(null);
     } else if (annotating) {
-      exitRef.current?.();
+      setAnnotating(false);
     } else if (railHovered) {
       setRailHovered(false);
     } else if (grid && gridSelection !== null) {
@@ -981,11 +980,7 @@ export default function ResourceSlidesPreview(
       const anchor = item.target?.kind === "slide" ? item.target.point : undefined;
       const x = area.left + (width ? left : (anchor?.x ?? left)) * area.width;
       const y = area.top + (height ? top : (anchor?.y ?? top)) * area.height;
-      const regionHeight = height * area.height;
-      if (y + regionHeight < viewport.top || y > viewport.bottom) return;
-      const topInView = Math.max(y, viewport.top);
-      const fieldY = topInView > viewport.bottom - 100 ? topInView - 92 : topInView;
-      const target = new DOMRect(x, fieldY, width * area.width, 0);
+      const target = new DOMRect(x, y, width * area.width, height * area.height);
       return { target, viewport, observe: frame };
     },
     [busy, grid, gridSelection, page, slideFrame],
@@ -1041,7 +1036,7 @@ export default function ResourceSlidesPreview(
               onClick={() => {
                 if (showIntro) dismissIntro();
                 setCandidate(null);
-                if (annotating) exitRef.current?.();
+                if (annotating) setAnnotating(false);
                 else {
                   if (grid && gridSelection === null) selectGridPage(page);
                   setAnnotating(true);
@@ -1141,7 +1136,7 @@ export default function ResourceSlidesPreview(
             event.key !== "Escape" ||
             event.defaultPrevented ||
             event.nativeEvent.isComposing ||
-            !handleEscape()
+            (event.repeat ? !selection : !handleEscape())
           )
             return;
           event.preventDefault();
@@ -1306,21 +1301,27 @@ export default function ResourceSlidesPreview(
             enabled={annotating}
             onEnabled={setAnnotating}
             selection={selection}
-            onSelection={setSelection}
-            exitRef={exitRef}
+            onSelection={(next) => {
+              if (!next && document.activeElement?.closest(".za-document-comment-editor")) {
+                focusSlideCanvas();
+              }
+              setSelection(next);
+            }}
             editRef={editRef}
             dismissSelectionRef={dismissSelectionRef}
             toolbarTarget={commentsToolbar}
             onMarks={setMarks}
             resolveSelectionBounds={resolveSelectionBounds}
-            onNavigate={(_block, comment) => {
+            onNavigate={(_block, comment, source) => {
               if (comment?.target?.kind !== "slide") return;
               if (grid) {
                 const { slide, point } = comment.target;
+                if (source === "marker" && gridSelection === slide) return;
                 selectGridPage(slide);
                 if (point) revealGridComment.current?.(slide, point);
                 return;
               }
+              if (source === "marker" && comment.target.slide === page) return;
               setPendingMark(comment);
               void navigate(comment.target.slide);
             }}

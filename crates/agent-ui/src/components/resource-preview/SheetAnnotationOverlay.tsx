@@ -58,6 +58,9 @@ export function SheetAnnotationOverlay({
     }));
     if (!shortcut && !ranges.length) return;
 
+    const editor = engine.querySelector<HTMLElement>(".za-document-comment-editor");
+    let editorWidth = editor?.offsetWidth ?? 294;
+    let editorHeight = editor?.offsetHeight ?? 48;
     let frame = 0;
     const draw = () => {
       frame = 0;
@@ -92,14 +95,16 @@ export function SheetAnnotationOverlay({
           engine.toggleAttribute("data-sheet-comment-offscreen", !bounds);
           if (bounds) {
             const width = viewState.width;
-            const editorWidth = Math.min(360, width - 24);
             const x = Math.max(
               12,
               Math.min(bounds.left + bounds.width - editorWidth, width - editorWidth - 12),
             );
-            const y = Math.max(8, Math.min(bounds.top + bounds.height, viewState.height - 64));
+            const below = bounds.top + bounds.height + 8;
+            const above = bounds.top - editorHeight - 8;
+            const bottom = viewState.height - editorHeight - 8;
+            const y = Math.max(8, below <= bottom ? below : above >= 8 ? above : bottom);
             engine.style.setProperty("--za-sheet-comment-left", `${x}px`);
-            engine.style.setProperty("--za-sheet-comment-top", `${y + 8}px`);
+            engine.style.setProperty("--za-sheet-comment-top", `${y}px`);
           }
         }
       }
@@ -126,11 +131,19 @@ export function SheetAnnotationOverlay({
     };
     const resize = new ResizeObserver(schedule);
     resize.observe(view);
+    const resizeEditor = new ResizeObserver(() => {
+      if (!editor) return;
+      editorWidth = editor.offsetWidth;
+      editorHeight = editor.offsetHeight;
+      schedule();
+    });
+    if (editor) resizeEditor.observe(editor);
     view.addEventListener("scroll", schedule, { passive: true });
     draw();
     return () => {
       view.removeEventListener("scroll", schedule);
       resize.disconnect();
+      resizeEditor.disconnect();
       cancelAnimationFrame(frame);
       engine.removeAttribute("data-sheet-comment-offscreen");
     };
@@ -140,7 +153,11 @@ export function SheetAnnotationOverlay({
     <div className="za-sheet-annotations" ref={overlay}>
       {marks.map((mark) => {
         const { target } = mark;
-        if (mark.block === draft?.id || target?.kind !== "sheet" || target.sheet !== sheetName)
+        if (
+          mark.id === draft?.editingCommentId ||
+          target?.kind !== "sheet" ||
+          target.sheet !== sheetName
+        )
           return null;
         return (
           <div key={mark.id} data-sheet-comment={mark.id} data-sheet-range={target.range}>

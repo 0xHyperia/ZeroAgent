@@ -46,6 +46,7 @@ import {
   type DocumentRevisionComment,
   ResourceDocumentComments,
   type RevisionSelection,
+  type RevisionSelectionBounds,
 } from "./ResourceDocumentComments";
 import {
   COMMENT_CURSOR,
@@ -203,12 +204,9 @@ export default function ResourcePDFPreview({
   const [navigation, setNavigation] = usePreviewReadingState("pdfNavigation", false);
   const [annotating, setAnnotating] = useState(false);
   const [selection, setSelection] = useState<RevisionSelection | null>(null);
-  const annotationExit = useRef<(() => void) | null>(null);
-  const annotationState = useRef(false);
-  annotationState.current = annotating || !!selection;
+  const dismissSelection = useRef<(() => boolean) | null>(null);
   const toggleAnnotation = useCallback(() => {
-    if (annotationState.current) annotationExit.current?.();
-    else setAnnotating(true);
+    setAnnotating((active) => !active);
   }, []);
   const [commentDestination, setCommentDestination] = useState<{
     comment: DocumentRevisionComment;
@@ -300,6 +298,56 @@ export default function ResourcePDFPreview({
     [],
   );
   const pageElements = useRef<HTMLElement[]>([]);
+  const resolveCommentBounds = useCallback(
+    (selection: RevisionSelection): RevisionSelectionBounds | undefined => {
+      const view = container.current;
+      const paper = pageElements.current[selection.page - 1];
+      if (!view || !paper) return undefined;
+      const paperBox = paper.getBoundingClientRect();
+      const layer = paper.querySelector<HTMLElement>(".za-pdf-text-layer");
+      const region = selection.region;
+      const target = region
+        ? new DOMRect(
+            paperBox.left + region.left * paperBox.width,
+            paperBox.top + region.top * paperBox.height,
+            region.width * paperBox.width,
+            region.height * paperBox.height,
+          )
+        : layer &&
+          pdfTextRange(
+            layer,
+            selection.start,
+            selection.end,
+            selection.quote,
+          )?.getBoundingClientRect();
+      return target
+        ? { target, viewport: view.getBoundingClientRect(), observe: paper, align: "end" }
+        : undefined;
+    },
+    [container],
+  );
+  const selectComment = useCallback(
+    (next: RevisionSelection | null) => {
+      const view = container.current;
+      if (!next && view?.ownerDocument.activeElement?.closest(".za-document-comment-editor"))
+        view.focus({ preventScroll: true });
+      setSelection(next);
+    },
+    [container],
+  );
+  const handleAnnotationEscape = useCallback(() => {
+    if (selection) {
+      dismissSelection.current?.();
+      return true;
+    }
+    if (annotating && dismissSelection.current?.() !== false) setAnnotating(false);
+    return annotating;
+  }, [annotating, selection]);
+  const registerEscape = chrome?.registerEscapeHandler;
+  useLayoutEffect(
+    () => (annotating || selection ? registerEscape?.(handleAnnotationEscape) : undefined),
+    [annotating, selection, registerEscape, handleAnnotationEscape],
+  );
   function trackViewport() {
     if (scrollFrame.current !== null) return;
     scrollFrame.current = requestAnimationFrame(() => {
@@ -330,7 +378,6 @@ export default function ResourcePDFPreview({
         }
       }
       if (best && best !== currentPage.current) setPage(best);
-      trackSelection();
     });
   }
   useEffect(() => {
@@ -517,37 +564,6 @@ export default function ResourcePDFPreview({
     setFindOpen(true);
     findInput.current?.focus();
   }
-  const selectionRef = useRef(selection);
-  selectionRef.current = selection;
-  function trackSelection() {
-    const current = selectionRef.current,
-      host = workspace.current?.getBoundingClientRect();
-    const paper = container.current?.querySelector<HTMLElement>(
-      `[data-pdf-page="${current?.page}"]`,
-    );
-    const layer = paper?.querySelector<HTMLElement>(".za-pdf-text-layer");
-    if (!current || !host || !paper || !layer) return;
-    const bounds = paper.getBoundingClientRect();
-    const region = current.region;
-    const rect = region
-      ? {
-          left: bounds.left + region.left * bounds.width,
-          top: bounds.top + region.top * bounds.height,
-          bottom: bounds.top + (region.top + region.height) * bounds.height,
-        }
-      : pdfTextRange(layer, current.start, current.end, current.quote)?.getBoundingClientRect();
-    if (!rect) return;
-    setSelection((old) =>
-      old
-        ? {
-            ...old,
-            x: Math.max(12, Math.min(rect.left - host.left, host.width - 352)),
-            y: Math.min(rect.bottom - host.top, host.height - 110),
-            visible: rect.bottom - host.top > 72 && rect.top - host.top < host.height - 20,
-          }
-        : null,
-    );
-  }
   return (
     <>
       <PreviewToolbar label="PDF" detail="只读">
@@ -597,12 +613,27 @@ export default function ResourcePDFPreview({
           onZoomAnchor={anchorZoom}
         />
       </PreviewToolbar>
+      {/* biome-ignore lint/a11y/useSemanticElements: The workspace groups the PDF canvas and its controls. */}
       <div
         className="za-document-workspace"
         ref={workspace}
+        role="group"
+        aria-label="PDF 阅读与批注"
         data-pdf-workspace=""
         data-navigation-pinned={navigation}
         data-annotating={annotating}
+        onKeyDown={(event) => {
+          if (
+            event.key !== "Escape" ||
+            event.defaultPrevented ||
+            event.nativeEvent.isComposing ||
+            (!selection && !annotating)
+          )
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (!event.repeat) handleAnnotationEscape();
+        }}
         style={
           {
             "--za-comment-cursor": COMMENT_CURSOR,
@@ -730,6 +761,19 @@ export default function ResourcePDFPreview({
           aria-label="PDF 阅读画布"
           aria-busy={!document && !error}
           onScroll={thumbnail ? undefined : trackViewport}
+          onPointerDownCapture={(event) => {
+            if (
+              (!annotating && !selection) ||
+              event.button !== 0 ||
+              !event.isPrimary ||
+              (event.target instanceof Element && event.target.closest("button,a"))
+            )
+              return;
+            if (dismissSelection.current?.() === false) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
           tabIndex={0}
           onKeyDown={(event) => {
             if (
@@ -795,7 +839,9 @@ export default function ResourcePDFPreview({
             pageCount={document.numPages}
             zoom={zoom}
             assertCurrent={assertCurrent}
-            onPick={setSelection}
+            onPick={(next) => {
+              if (dismissSelection.current?.() !== false) setSelection(next);
+            }}
           />
         )}
         {!painted && !error ? (
@@ -805,18 +851,16 @@ export default function ResourcePDFPreview({
         ) : null}
         {!thumbnail ? (
           <ResourceDocumentComments
-            exitRef={annotationExit}
             enabled={annotating || !!selection}
             onEnabled={setAnnotating}
             selection={selection}
-            onSelection={setSelection}
+            onSelection={selectComment}
             editRef={editComment}
+            dismissSelectionRef={dismissSelection}
+            resolveSelectionBounds={resolveCommentBounds}
             onNavigate={(id, comment, source) => {
               const target = Number(id.split("-")[2]);
-              if (source === "marker" && target === currentPage.current) {
-                trackViewport();
-                return;
-              }
+              if (source === "marker") return;
               navigatePage(target);
               if (comment)
                 setCommentDestination((old) => ({ comment, request: (old?.request ?? 0) + 1 }));
@@ -1291,7 +1335,9 @@ const PDFPage = memo(function PDFPage({
             style={{ left: lasso.left, top: lasso.top, width: lasso.width, height: lasso.height }}
           />
         ) : null}
-        {activeSelection?.page === number && activeSelection.region ? (
+        {activeSelection?.page === number &&
+        !activeSelection.editingCommentId &&
+        activeSelection.region ? (
           <span
             className="za-pdf-region"
             style={{
@@ -1326,10 +1372,14 @@ const PDFPage = memo(function PDFPage({
                 <LabelTooltip
                   label={comment.comment}
                   contentClassName="za-slide-comment-preview"
+                  side="top"
+                  delay={180}
+                  disabled={!!activeSelection?.editingCommentId}
                   render={
                     <button
                       type="button"
                       className="za-pdf-comment-pin"
+                      aria-expanded={activeSelection?.editingCommentId === comment.id}
                       aria-label={`编辑第 ${number} 页批注 ${index + 1}`}
                       style={{ left: `${(left + width) * 100}%`, top: `${top * 100}%` }}
                       onClick={() => onEditComment(comment.id)}

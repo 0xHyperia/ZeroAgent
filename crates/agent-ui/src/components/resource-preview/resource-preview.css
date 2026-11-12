@@ -630,9 +630,6 @@
     min-height: var(--za-touch-target);
   }
 }
-.za-preview-slides-layout .za-document-comment-input {
-  animation: za-slide-comment-appear 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
 @keyframes za-slide-comment-appear {
   from {
     opacity: 0;
@@ -643,8 +640,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .za-slide-region-action,
-  .za-pdf-selection-action,
-  .za-preview-slides-layout .za-document-comment-input {
+  .za-pdf-selection-action {
     animation: none;
   }
 }
@@ -1363,42 +1359,6 @@
 .za-document-comment-error {
   pointer-events: auto;
 }
-.za-document-comment-input {
-  position: absolute;
-  width: min(360px, calc(100% - 24px));
-  max-height: 180px;
-  border-radius: 18px;
-  border: 1px solid var(--za-border);
-  background: var(--za-surface);
-  box-shadow: 0 8px 32px #0002;
-  padding: 8px;
-}
-.za-document-comment-quote {
-  max-height: 48px;
-  overflow: auto;
-  padding: 4px 8px;
-  margin-bottom: 6px;
-  border-left: 2px solid #93bdf2;
-  color: hsl(var(--muted-foreground));
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-.za-document-comment-field {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-.za-document-comment-field input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: none;
-  background: transparent;
-  padding: 8px;
-  color: inherit;
-  font-size: 13px;
-}
 .za-document-comment-queue {
   position: absolute;
   bottom: 16px;
@@ -1767,10 +1727,6 @@
   .za-document-comment-queue > button {
     min-height: 44px;
   }
-  .za-document-comment-input button {
-    min-width: 44px;
-    min-height: 44px;
-  }
 }
 
 /* Full-height reading viewport; only content reserves the initial tool clearance. */
@@ -2015,18 +1971,6 @@
 .za-document-comment-queue > .za-document-comment-send {
   border-radius: 10px;
 }
-.za-document-comment-input {
-  border-radius: 999px;
-  padding: 4px 6px;
-  animation: za-comment-enter 150ms ease-out;
-}
-.za-document-comment-quote {
-  display: none;
-}
-.za-document-comment-field input {
-  font-size: 14px;
-  padding: 8px 12px;
-}
 .za-request-revision {
   transition:
     background 160ms,
@@ -2035,27 +1979,6 @@
 }
 .za-request-revision:active {
   transform: scale(0.97);
-}
-.za-document-comment-field button {
-  border-radius: 999px;
-}
-.za-document-comment-field button[type="submit"] {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  background: #171717;
-  color: white;
-  transition:
-    background 140ms,
-    transform 140ms;
-}
-.za-document-comment-field button[type="submit"]:disabled {
-  background: #a3a3a3;
-  opacity: 1;
-}
-.za-document-comment-field button[type="submit"]:not(:disabled):hover {
-  background: #333;
-  transform: scale(1.05);
 }
 .za-document-image-shortcut {
   position: absolute;
@@ -2090,7 +2013,6 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .za-document-comment-input,
   .za-document-image-shortcut {
     animation: none;
   }
@@ -2130,6 +2052,136 @@
 .za-pdf-comment-pin:hover {
   scale: 1.08;
 }
+.za-pdf-comment-pin[aria-expanded="true"] {
+  scale: 1.08;
+}
+.za-document-comment-editor {
+  --document-comment-action-size: 28px;
+  --document-comment-line-height: 22px;
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  inline-size: min(294px, calc(100% - 24px));
+  padding: 4px;
+  border: 1px solid var(--za-border);
+  border-radius: 999px;
+  background: var(--za-surface);
+  box-shadow: 0 2px 12px #0002;
+  font-size: 14px;
+  line-height: var(--document-comment-line-height);
+  animation: za-comment-enter 150ms ease-out;
+}
+.za-document-comment-editor[data-expanded="true"] {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 16px;
+  padding: 8px;
+}
+.za-document-comment-editor[data-confirm-dismiss="true"] {
+  animation: za-document-comment-shake 900ms linear both;
+}
+.za-document-comment-measure,
+.za-document-comment-body::before,
+.za-document-comment-body textarea {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.za-document-comment-measure {
+  position: absolute;
+  inset-inline: 14px calc(var(--document-comment-action-size) + 16px);
+  visibility: hidden;
+  pointer-events: none;
+}
+.za-document-comment-body {
+  position: relative;
+  flex: 1;
+  min-inline-size: 0;
+  block-size: var(--document-comment-line-height);
+  margin-inline: 9px 0;
+}
+.za-document-comment-editor[data-expanded="true"] .za-document-comment-body {
+  display: grid;
+  block-size: auto;
+  margin-inline: 5px;
+}
+.za-document-comment-editor[data-expanded="true"] .za-document-comment-body::before {
+  content: attr(data-value);
+  max-block-size: 132px;
+  overflow: hidden;
+  visibility: hidden;
+}
+.za-document-comment-editor .za-document-comment-body textarea {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  resize: none;
+}
+.za-document-comment-editor[data-expanded="false"] textarea {
+  white-space: pre;
+  overflow: hidden;
+}
+.za-document-comment-editor[data-editing="true"] .za-document-comment-body {
+  min-block-size: 44px;
+}
+.za-document-comment-editor .za-document-comment-add {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  inline-size: var(--document-comment-action-size);
+  block-size: var(--document-comment-action-size);
+  border-radius: 50%;
+}
+.za-document-comment-editor .za-document-comment-add:disabled {
+  opacity: 1;
+  background: var(--za-control-hover);
+  color: hsl(var(--muted-foreground));
+}
+.za-document-comment-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.za-document-comment-footer > :first-child {
+  margin-inline-end: auto;
+}
+.za-document-comment-footer button {
+  border-radius: 999px;
+}
+@keyframes za-document-comment-shake {
+  0%,
+  45%,
+  100% {
+    translate: 0;
+  }
+  7%,
+  21%,
+  35% {
+    translate: -3px;
+  }
+  14%,
+  28% {
+    translate: 3px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-document-comment-editor,
+  .za-document-comment-editor[data-confirm-dismiss="true"] {
+    animation: none;
+  }
+  .za-document-comment-editor[data-confirm-dismiss="true"] {
+    outline: 2px solid #3478df;
+  }
+}
 @container reader-stage (max-width: 599px) {
   .za-resource-preview,
   .za-document-workspace,
@@ -2137,17 +2189,17 @@
     --za-reader-side-inset: 0px;
     --za-reader-navigation-inset: 0px;
   }
-  .za-document-comment-field input {
-    font-size: 16px;
-  }
-  .za-document-comment-field button[type="submit"] {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-  }
   .za-document-comment-drag {
     min-width: 32px;
     min-height: 44px;
+  }
+  .za-document-comment-editor {
+    --document-comment-action-size: 44px;
+    font-size: 16px;
+  }
+  .za-document-comment-footer button {
+    min-inline-size: 44px;
+    min-block-size: 44px;
   }
 }
 
@@ -2372,17 +2424,15 @@
     display: none;
   }
 }
-.za-sheet-engine .za-document-comment-input {
+.za-sheet-engine .za-document-comment-editor {
   left: var(--za-sheet-comment-left, 12px);
   top: var(--za-sheet-comment-top, 16px);
-  animation: za-slide-comment-appear 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
-.za-sheet-engine[data-sheet-comment-offscreen] .za-document-comment-input {
+.za-sheet-engine[data-sheet-comment-offscreen] .za-document-comment-editor {
   visibility: hidden;
 }
 @media (prefers-reduced-motion: reduce) {
-  .za-sheet-range-action,
-  .za-sheet-engine .za-document-comment-input {
+  .za-sheet-range-action {
     animation: none;
   }
 }

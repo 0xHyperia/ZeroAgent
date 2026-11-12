@@ -40,13 +40,10 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   const [page, setPage] = useState(1);
   const [heading, setHeading] = useState("");
   const [annotating, setAnnotating] = useState(false);
-  const annotationExit = useRef<(() => void) | null>(null);
-  const annotationEdit = useRef<((id: string) => void) | null>(null);
-  const annotationState = useRef(false);
-  annotationState.current = annotating;
+  const dismissSelection = useRef<(() => boolean) | null>(null);
+  const annotationEdit = useRef<((id: string, source?: "marker") => void) | null>(null);
   const toggleAnnotation = useCallback(() => {
-    if (annotationState.current) annotationExit.current?.();
-    else setAnnotating(true);
+    setAnnotating((enabled) => !enabled);
   }, []);
   const commentMarks = useRef<string[]>([]);
   const commentNotes = useRef<{ id: string; comment: string; commentId: string }[]>([]);
@@ -60,12 +57,31 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   const { onRequestRevision } = useContext(PreviewIdentityContext);
   const requestImageModification = useCallback(() => {
     const image = selectionRef.current;
-    if (!onRequestRevision || image?.kind !== "image") return;
+    if (!onRequestRevision || image?.kind !== "image" || dismissSelection.current?.() === false)
+      return;
     setAnnotating(true);
-    setSelection(image);
+    setSelection({ ...image, visible: false });
     setImageShortcut(null);
   }, [onRequestRevision]);
+  const selectComment = useCallback((next: RevisionSelection | null) => {
+    if (!next && document.activeElement?.closest(".za-document-comment-editor")) {
+      frame.current?.focus({ preventScroll: true });
+    }
+    setSelection(next?.editingCommentId ? { ...next, visible: false } : next);
+  }, []);
+  const handleEscape = useCallback(() => {
+    if (selection) dismissSelection.current?.();
+    else if (annotating) setAnnotating(false);
+    else if (imageShortcut) setImageShortcut(null);
+    else return false;
+    return true;
+  }, [annotating, imageShortcut, selection]);
   const chrome = useContext(PreviewToolbarMount);
+  const registerEscape = chrome?.registerEscapeHandler;
+  useLayoutEffect(
+    () => (selection || annotating || imageShortcut ? registerEscape?.(handleEscape) : undefined),
+    [annotating, handleEscape, imageShortcut, registerEscape, selection],
+  );
   const setFileMenu = chrome?.setFileMenu;
   useEffect(() => {
     if (!setFileMenu || props.thumbnail) return;
@@ -109,6 +125,34 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
           Math.max(1, (viewport.width || logicalWidth) - sideInset - navigationInset) /
             logicalWidth,
         );
+  const resolveSelectionBounds = useCallback(
+    (item: RevisionSelection) => {
+      const paper = frame.current?.getBoundingClientRect();
+      const viewport = container.current?.getBoundingClientRect();
+      if (!paper || !viewport || !frame.current) return;
+      return {
+        target: new DOMRect(paper.left + item.x * scale, paper.top + item.y * scale, 0, 0),
+        viewport,
+        observe: frame.current,
+        align: "end" as const,
+      };
+    },
+    [container, scale],
+  );
+  const imageShortcutPosition = useCallback(
+    (x: number, y: number, top: number) => {
+      const paper = frame.current?.getBoundingClientRect();
+      const host = surface.current?.getBoundingClientRect();
+      if (!paper || !host) return;
+      const bottom = paper.top - host.top + y * scale;
+      return {
+        x: Math.max(12, Math.min(paper.left - host.left + x * scale - 240, host.width - 240)),
+        y: Math.max(64, Math.min(bottom + 8, host.height - 56)),
+        visible: bottom > 72 && paper.top - host.top + top * scale < host.height - 20,
+      };
+    },
+    [scale],
+  );
   useEffect(() => {
     const controller = new AbortController();
     const client = createResourcePreviewWorker(controller.signal);
@@ -190,7 +234,8 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     },
     [reader],
   );
-  function navigate(id: string, comment?: DocumentRevisionComment) {
+  function navigate(id: string, comment?: DocumentRevisionComment, source?: "marker") {
+    if (source === "marker") return;
     post({ type: "navigate", id, region: comment?.region });
     if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 820px)").matches)
       setNavigation("closed");
@@ -237,14 +282,27 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
   }, [selection, post]);
   const trackedSelection = selection ?? imageShortcut;
   const selectedRegion = trackedSelection?.region;
+  const editingComment = !!selection;
   useEffect(() => {
     post({
       type: "track",
       id: trackedSelection?.id,
       page: trackedSelection?.page,
       region: selectedRegion,
+      editing: editingComment,
+      commentId: trackedSelection?.editingCommentId,
     });
-  }, [post, trackedSelection?.id, trackedSelection?.page, selectedRegion]);
+  }, [
+    post,
+    trackedSelection?.id,
+    trackedSelection?.page,
+    trackedSelection?.editingCommentId,
+    selectedRegion,
+    editingComment,
+  ]);
+  useEffect(() => {
+    post({ type: "annotate", enabled: annotating });
+  }, [annotating, post]);
   const updateLayout = useCallback(() => {
     post({ type: "layout", inset: floatingTools ? 80 / scale : 20, scale });
     updateViewport();
@@ -345,54 +403,39 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
           (value) => Number.isFinite(value) && Math.abs(value) <= 2000000,
         )
       ) {
-        const rect = frame.current?.getBoundingClientRect(),
-          host = surface.current?.getBoundingClientRect();
-        if (rect && host) {
-          const top = rect.top - host.top + event.data.top * scale;
-          const bottom = rect.top - host.top + event.data.bottom * scale;
-          const update =
-            selectionRef.current?.id === imageShortcut?.id && !selection
-              ? setImageShortcut
-              : setSelection;
-          update((old) =>
-            old
-              ? {
-                  ...old,
-                  x: Math.max(
-                    12,
-                    Math.min(rect.left - host.left + event.data.x * scale - 360, host.width - 372),
-                  ),
-                  y: Math.max(64, Math.min(bottom, host.height - 110)),
-                  visible: bottom > 72 && top < host.height - 20,
-                }
-              : null,
+        const { id, x, y } = event.data;
+        if (selection) {
+          setSelection((old) =>
+            old && old.id === id && (old.x !== x || old.y !== y || old.visible === false)
+              ? { ...old, x, y, visible: true }
+              : old,
+          );
+        } else {
+          const shortcut = imageShortcutPosition(x, y, event.data.top);
+          setImageShortcut((old) =>
+            old && old.id === id && shortcut ? { ...old, ...shortcut } : old,
           );
         }
       }
+      if (event.data.type === "annotation-escape") handleEscape();
       if (event.data.type === "image-shortcut-clear") setImageShortcut(null);
       if (
         event.data.type === "edit-comment" &&
         onRequestRevision &&
         typeof event.data.id === "string"
       )
-        annotationEdit.current?.(event.data.id);
+        annotationEdit.current?.(event.data.id, "marker");
       if (event.data.type === "request-modification" && onRequestRevision) {
         if (selectionRef.current?.kind === "image") requestImageModification();
         else toggleAnnotation();
       }
       if (
         (event.data.type === "selection" && annotating) ||
-        (event.data.type === "image-shortcut" && onRequestRevision && !annotating)
+        (event.data.type === "image-shortcut" && onRequestRevision && !annotating && !selection)
       ) {
         const chosen = checkedDocumentSelection(event.data, reader.blocks, reader.pageCount);
-        const rect = frame.current?.getBoundingClientRect(),
-          host = surface.current?.getBoundingClientRect();
-        if (
-          chosen &&
-          rect &&
-          host &&
-          (event.data.type !== "image-shortcut" || chosen.kind === "image")
-        ) {
+        if (chosen && (event.data.type !== "image-shortcut" || chosen.kind === "image")) {
+          if (event.data.type === "selection" && dismissSelection.current?.() === false) return;
           if (event.data.type === "selection") setImageShortcut(null);
           const update = event.data.type === "image-shortcut" ? setImageShortcut : setSelection;
           const { pageWidth, pageHeight } = event.data;
@@ -401,20 +444,17 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
           );
           update({
             ...chosen,
+            ...(event.data.type === "image-shortcut"
+              ? imageShortcutPosition(chosen.x, chosen.y, chosen.y)
+              : {}),
             ...(hasGeometry
               ? { document: { pageCount: reader.pageCount, pageWidth, pageHeight } }
               : {}),
-            x: Math.min(
-              Math.max(12, rect.left - host.left + chosen.x * scale - 360),
-              Math.max(12, host.width - 372),
-            ),
-            y: Math.min(rect.top - host.top + chosen.y * scale, host.height - 150),
           });
         }
       }
     };
     window.addEventListener("message", receive);
-    post({ type: "annotate", enabled: annotating });
     return () => window.removeEventListener("message", receive);
   }, [
     reader,
@@ -428,8 +468,9 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
     updateViewport,
     setZoom,
     onRequestRevision,
-    imageShortcut,
     selection,
+    handleEscape,
+    imageShortcutPosition,
     toggleAnnotation,
     requestImageModification,
   ]);
@@ -502,7 +543,15 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
         data-navigation-pinned={navigation !== "closed"}
         data-annotating={annotating}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && imageShortcut) setImageShortcut(null);
+          if (
+            event.key === "Escape" &&
+            !event.defaultPrevented &&
+            !event.nativeEvent.isComposing &&
+            (event.repeat ? !!selection : handleEscape())
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
           if (
             (event.ctrlKey || event.metaKey) &&
             event.shiftKey &&
@@ -639,10 +688,7 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
         {imageShortcut && !annotating && imageShortcut.visible !== false && onRequestRevision ? (
           <div
             className="za-document-image-shortcut"
-            style={{
-              left: Math.max(12, imageShortcut.x + 120),
-              top: Math.max(64, imageShortcut.y + 8),
-            }}
+            style={{ left: imageShortcut.x, top: imageShortcut.y }}
           >
             <Button variant="ghost" size="sm" onClick={requestImageModification}>
               <SquareMousePointer className="size-4" />
@@ -653,13 +699,14 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
         ) : null}
         {!props.thumbnail ? (
           <ResourceDocumentComments
-            exitRef={annotationExit}
             editRef={annotationEdit}
+            dismissSelectionRef={dismissSelection}
             enabled={annotating}
             onEnabled={setAnnotating}
             selection={selection}
-            onSelection={setSelection}
+            onSelection={selectComment}
             onNavigate={navigate}
+            resolveSelectionBounds={resolveSelectionBounds}
             onMarks={(items) => {
               const ids = items
                 .filter((item) => !item.region || item.kind === "image")
