@@ -205,6 +205,7 @@ export default function ResourcePreviewContent(
         assertCurrent={assertCurrent}
         onError={setError}
         onCancel={props.onCancel}
+        onDownload={props.onDownload}
         thumbnail={props.thumbnail}
         onViewSource={kind === "svg" ? () => setSource(true) : undefined}
       />

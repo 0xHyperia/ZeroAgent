@@ -644,7 +644,8 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       imagePaths={imagePaths}
       imageTransitionDirection={imageTransitionDirection}
       isSwitchingImage={loading && currentPreview.kind === "image"}
-      canOpenImageInSystemViewer={canOpenExternal}
+      stagedAttachment={Boolean(activePreviewRequest?.stagedAttachment)}
+      canOpenImageInSystemViewer={canOpenExternal && !activePreviewRequest?.stagedAttachment}
       onOpenImageInSystemViewer={() => void openExternal()}
       onOpenImagePath={openImagePath}
       onActionError={setError}
@@ -696,7 +697,9 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         description={t("workspaceFilePreview.title")}
         closeLabel={t("workspaceFilePreview.close")}
         tabbed={props.tabbed}
-        preserveOnEscape={kind === "presentation" || getWorkspacePreviewKind(activePath) === "presentation"}
+        preserveOnEscape={
+          kind === "presentation" || getWorkspacePreviewKind(activePath) === "presentation"
+        }
         tabbedToolbarTarget={props.tabbedToolbarTarget}
         returnFocusTo={activePreviewRequest.returnFocusTo}
         headerActions={
@@ -950,6 +953,7 @@ function PreviewBody(props: {
   imagePaths: string[];
   imageTransitionDirection: ImagePreviewTransitionDirection;
   isSwitchingImage: boolean;
+  stagedAttachment: boolean;
   canOpenImageInSystemViewer: boolean;
   onOpenImageInSystemViewer: () => void;
   onOpenImagePath: (path: string, direction?: ImagePreviewTransitionDirection) => void;
@@ -1024,6 +1028,26 @@ function PreviewBody(props: {
             /^(?:[a-z]:[\\/]|\/)/i.test(preview.path)
               ? { path: preview.path }
               : { relativePath: preview.path }
+          }
+          workspaceImageActions={
+            preview.kind === "image"
+              ? {
+                  sizeBytes: preview.sizeBytes,
+                  onCopy: () =>
+                    copyWorkspacePreviewImage({ data: preview.data, mimeType: preview.mimeType }),
+                  onCopyAbsolutePath: props.stagedAttachment
+                    ? undefined
+                    : () =>
+                        copyTextToClipboard(workspaceImageAbsolutePathForCopy(workdir, activePath)),
+                  onCopyRelativePath: props.stagedAttachment
+                    ? undefined
+                    : () =>
+                        copyTextToClipboard(workspaceImageRelativePathForCopy(workdir, activePath)),
+                  onOpenInSystemViewer: canOpenImageInSystemViewer
+                    ? onOpenImageInSystemViewer
+                    : undefined,
+                }
+              : undefined
           }
           load={async (signal) => {
             const assertCurrent = () => {
@@ -1460,6 +1484,8 @@ function WorkspaceImagePreviewBody(props: {
           zoomByWheel(event.deltaY, event.deltaMode, imageViewerAnchor(event, viewportRef.current));
         }}
         onPointerDown={(event) => {
+          // The context-menu portal bubbles through React, outside this DOM viewport.
+          if (!event.currentTarget.contains(event.target as Node)) return;
           event.currentTarget.focus({ preventScroll: true });
           if (contextMenu) {
             setContextMenu(null);

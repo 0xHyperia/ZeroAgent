@@ -4,12 +4,27 @@ import { fileURLToPath } from "node:url";
 import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 
 const nativeCalls = [];
+const icon = "data:image/png;base64,iVBORw0KGgo=";
+const wordApps = {
+  defaultApplication: { id: "word", name: "Word", iconDataUrl: icon },
+  alternatives: [{ id: "writer", name: "Writer", iconDataUrl: icon }],
+};
+const pdfApps = {
+  defaultApplication: { id: "edge", name: "Microsoft Edge", iconDataUrl: icon },
+  alternatives: [{ id: "reader", name: "PDF Reader", iconDataUrl: icon }],
+};
+let fileApplications = (path) =>
+  path.endsWith(".docx") ? wordApps : path.endsWith(".pdf") ? pdfApps : {
+    defaultApplication: { id: "notepad", name: "Notepad" },
+    alternatives: [],
+  };
 const env = await createDomTestEnv({
   mocks: {
     [fileURLToPath(new URL("../../../agent-ui/src/lib/tools/fsBackend.ts", import.meta.url))]: {
       invokeFs: async (command, payload) => {
         nativeCalls.push({ command, payload });
         if (command === "fs_workspace_editor_targets") return ["vscode"];
+        if (command === "fs_workspace_file_apps") return fileApplications(payload.path);
         if (command === "fs_list") return { entries: [] };
       },
     },
@@ -140,7 +155,7 @@ test("preview and comparison actions share one file tool group and tree toggle",
   const tree = findButton(group, /^(Toggle file tree|切换文件树)$/);
   assert.equal(group.querySelectorAll("button").length, 5);
   assert.ok(findButton(group, /Open with|打开方式/));
-  assert.ok(findButton(group, /VS Code/));
+  assert.ok(findButton(group, /Notepad/));
   assert.ok(!group.contains(mode));
   assert.equal(tree.getAttribute("aria-pressed"), "true");
   await act(async () => tree.click());
@@ -227,12 +242,17 @@ test("the installed editor opens the original path only after the current editor
     },
   })));
 
-  const primary = findButton(container, /VS Code/);
-  assert.ok(primary);
-  await act(async () => primary.click());
+  const openEditor = async () => {
+    await act(async () => findButton(container, /Open with|打开方式/).click());
+    const editor = [...document.querySelectorAll('[role="menuitem"]')]
+      .find((item) => item.textContent === "VS Code");
+    assert.ok(editor);
+    await act(async () => editor.click());
+  };
+  await openEditor();
   assert.deepEqual(nativeCalls.filter(({ command }) => command === "fs_open_workspace_editor"), []);
   canOpen = true;
-  await act(async () => primary.click());
+  await openEditor();
   assert.deepEqual(checks, [false, true]);
   assert.deepEqual(nativeCalls.filter(({ command }) => command === "fs_open_workspace_editor"), [
     {
@@ -246,4 +266,65 @@ test("the installed editor opens the original path only after the current editor
       },
     },
   ]);
+});
+
+test("reader applications and icons follow the current file and preserve the system default", async (t) => {
+  const { container, root } = mount(t);
+  const start = nativeCalls.length;
+  const show = async (path) => act(async () => root.render(React.createElement(WorkspaceFileHeader, {
+    active: true,
+    request: { ...file, path },
+    modeActions: null,
+    setFormatTools() {},
+    onOpenFile() {},
+    onError() {},
+    readDraft() {},
+    beforeOpen: async () => true,
+  })));
+  const menu = async () => {
+    const trigger = findButton(container, /Open with|打开方式/);
+    if (trigger.getAttribute("aria-expanded") !== "true") await act(async () => trigger.click());
+    return [...document.querySelectorAll('[role="menuitem"]')];
+  };
+  await show("draft.docx");
+  assert.equal(findButton(container, /Word/).querySelector("img").getAttribute("src"), icon);
+  const docChoices = await menu();
+  assert.match(docChoices[0].textContent, /Word.*(?:默认应用|Default)/);
+  const writer = docChoices.find((item) => item.textContent === "Writer");
+  assert.equal(writer.querySelector("img").getAttribute("src"), icon);
+  assert.ok(!docChoices.some((item) => item.textContent === "VS Code"));
+  await act(async () => writer.click());
+  assert.ok(findButton(container, /Word/));
+  await act(async () => findButton(container, /Word/).click());
+  await show("manual.pdf");
+  assert.equal(findButton(container, /Word/), undefined);
+  assert.ok(findButton(container, /Microsoft Edge/));
+  const pdfChoices = await menu();
+  assert.ok(pdfChoices.some((item) => item.textContent === "PDF Reader"));
+  assert.ok(!pdfChoices.some((item) => item.textContent === "Writer"));
+  assert.deepEqual(nativeCalls.slice(start).filter(({ command }) => command.startsWith("fs_open")), [
+    { command: "fs_open_workspace_file_app", payload: { workdir: "D:/repo", path: "draft.docx", application: "writer" } },
+    { command: "fs_open_workspace_path", payload: { workdir: "D:/repo", path: "draft.docx", mode: "open" } },
+  ]);
+  assert.ok(!nativeCalls.slice(start).some(({ command }) => command === "fs_workspace_editor_targets"));
+});
+
+test("a stale association lookup cannot replace the current file applications", async (t) => {
+  const { container, root } = mount(t);
+  const lookup = fileApplications;
+  let finish;
+  fileApplications = (path) =>
+    path.endsWith(".docx") ? new Promise((resolve) => { finish = resolve; }) : lookup(path);
+  t.after(() => { fileApplications = lookup; });
+  const show = async (path) => act(async () => root.render(React.createElement(WorkspaceFileHeader, {
+    active: true, request: { ...file, path }, modeActions: null,
+    setFormatTools() {}, onOpenFile() {}, onError() {}, readDraft() {},
+    beforeOpen: async () => true,
+  })));
+  await show("draft.docx");
+  await show("manual.pdf");
+  assert.ok(findButton(container, /Microsoft Edge/));
+  await act(async () => finish(wordApps));
+  assert.ok(findButton(container, /Microsoft Edge/));
+  assert.equal(findButton(container, /Word/), undefined);
 });

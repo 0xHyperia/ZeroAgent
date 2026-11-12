@@ -43,7 +43,6 @@ import { getFileTypeIcon } from "../../chat/fileTypeIcons";
 import { Button, RefreshButton } from "../../ui/button";
 import { useConfirmDialog } from "../../ui/confirm-dialog";
 import { Input } from "../../ui/input";
-import { isWorkspaceImagePath } from "../../workspace-editor/workspaceImagePreview";
 import { useRightDockToolContext } from "../RightDockContext";
 import { FileTreeContextMenu } from "./ContextMenu";
 import {
@@ -522,18 +521,6 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     setRevealTarget(null);
   }, [revealTarget, rowVirtualizer, rows]);
 
-  const getSiblingImagePaths = useCallback((targetPath: string) => {
-    if (!isWorkspaceImagePath(targetPath)) return [];
-    const currentNodes = nodesRef.current;
-    const parentNode = currentNodes[dirname(targetPath)];
-    const siblingPaths =
-      parentNode?.children.filter((childPath) => {
-        const child = currentNodes[childPath];
-        return child?.kind === "file" && isWorkspaceImagePath(childPath);
-      }) ?? [];
-    return siblingPaths.includes(targetPath) ? siblingPaths : [targetPath];
-  }, []);
-
   const onOpenFileRef = useRef(onOpenFile);
   useEffect(() => {
     onOpenFileRef.current = onOpenFile;
@@ -548,9 +535,9 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         });
         return;
       }
-      onOpenFileRef.current?.(path, getSiblingImagePaths(path), temporary);
+      onOpenFileRef.current?.(path, undefined, temporary);
     },
-    [getSiblingImagePaths, isExternalPath, openWorkspacePath, t],
+    [isExternalPath, openWorkspacePath, t],
   );
 
   const onInsertFileMentionRef = useRef(onInsertFileMention);

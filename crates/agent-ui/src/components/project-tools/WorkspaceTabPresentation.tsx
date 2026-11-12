@@ -32,6 +32,7 @@ import {
   getWorkspacePreviewKind,
   isWorkspaceEditablePreviewPath,
   isWorkspacePreviewPath,
+  workspacePathExtension,
 } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import {
   workspaceImageAbsolutePathForCopy,
@@ -46,6 +47,7 @@ import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import type { WorkspaceActivityClient } from "@liveagent/ui/lib/workspace-activity/types";
 import { type ComponentType, Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { gitReviewPreviewKind } from "./git-review/GitBinaryReviewPreview";
 import type { DesktopWorkspaceTab, useWorkspaceTabs, WorkspaceFileMode } from "./useWorkspaceTabs";
 import { WorkspaceFileHeader, workspaceFileName } from "./WorkspaceFileHeader";
 import type { BrowserHistorySnapshot } from "./workspaceBrowserHistory";
@@ -381,18 +383,26 @@ function WorkspaceFileTabPane({
     projectPathKey,
   } = options;
   const viewId = JSON.stringify([scope, tab.id]);
-  const canPreview = isWorkspacePreviewPath(request.path);
-  const canEdit =
-    !request.stagedAttachment && (!canPreview || isWorkspaceEditablePreviewPath(request.path));
+  const previewKind = getWorkspacePreviewKind(request.path);
+  const canPreview = previewKind !== null;
+  const isEditablePreview = isWorkspaceEditablePreviewPath(request.path);
+  const canEdit = !request.stagedAttachment && (!canPreview || isEditablePreview);
   const workspacePath = workspaceImageRelativePathForCopy(request.workdir, request.path);
   const liveMarkdown =
-    getWorkspacePreviewKind(request.path) === "markdown" &&
+    previewKind === "markdown" &&
     !request.remote &&
     !request.stagedAttachment &&
     !!workspacePath &&
     !/^(?:[/\\@]|[a-z]:)/i.test(workspacePath) &&
     !workspacePath.split("/").includes("..");
-  const canDiff = Boolean(gitClient && request.projectPathKey === projectPathKey);
+  const workspaceGitClient = request.projectPathKey === projectPathKey ? gitClient : undefined;
+  const binaryDiffKind = gitReviewPreviewKind(request.path, false);
+  const canDiff =
+    !!workspaceGitClient &&
+    !request.stagedAttachment &&
+    (binaryDiffKind
+      ? !!workspaceGitClient.readDiffPreview
+      : !canPreview || isEditablePreview || workspacePathExtension(request.path) === "svg");
   const copy = (zh: string, en: string) => (locale === "zh-CN" ? zh : en);
   const currentMode = useRef<WorkspaceFileMode | null>(null);
   const returnMode = useRef<WorkspaceFileMode>(canPreview ? "preview" : "source");
@@ -405,7 +415,6 @@ function WorkspaceFileTabPane({
   }, [active, mode]);
   const editorHandle = useRef<WorkspaceFileEditorHandle>(null);
   const [formatTools, setFormatTools] = useState<HTMLDivElement | null>(null);
-  const isPresentation = getWorkspacePreviewKind(request.path) === "presentation";
   const [diffNavigation, setDiffNavigation] = useState<HTMLDivElement | null>(null);
   const [diffActions, setDiffActions] = useState<HTMLDivElement | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -490,7 +499,7 @@ function WorkspaceFileTabPane({
           onComparisonChange={resources.setComparison}
         />
       )}
-      {((canDiff && !isPresentation) || mode === "diff") && (
+      {(canDiff || mode === "diff") && (
         <TooltipButton
           type="button"
           variant="ghost"
@@ -534,7 +543,7 @@ function WorkspaceFileTabPane({
 
   const fileHeader = active ? (
     <WorkspaceFileHeader
-      gitClient={canDiff ? gitClient : undefined}
+      gitClient={workspaceGitClient}
       active={active}
       nativeFileActions={options.nativeFileActions}
       request={request}

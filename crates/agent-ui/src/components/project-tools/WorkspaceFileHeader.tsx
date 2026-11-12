@@ -4,7 +4,6 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
-  FolderOpen,
   Github,
   MoreHorizontal,
 } from "@liveagent/ui/components/IconSet";
@@ -32,6 +31,7 @@ import { localEditorFileIo } from "@liveagent/ui/components/workspace-editor/wor
 import {
   isWorkspaceEditablePreviewPath,
   isWorkspacePreviewPath,
+  workspacePathExtension,
 } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import {
   workspaceImageAbsolutePathForCopy,
@@ -40,6 +40,7 @@ import {
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { GitClient, GitRepositoryState } from "@liveagent/ui/lib/git/types";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
+import { resolveSourceLanguage } from "@liveagent/ui/lib/sourceLanguages";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import AndroidIcon from "~icons/logos/android-icon";
@@ -91,27 +92,40 @@ type DirectorySnapshot = {
   hasMore?: boolean;
 };
 
-const DEFAULT_OPEN_TARGET = { id: "default", label: "Default app", Icon: FolderOpen } as const;
 const WORKSPACE_OPEN_TARGETS = [
   { id: "vscode", label: "VS Code", Icon: VSCodeIcon },
   { id: "visual-studio", label: "Visual Studio", Icon: VisualStudioIcon },
   { id: "vscode-insiders", label: "VS Code Insiders", Icon: VSCodeIcon },
   { id: "cursor", label: "Cursor", Icon: CursorIcon },
-  DEFAULT_OPEN_TARGET,
-  { id: "terminal", label: "Terminal", Icon: TerminalIcon, directory: true },
-  { id: "git-bash", label: "Git Bash", Icon: GitIcon, directory: true },
-  { id: "wsl", label: "WSL", Icon: WslIcon, directory: true },
+  { id: "terminal", label: "Terminal", Icon: TerminalIcon },
+  { id: "git-bash", label: "Git Bash", Icon: GitIcon },
+  { id: "wsl", label: "WSL", Icon: WslIcon },
   { id: "android-studio", label: "Android Studio", Icon: AndroidIcon },
   { id: "pycharm", label: "PyCharm", Icon: PyCharmIcon },
 ] as const;
-const WORKSPACE_OPEN_TARGET_KEY = "zeroagent.workspace.openTarget";
+type FileApplication = { id: string; name: string; iconDataUrl?: string | null };
+type FileApplications = {
+  defaultApplication: FileApplication | null;
+  alternatives: FileApplication[];
+};
 
-function preferredOpenTarget() {
-  try {
-    return window.localStorage.getItem(WORKSPACE_OPEN_TARGET_KEY);
-  } catch {
-    return null;
-  }
+function applicationDisplayKey(name: string) {
+  return name.toLowerCase().replace("visual studio code", "vs code").replace(" - ", " ");
+}
+
+function FileApplicationIcon({
+  application,
+  path,
+}: {
+  application?: FileApplication;
+  path: string;
+}) {
+  const Icon = getFileTypeIcon(path, "file");
+  return application?.iconDataUrl ? (
+    <img src={application.iconDataUrl} alt="" className="size-4 shrink-0 object-contain" />
+  ) : (
+    <Icon aria-hidden="true" className="size-4 shrink-0" />
+  );
 }
 
 const FILE_TOOLBAR_COMPACT_WIDTH = 625;
@@ -477,20 +491,36 @@ export function WorkspaceFileHeader({
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [openWith, setOpenWith] = useState(false);
   const [editorTargets, setEditorTargets] = useState<string[]>([]);
-  const [preferredTarget, setPreferredTarget] = useState(preferredOpenTarget);
+  const [applicationSnapshot, setApplicationSnapshot] = useState<{
+    path: string;
+    workdir: string;
+    applications: FileApplications;
+  }>();
   const [repository, setRepository] = useState<GitRepositoryState | null>(null);
   const details = repository && fileRepositoryDetails(request, repository);
-  const openTargets = WORKSPACE_OPEN_TARGETS.filter(
-    ({ id }) => id === "default" || editorTargets.includes(id),
-  );
   const editable =
     !isWorkspacePreviewPath(request.path) || isWorkspaceEditablePreviewPath(request.path);
-  const primaryTarget =
-    openTargets.find(({ id }) => id === preferredTarget) ??
-    (editable
-      ? openTargets.find((target) => target.id !== "default" && !("directory" in target))
-      : undefined) ??
-    DEFAULT_OPEN_TARGET;
+  const codeTools =
+    editable &&
+    (isWorkspacePreviewPath(request.path) || resolveSourceLanguage(request.path) !== "plaintext") &&
+    !["csv", "tsv"].includes(workspacePathExtension(request.path));
+  const applications =
+    active &&
+    applicationSnapshot?.path === request.path &&
+    applicationSnapshot.workdir === request.workdir
+      ? applicationSnapshot.applications
+      : undefined;
+  const defaultApplication = applications?.defaultApplication ?? undefined;
+  const openTargets = codeTools
+    ? WORKSPACE_OPEN_TARGETS.filter(
+        ({ id, label }) =>
+          editorTargets.includes(id) &&
+          (request.line ||
+            ![defaultApplication, ...(applications?.alternatives ?? [])].some(
+              (item) => item && applicationDisplayKey(item.name) === applicationDisplayKey(label),
+            )),
+      )
+    : [];
   const comparing = Boolean(comparisonActions);
   const relative = details?.relative ?? relativePath;
   const canCopyRelative = Boolean(relative && !/^(?:[/\\]|[a-z]:)/i.test(relative));
@@ -549,7 +579,29 @@ export function WorkspaceFileHeader({
   }, [active, gitClient, openWith, request.remote, request.workdir]);
   useEffect(() => {
     if (!active || !nativeFileActions || request.remote) return;
-    setPreferredTarget(preferredOpenTarget());
+    const path = request.path;
+    const workdir = request.workdir;
+    let generation = 0;
+    const refresh = () => {
+      const lookup = ++generation;
+      void invokeFs<FileApplications>("fs_workspace_file_apps", { path, workdir }).then(
+        (applications) => {
+          if (lookup === generation) setApplicationSnapshot({ path, workdir, applications });
+        },
+        () => {
+          if (lookup === generation) setApplicationSnapshot(undefined);
+        },
+      );
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      generation++;
+      window.removeEventListener("focus", refresh);
+    };
+  }, [active, nativeFileActions, request.path, request.remote, request.workdir]);
+  useEffect(() => {
+    if (!active || !nativeFileActions || request.remote || !codeTools) return;
     let listening = true;
     void invokeFs<string[]>("fs_workspace_editor_targets", {}).then(
       (targets) => {
@@ -562,7 +614,7 @@ export function WorkspaceFileHeader({
     return () => {
       listening = false;
     };
-  }, [active, nativeFileActions, request.remote]);
+  }, [active, codeTools, nativeFileActions, request.remote]);
   useEffect(() => {
     if (!active) {
       setControlsOpen(false);
@@ -570,30 +622,27 @@ export function WorkspaceFileHeader({
       setOpenWith(false);
       setRepository(null);
       setEditorTargets([]);
+      setApplicationSnapshot(undefined);
     }
   }, [active]);
   const openFileLabel = copy("在默认应用中打开", "Open in default application");
-  const openPrimaryLabel =
-    primaryTarget.id === "default"
-      ? openFileLabel
-      : copy(`在 ${primaryTarget.label} 中打开`, `Open in ${primaryTarget.label}`);
-  const rememberTarget = (id: string) => {
-    setPreferredTarget(id);
-    try {
-      window.localStorage.setItem(WORKSPACE_OPEN_TARGET_KEY, id);
-    } catch {
-      // The selected target remains usable for this tab without storage.
-    }
-  };
-  const open = async (mode: "open" | "reveal", remember = false) => {
+  const openPrimaryLabel = defaultApplication
+    ? copy(`在 ${defaultApplication.name} 中打开`, `Open in ${defaultApplication.name}`)
+    : openFileLabel;
+  const open = async (mode: "open" | "reveal", application?: FileApplication) => {
     try {
       if (mode === "open" && !(await beforeOpen())) return;
-      await invokeFs("fs_open_workspace_path", {
-        workdir: request.workdir,
-        path: request.path,
-        mode,
-      });
-      if (remember) rememberTarget("default");
+      if (activeRequest.current !== request) return;
+      const { workdir, path } = request;
+      if (application) {
+        await invokeFs("fs_open_workspace_file_app", {
+          workdir,
+          path,
+          application: application.id,
+        });
+      } else {
+        await invokeFs("fs_open_workspace_path", { workdir, path, mode });
+      }
     } catch {
       onError(copy("无法打开文件", "Could not open the file"));
     }
@@ -615,9 +664,9 @@ export function WorkspaceFileHeader({
     }
     onError(copy("无法复制文件内容", "Could not copy file contents"));
   };
-  const openEditor = async (id: string, remember = false) => {
+  const openEditor = async (id: string) => {
     try {
-      if (!(await beforeOpen())) return;
+      if (!(await beforeOpen()) || activeRequest.current !== request) return;
       await invokeFs("fs_open_workspace_editor", {
         workdir: request.workdir,
         path: request.path,
@@ -625,7 +674,6 @@ export function WorkspaceFileHeader({
         line: request.line,
         column: request.column,
       });
-      if (remember) rememberTarget(id);
     } catch {
       onError(copy("无法在此编辑器中打开文件", "Could not open the file in this editor"));
     }
@@ -717,11 +765,9 @@ export function WorkspaceFileHeader({
             aria-label={openPrimaryLabel}
             tooltip={openPrimaryLabel}
             tooltipSide="bottom"
-            onClick={() =>
-              void (primaryTarget.id === "default" ? open("open") : openEditor(primaryTarget.id))
-            }
+            onClick={() => void open("open")}
           >
-            <primaryTarget.Icon aria-hidden="true" className="size-4" />
+            <FileApplicationIcon application={defaultApplication} path={request.path} />
             <span>{copy("打开", "Open")}</span>
           </TooltipButton>
           <DropdownMenu open={active && openWith} onOpenChange={setOpenWith}>
@@ -741,16 +787,31 @@ export function WorkspaceFileHeader({
               }
             />
             <DropdownMenuContent align="end" className="za-workspace-compact-menu">
-              {openTargets.map(({ id, label, Icon }) => (
+              <DropdownMenuItem data-preferred="" onClick={() => void open("open")}>
+                <FileApplicationIcon application={defaultApplication} path={request.path} />
+                <span className="min-w-0 truncate">
+                  {defaultApplication?.name ?? copy("默认应用", "Default app")}
+                </span>
+                {defaultApplication && (
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                    {copy("默认应用", "Default")}
+                  </span>
+                )}
+              </DropdownMenuItem>
+              {applications?.alternatives.map((application) => (
                 <DropdownMenuItem
-                  key={id}
-                  data-preferred={id === primaryTarget.id || undefined}
-                  onClick={() =>
-                    void (id === "default" ? open("open", true) : openEditor(id, true))
-                  }
+                  key={application.id}
+                  onClick={() => void open("open", application)}
                 >
+                  <FileApplicationIcon application={application} path={request.path} />
+                  <span className="min-w-0 truncate">{application.name}</span>
+                </DropdownMenuItem>
+              ))}
+              {openTargets.length > 0 && <DropdownMenuSeparator />}
+              {openTargets.map(({ id, label, Icon }) => (
+                <DropdownMenuItem key={id} onClick={() => void openEditor(id)}>
                   <Icon aria-hidden="true" className="size-4" />
-                  {id === "default" ? copy("默认应用", label) : label}
+                  {label}
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />

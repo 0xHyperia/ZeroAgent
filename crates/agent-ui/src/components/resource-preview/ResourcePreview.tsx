@@ -1,6 +1,10 @@
 import { Component, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { File } from "../IconSet";
-import { type MarkdownSelectionActions, PreviewIdentityContext } from "./PreviewChrome";
+import {
+  type MarkdownSelectionActions,
+  PreviewIdentityContext,
+  type WorkspaceImageActions,
+} from "./PreviewChrome";
 import {
   checkPreviewSignature,
   RESOURCE_PREVIEW_MAX_BYTES,
@@ -27,6 +31,7 @@ export type ResourcePreviewProps = {
   /** Source links select original lines; paths are optional host-provided display values. */
   sourceRange?: { fromLine: number; toLine?: number };
   sourcePaths?: { path?: string; relativePath?: string };
+  workspaceImageActions?: WorkspaceImageActions;
   markdownSelectionActions?: MarkdownSelectionActions;
   /** Workspace media retains its rectangular skeleton through file and decoder loads. */
   loadingSkeleton?: "media";
@@ -172,6 +177,7 @@ export function ResourcePreview(props: ResourcePreviewProps) {
         loadingSkeleton: props.loadingSkeleton,
         sourceRange: props.sourceRange,
         sourcePaths: props.sourcePaths,
+        workspaceImageActions: props.workspaceImageActions,
         markdownSelectionActions: props.markdownSelectionActions,
         onRequestRevision: props.onRequestRevision,
       }}

@@ -15,15 +15,23 @@ import Plus from "~icons/lucide/plus";
 import RotateCw from "~icons/lucide/rotate-cw";
 import Scan from "~icons/lucide/scan";
 import { useLocale } from "../../i18n";
-import { MoreHorizontal } from "../IconSet";
+import { Copy, Download, ExternalLink, Info, Maximize2, MoreHorizontal, X } from "../IconSet";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { floatingSurfaceClassName } from "../ui/menu-surface";
+import { toast } from "../ui/toast-manager";
 import { TooltipButton as Button } from "../ui/tooltip-button";
-import { PreviewToolbarMount } from "./PreviewChrome";
+import { PreviewIdentityContext, PreviewToolbarMount } from "./PreviewChrome";
 import { PreviewDock } from "./PreviewDock";
 import { PreviewLoading } from "./PreviewFeedback";
 import { PreviewToolbar, PreviewZoomControl } from "./PreviewToolbar";
@@ -47,6 +55,7 @@ type Props = {
   assertCurrent: () => void;
   onError: (message: string) => void;
   onCancel?: () => void;
+  onDownload?: () => void;
   onViewSource?: () => void;
   thumbnail?: boolean;
   conversation?: {
@@ -62,15 +71,21 @@ export default function ResourceImagePreview(props: Props) {
 }
 
 function ImageCanvas(props: Props) {
-  const { locale } = useLocale();
+  const { locale, t } = useLocale();
   const zh = locale === "zh-CN";
   const chrome = useContext(PreviewToolbarMount);
+  const registerEscapeHandler = chrome?.registerEscapeHandler;
+  const { mime, workspaceImageActions } = useContext(PreviewIdentityContext);
+  const copyAbsolutePath = workspaceImageActions?.onCopyAbsolutePath;
+  const copyRelativePath = workspaceImageActions?.onCopyRelativePath;
   const workspaceTab = Boolean(chrome?.workspaceTab && !props.conversation);
   const workspaceInset = props.document ? 24 : 12;
   const { container, viewport, sideInset } = usePreviewViewport();
   const [view, setView] = useState<ImageView>(initialImageView);
   const [ready, setReady] = useState(Boolean(props.decodedDimensions));
   const [moving, setMoving] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [size, setSize] = useState(props.decodedDimensions ?? props.dimensions);
   const focusArea = props.conversation?.focusArea;
   const left = focusArea ? 0 : workspaceTab ? workspaceInset : 16;
@@ -99,7 +114,20 @@ function ImageCanvas(props: Props) {
   } | null>(null);
   const movingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const image = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const alive = useRef(false);
+  const closeInfo = useCallback(() => {
+    setShowInfo(false);
+    canvasRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+    if (!showInfo) return;
+    return registerEscapeHandler?.(() => {
+      closeInfo();
+      return true;
+    });
+  }, [closeInfo, registerEscapeHandler, showInfo]);
 
   const authorized = useCallback(() => {
     try {
@@ -169,6 +197,13 @@ function ImageCanvas(props: Props) {
       alive.current = false;
     };
   }, [loaded]);
+  useEffect(() => {
+    if (!workspaceImageActions) return;
+    const onFullscreenChange = () =>
+      setFullscreen(document.fullscreenElement === container.current);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, [container, workspaceImageActions]);
   useEffect(() => {
     const element = container.current;
     if (!element) return;
@@ -323,7 +358,19 @@ function ImageCanvas(props: Props) {
   };
   const transform = `translate(-50%, -50%) translate(${bounded.x}px, ${bounded.y}px) rotate(${bounded.rotation}deg)`;
   const imageStyle = { width: size.width * scale, height: size.height * scale, transform };
-  const rotate = () => commit({ ...bounded, rotation: (bounded.rotation + 90) % 360, x: 0, y: 0 });
+  const rotate = (direction: -1 | 1) =>
+    commit({ ...bounded, rotation: bounded.rotation + direction * 90, x: 0, y: 0 });
+  const reset = () => commit(initialImageView);
+  const run = (action: () => void | Promise<void>, fallback: string) => {
+    if (!authorized()) return;
+    void (async () => {
+      try {
+        await action();
+      } catch (error) {
+        toast.error(error instanceof Error && error.message ? error.message : fallback);
+      }
+    })();
+  };
   const imageTools = (
     <>
       <Button
@@ -355,7 +402,7 @@ function ImageCanvas(props: Props) {
         tooltip="顺时针旋转"
         aria-label="旋转图像"
         disabled={!ready}
-        onClick={rotate}
+        onClick={() => rotate(1)}
       >
         <RotateCw />
       </Button>
@@ -366,7 +413,7 @@ function ImageCanvas(props: Props) {
         tooltipShortcut="0"
         aria-label="重置图像视图"
         disabled={!ready}
-        onClick={() => commit(initialImageView)}
+        onClick={reset}
       >
         <Scan />
       </Button>
@@ -376,6 +423,58 @@ function ImageCanvas(props: Props) {
         </Button>
       ) : null}
     </>
+  );
+  const canvas = (
+    <div
+      ref={canvasRef}
+      className="za-image-canvas"
+      role={props.conversation?.interactiveOverlay ? "group" : "img"}
+      aria-label={
+        zh
+          ? `${props.name}，${Math.round(scale * 100)}%，可缩放和平移`
+          : `${props.name}, ${Math.round(scale * 100)}%, zoom and pan available`
+      }
+      aria-busy={!ready}
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: this named image canvas provides local zoom/pan keyboard controls.
+      tabIndex={0}
+      onKeyDown={keyboard}
+      onPointerDown={start}
+      onPointerMove={move}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+      onLostPointerCapture={finish}
+      onDoubleClick={(event) =>
+        zoom(
+          Math.abs(scale - geometry.fit) < 0.001 ? (geometry.fit < 0.99 ? 100 : 200) : "fit-page",
+          point(event),
+        )
+      }
+    >
+      {props.document ? (
+        <iframe
+          className="za-image-content"
+          sandbox=""
+          referrerPolicy="no-referrer"
+          title={props.name}
+          srcDoc={props.document}
+          style={imageStyle}
+          onLoad={loaded}
+        />
+      ) : (
+        <img
+          ref={image}
+          className="za-image-content za-preview-image"
+          src={props.url}
+          alt={props.name}
+          draggable={false}
+          decoding="async"
+          style={imageStyle}
+          onLoad={loaded}
+          onError={() => props.onError("图片未能解码，请下载原件查看。网页预览不会修改原件。")}
+        />
+      )}
+      {ready && props.conversation?.overlay?.(imageStyle, size)}
+    </div>
   );
   return (
     <>
@@ -407,11 +506,11 @@ function ImageCanvas(props: Props) {
               }
             />
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={rotate}>
+              <DropdownMenuItem onClick={() => rotate(1)}>
                 <RotateCw className="size-4" />
                 {zh ? "顺时针旋转" : "Rotate clockwise"}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => commit(initialImageView)}>
+              <DropdownMenuItem onClick={reset}>
                 <Scan className="size-4" />
                 {zh ? "重置视图" : "Reset view"}
               </DropdownMenuItem>
@@ -439,59 +538,126 @@ function ImageCanvas(props: Props) {
         data-conversation-image={props.conversation ? "" : undefined}
         data-workspace-image={workspaceTab ? (props.document ? "svg" : "raster") : undefined}
       >
-        <div
-          className="za-image-canvas"
-          role={props.conversation?.interactiveOverlay ? "group" : "img"}
-          aria-label={
-            zh
-              ? `${props.name}，${Math.round(scale * 100)}%，可缩放和平移`
-              : `${props.name}, ${Math.round(scale * 100)}%, zoom and pan available`
-          }
-          aria-busy={!ready}
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: this named image canvas provides local zoom/pan keyboard controls.
-          tabIndex={0}
-          onKeyDown={keyboard}
-          onPointerDown={start}
-          onPointerMove={move}
-          onPointerUp={finish}
-          onPointerCancel={finish}
-          onLostPointerCapture={finish}
-          onDoubleClick={(event) =>
-            zoom(
-              Math.abs(scale - geometry.fit) < 0.001
-                ? geometry.fit < 0.99
-                  ? 100
-                  : 200
-                : "fit-page",
-              point(event),
-            )
-          }
-        >
-          {props.document ? (
-            <iframe
-              className="za-image-content"
-              sandbox=""
-              referrerPolicy="no-referrer"
-              title={props.name}
-              srcDoc={props.document}
-              style={imageStyle}
-              onLoad={loaded}
-            />
-          ) : (
-            <img
-              ref={image}
-              className="za-image-content za-preview-image"
-              src={props.url}
-              alt={props.name}
-              draggable={false}
-              decoding="async"
-              style={imageStyle}
-              onLoad={loaded}
-              onError={() => props.onError("图片未能解码，请下载原件查看。网页预览不会修改原件。")}
-            />
-          )}
-          {ready && props.conversation?.overlay?.(imageStyle, size)}
-        </div>
+        {workspaceImageActions && !props.conversation ? (
+          <ContextMenu disabled={!ready}>
+            <ContextMenuTrigger render={canvas} />
+            <ContextMenuContent portalContainer={fullscreen ? container.current : undefined}>
+              <ContextMenuItem onClick={reset}>
+                <Scan className="size-4" />
+                {t("workspaceFilePreview.resetImage")}
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => rotate(-1)}>
+                <RotateCw className="size-4 -scale-x-100" />
+                {t("workspaceFilePreview.rotateLeft")}
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => rotate(1)}>
+                <RotateCw className="size-4" />
+                {t("workspaceFilePreview.rotateRight")}
+              </ContextMenuItem>
+              {props.onDownload && (
+                <ContextMenuItem onClick={props.onDownload}>
+                  <Download className="size-4" />
+                  {t("workspaceFilePreview.downloadImage")}
+                </ContextMenuItem>
+              )}
+              {workspaceImageActions.onOpenInSystemViewer && (
+                <ContextMenuItem
+                  onClick={() => {
+                    if (authorized()) workspaceImageActions.onOpenInSystemViewer?.();
+                  }}
+                >
+                  <ExternalLink className="size-4" />
+                  {t("workspaceFilePreview.openInSystemImageViewer")}
+                </ContextMenuItem>
+              )}
+              <ContextMenuItem
+                onClick={() =>
+                  run(workspaceImageActions.onCopy, t("workspaceFilePreview.copyImageFailed"))
+                }
+              >
+                <Copy className="size-4" />
+                {t("workspaceFilePreview.copyImage")}
+              </ContextMenuItem>
+              {copyAbsolutePath && (
+                <ContextMenuItem
+                  onClick={() => run(copyAbsolutePath, t("workspaceFilePreview.copyPathFailed"))}
+                >
+                  <Copy className="size-4" />
+                  {t("workspaceFilePreview.copyImageAbsolutePath")}
+                </ContextMenuItem>
+              )}
+              {copyRelativePath && (
+                <ContextMenuItem
+                  onClick={() => run(copyRelativePath, t("workspaceFilePreview.copyPathFailed"))}
+                >
+                  <Copy className="size-4" />
+                  {t("workspaceFilePreview.copyImageRelativePath")}
+                </ContextMenuItem>
+              )}
+              <ContextMenuItem onClick={() => setShowInfo(true)}>
+                <Info className="size-4" />
+                {t("workspaceFilePreview.imageInfo")}
+              </ContextMenuItem>
+              {container.current?.requestFullscreen && (
+                <ContextMenuItem
+                  onClick={() =>
+                    run(
+                      () =>
+                        fullscreen
+                          ? document.exitFullscreen()
+                          : container.current?.requestFullscreen(),
+                      t("workspaceFilePreview.fullscreenFailed"),
+                    )
+                  }
+                >
+                  <Maximize2 className="size-4" />
+                  {t(
+                    fullscreen
+                      ? "chat.imageViewer.exitFullscreen"
+                      : "workspaceFilePreview.fullscreen",
+                  )}
+                </ContextMenuItem>
+              )}
+            </ContextMenuContent>
+          </ContextMenu>
+        ) : (
+          canvas
+        )}
+        {showInfo && workspaceImageActions && (
+          <aside
+            aria-label={t("workspaceFilePreview.imageInfo")}
+            className={`absolute right-3 top-3 z-10 w-64 max-w-[calc(100%-1.5rem)] p-3 text-xs ${floatingSurfaceClassName}`}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold">{t("workspaceFilePreview.imageInfo")}</span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                tooltip={t("workspaceFilePreview.close")}
+                aria-label={t("workspaceFilePreview.close")}
+                onClick={closeInfo}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-muted-foreground">
+              <dt>{t("workspaceFilePreview.fileName")}</dt>
+              <dd className="truncate text-right text-foreground">{props.name}</dd>
+              <dt>{t("workspaceFilePreview.dimensions")}</dt>
+              <dd className="text-right text-foreground">
+                {size.width} × {size.height}
+              </dd>
+              <dt>{t("workspaceFilePreview.fileSize")}</dt>
+              <dd className="text-right text-foreground">
+                {new Intl.NumberFormat(zh ? "zh-CN" : "en", { style: "unit", unit: "byte" }).format(
+                  workspaceImageActions.sizeBytes,
+                )}
+              </dd>
+              <dt>{t("workspaceFilePreview.fileType")}</dt>
+              <dd className="truncate text-right text-foreground">{mime}</dd>
+            </dl>
+          </aside>
+        )}
         {!ready ? (
           <div className="za-image-loading">
             <PreviewLoading

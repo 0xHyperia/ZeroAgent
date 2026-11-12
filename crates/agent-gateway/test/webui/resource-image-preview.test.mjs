@@ -9,11 +9,20 @@ async function setup(t, options = {}) {
   Object.defineProperty(env.dom.window.HTMLElement.prototype, "clientHeight", {configurable:true,get(){return height;}});
   globalThis.ResizeObserver = class { constructor(callback){resize=callback;} observe(){} disconnect(){retired=true;} };
   const Player = env.loadModule("@liveagent/ui/components/resource-preview/ResourceImagePreview.tsx").default;
-  const { PreviewToolbarMount } = env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");
+  const { PreviewIdentityContext, PreviewToolbarMount } = env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");
   const host = document.body.appendChild(document.createElement("div")), root = env.createRoot(host);
   const errors=[]; let mounted=true;
   const props = {name:"图像.png",url:"blob:image-one",dimensions:{width:1200,height:800},assertCurrent(){},onError(value){errors.push(value);},...options};
-  const render = async(extra={},inspector=false,workspace=false) => env.act(async()=>root.render(env.React.createElement(env.React.StrictMode,null,env.React.createElement(PreviewToolbarMount.Provider,{value:workspace?{target:host,workspaceTab:true}:inspector?{target:null,inspectorOpen:true}:null},env.React.createElement(Player,{...props,...extra})))));
+  const render = async(extra={},inspector=false,workspace=false,workspaceImageActions) => env.act(async()=>root.render(
+    env.React.createElement(env.React.StrictMode,null,
+      env.React.createElement(PreviewToolbarMount.Provider,{value:workspace?{target:host,workspaceTab:true}:inspector?{target:null,inspectorOpen:true}:null},
+        env.React.createElement(PreviewIdentityContext.Provider,
+          {value:{name:props.name,mime:"image/png",workspaceImageActions}},
+          env.React.createElement(Player,{...props,...extra}),
+        ),
+      ),
+    ),
+  ));
   const click = async(label)=>env.act(async()=>host.querySelector(`button[aria-label="${label}"]`).click());
   const decode = async()=>env.act(async()=>host.querySelector("img,iframe").dispatchEvent(new Event("load")));
   const pointer = async(type,id,x,y,pointerType="mouse")=>env.act(async()=>{
@@ -68,6 +77,42 @@ test("workspace image uses the full reading canvas and keeps actions in the shar
   assert.ok(rotate);
   await app.env.act(async () => rotate.click());
   assert.match(app.host.querySelector("img").style.transform, /rotate\(90deg\)/);
+});
+
+test("workspace image right-click executes the menu item without restarting the canvas", async (t) => {
+  const app = await setup(t);
+  const originalDOMRect = Object.getOwnPropertyDescriptor(globalThis, "DOMRect");
+  globalThis.DOMRect = app.env.dom.window.DOMRect;
+  t.after(() => {
+    if (originalDOMRect) Object.defineProperty(globalThis, "DOMRect", originalDOMRect);
+    else delete globalThis.DOMRect;
+  });
+  const actions = [];
+  await app.render({}, false, true, {
+    sizeBytes: 64,
+    onCopy: async () => { actions.push("copy"); },
+  });
+  await app.decode();
+  const canvas = app.host.querySelector(".za-image-canvas");
+  const { act } = app.env;
+  async function selectItem(label) {
+    await act(async () => canvas.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true, button: 2, clientX: 90, clientY: 90,
+    })));
+    const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+      (entry) => label.test(entry.textContent),
+    );
+    assert.ok(item, String(label));
+    await act(async () => {
+      item.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+      item.click();
+    });
+    assert.equal(app.host.querySelector(".za-image-canvas"), canvas);
+  }
+  await selectItem(/向右旋转|Rotate right/);
+  assert.match(canvas.querySelector("img").style.transform, /rotate\(90deg\)/);
+  await selectItem(/复制图片|^Copy image$/);
+  assert.deepEqual(actions, ["copy"]);
 });
 
 test("pan bounds, anchored wheel and two-finger pinch do not steal browser or composer gestures",async t=>{

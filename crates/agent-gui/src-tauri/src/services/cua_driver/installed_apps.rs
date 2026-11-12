@@ -107,7 +107,7 @@ fn list_macos_apps(exclude_bundle_id: &str) -> Vec<InstalledApp> {
 }
 
 #[cfg(target_os = "macos")]
-fn read_macos_app_bundle(path: &std::path::Path) -> Option<InstalledApp> {
+pub(crate) fn read_macos_app_bundle(path: &std::path::Path) -> Option<InstalledApp> {
     let info = plist::Value::from_file(path.join("Contents/Info.plist")).ok()?;
     let dict = info.as_dictionary()?;
     let string_of = |key: &str| {
@@ -383,7 +383,7 @@ mod lnk {
 }
 
 #[cfg(target_os = "windows")]
-mod windows {
+pub(crate) mod windows {
     use super::{lnk, InstalledApp};
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
@@ -523,7 +523,7 @@ mod windows {
     /// 目标 exe 的系统图标 → 32px PNG data URL。取图标交给
     /// `SHGetFileInfoW`（与 macOS 交给 NSWorkspace 同理，见模块注释），
     /// HICON → GDI 位图取 BGRA 像素 → `image` crate 编码 PNG。
-    fn app_icon_data_url(target: &Path) -> Option<String> {
+    pub(crate) fn app_icon_data_url(target: &Path) -> Option<String> {
         use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
         use std::os::windows::ffi::OsStrExt;
         use windows_sys::Win32::UI::Shell::{
@@ -559,7 +559,9 @@ mod windows {
 
     /// HICON → PNG 字节。彩色位图按 32bpp 顶朝下取出（BGRA），alpha
     /// 全零说明是老式掩码图标——再取掩码位图补出透明度。
-    fn icon_to_png(icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON) -> Option<Vec<u8>> {
+    pub(crate) fn icon_to_png(
+        icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+    ) -> Option<Vec<u8>> {
         use windows_sys::Win32::Graphics::Gdi::DeleteObject;
         use windows_sys::Win32::UI::WindowsAndMessaging::{GetIconInfo, ICONINFO};
 

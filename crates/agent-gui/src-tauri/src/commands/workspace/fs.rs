@@ -3724,6 +3724,71 @@ pub async fn fs_save_workspace_copy(workdir: String, path: String) -> Result<boo
     .await
 }
 
+#[cfg(desktop)]
+#[path = "file_applications.rs"]
+mod file_applications;
+
+#[cfg(desktop)]
+fn resolve_workspace_application_file(
+    workdir: &str,
+    path: &str,
+) -> Result<PathBuf, FsCommandError> {
+    let scope = resolve_scoped_fs_path(workdir, path)?;
+    let file = resolve_target(&scope.root, &scope.relative_path)
+        .map_err(|error| remap_scoped_path_error(&scope, error))?;
+    if !file.is_file() {
+        return Err(FsError::Other("Only regular files have opening applications".into()).into());
+    }
+    Ok(file)
+}
+
+#[cfg(desktop)]
+#[tauri::command(rename_all = "snake_case")]
+pub async fn fs_workspace_file_apps(
+    app: tauri::AppHandle,
+    workdir: String,
+    path: String,
+) -> Result<file_applications::FileApplications, FsCommandError> {
+    #[cfg(target_os = "linux")]
+    {
+        let file = run_blocking_fs("fs_workspace_file_apps", move || {
+            resolve_workspace_application_file(&workdir, &path)
+        })
+        .await?;
+        let (send, receive) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let _ = send.send(file_applications::list(&file));
+        })
+        .map_err(|error| FsError::Other(error.to_string()))?;
+        receive
+            .await
+            .map_err(|error| FsError::Other(error.to_string()).into())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        run_blocking_fs("fs_workspace_file_apps", move || {
+            let file = resolve_workspace_application_file(&workdir, &path)?;
+            Ok(file_applications::list(&file))
+        })
+        .await
+    }
+}
+
+#[cfg(desktop)]
+#[tauri::command(rename_all = "snake_case")]
+pub async fn fs_open_workspace_file_app(
+    workdir: String,
+    path: String,
+    application: String,
+) -> Result<(), FsCommandError> {
+    run_blocking_fs("fs_open_workspace_file_app", move || {
+        let file = resolve_workspace_application_file(&workdir, &path)?;
+        file_applications::open(&file, &application).map_err(|error| FsError::Other(error).into())
+    })
+    .await
+}
+
 #[cfg(target_os = "windows")]
 const WORKSPACE_EDITORS: &[&str] = &[
     "vscode",

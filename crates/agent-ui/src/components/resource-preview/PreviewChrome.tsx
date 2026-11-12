@@ -6,7 +6,15 @@ export type MarkdownSelectionActions = {
   onEditSource?: (line: number, column: number) => void;
 };
 
-/** Reading identity and toolbar placement only; no bytes, credentials or host actions. */
+export type WorkspaceImageActions = {
+  onCopy: () => Promise<void>;
+  onCopyAbsolutePath?: () => Promise<void>;
+  onCopyRelativePath?: () => Promise<void>;
+  onOpenInSystemViewer?: () => void;
+  sizeBytes: number;
+};
+
+/** Reading identity and presentation hooks; no bytes or credentials. */
 export const PreviewIdentityContext = createContext<{
   name: string;
   mime: string;
@@ -15,6 +23,7 @@ export const PreviewIdentityContext = createContext<{
   loadingSkeleton?: "media";
   sourceRange?: { fromLine: number; toLine?: number };
   sourcePaths?: { path?: string; relativePath?: string };
+  workspaceImageActions?: WorkspaceImageActions;
   markdownSelectionActions?: MarkdownSelectionActions;
   onRequestRevision?: (
     comments: readonly DocumentRevisionComment[],

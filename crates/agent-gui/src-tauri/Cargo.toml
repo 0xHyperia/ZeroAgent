@@ -86,7 +86,7 @@ objc2-user-notifications = { version = "0.3", default-features = false, features
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSButton", "NSControl", "NSView", "NSWindow", "NSWorkspace", "NSRunningApplication", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics", "NSGraphicsContext", "objc2-core-graphics"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "AVCaptureDevice", "AVMediaFormat"] }
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString", "NSData", "NSDictionary", "NSArray", "NSObject", "NSEnumerator", "NSGeometry", "NSNotification", "NSOperation", "block2", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString", "NSURL", "NSData", "NSDictionary", "NSArray", "NSObject", "NSEnumerator", "NSGeometry", "NSNotification", "NSOperation", "block2", "objc2-core-foundation"] }
 block2 = "0.6"
 # 读 .app bundle 的 Info.plist（输入框 @ 应用提及的枚举）。
 plist = "1.10"
@@ -101,6 +101,7 @@ aws-lc-rs = "1.17.1"
 wry = { version = "0.55.1", default-features = false }
 webview2-com = "0.38.2"
 windows-core = "0.61.2"
+windows = { version = "0.61.3", features = ["Win32_System_Com", "Win32_UI_Shell"] }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security_Credentials",
@@ -126,6 +127,10 @@ windows-sys = { version = "0.61", features = [
     "Win32_NetworkManagement_IpHelper",
     "Win32_Networking_WinSock",
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gio = "0.18.4"
+gtk = "0.18.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 rfd = "0.17.2"

@@ -129,6 +129,10 @@ macro_rules! app_invoke_handler {
             commands::fs::fs_edit_text,
             commands::fs::fs_delete,
             commands::fs::fs_open_workspace_path,
+            #[cfg(desktop)]
+            commands::fs::fs_workspace_file_apps,
+            #[cfg(desktop)]
+            commands::fs::fs_open_workspace_file_app,
             commands::fs::fs_save_workspace_copy,
             commands::fs::fs_workspace_editor_targets,
             commands::fs::fs_open_workspace_editor,
