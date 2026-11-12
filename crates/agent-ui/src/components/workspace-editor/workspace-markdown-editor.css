@@ -145,6 +145,11 @@
   border-end-end-radius: 8px;
 }
 
+.za-md-mermaid-widget {
+  min-inline-size: 0;
+  white-space: normal;
+}
+
 .za-workspace-markdown-content .cm-line.za-md-table-row {
   display: flex;
   padding: 0;

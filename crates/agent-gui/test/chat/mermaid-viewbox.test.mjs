@@ -4,9 +4,26 @@ import test from "node:test";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
 const loader = createTsModuleLoader();
-const { panMermaidViewBox, zoomMermaidViewBox } = loader.loadModule(
+const { fitMermaidViewBox, panMermaidViewBox, zoomMermaidViewBox } = loader.loadModule(
   "@liveagent/ui/lib/mermaidViewBox.ts",
 );
+
+test("Mermaid opens at natural size on large canvases and fits smaller ones without cropping", () => {
+  const diagram = { x: 10, y: 20, width: 200, height: 100 };
+
+  assert.deepEqual(fitMermaidViewBox(diagram, { width: 600, height: 400 }, 16), {
+    x: -190,
+    y: -130,
+    width: 600,
+    height: 400,
+  });
+  assert.deepEqual(fitMermaidViewBox(diagram, { width: 132, height: 160 }, 16), {
+    x: -22,
+    y: -90,
+    width: 264,
+    height: 320,
+  });
+});
 
 test("Mermaid viewBox zoom keeps the center and avoids CSS scaling", () => {
   const source = { x: 10, y: 20, width: 200, height: 100 };

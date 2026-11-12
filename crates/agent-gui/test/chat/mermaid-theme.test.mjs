@@ -6,31 +6,28 @@ import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 
 const renders = [];
 let deferRenders = false;
+let config;
 const mermaid = {
-  name: "mermaid",
-  type: "diagram",
-  language: "mermaid",
-  getMermaid(config) {
-    return {
-      render(id, chart) {
-        const theme = config?.theme ?? "default";
-        const result = {
-          svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" data-theme="${theme}"><text>${theme}</text></svg>`,
-        };
-        const job = { id, chart, theme };
-        renders.push(job);
-        return deferRenders
-          ? new Promise((resolve) => { job.complete = () => resolve(result); })
-          : Promise.resolve(result);
-      },
-    };
+  initialize(next) { config = next; },
+  registerLayoutLoaders() {},
+  render(id, chart) {
+    const theme = config.darkMode ? "dark" : "default";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" data-theme="${theme}"><text>${theme}</text></svg>`;
+    const job = { id, chart, theme };
+    renders.push(job);
+    return deferRenders
+      ? new Promise((resolve) => { job.complete = () => resolve({ svg }); })
+      : Promise.resolve({ svg });
   },
 };
 
 const env = await createDomTestEnv({ mocks: {
   streamdown,
   "remark-breaks": { __esModule: true, default: remarkBreaks },
-  "@streamdown/mermaid": { mermaid },
+  "./loadMermaid": {
+    loadMermaid: async () => ({ default: mermaid }),
+    loadMermaidElk: async () => ({ default: [] }),
+  },
   "@streamdown/code": { code: undefined },
   "@streamdown/math": { math: undefined },
   "@streamdown/cjk": { cjk: undefined },
@@ -40,8 +37,10 @@ const env = await createDomTestEnv({ mocks: {
 } });
 const { React, act, createRoot } = env;
 const { Markdown } = env.loadModule("@liveagent/ui/components/Markdown.tsx");
-const { MermaidFullscreenButton } = env.loadModule("@liveagent/ui/components/MarkdownMermaidFullscreen.tsx");
+const { MarkdownMermaidBlock } = env.loadModule("@liveagent/ui/components/markdown/MarkdownMermaidBlock.tsx");
 const previousParser = globalThis.DOMParser;
+const previousSerializer = globalThis.XMLSerializer;
+globalThis.XMLSerializer = window.XMLSerializer;
 const previousIntersectionObserver = globalThis.IntersectionObserver;
 globalThis.DOMParser = window.DOMParser;
 globalThis.IntersectionObserver = class {
@@ -52,6 +51,7 @@ globalThis.IntersectionObserver = class {
 };
 after(() => {
   globalThis.DOMParser = previousParser;
+  globalThis.XMLSerializer = previousSerializer;
   globalThis.IntersectionObserver = previousIntersectionObserver;
   env.cleanup();
 });
@@ -132,38 +132,70 @@ test("theme changes preserve expanded code blocks and an open fullscreen dialog"
   } finally { await cleanup(); }
 });
 
-test("fullscreen initializes its theme even before any inline diagram renders", async () => {
-  await setDark(true);
-  const cleanup = await mount(React.createElement(MermaidFullscreenButton, { chart }));
+test("streaming fences wait for the full language and the closing delimiter", async () => {
+  await setDark(false);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const initialCount = renders.length;
+  const update = (content) => act(async () => root.render(React.createElement(Markdown, {
+    renderMode: "streaming", showCaret: true, content,
+  })));
   try {
-    await act(async () => document.querySelector("button").click());
-    await eventually(() => fullscreen()?.querySelector("svg[data-theme]")?.dataset.theme === "dark");
-    assert.equal(inlineSvg(), null);
-  } finally { await cleanup(); }
+    await update("```mer");
+    assert.ok(container.querySelector("[data-waiting]"));
+    await update("~~~mermaid\n" + chart + "\n");
+    assert.ok(container.querySelector("[data-waiting]"));
+    assert.equal(renders.length, initialCount);
+    await update("~~~mermaid\n" + chart + "\n~~~");
+    await eventually(() => inlineSvg());
+    assert.equal(renders.length, initialCount + 1);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
 });
 
-test("late old-theme renders cannot replace the new inline or fullscreen SVG", async () => {
+test("a serialized old-theme render cannot replace a newer requested theme", async () => {
   await setDark(false);
   renders.length = 0;
   deferRenders = true;
-  const cleanup = await mount(React.createElement(Markdown, {
-    content: `\`\`\`mermaid\n${chart}\n\`\`\``,
-  }));
+  const cleanup = await mount(React.createElement(MarkdownMermaidBlock, { chart }));
   try {
-    await eventually(() => renders.some((job) => !job.id.includes("fullscreen")));
-    await act(async () => document.querySelector('[aria-label="chat.imageViewer.fullscreen"]').click());
-    await eventually(() => renders.some((job) => job.id.includes("fullscreen")));
-    const oldJobs = [...renders];
+    await eventually(() => renders.length === 1);
     await setDark(true);
-    await eventually(() => renders.some((job) => job.theme === "dark" && !job.id.includes("fullscreen")));
-    await act(async () => { for (const job of renders.filter((job) => job.theme === "dark")) job.complete(); });
-    await eventually(() => inlineSvg()?.dataset.theme === "dark" &&
-      fullscreen()?.querySelector("svg[data-theme]")?.dataset.theme === "dark");
-    await act(async () => { for (const job of oldJobs) job.complete(); });
-    assert.equal(inlineSvg().dataset.theme, "dark");
-    assert.equal(fullscreen().querySelector("svg[data-theme]").dataset.theme, "dark");
+    assert.equal(renders.length, 1);
+    await act(async () => renders[0].complete());
+    await eventually(() => renders[1]?.theme === "dark");
+    assert.equal(inlineSvg(), null);
+    await act(async () => renders[1].complete());
+    await eventually(() => inlineSvg()?.dataset.theme === "dark");
   } finally {
+    for (const job of renders) job.complete?.();
     deferRenders = false;
+    await cleanup();
+  }
+});
+
+test("author configuration and diagram clicks cannot override the renderer", async () => {
+  const source = [
+    "---",
+    "title: Preview title",
+    "config:",
+    "  securityLevel: loose",
+    "---",
+    '%%{init: {"themeCSS": ".untrusted{}"}}%%',
+    chart,
+    'click A "https://example.invalid"',
+  ].join("\n");
+  const cleanup = await mount(React.createElement(MarkdownMermaidBlock, { chart: source }));
+  try {
+    await eventually(() => inlineSvg());
+    const renderedSource = renders.at(-1).chart;
+    assert.match(renderedSource, /title: "Preview title"/);
+    assert.match(renderedSource, /layout: elk/);
+    assert.doesNotMatch(renderedSource, /securityLevel|themeCSS|\bclick\b/);
+  } finally {
     await cleanup();
   }
 });

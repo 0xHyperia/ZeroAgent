@@ -2,8 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 
-test("desktop Markdown lays out tables and fences without modifying source or revealing the whole line", async () => {
-  const env = await createDomTestEnv();
+test("editable Markdown renders tables, code fences and Mermaid without modifying source", async () => {
+  const env = await createDomTestEnv({
+    mocks: {
+      "../markdown/MarkdownMermaidBlock": {
+        MarkdownMermaidBlock: ({ chart }) =>
+          env.React.createElement("div", { "data-chart": chart }),
+      },
+    },
+  });
   const previousWindow = globalThis.Window;
   globalThis.Window = window.Window;
   // CodeMirror measures selections even in jsdom.
@@ -33,6 +40,12 @@ test("desktop Markdown lays out tables and fences without modifying source or re
     "Alpha **first** and **second**.",
     "",
     "[guide](README.md)",
+    "",
+    "> " + fence + "mermaid",
+    "> flowchart TD",
+    ">",
+    ">   A --> B",
+    "> " + fence,
   ].join("\n");
   const opened = [];
   const changed = [];
@@ -60,6 +73,10 @@ test("desktop Markdown lays out tables and fences without modifying source or re
     assert.equal(body.textContent, "const value = 1;");
     assert.equal(closing.textContent, "");
     assert.ok(closing.matches(".za-md-code-last"));
+    assert.equal(
+      container.querySelector(".za-md-mermaid-widget [data-chart]").dataset.chart,
+      "flowchart TD\n\n  A --> B",
+    );
 
     const tableRows = [...container.querySelectorAll(".za-md-table-row")];
     assert.deepEqual(
@@ -89,6 +106,8 @@ test("desktop Markdown lays out tables and fences without modifying source or re
     assert.equal(editorLine("ts options").textContent, fence + "ts options");
 
     await act(async () => root.render(React.createElement(Editor, { ...props, mode: "source" })));
+    assert.equal(container.querySelector(".za-md-mermaid-widget"), null);
+    assert.equal(editorLine("flowchart TD").textContent, "> flowchart TD");
     assert.equal(editorLine("Heading").textContent, "# Heading");
     assert.equal(editorLine("Quantity").textContent, "| Name | Quantity |");
     assert.equal(handle.current.getValue(), source);

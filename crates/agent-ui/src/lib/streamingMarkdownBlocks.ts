@@ -25,6 +25,10 @@ import { parseChatMarkdownBlocks } from "./markdownBlocks";
 
 // Blank-line runs are blocks of their own; only blocks with content count.
 const REPARSE_CONTENT_BLOCKS = 2;
+// Mermaid's source is opaque to Markdown. In particular, remend may append
+// tildes to the info string while a tilde-fenced opening line is arriving.
+const MERMAID_FENCE =
+  /^[\t ]{0,3}(?:`{3,}|~{3,})[\t ]*(?:me(?:r(?:m(?:a(?:i(?:d)?)?)?)?)?|mmd)(?:[\t ]|\r?\n|$)/i;
 
 export type MarkdownBlockParser = (markdown: string) => string[];
 
@@ -55,7 +59,7 @@ export function createStreamingBlockParser(
     if (blocks.length === 0) return blocks;
     const repaired = blocks.slice();
     const last = repaired.length - 1;
-    repaired[last] = repair(repaired[last]);
+    if (!MERMAID_FENCE.test(repaired[last])) repaired[last] = repair(repaired[last]);
     return repaired;
   };
 }

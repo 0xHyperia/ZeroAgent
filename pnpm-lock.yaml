@@ -93,9 +93,6 @@ importers:
       '@streamdown/math':
         specifier: ^1.0.2
         version: 1.0.2(react@19.2.4)
-      '@streamdown/mermaid':
-        specifier: ^1.0.2
-        version: 1.0.2(react@19.2.4)
       '@tanstack/react-virtual':
         specifier: 3.14.6
         version: 3.14.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -230,9 +227,6 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1(react@19.2.4)
       '@streamdown/math':
-        specifier: ^1.0.2
-        version: 1.0.2(react@19.2.4)
-      '@streamdown/mermaid':
         specifier: ^1.0.2
         version: 1.0.2(react@19.2.4)
       '@tanstack/react-virtual':
@@ -389,6 +383,9 @@ importers:
       '@lezer/rust':
         specifier: 1.0.3
         version: 1.0.3
+      '@mermaid-js/layout-elk':
+        specifier: 0.2.3
+        version: 0.2.3(mermaid@11.16.1)
       '@office-kit/pptx':
         specifier: 0.28.0
         version: 0.28.0
@@ -402,9 +399,6 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1(react@19.2.4)
       '@streamdown/math':
-        specifier: ^1.0.2
-        version: 1.0.2(react@19.2.4)
-      '@streamdown/mermaid':
         specifier: ^1.0.2
         version: 1.0.2(react@19.2.4)
       '@tanstack/react-virtual':
@@ -455,6 +449,9 @@ importers:
       mdast-util-gfm:
         specifier: 3.1.0
         version: 3.1.0
+      mermaid:
+        specifier: 11.16.1
+        version: 11.16.1
       micromark-extension-gfm:
         specifier: 3.0.0
         version: 3.0.0
@@ -1188,6 +1185,11 @@ packages:
   '@marijn/find-cluster-break@1.0.4':
     resolution: {integrity: sha512-Wy0V7+SGUjnF9/TkiM1hKVDPj7jKXduPNboMVtHTA8dySMURWqfg/JZ9E2Sq8JgSJmkl7k7Qe9FLeMSrSraWmQ==}
 
+  '@mermaid-js/layout-elk@0.2.3':
+    resolution: {integrity: sha512-m46RVGfvKK1PSMdAFGDz2nksI4jusEkFxvf0lb48bYWmqLQxZpjtpruiw29MbOy9rlWJtuMf9EzG9fAF8CVZbg==}
+    peerDependencies:
+      mermaid: ^11.0.2
+
   '@mermaid-js/parser@1.2.0':
     resolution: {integrity: sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==}
 
@@ -1665,11 +1667,6 @@ packages:
 
   '@streamdown/math@1.0.2':
     resolution: {integrity: sha512-r8Ur9/lBuFnzZAFdEWrLUF2s/gRwRRRwruqltdZibyjbCBnuW7SJbFm26nXqvpJPW/gzpBUMrBVBzd88z05D5g==}
-    peerDependencies:
-      react: 19.2.4
-
-  '@streamdown/mermaid@1.0.2':
-    resolution: {integrity: sha512-Fr/4sBWnAeSnxM3PcrV/+DiZe5oPMq9gOkUIAH7ZauJeuwrZ/DVzD4g0zlav6AH0axh2m/sOfrfLtY5aLT7niw==}
     peerDependencies:
       react: 19.2.4
 
@@ -2766,6 +2763,9 @@ packages:
 
   electron-to-chromium@1.5.402:
     resolution: {integrity: sha512-/oOpMaPT6Yg+6/1XQhyIPlzgj7Ye9zf+nNM2Uh6OcE2G2oNptWazFa+qB2Pdqqbsc9KnIDzgAntoYN0dbwOXwA==}
+
+  elkjs@0.9.3:
+    resolution: {integrity: sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxfOmt8KjswHmI5EwCQcPMpOYhQ==}
 
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
@@ -5338,6 +5338,12 @@ snapshots:
 
   '@marijn/find-cluster-break@1.0.4': {}
 
+  '@mermaid-js/layout-elk@0.2.3(mermaid@11.16.1)':
+    dependencies:
+      d3: 7.9.0
+      elkjs: 0.9.3
+      mermaid: 11.16.1
+
   '@mermaid-js/parser@1.2.0':
     dependencies:
       '@chevrotain/types': 11.1.2
@@ -5712,11 +5718,6 @@ snapshots:
       remark-math: 6.0.0
     transitivePeerDependencies:
       - supports-color
-
-  '@streamdown/mermaid@1.0.2(react@19.2.4)':
-    dependencies:
-      mermaid: 11.16.1
-      react: 19.2.4
 
   '@svgr/babel-plugin-add-jsx-attribute@8.0.0(@babel/core@7.29.7)':
     dependencies:
@@ -6774,6 +6775,8 @@ snapshots:
       undici: 8.12.3
 
   electron-to-chromium@1.5.402: {}
+
+  elkjs@0.9.3: {}
 
   end-of-stream@1.4.5:
     dependencies:

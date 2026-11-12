@@ -40,6 +40,7 @@ function createMarkdownModule(expanded) {
         },
         defaultRemarkPlugins: {},
         defaultRehypePlugins: { raw: {}, sanitize: {} },
+        useIsCodeFenceIncomplete: () => false,
       },
       "remark-breaks": {},
       "react-dom": { createPortal(children) { return children; } },

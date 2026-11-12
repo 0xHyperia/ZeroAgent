@@ -1,296 +1,238 @@
-import { Loader2, Minus, Plus, RefreshCw } from "@liveagent/ui/components/IconSet";
+import { Minus, Plus } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { mermaid } from "@streamdown/mermaid";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  fitMermaidViewBox,
   formatMermaidViewBox,
+  type MermaidPoint,
   type MermaidViewBox,
+  mermaidZoomAnchor,
   panMermaidViewBox,
   parseMermaidViewBox,
   zoomMermaidViewBox,
 } from "../../lib/mermaidViewBox";
-import { cn } from "../../lib/shared/utils";
+import { TooltipButton } from "../ui/tooltip-button";
 import { useMermaidConfig } from "./MermaidTheme";
+import { renderMermaid } from "./mermaidRenderer";
 
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 3;
-const ZOOM_STEP = 0.1;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
+const CANVAS_PADDING = 16;
+type Viewport = { zoom: number; viewBox: MermaidViewBox };
 
-// Streaming hands the diagram a longer chart every flush; a full mermaid
-// parse + layout per delta stalls the main thread. First sight renders
-// immediately, later chart changes render at most once per interval with a
-// trailing render for the final chart. The previous SVG stays visible while
-// a render is pending, so the diagram never flashes back to the spinner.
-const STREAM_RENDER_MIN_INTERVAL_MS = 500;
-
-type ViewportState = { zoom: number; viewBox: MermaidViewBox };
-
-export function MermaidDiagram({
-  chart,
-  fullscreen = false,
-  interactive = true,
-}: {
-  chart: string;
-  fullscreen?: boolean;
-  interactive?: boolean;
-}) {
-  const { t } = useLocale();
+export function useMermaidSvg(chart: string, id: string, enabled: boolean) {
   const config = useMermaidConfig();
-  const renderId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const generation = useRef(0);
-  const lastRenderStartRef = useRef(0);
-  const lastRenderChartRef = useRef<string | null>(null);
+  const [result, setResult] = useState<{ chart: string; svg?: string; error?: true }>();
+  useEffect(() => {
+    if (!enabled) return;
+    let current = true;
+    void renderMermaid(id, chart, config)
+      .then((svg) => {
+        if (current && svg) setResult({ chart, svg });
+      })
+      .catch(() => {
+        if (current) setResult({ chart, error: true });
+      });
+    return () => {
+      current = false;
+    };
+  }, [chart, config, enabled, id]);
+  return enabled && result?.chart === chart ? result : undefined;
+}
+
+function midpoint(a: MermaidPoint, b: MermaidPoint) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function distance(a: MermaidPoint, b: MermaidPoint) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+export function MermaidDiagram({ svg, fullscreen = false }: { svg: string; fullscreen?: boolean }) {
+  const { t } = useLocale();
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgHostRef = useRef<HTMLDivElement>(null);
-  const originalViewBoxRef = useRef<MermaidViewBox | null>(null);
-  const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
-  const [visible, setVisible] = useState(fullscreen);
-  const [svg, setSvg] = useState("");
-  const [error, setError] = useState("");
-  const [viewport, setViewport] = useState<ViewportState | null>(null);
+  const original = useRef<MermaidViewBox | null>(null);
+  const diagramBounds = useRef<MermaidViewBox | null>(null);
+  const pointers = useRef(new Map<number, MermaidPoint>());
+  const [viewport, setViewport] = useState<Viewport | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  useEffect(() => {
-    if (visible) return;
-    const element = viewportRef.current;
-    if (!element) return;
-    if (typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const render = () => {
-      timer = null;
-      lastRenderStartRef.current = performance.now();
-      lastRenderChartRef.current = chart;
-      setError("");
-      generation.current += 1;
-      void mermaid
-        .getMermaid(config)
-        .render(
-          `mermaid-${fullscreen ? "fullscreen" : "inline"}-${renderId}-${generation.current}`,
-          chart,
-        )
-        .then(({ svg: renderedSvg }) => {
-          if (active) setSvg(renderedSvg);
-        })
-        .catch((reason: unknown) => {
-          if (active) {
-            setError(reason instanceof Error ? reason.message : "Failed to render Mermaid chart");
-          }
-        });
-    };
-    // Only a grown/changed chart is throttled; theme/config changes and the
-    // first sight of a chart render immediately.
-    const wait =
-      lastRenderStartRef.current === 0 || lastRenderChartRef.current === chart
-        ? 0
-        : Math.max(
-            0,
-            STREAM_RENDER_MIN_INTERVAL_MS - (performance.now() - lastRenderStartRef.current),
-          );
-    if (wait === 0) {
-      render();
-    } else {
-      timer = setTimeout(render, wait);
-    }
-    return () => {
-      active = false;
-      if (timer !== null) clearTimeout(timer);
-    };
-  }, [chart, config, fullscreen, renderId, visible]);
-
   useLayoutEffect(() => {
-    if (!svg || !svgHostRef.current) return;
-    const parsed = new DOMParser().parseFromString(svg, "image/svg+xml");
-    const original = parseMermaidViewBox(parsed.documentElement.getAttribute("viewBox"));
-    if (
-      parsed.querySelector("parsererror") ||
-      parsed.documentElement.localName !== "svg" ||
-      !original
-    ) {
-      setError("Mermaid returned invalid SVG or viewBox");
-      return;
-    }
-    const element = document.importNode(parsed.documentElement, true);
+    const host = svgHostRef.current;
+    if (!host) return;
+    const parsed = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
+    const viewBox = parseMermaidViewBox(parsed.getAttribute("viewBox"));
+    if (!viewBox) return;
+    const element = document.importNode(parsed, true);
     element.setAttribute("preserveAspectRatio", "xMidYMid meet");
-    // Keep the SVG viewport fixed. Only its viewBox changes, so text and paths
-    // are repainted at the new scale instead of enlarging a composited layer.
     element.setAttribute("width", "100%");
     element.setAttribute("height", "100%");
-    element.style.width = "100%";
-    element.style.height = "100%";
-    element.style.maxWidth = "none";
-    svgHostRef.current.replaceChildren(element);
-    originalViewBoxRef.current = original;
-    setViewport({ zoom: 1, viewBox: original });
-  }, [svg]);
+    element.style.cssText = "width:100%;height:100%;max-width:none;display:block";
+    host.replaceChildren(element);
+    if (!fullscreen) {
+      host.style.aspectRatio = `${viewBox.width} / ${viewBox.height}`;
+      host.style.setProperty("--mermaid-width", `${viewBox.width}px`);
+      host.style.setProperty("--mermaid-ratio", String(viewBox.width / viewBox.height));
+      host.toggleAttribute("data-wide", viewBox.width >= 720);
+      return;
+    }
+    const previousBounds = diagramBounds.current;
+    const sameDiagram =
+      previousBounds?.x === viewBox.x &&
+      previousBounds.y === viewBox.y &&
+      previousBounds.width === viewBox.width &&
+      previousBounds.height === viewBox.height;
+    diagramBounds.current = viewBox;
+    const resize = (preservePosition: boolean) => {
+      const fitted = fitMermaidViewBox(
+        viewBox,
+        { width: host.clientWidth, height: host.clientHeight },
+        CANVAS_PADDING,
+      );
+      original.current = fitted;
+      setViewport((previous) => {
+        const zoom = preservePosition ? (previous?.zoom ?? 1) : 1;
+        const next = zoomMermaidViewBox(fitted, zoom);
+        if (previous && zoom > 1) {
+          // Keep the center of the part being read on viewport resize or a theme swap.
+          next.x = previous.viewBox.x + (previous.viewBox.width - next.width) / 2;
+          next.y = previous.viewBox.y + (previous.viewBox.height - next.height) / 2;
+        }
+        return { zoom, viewBox: next };
+      });
+    };
+    resize(sameDiagram);
+    const observer = new ResizeObserver(() => resize(true));
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [svg, fullscreen]);
 
   useLayoutEffect(() => {
-    if (!viewport) return;
-    svgHostRef.current
-      ?.querySelector("svg")
-      ?.setAttribute("viewBox", formatMermaidViewBox(viewport.viewBox));
+    if (viewport)
+      svgHostRef.current?.firstElementChild?.setAttribute(
+        "viewBox",
+        formatMermaidViewBox(viewport.viewBox),
+      );
   }, [viewport]);
 
-  const changeZoom = useCallback((delta: number) => {
+  const updateZoom = useCallback((factor: number, point?: MermaidPoint, pan?: MermaidPoint) => {
+    const rect = svgHostRef.current?.getBoundingClientRect();
+    if (!rect) return;
     setViewport((current) => {
       if (!current) return current;
-      const zoom = Math.max(
-        MIN_ZOOM,
-        Math.min(MAX_ZOOM, Number((current.zoom + delta).toFixed(1))),
-      );
-      if (zoom === current.zoom) return current;
-      return { zoom, viewBox: zoomMermaidViewBox(current.viewBox, zoom / current.zoom) };
+      const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, current.zoom * factor));
+      if (zoom <= 1 && original.current) {
+        return { zoom, viewBox: zoomMermaidViewBox(original.current, zoom) };
+      }
+      const anchor =
+        point &&
+        mermaidZoomAnchor(current.viewBox, { x: point.x - rect.left, y: point.y - rect.top }, rect);
+      const zoomed = zoomMermaidViewBox(current.viewBox, zoom / current.zoom, anchor);
+      return { zoom, viewBox: pan ? panMermaidViewBox(zoomed, pan, rect) : zoomed };
     });
   }, []);
 
   useEffect(() => {
     const element = viewportRef.current;
-    if (!element || !interactive) return;
+    if (!element || !fullscreen) return;
     const onWheel = (event: WheelEvent) => {
-      if (!originalViewBoxRef.current || event.deltaY === 0) return;
+      if (!event.ctrlKey || !event.deltaY) return;
       event.preventDefault();
       event.stopPropagation();
-      changeZoom(event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP);
+      const delta =
+        event.deltaY *
+        (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
+      updateZoom(Math.exp(-delta * 0.003), { x: event.clientX, y: event.clientY });
     };
-    // React's delegated wheel listener is passive; cancellation must happen here.
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
-  }, [changeZoom, interactive]);
+  }, [fullscreen, updateZoom]);
 
-  const finishDrag = () => {
-    dragRef.current = null;
-    setDragging(false);
-  };
-
+  const zoom = viewport?.zoom ?? 1;
   return (
-    <div
-      ref={viewportRef}
-      role="img"
-      aria-label="Mermaid chart"
-      data-liveagent-mermaid-viewport=""
-      className={cn(
-        "relative min-w-0 overflow-hidden",
-        fullscreen ? "min-h-0 flex-1" : "h-280px w-full",
-        interactive && "touch-none select-none",
-        interactive && (dragging ? "cursor-grabbing" : "cursor-grab"),
-      )}
-      onPointerDown={(event) => {
-        if (
-          !interactive ||
-          event.button !== 0 ||
-          event.isPrimary === false ||
-          !viewport ||
-          (event.target instanceof Element && event.target.closest("button"))
-        )
-          return;
-        dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-        event.currentTarget.setPointerCapture(event.pointerId);
-        setDragging(true);
-      }}
-      onPointerMove={(event) => {
-        const drag = dragRef.current;
-        if (!drag || drag.pointerId !== event.pointerId) return;
-        const delta = { x: event.clientX - drag.x, y: event.clientY - drag.y };
-        drag.x = event.clientX;
-        drag.y = event.clientY;
-        const rect = svgHostRef.current?.querySelector("svg")?.getBoundingClientRect();
-        if (!rect) return;
-        setViewport((current) =>
-          current
-            ? { ...current, viewBox: panMermaidViewBox(current.viewBox, delta, rect) }
-            : current,
-        );
-      }}
-      onPointerUp={(event) => {
-        if (dragRef.current?.pointerId !== event.pointerId) return;
-        finishDrag();
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-      }}
-      onPointerCancel={finishDrag}
-      onLostPointerCapture={finishDrag}
-    >
+    <div className="za-mermaid-view" data-fullscreen={fullscreen || undefined}>
       <div
-        ref={svgHostRef}
-        data-streamdown={fullscreen ? undefined : "mermaid"}
-        className={cn("absolute", fullscreen ? "inset-4" : "inset-0")}
-      />
-      {!svg && !error ? (
-        <Loader2 className="absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />
-      ) : null}
-      {error && !svg ? (
-        <div role="alert" className="absolute inset-4 overflow-auto text-sm text-destructive">
-          {error}
-        </div>
-      ) : null}
-      {interactive ? (
+        ref={viewportRef}
+        className="za-mermaid-canvas"
+        data-pannable={(fullscreen && zoom > 1) || undefined}
+        data-dragging={dragging || undefined}
+        data-liveagent-mermaid-viewport=""
+        onPointerDown={(event) => {
+          if (!fullscreen || event.button !== 0 || pointers.current.size >= 2) return;
+          if (event.pointerType !== "touch" && zoom <= 1) return;
+          pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDragging(zoom > 1);
+        }}
+        onPointerMove={(event) => {
+          const previous = pointers.current.get(event.pointerId);
+          if (!previous) return;
+          const next = { x: event.clientX, y: event.clientY };
+          pointers.current.set(event.pointerId, next);
+          const other = [...pointers.current.entries()].find(([id]) => id !== event.pointerId)?.[1];
+          if (other) {
+            const start = midpoint(previous, other);
+            const end = midpoint(next, other);
+            updateZoom(distance(next, other) / Math.max(distance(previous, other), 1), start, {
+              x: end.x - start.x,
+              y: end.y - start.y,
+            });
+          } else if (zoom > 1) {
+            setDragging(true);
+            updateZoom(1, undefined, { x: next.x - previous.x, y: next.y - previous.y });
+          }
+        }}
+        onLostPointerCapture={(event) => {
+          pointers.current.delete(event.pointerId);
+          if (pointers.current.size === 0) setDragging(false);
+        }}
+      >
         <div
-          className={cn(
-            "absolute bottom-2 left-2 z-10 flex items-center gap-1",
-            fullscreen
-              ? "rounded-md border border-border bg-background/95 p-1 shadow-md"
-              : "flex-col",
-          )}
-        >
-          <button
-            type="button"
-            aria-label={t("chat.imageViewer.zoomIn")}
-            title={t("chat.imageViewer.zoomIn")}
-            disabled={!viewport || viewport.zoom >= MAX_ZOOM}
-            className="flex size-8 items-center justify-center rounded-md text-foreground/75 transition-colors hover:bg-foreground/[0.08] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
-            onClick={() => changeZoom(ZOOM_STEP)}
-          >
-            <Plus className="size-4" />
-          </button>
-          {fullscreen ? (
-            <span className="w-12 text-center text-xs tabular-nums text-muted-foreground">
-              {Math.round((viewport?.zoom ?? 1) * 100)}%
-            </span>
-          ) : null}
-          <button
-            type="button"
+          ref={svgHostRef}
+          data-streamdown={fullscreen ? undefined : "mermaid"}
+          className="za-mermaid-svg"
+          role="img"
+          aria-label={t("chat.markdown.mermaidDiagram")}
+        />
+      </div>
+      {fullscreen && (
+        <div className="za-mermaid-zoom">
+          <TooltipButton
+            size="icon-sm"
+            variant="ghost"
+            className="za-mermaid-zoom-step"
+            tooltip={t("chat.imageViewer.zoomOut")}
             aria-label={t("chat.imageViewer.zoomOut")}
-            title={t("chat.imageViewer.zoomOut")}
-            disabled={!viewport || viewport.zoom <= MIN_ZOOM}
-            className="flex size-8 items-center justify-center rounded-md text-foreground/75 transition-colors hover:bg-foreground/[0.08] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
-            onClick={() => changeZoom(-ZOOM_STEP)}
+            disabled={zoom <= MIN_ZOOM}
+            onClick={() => updateZoom(1 / 1.25)}
           >
             <Minus className="size-4" />
-          </button>
-          <button
-            type="button"
-            aria-label={t("chat.imageViewer.reset")}
-            title={t("chat.imageViewer.reset")}
-            disabled={!viewport}
-            className="flex size-8 items-center justify-center rounded-md text-foreground/75 transition-colors hover:bg-foreground/[0.08] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+          </TooltipButton>
+          <TooltipButton
+            variant="ghost"
+            className="za-mermaid-zoom-ratio"
+            tooltip={t("chat.imageViewer.reset")}
+            aria-label={`${Math.round(zoom * 100)}% · ${t("chat.imageViewer.reset")}`}
             onClick={() => {
-              const original = originalViewBoxRef.current;
-              if (original) setViewport({ zoom: 1, viewBox: original });
+              if (original.current) setViewport({ zoom: 1, viewBox: original.current });
             }}
           >
-            <RefreshCw className="size-4" />
-          </button>
+            {Math.round(zoom * 100)}%
+          </TooltipButton>
+          <TooltipButton
+            size="icon-sm"
+            variant="ghost"
+            className="za-mermaid-zoom-step"
+            tooltip={t("chat.imageViewer.zoomIn")}
+            aria-label={t("chat.imageViewer.zoomIn")}
+            disabled={zoom >= MAX_ZOOM}
+            onClick={() => updateZoom(1.25)}
+          >
+            <Plus className="size-4" />
+          </TooltipButton>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

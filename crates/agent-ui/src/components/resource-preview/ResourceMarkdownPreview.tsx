@@ -18,6 +18,7 @@ import { throttledCodePlugin } from "../../lib/markdownCodeHighlight";
 import { copyTextToClipboard } from "../../lib/shared/clipboard";
 import { COPY_FEEDBACK_DURATION, useCopyFeedback } from "../../lib/shared/useCopyFeedback";
 import { Check, ChevronRight, Copy, FileText } from "../IconSet";
+import { MarkdownMermaidBlock } from "../markdown/MarkdownMermaidBlock";
 import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
@@ -335,7 +336,18 @@ const MarkdownBody = memo(function MarkdownBody({
       pre: ({ children }) => {
         const child = isValidElement<ComponentProps<"code">>(children) ? children : null;
         const code = child ? codeText(child.props.children).replace(/\n$/, "") : codeText(children);
-        const language = child?.props.className?.match(/language-([^\s]+)/)?.[1] ?? "text";
+        const language =
+          child?.props.className?.match(/language-([^\s]+)/)?.[1]?.toLowerCase() ?? "text";
+        if (language === "mermaid" || language === "mmd") {
+          return (
+            <MarkdownMermaidBlock
+              chart={code}
+              readOnly={thumbnail}
+              allowEdit={false}
+              assertCurrent={assertCurrent}
+            />
+          );
+        }
         return (
           <MarkdownCode
             code={code}

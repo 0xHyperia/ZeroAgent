@@ -15,6 +15,7 @@ import {
   Compartment,
   EditorSelection,
   EditorState,
+  type Extension,
   type Range,
   Transaction,
 } from "@codemirror/state";
@@ -35,6 +36,7 @@ import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTe
 import { normalizeQuoteText } from "../../lib/chat/transcriptQuote";
 import { copyTextToClipboard } from "../../lib/shared/clipboard";
 import { Check, Copy } from "../IconSet";
+import { MarkdownMermaidBlock } from "../markdown/MarkdownMermaidBlock";
 import {
   MarkdownSelectionToolbar,
   type MarkdownToolbarSelection,
@@ -52,6 +54,7 @@ import {
   type MarkdownSourceEdit,
   workspaceMarkdownEditorText,
 } from "./workspaceMarkdownDocument";
+import { type WorkspaceMermaidHost, workspaceMarkdownMermaid } from "./workspaceMarkdownMermaid";
 import { MARKDOWN_EDIT_TEXT_LIMIT } from "./workspaceMarkdownSelectionEdit";
 import "./workspace-markdown-editor.css";
 
@@ -146,6 +149,7 @@ function liveDecorations(view: EditorView) {
           const completeFence = name === "FencedCode" && marks.length === 2;
           const info = completeFence ? node.getChild("CodeInfo") : null;
           const language = info ? state.sliceDoc(info.from, info.to).trim().split(/\s+/, 1)[0] : "";
+          if (["mermaid", "mmd"].includes(language.toLowerCase())) return false;
           const start = state.doc.lineAt(Math.max(from, visible.from)).number;
           const end = state.doc.lineAt(Math.min(to, visible.to)).number;
           for (let index = start; index <= end; index++) {
@@ -338,14 +342,43 @@ export default function WorkspaceMarkdownEditor(props: Props) {
   const currentSelectionEdit = useRef(selectionEdit);
   currentSelectionEdit.current = selectionEdit;
   const [copied, setCopied] = useState(false);
+  const [diagramHosts, setDiagramHosts] = useState<WorkspaceMermaidHost[]>([]);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modeExtension = useRef(new Compartment());
+  const previewExtensions = useRef<Extension>(liveMode);
   const writable = useRef(new Compartment());
   const undoHistory = useRef(new Compartment());
   const scrollTop = useRef({ preview: 0, source: 0 });
   const visibleMode = useRef(props.mode);
   useLayoutEffect(() => {
     if (!root.current) return;
+    const hosts = new Map<HTMLElement, WorkspaceMermaidHost>();
+    let scheduled = false;
+    let disposed = false;
+    const updateDiagramHosts = () => {
+      if (disposed || scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        if (!disposed) setDiagramHosts([...hosts.values()]);
+      });
+    };
+    previewExtensions.current = [
+      liveMode,
+      workspaceMarkdownMermaid(
+        (host) => {
+          hosts.set(host.element, host);
+          updateDiagramHosts();
+        },
+        (element) => {
+          hosts.delete(element);
+          updateDiagramHosts();
+        },
+      ),
+    ];
+    // Refresh the portal targets even when a recreated editor has no visible diagrams.
+    updateDiagramHosts();
+    visibleMode.current = current.current.mode;
     const view = new EditorView({
       parent: root.current,
       state: EditorState.create({
@@ -359,7 +392,9 @@ export default function WorkspaceMarkdownEditor(props: Props) {
           EditorView.contentAttributes.of({
             "aria-label": zh ? "Markdown 文档正文" : "Markdown document",
           }),
-          modeExtension.current.of(current.current.mode === "preview" ? liveMode : sourceMode),
+          modeExtension.current.of(
+            current.current.mode === "preview" ? previewExtensions.current : sourceMode,
+          ),
           writable.current.of(EditorState.readOnly.of(current.current.readOnly)),
           keymap.of([
             {
@@ -422,6 +457,7 @@ export default function WorkspaceMarkdownEditor(props: Props) {
     });
     editor.current = view;
     return () => {
+      disposed = true;
       if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
       editor.current = null;
       view.destroy();
@@ -449,7 +485,9 @@ export default function WorkspaceMarkdownEditor(props: Props) {
     scrollTop.current[visibleMode.current] = view.scrollDOM.scrollTop;
     visibleMode.current = props.mode;
     view.dispatch({
-      effects: modeExtension.current.reconfigure(props.mode === "preview" ? liveMode : sourceMode),
+      effects: modeExtension.current.reconfigure(
+        props.mode === "preview" ? previewExtensions.current : sourceMode,
+      ),
     });
     view.scrollDOM.scrollTop = scrollTop.current[props.mode];
   }, [props.mode]);
@@ -546,6 +584,14 @@ export default function WorkspaceMarkdownEditor(props: Props) {
   return (
     <div className="za-workspace-markdown-editor" data-markdown-mode={props.mode}>
       <div ref={root} className="za-workspace-markdown-content" inert={fullReview} />
+      {props.mode === "preview" &&
+        diagramHosts.map(({ element, chart, id }) =>
+          createPortal(
+            <MarkdownMermaidBlock chart={chart} allowEdit={false} />,
+            element,
+            String(id),
+          ),
+        )}
       {fullReview ? (
         review
       ) : activeEdit?.phase === "pending" && !activeEdit.inline ? (

@@ -30,6 +30,7 @@ import {
   type LinkSafetyModalProps,
   Streamdown,
   type StreamdownTranslations,
+  useIsCodeFenceIncomplete,
 } from "streamdown";
 import {
   type ChatFileLink,
@@ -621,25 +622,34 @@ export function CollapsibleCodePre({
     ? ensureCodeBlockLanguage(children)
     : null;
   const codeContent = childElement ? getCodeTextFromChild(childElement) : "";
-  const language = childElement ? getCodeLanguage(childElement.props.className) : "";
+  const language = childElement ? getCodeLanguage(childElement.props.className).toLowerCase() : "";
   const { lineCount, shouldCollapse } = resolveCodeBlockRenderPolicy(codeContent);
-  const isMermaid = language === "mermaid" || language === "mmd";
-  const isRenderedMermaid = language === "mermaid";
+  const fenceIncomplete = useIsCodeFenceIncomplete();
+  const isRenderedMermaid = language === "mermaid" || language === "mmd";
+  const pendingMermaid =
+    fenceIncomplete && (isRenderedMermaid || /^me(?:r(?:m(?:a(?:i)?)?)?)?$/.test(language));
+  const isMermaid = isRenderedMermaid || pendingMermaid;
   const isCollapsible = Boolean(childElement && !isMermaid && shouldCollapse);
   const [expanded, setExpanded] = useState(false);
 
   if (!childElement) return children;
 
-  if (isRenderedMermaid) {
-    return <MarkdownMermaidBlock chart={codeContent} readOnly={!allowMermaidFullscreen} />;
+  if (isMermaid) {
+    return (
+      <MarkdownMermaidBlock
+        chart={codeContent.replace(/\n$/, "")}
+        pending={pendingMermaid}
+        readOnly={!allowMermaidFullscreen}
+      />
+    );
   }
 
   if (!isCollapsible) {
     const codeBlock = cloneElement(childElement, { "data-block": "true" });
     return (
       <div className="relative w-full">
-        {isMermaid ? null : <CodeBlockActions code={codeContent} />}
-        {isMermaid ? codeBlock : <HeightClampedCode>{codeBlock}</HeightClampedCode>}
+        <CodeBlockActions code={codeContent} />
+        <HeightClampedCode>{codeBlock}</HeightClampedCode>
       </div>
     );
   }
@@ -886,12 +896,6 @@ function ExternalLinkDialog({
 
 const MARKDOWN_EMBED_CLASSNAME = cn(
   "min-w-0 max-w-full overflow-hidden [overflow-wrap:anywhere]",
-  "[&_[data-streamdown='mermaid-block']]:my-4 [&_[data-streamdown='mermaid-block']]:flex [&_[data-streamdown='mermaid-block']]:!w-full [&_[data-streamdown='mermaid-block']]:min-w-0 [&_[data-streamdown='mermaid-block']]:gap-2 [&_[data-streamdown='mermaid-block']]:rounded-none [&_[data-streamdown='mermaid-block']]:border-0 [&_[data-streamdown='mermaid-block']]:bg-transparent [&_[data-streamdown='mermaid-block']]:p-0 [&_[data-streamdown='mermaid-block']]:shadow-none",
-  "[&_[data-streamdown='mermaid-block']>div:last-child]:!w-full [&_[data-streamdown='mermaid-block']>div:last-child]:min-w-0 [&_[data-streamdown='mermaid-block']>div:last-child]:rounded-none [&_[data-streamdown='mermaid-block']>div:last-child]:border-0 [&_[data-streamdown='mermaid-block']>div:last-child]:bg-transparent [&_[data-streamdown='mermaid-block']>div:last-child]:p-0 [&_[data-streamdown='mermaid-block']>div:last-child]:shadow-none",
-  "[&_[data-streamdown='mermaid']]:my-0 [&_[data-streamdown='mermaid']]:block [&_[data-streamdown='mermaid']]:!w-full [&_[data-streamdown='mermaid']]:max-h-280px [&_[data-streamdown='mermaid']]:min-w-0 [&_[data-streamdown='mermaid']]:overflow-hidden [&_[data-streamdown='mermaid']]:rounded-none [&_[data-streamdown='mermaid']]:border-0 [&_[data-streamdown='mermaid']]:bg-transparent [&_[data-streamdown='mermaid']]:shadow-none",
-  "[&_[data-streamdown='mermaid']_svg]:mx-auto [&_[data-streamdown='mermaid']_svg]:block [&_[data-streamdown='mermaid']_svg]:h-auto [&_[data-streamdown='mermaid']_svg]:max-h-280px [&_[data-streamdown='mermaid']_svg]:max-w-full [&_[data-streamdown='mermaid']_svg]:bg-transparent",
-  "[&_[data-streamdown='mermaid-block-actions']]:gap-2 [&_[data-streamdown='mermaid-block-actions']]:rounded-none [&_[data-streamdown='mermaid-block-actions']]:border-0 [&_[data-streamdown='mermaid-block-actions']]:bg-transparent [&_[data-streamdown='mermaid-block-actions']]:p-0 [&_[data-streamdown='mermaid-block-actions']]:shadow-none [&_[data-streamdown='mermaid-block-actions']]:backdrop-blur-none",
-  "[&_[data-streamdown='mermaid-block-actions']_svg]:size-3 [&_[data-streamdown='mermaid-block']_button>svg]:size-3",
   "[&_[data-streamdown='table-wrapper']]:my-4 [&_[data-streamdown='table-wrapper']]:!w-full [&_[data-streamdown='table-wrapper']]:min-w-0 [&_[data-streamdown='table-wrapper']]:gap-0 [&_[data-streamdown='table-wrapper']]:rounded-none [&_[data-streamdown='table-wrapper']]:border-0 [&_[data-streamdown='table-wrapper']]:bg-transparent [&_[data-streamdown='table-wrapper']]:p-0 [&_[data-streamdown='table-wrapper']]:shadow-none [&_[data-streamdown='table-wrapper']]:outline-none [&_[data-streamdown='table-wrapper']]:ring-0",
   "[&_[data-streamdown='table-wrapper']>div:last-child]:!w-full [&_[data-streamdown='table-wrapper']>div:last-child]:min-w-0 [&_[data-streamdown='table-wrapper']>div:last-child]:overflow-x-auto [&_[data-streamdown='table-wrapper']>div:last-child]:overflow-y-hidden [&_[data-streamdown='table-wrapper']>div:last-child]:[contain:layout_paint_style] [&_[data-streamdown='table-wrapper']>div:last-child]:rounded-none [&_[data-streamdown='table-wrapper']>div:last-child]:border-0 [&_[data-streamdown='table-wrapper']>div:last-child]:bg-transparent [&_[data-streamdown='table-wrapper']>div:last-child]:p-0 [&_[data-streamdown='table-wrapper']>div:last-child]:shadow-none [&_[data-streamdown='table-wrapper']>div:last-child]:outline-none [&_[data-streamdown='table-wrapper']>div:last-child]:ring-0",
   "[&_table]:my-2 [&_table]:!w-full [&_table]:!min-w-full [&_table]:max-w-none [&_table]:table-auto [&_table]:border-collapse [&_table]:rounded-none [&_table]:border-0 [&_table]:bg-transparent [&_table]:shadow-none [&_table]:outline-none [&_table]:ring-0",
