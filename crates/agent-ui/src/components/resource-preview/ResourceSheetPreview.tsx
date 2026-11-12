@@ -13,6 +13,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -36,17 +37,10 @@ import ResourceSheetFallback from "./ResourceSheetFallback";
 import { SHEET_COMMENT_CURSOR } from "./readerInteraction";
 import { usePreviewReadingState } from "./readingSession";
 import { SheetAnnotationOverlay, type SheetRevisionCandidate } from "./SheetAnnotationOverlay";
-import { expandSheetRange, spansSheetCells } from "./sheetAnnotationGeometry";
+import { expandSheetRange, sheetGridCellAt, spansSheetCells } from "./sheetAnnotationGeometry";
 
 // Vite emits the version-pinned WASM next to the application, including remote-device builds.
 setWasmSource(wasmURL);
-
-function sheetCellAt(target: Element | null) {
-  const coordinates = target?.closest("[data-xlsx-cell]")?.getAttribute("data-xlsx-cell");
-  if (!coordinates) return null;
-  const [row, col] = coordinates.split(":").map(Number);
-  return Number.isInteger(row) && Number.isInteger(col) ? { row, col } : null;
-}
 
 function addressAt(row: number, col: number) {
   return `${sheetColumnName(col)}${row + 1}`;
@@ -124,6 +118,7 @@ function StyledSheet({
   const [, setSavedCell] = usePreviewReadingState("sheetCell", "A1");
   const initial = useRef({ savedSheet, savedZoom, savedRange });
   const ready = useRef(false);
+  const engine = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   const [coordinate, setCoordinate] = useState("A1");
@@ -140,9 +135,8 @@ function StyledSheet({
   const dismissSelectionRef = useRef<(() => boolean) | null>(null);
   const pointer = useRef<{
     id: number;
-    cell: XlsxCellAddress;
+    anchor: XlsxCellAddress;
     sheet: string;
-    extend: boolean;
   } | null>(null);
   const selectionFrame = useRef(0);
   const blockedPointer = useRef(false);
@@ -155,6 +149,9 @@ function StyledSheet({
   const busy = controller.isLoading || !controller.activeSheet;
   const rangeName = controller.selectedRangeAddress || controller.activeCellAddress || "A1";
   const sheetName = controller.activeSheet?.name ?? "";
+  const activeCellId = useId();
+  const activeCell = controller.activeCell;
+  const selectedValue = controller.selectedValue;
   const zoom = controller.zoomScale;
   const zoomPoint = useRef<{ x: number; y: number } | null>(null);
   const zoomScroll = useRef<{ left: number; top: number } | null>(null);
@@ -167,39 +164,33 @@ function StyledSheet({
     view.scrollLeft = target.left;
     view.scrollTop = target.top;
   }, [zoom]);
-  const freeze = controller.activeSheet?.freezePanes;
-  const frozenColumns = freeze?.col ?? 0;
-  const frozenRows = freeze?.row ?? 0;
   const addSelection = useCallback(
     (
       edit: boolean,
       gesture?: {
         start: XlsxCellAddress;
         end: XlsxCellAddress;
-        extend: boolean;
       },
     ) => {
       const active = latest.current;
       const sheet = active.activeSheet?.name;
       const end = gesture?.end;
-      const base =
-        active.selection ??
-        (active.activeCell ? { start: active.activeCell, end: active.activeCell } : null);
-      if (!sheet || !base) return false;
-      const singleClick =
-        gesture && gesture.start.row === gesture.end.row && gesture.start.col === gesture.end.col;
-      if (!edit && gesture && !gesture.extend && singleClick) return;
+      const base = gesture
+        ? {
+            start: {
+              row: Math.min(gesture.start.row, gesture.end.row),
+              col: Math.min(gesture.start.col, gesture.end.col),
+            },
+            end: {
+              row: Math.max(gesture.start.row, gesture.end.row),
+              col: Math.max(gesture.start.col, gesture.end.col),
+            },
+          }
+        : (active.selection ??
+          (active.activeCell ? { start: active.activeCell, end: active.activeCell } : null));
+      if (!sheet || !base) return;
       const merges = active.activeSheet?.mergedRanges ?? [];
       const bounds = expandSheetRange(base, merges);
-      if (gesture) {
-        const contains = (cell: XlsxCellAddress) =>
-          cell.row >= bounds.start.row &&
-          cell.row <= bounds.end.row &&
-          cell.col >= bounds.start.col &&
-          cell.col <= bounds.end.col;
-        if (!contains(gesture.end) || (!gesture.extend && !contains(gesture.start))) return false;
-        if (singleClick && !gesture.extend && spansSheetCells(bounds, merges)) return false;
-      }
       if (!edit && (!end || !spansSheetCells(bounds, merges))) return;
       props.assertCurrent();
       const range = rangeAddress(bounds);
@@ -219,7 +210,9 @@ function StyledSheet({
           kind: "sheet",
           sheet,
           range,
-          anchor: active.activeCellAddress ?? undefined,
+          anchor: gesture
+            ? addressAt(gesture.start.row, gesture.start.col)
+            : (active.activeCellAddress ?? undefined),
         },
       };
       if (edit) {
@@ -313,145 +306,176 @@ function StyledSheet({
   }, [thumbnail]);
 
   const renderScroller = useCallback(
-    ({ children, viewportProps }: XlsxScrollerRenderProps) => {
+    ({ children, viewportProps, gridGeometry }: XlsxScrollerRenderProps) => {
       const { ref, ...rest } = viewportProps;
       return (
-        <ScrollArea
-          className="za-sheet-engine-scroll"
-          horizontal
-          viewportRef={(element) => {
-            viewport.current = element;
-            if (typeof ref === "function") ref(element);
-            else if (ref) ref.current = element;
-          }}
-          contentClassName="za-sheet-engine-content"
-          viewportProps={{
-            ...rest,
-            "aria-label": `${props.name} · 工作表`,
-            style: rest.style,
-            onPointerDownCapture: (event) => {
-              blockedPointer.current = false;
-              if (
-                onRequestRevision &&
-                event.isPrimary &&
-                event.button === 0 &&
-                event.target instanceof Element
-              ) {
-                cancelAnimationFrame(selectionFrame.current);
-                selectionFrame.current = 0;
-                pointer.current = null;
-                if (hasDraft && dismissSelectionRef.current?.() === false) {
-                  blockedPointer.current = true;
+        <>
+          <ScrollArea
+            className="za-sheet-engine-scroll"
+            horizontal
+            viewportRef={(element) => {
+              viewport.current = element;
+              if (typeof ref === "function") ref(element);
+              else if (ref) ref.current = element;
+            }}
+            contentClassName="za-sheet-engine-content"
+            viewportProps={{
+              ...rest,
+              "aria-label": `${props.name} · 工作表`,
+              "aria-activedescendant": !thumbnail && activeCell ? activeCellId : undefined,
+              style: rest.style,
+              onPointerDownCapture: (event) => {
+                blockedPointer.current = false;
+                if (onRequestRevision && event.isPrimary && event.button === 0 && gridGeometry) {
+                  cancelAnimationFrame(selectionFrame.current);
+                  selectionFrame.current = 0;
+                  pointer.current = null;
+                  if (hasDraft && dismissSelectionRef.current?.() === false) {
+                    blockedPointer.current = true;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                  }
+                  const cell = sheetGridCellAt(
+                    gridGeometry,
+                    event.currentTarget,
+                    event.clientX,
+                    event.clientY,
+                  );
+                  setCandidate(null);
+                  if (cell)
+                    pointer.current = {
+                      id: event.pointerId,
+                      anchor: (event.shiftKey && latest.current.activeCell) || cell,
+                      sheet: latest.current.activeSheet?.name ?? "",
+                    };
+                }
+                rest.onPointerDownCapture?.(event);
+              },
+              onClickCapture: (event) => {
+                if (blockedPointer.current && event.detail > 0) {
+                  blockedPointer.current = false;
                   event.preventDefault();
                   event.stopPropagation();
                   return;
                 }
-                const cell = sheetCellAt(event.target);
-                setCandidate(null);
-                if (cell)
-                  pointer.current = {
-                    id: event.pointerId,
-                    cell,
-                    sheet: latest.current.activeSheet?.name ?? "",
-                    extend: event.shiftKey,
-                  };
-              }
-              rest.onPointerDownCapture?.(event);
-            },
-            onClickCapture: (event) => {
-              if (blockedPointer.current && event.detail > 0) {
-                blockedPointer.current = false;
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-              }
-              rest.onClickCapture?.(event);
-            },
-            onPointerUpCapture: (event) => {
-              rest.onPointerUpCapture?.(event);
-              const gesture = pointer.current;
-              if (gesture?.id !== event.pointerId) return;
-              pointer.current = null;
-              const hit = event.currentTarget.ownerDocument.elementFromPoint(
-                event.clientX,
-                event.clientY,
-              );
-              const end = event.currentTarget.contains(hit) ? sheetCellAt(hit) : null;
-              if (!end) return;
-              // The workbook publishes its committed range in a transition after pointer-up.
-              let attempts = 6;
-              const settleSelection = () => {
-                selectionFrame.current = 0;
-                if (!viewport.current || latest.current.activeSheet?.name !== gesture.sheet) return;
+                rest.onClickCapture?.(event);
+              },
+              onPointerUpCapture: (event) => {
+                rest.onPointerUpCapture?.(event);
+                const gesture = pointer.current;
+                if (gesture?.id !== event.pointerId) return;
+                pointer.current = null;
+                const end =
+                  gridGeometry &&
+                  sheetGridCellAt(gridGeometry, event.currentTarget, event.clientX, event.clientY);
+                if (!end) return;
+                // Let the engine publish the active cell text. The range itself comes from the canvas.
+                selectionFrame.current = requestAnimationFrame(() => {
+                  selectionFrame.current = 0;
+                  if (!viewport.current || latest.current.activeSheet?.name !== gesture.sheet)
+                    return;
+                  addSelection(annotating, { start: gesture.anchor, end });
+                });
+              },
+              onPointerCancel: (event) => {
+                rest.onPointerCancel?.(event);
+                pointer.current = null;
+              },
+              onKeyDownCapture: (event) => {
                 if (
-                  addSelection(annotating, { start: gesture.cell, end, extend: gesture.extend }) ===
-                    false &&
-                  --attempts > 0
-                )
-                  selectionFrame.current = requestAnimationFrame(settleSelection);
-              };
-              selectionFrame.current = requestAnimationFrame(() => {
-                selectionFrame.current = requestAnimationFrame(settleSelection);
-              });
-            },
-            onPointerCancel: (event) => {
-              rest.onPointerCancel?.(event);
-              pointer.current = null;
-            },
-            onKeyDownCapture: (event) => {
-              if (
-                hasDraft &&
-                /^(Arrow|Home|End|Page|Enter)/.test(event.key) &&
-                dismissSelectionRef.current?.() === false
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-              }
-              rest.onKeyDownCapture?.(event);
-              if (annotating && event.key === "Enter" && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                event.stopPropagation();
-                addSelection(true);
-              } else if (
-                candidate &&
-                (event.ctrlKey || event.metaKey) &&
-                event.shiftKey &&
-                event.key.toLowerCase() === "x"
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                requestCandidate();
-              } else if (
-                event.key === "Escape" &&
-                (candidate || annotating || selectionFrame.current)
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                cancelAnimationFrame(selectionFrame.current);
-                selectionFrame.current = 0;
-                if (hasDraft) dismissSelectionRef.current?.();
-                else if (annotating) changeAnnotationMode(false);
+                  hasDraft &&
+                  /^(Arrow|Home|End|Page|Enter)/.test(event.key) &&
+                  dismissSelectionRef.current?.() === false
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+                rest.onKeyDownCapture?.(event);
+                if (annotating && event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  addSelection(true);
+                } else if (
+                  candidate &&
+                  (event.ctrlKey || event.metaKey) &&
+                  event.shiftKey &&
+                  event.key.toLowerCase() === "x"
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  requestCandidate();
+                } else if (
+                  event.key === "Escape" &&
+                  (candidate || annotating || selectionFrame.current)
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  cancelAnimationFrame(selectionFrame.current);
+                  selectionFrame.current = 0;
+                  if (hasDraft) dismissSelectionRef.current?.();
+                  else if (annotating) changeAnnotationMode(false);
+                  setCandidate(null);
+                } else if (event.key.startsWith("Arrow")) {
+                  setCandidate(null);
+                }
+              },
+            }}
+          >
+            {children}
+            {!thumbnail && activeCell && (
+              // biome-ignore lint/a11y/useSemanticElements: The canvas grid owns this virtual row.
+              <div role="row" tabIndex={-1} aria-rowindex={activeCell.row + 1} className="sr-only">
+                {/* biome-ignore lint/a11y/useSemanticElements: The grid uses aria-activedescendant for this virtual cell. */}
+                <div
+                  id={activeCellId}
+                  role="gridcell"
+                  tabIndex={-1}
+                  aria-colindex={activeCell.col + 1}
+                  aria-selected="true"
+                >
+                  {addressAt(activeCell.row, activeCell.col)} {selectedValue}
+                </div>
+              </div>
+            )}
+          </ScrollArea>
+          {onRequestRevision && !busy && gridGeometry && (
+            <SheetAnnotationOverlay
+              viewport={viewport}
+              sheetName={sheetName}
+              geometry={gridGeometry}
+              candidate={candidate}
+              draft={draft}
+              marks={marks}
+              onRequest={requestCandidate}
+              onDismiss={() => {
                 setCandidate(null);
-              } else if (event.key.startsWith("Arrow")) {
-                setCandidate(null);
-              }
-            },
-          }}
-        >
-          {children}
-        </ScrollArea>
+                viewport.current?.focus({ preventScroll: true });
+              }}
+              onEdit={(id) => editRef.current?.(id, "marker")}
+            />
+          )}
+        </>
       );
     },
     [
+      activeCell,
+      activeCellId,
       addSelection,
       annotating,
+      busy,
       candidate,
       changeAnnotationMode,
+      draft,
       hasDraft,
+      marks,
       onRequestRevision,
       props.name,
       requestCandidate,
+      selectedValue,
+      sheetName,
+      thumbnail,
     ],
   );
 
@@ -526,17 +550,17 @@ function StyledSheet({
       readOnly
       rounded={false}
       height="100%"
-      experimentalCanvas={false}
+      experimentalCanvas
       showDefaultToolbar={false}
       isDark={false}
       showImages
       enableContextMenu={false}
       highlightClassName="za-sheet-navigation-highlight"
       renderTableHeaderMenu={() => null}
-      enableCanvasSelectionAnimation={!thumbnail}
+      enableCanvasSelectionAnimation={false}
       enableGestureZoom={false}
       headerBackgroundColor="#f5f5f5"
-      headerTextColor="#737373"
+      headerTextColor="#333333"
       selectionColor="#3578ed"
       selectionFillColor="rgba(53,120,237,.10)"
       selectionHeaderColor="#d5e0f1"
@@ -599,6 +623,7 @@ function StyledSheet({
           fitWidth={false}
           maxPercent={400}
           zoomCurve="camera"
+          gestureRoot={engine}
           percentages={[25, 50, 100, 200]}
           onZoomAnchor={(x, y) => {
             const rect = viewport.current?.getBoundingClientRect();
@@ -661,9 +686,11 @@ function StyledSheet({
         </p>
       ) : null}
       <div
+        ref={engine}
         className="za-sheet-engine relative"
         aria-busy={busy}
         data-sheet-annotation-mode={(annotating && !draft) || undefined}
+        data-sheet-single-selection={!rangeName.includes(":") || undefined}
         data-sheet-own-selection={
           !!draft ||
           marks.some(
@@ -681,24 +708,6 @@ function StyledSheet({
         }
       >
         {viewer}
-        {onRequestRevision && !busy && (
-          <SheetAnnotationOverlay
-            viewport={viewport}
-            sheetName={sheetName}
-            frozenRows={frozenRows}
-            frozenColumns={frozenColumns}
-            zoom={zoom}
-            candidate={candidate}
-            draft={draft}
-            marks={marks}
-            onRequest={requestCandidate}
-            onDismiss={() => {
-              setCandidate(null);
-              viewport.current?.focus({ preventScroll: true });
-            }}
-            onEdit={(id) => editRef.current?.(id, "marker")}
-          />
-        )}
         {onRequestRevision && (
           <ResourceDocumentComments
             enabled={annotating}

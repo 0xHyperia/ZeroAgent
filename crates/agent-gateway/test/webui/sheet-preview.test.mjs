@@ -11,41 +11,30 @@ async function modules(t, mocks = {}) {
   return { env, ...env.loadModule("@liveagent/ui/components/resource-preview/sheetModel.ts") };
 }
 
-test("saved sheet ranges use rendered cell edges and clip at frozen rows and columns", async (t) => {
+test("canvas hit tests and saved ranges share workbook edges, including hidden and frozen cells", async (t) => {
   const { env } = await modules(t);
-  const { measureSheetGrid, projectSheetRange, sheetRangeTopRight, spansSheetCells } = env.loadModule(
+  const { sheetGridCellAt, projectSheetRange, sheetRangeTopRight, spansSheetCells } = env.loadModule(
     "@liveagent/ui/components/resource-preview/sheetAnnotationGeometry.ts",
   );
-  const viewport = document.createElement("div");
-  viewport.innerHTML = `
-    <table>
-      <thead><tr><th></th><th data-xlsx-col-header="0"></th>
-        <th data-xlsx-col-header="1"></th><th data-xlsx-col-header="3"></th></tr></thead>
-      <tbody><tr data-xlsx-row="0"><td></td></tr>
-        <tr data-xlsx-row="1"><td></td></tr><tr data-xlsx-row="2"><td></td></tr></tbody>
-    </table>`;
-  Object.defineProperties(viewport, {
-    clientWidth: { value: 350 },
-    clientHeight: { value: 230 },
-  });
-  function rect(element, left, top, right, bottom) {
-    element.getBoundingClientRect = () => ({ left, top, right, bottom });
-  }
-  rect(viewport, 100, 50, 450, 280);
-  const headers = viewport.querySelectorAll("th");
-  rect(headers[0], 100, 50, 142, 70);
-  rect(headers[1], 142, 50, 198, 70);
-  rect(headers[2], 170, 50, 241, 70);
-  rect(headers[3], 241, 50, 335, 70);
-  const rowHeaders = viewport.querySelectorAll("tbody td");
-  rect(rowHeaders[0], 100, 70, 142, 98);
-  rect(rowHeaders[1], 100, 85, 142, 138);
-  rect(rowHeaders[2], 100, 138, 142, 181);
-  const grid = measureSheetGrid(viewport, { row: 1, col: 1 });
+  const viewport = { width: 350, height: 230, left: 28, top: 13 };
+  const grid = {
+    rows: { header: 20, frozenCount: 1, offsets: [0, 28, 81, 124] },
+    cols: { header: 42, frozenCount: 1, offsets: [0, 56, 127, 127, 221] },
+  };
+  const element = {
+    clientWidth: viewport.width,
+    clientHeight: viewport.height,
+    scrollLeft: viewport.left,
+    scrollTop: viewport.top,
+    getBoundingClientRect: () => ({ left: 100, top: 50 }),
+  };
+  assert.equal(sheetGridCellAt(grid, element, 120, 86), null, "headers are outside the grid");
+  assert.deepEqual(sheetGridCellAt(grid, element, 155, 80), { row: 0, col: 0 });
+  assert.deepEqual(sheetGridCellAt(grid, element, 241, 138), { row: 2, col: 3 });
   const parts = projectSheetRange(grid, {
     start: { row: 0, col: 0 },
     end: { row: 2, col: 3 },
-  });
+  }, viewport);
   assert.deepEqual(parts, [
     { key: "true:true", left: 42, top: 20, width: 56, height: 28 },
     { key: "true:false", left: 98, top: 20, width: 137, height: 28 },
@@ -56,7 +45,7 @@ test("saved sheet ranges use rendered cell edges and clip at frozen rows and col
   const scrolled = projectSheetRange(grid, {
     start: { row: 0, col: 0 },
     end: { row: 2, col: 3 },
-  }, { x: 12, y: 11 });
+  }, { ...viewport, left: 40, top: 24 });
   assert.deepEqual(scrolled, [
     parts[0],
     { ...parts[1], width: 125 },
@@ -66,11 +55,11 @@ test("saved sheet ranges use rendered cell edges and clip at frozen rows and col
   assert.deepEqual(projectSheetRange(grid, {
     start: { row: 1, col: 1 },
     end: { row: 2, col: 3 },
-  }, { x: 0, y: 250 }), [], "cached ranges do not follow unrelated virtual rows");
+  }, { ...viewport, top: 250 }), [], "offscreen ranges do not follow unrelated rows");
   assert.deepEqual(projectSheetRange(grid, {
     start: { row: 30, col: 0 },
     end: { row: 32, col: 1 },
-  }), []);
+  }, viewport), []);
   const merged = { start: { row: 0, col: 0 }, end: { row: 0, col: 2 } };
   assert.equal(spansSheetCells(merged, [merged]), false);
   assert.equal(spansSheetCells({ start: merged.start, end: merged.start }, [merged]), false);

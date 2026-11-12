@@ -85,14 +85,25 @@ test("real terminable engine retains four conditional rules, six sparklines, nin
       worker.once("error", reject);
       worker.postMessage({ id, type, payload });
     });
-  const prepareSheet = await prepare(t),
-    source = prepareSheet(await readFile(fixture));
+  const prepareSheet = await prepare(t);
+  const files = unzipSync(await readFile(fixture));
+  const sheetPath = "xl/worksheets/sheet1.xml";
+  files[sheetPath] = strToU8(
+    strFromU8(files[sheetPath]).replace(/<row r="4"[^>]* ht="27"/, (row) =>
+      row.replace('ht="27"', 'ht="27.2"'),
+    ),
+  );
+  const source = prepareSheet(zipSync(files));
   const result = await ask("load", {
     buffer: source.slice().buffer,
     wasmSource: new Uint8Array(await readFile(join(root, "dist/duke_sheets_wasm_bg.wasm"))),
   });
   assert.equal(result.success, true, result.error);
   const sheet = result.result.sheets[0];
+  assert.equal(sheet.defaultColWidthPx, 64);
+  assert.equal(sheet.defaultRowHeightPx, 20);
+  assert.equal(sheet.colWidthOverridesPx[0], 125.6875);
+  assert.equal(sheet.rowHeightOverridesPx[3], (27.2 * 4) / 3);
   assert.equal(sheet.conditionalFormatRules.length, 4);
   assert.equal(sheet.sparklines.length, 6);
   assert.equal(sheet.zeroagentVisualValues["3:1"], 15);

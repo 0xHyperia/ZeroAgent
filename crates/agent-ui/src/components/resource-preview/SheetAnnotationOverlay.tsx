@@ -6,7 +6,7 @@ import { LabelTooltip } from "../ui/label-tooltip";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import type { DocumentRevisionComment, RevisionSelection } from "./ResourceDocumentComments";
 import { COMMENT_PIN } from "./readerInteraction";
-import { measureSheetGrid, projectSheetRange, sheetRangeTopRight } from "./sheetAnnotationGeometry";
+import { projectSheetRange, type SheetGrid, sheetRangeTopRight } from "./sheetAnnotationGeometry";
 
 export type SheetRevisionCandidate = {
   selection: RevisionSelection;
@@ -24,9 +24,7 @@ function RangeOutline() {
 export function SheetAnnotationOverlay({
   viewport,
   sheetName,
-  frozenRows,
-  frozenColumns,
-  zoom,
+  geometry,
   draft,
   candidate,
   marks,
@@ -36,9 +34,7 @@ export function SheetAnnotationOverlay({
 }: {
   viewport: RefObject<HTMLDivElement | null>;
   sheetName: string;
-  frozenRows: number;
-  frozenColumns: number;
-  zoom: number;
+  geometry: SheetGrid;
   draft: RevisionSelection | null;
   candidate: SheetRevisionCandidate | null;
   marks: readonly DocumentRevisionComment[];
@@ -47,11 +43,11 @@ export function SheetAnnotationOverlay({
   onDismiss: () => void;
 }) {
   const overlay = useRef<HTMLDivElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: The logical targets, sheet and zoom invalidate the mounted geometry.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Updating the logical targets replaces the overlay nodes.
   useLayoutEffect(() => {
     const root = overlay.current;
     const view = viewport.current;
-    const engine = root?.parentElement;
+    const engine = root?.closest<HTMLElement>(".za-sheet-engine");
     if (!root || !view || !engine) return;
     const shortcut = root.querySelector<HTMLElement>(".za-sheet-range-action");
     const ranges = Array.from(root.querySelectorAll<HTMLElement>("[data-sheet-range]"), (node) => ({
@@ -63,21 +59,17 @@ export function SheetAnnotationOverlay({
     if (!shortcut && !ranges.length) return;
 
     let frame = 0;
-    let measure = true;
-    let grid: ReturnType<typeof measureSheetGrid> = null;
-    let left = 0;
-    let top = 0;
     const draw = () => {
       frame = 0;
-      if (measure) {
-        grid = measureSheetGrid(view, { row: frozenRows, col: frozenColumns });
-        left = view.scrollLeft;
-        top = view.scrollTop;
-        measure = false;
-      }
-      const delta = { x: view.scrollLeft - left, y: view.scrollTop - top };
+      const viewState = {
+        width: view.clientWidth,
+        height: view.clientHeight,
+        left: view.scrollLeft,
+        top: view.scrollTop,
+      };
       for (const { range, pieces, pin, draft } of ranges) {
-        const parts = range?.kind === "cells" ? projectSheetRange(grid, range.range, delta) : [];
+        const parts =
+          range?.kind === "cells" ? projectSheetRange(geometry, range.range, viewState) : [];
         for (const [index, piece] of pieces.entries()) {
           const rect = parts[index];
           piece.hidden = !rect;
@@ -92,20 +84,20 @@ export function SheetAnnotationOverlay({
           pin.hidden = !anchor;
           if (anchor) {
             pin.style.left = `${anchor.left + anchor.width}px`;
-            pin.style.top = `${anchor.top}px`;
+            pin.style.top = `${Math.max(13, anchor.top)}px`;
           }
         }
         if (draft) {
           const bounds = parts.at(-1);
           engine.toggleAttribute("data-sheet-comment-offscreen", !bounds);
-          if (bounds && grid) {
-            const width = grid.cols.viewportEnd;
+          if (bounds) {
+            const width = viewState.width;
             const editorWidth = Math.min(360, width - 24);
             const x = Math.max(
               12,
               Math.min(bounds.left + bounds.width - editorWidth, width - editorWidth - 12),
             );
-            const y = Math.max(8, Math.min(bounds.top + bounds.height, grid.rows.viewportEnd - 64));
+            const y = Math.max(8, Math.min(bounds.top + bounds.height, viewState.height - 64));
             engine.style.setProperty("--za-sheet-comment-left", `${x}px`);
             engine.style.setProperty("--za-sheet-comment-top", `${y + 8}px`);
           }
@@ -113,11 +105,11 @@ export function SheetAnnotationOverlay({
       }
       if (candidate && shortcut) {
         const { endpoint } = candidate;
-        const rect = projectSheetRange(grid, { start: endpoint, end: endpoint }, delta)[0];
+        const rect = projectSheetRange(geometry, { start: endpoint, end: endpoint }, viewState)[0];
         shortcut.hidden = !rect;
-        if (rect && grid) {
+        if (rect) {
           const bottom = rect.top + rect.height;
-          const below = rect.top < 48 || (candidate.below && bottom + 48 <= grid.rows.viewportEnd);
+          const below = rect.top < 48 || (candidate.below && bottom + 48 <= viewState.height);
           shortcut.dataset.below = String(below);
           shortcut.style.top = `${below ? bottom : rect.top}px`;
           shortcut.style.left = candidate.leading
@@ -132,35 +124,17 @@ export function SheetAnnotationOverlay({
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(draw);
     };
-    const invalidate = () => {
-      measure = true;
-      schedule();
-    };
-    const onScroll = () => {
-      cancelAnimationFrame(frame);
-      draw();
-    };
-    const resize = new ResizeObserver(invalidate);
+    const resize = new ResizeObserver(schedule);
     resize.observe(view);
-    const table = view.querySelector("table");
-    if (table) resize.observe(table);
-    const mutations = new MutationObserver(invalidate);
-    mutations.observe(view, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-xlsx-row", "data-xlsx-col-header"],
-    });
-    view.addEventListener("scroll", onScroll, { passive: true });
+    view.addEventListener("scroll", schedule, { passive: true });
     draw();
     return () => {
-      view.removeEventListener("scroll", onScroll);
+      view.removeEventListener("scroll", schedule);
       resize.disconnect();
-      mutations.disconnect();
       cancelAnimationFrame(frame);
       engine.removeAttribute("data-sheet-comment-offscreen");
     };
-  }, [viewport, sheetName, zoom, frozenRows, frozenColumns, marks, draft, candidate]);
+  }, [viewport, sheetName, geometry, marks, draft, candidate]);
 
   return (
     <div className="za-sheet-annotations" ref={overlay}>

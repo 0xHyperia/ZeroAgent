@@ -1,98 +1,73 @@
-import type { XlsxCellRange } from "@extend-ai/react-xlsx";
+import type { XlsxCellRange, XlsxScrollerRenderProps } from "@extend-ai/react-xlsx";
 
-type Freeze = { row: number; col: number };
-type AxisCell = { index: number; start: number; end: number };
-type Axis = {
-  cells: AxisCell[];
-  frozenCount: number;
-  headerEnd: number;
-  freezeEnd: number;
-  viewportEnd: number;
-};
+export type SheetGrid = NonNullable<XlsxScrollerRenderProps["gridGeometry"]>;
+type Axis = SheetGrid["rows"];
+type Viewport = { width: number; height: number; left: number; top: number };
 
-function measureAxis(
-  elements: Iterable<Element>,
-  axis: "row" | "col",
-  origin: number,
-  viewportEnd: number,
-  headerEnd: number,
-  frozenCount: number,
-): Axis {
-  let freezeEnd = headerEnd;
-  const cells: AxisCell[] = [];
-  for (const element of elements) {
-    const index = Number(
-      element.getAttribute(axis === "row" ? "data-xlsx-row" : "data-xlsx-col-header"),
-    );
-    // A row header is sticky in a frozen row. The enclosing <tr> itself scrolls.
-    const rect = (axis === "row" ? element.firstElementChild : element)?.getBoundingClientRect();
-    if (!rect) continue;
-    const start = (axis === "row" ? rect.top : rect.left) - origin;
-    const end = (axis === "row" ? rect.bottom : rect.right) - origin;
-    if (index < frozenCount) freezeEnd = Math.max(freezeEnd, end);
-    cells.push({ index, start, end });
+function freezeEdge(axis: Axis) {
+  return axis.header + (axis.offsets[axis.frozenCount] ?? axis.offsets.at(-1) ?? 0);
+}
+
+function axisIndex(axis: Axis, point: number, scroll: number) {
+  if (point < axis.header) return null;
+  const coordinate = point - axis.header + (point < freezeEdge(axis) ? 0 : scroll);
+  let low = 0;
+  let high = axis.offsets.length - 1;
+  if (high <= 0 || coordinate >= (axis.offsets[high] ?? 0)) return null;
+  // Use the last edge at this position so hidden rows and columns have no hit area.
+  while (low + 1 < high) {
+    const mid = (low + high) >>> 1;
+    if ((axis.offsets[mid] ?? Infinity) <= coordinate) low = mid;
+    else high = mid;
   }
-  return { cells, frozenCount, headerEnd, freezeEnd, viewportEnd };
+  return low;
 }
 
-/** The DOM grid can grow beyond the engine's nominal row heights to fit content. */
-export function measureSheetGrid(viewport: HTMLElement, freeze: Freeze) {
-  const header = viewport.querySelector("thead th");
-  if (!header) return null;
-  const corner = header.getBoundingClientRect();
-  const view = viewport.getBoundingClientRect();
-  return {
-    rows: measureAxis(
-      viewport.querySelectorAll("tr[data-xlsx-row]"),
-      "row",
-      view.top,
-      viewport.clientHeight,
-      corner.bottom - view.top,
-      freeze.row,
-    ),
-    cols: measureAxis(
-      viewport.querySelectorAll("[data-xlsx-col-header]"),
-      "col",
-      view.left,
-      viewport.clientWidth,
-      corner.right - view.left,
-      freeze.col,
-    ),
-  };
+export function sheetGridCellAt(grid: SheetGrid, viewport: HTMLElement, x: number, y: number) {
+  const rect = viewport.getBoundingClientRect();
+  const localX = x - rect.left;
+  const localY = y - rect.top;
+  if (localX >= viewport.clientWidth || localY >= viewport.clientHeight) return null;
+  const col = axisIndex(grid.cols, localX, viewport.scrollLeft);
+  const row = axisIndex(grid.rows, localY, viewport.scrollTop);
+  return col === null || row === null ? null : { row, col };
 }
 
-type SheetGrid = NonNullable<ReturnType<typeof measureSheetGrid>>;
-
-function projectAxis(axis: Axis, from: number, to: number, scrollDelta: number) {
+function projectAxis(axis: Axis, from: number, to: number, scroll: number, viewportEnd: number) {
   const parts: { start: number; end: number; frozen: boolean }[] = [];
+  const frozenEnd = freezeEdge(axis);
+  const lastCell = axis.offsets.length - 2;
   for (const frozen of [true, false]) {
-    const clipStart = frozen ? axis.headerEnd : axis.freezeEnd;
-    const clipEnd = frozen ? Math.min(axis.freezeEnd, axis.viewportEnd) : axis.viewportEnd;
-    let start = Infinity;
-    let end = -Infinity;
-    for (const cell of axis.cells) {
-      if (cell.index < axis.frozenCount !== frozen || cell.index < from || cell.index > to)
-        continue;
-      const offset = frozen ? 0 : scrollDelta;
-      start = Math.min(start, cell.start - offset);
-      end = Math.max(end, cell.end - offset);
-    }
-    start = Math.max(start, clipStart);
-    end = Math.min(end, clipEnd);
+    const first = Math.max(from, frozen ? 0 : axis.frozenCount);
+    const last = Math.min(to, frozen ? axis.frozenCount - 1 : lastCell, lastCell);
+    if (first > last) continue;
+    const origin = axis.header - (frozen ? 0 : scroll);
+    const startOffset = axis.offsets[first];
+    const endOffset = axis.offsets[last + 1];
+    if (startOffset === undefined || endOffset === undefined) continue;
+    const start = Math.max(origin + startOffset, frozen ? axis.header : frozenEnd);
+    const end = Math.min(origin + endOffset, frozen ? frozenEnd : viewportEnd, viewportEnd);
     if (end > start) parts.push({ start, end, frozen });
   }
   return parts;
 }
 
 /** Each frozen quadrant is clipped separately so scrolled cells cannot cover frozen cells. */
-export function projectSheetRange(
-  grid: SheetGrid | null,
-  range: XlsxCellRange,
-  scrollDelta = { x: 0, y: 0 },
-) {
-  if (!grid) return [];
-  const rows = projectAxis(grid.rows, range.start.row, range.end.row, scrollDelta.y);
-  const cols = projectAxis(grid.cols, range.start.col, range.end.col, scrollDelta.x);
+export function projectSheetRange(grid: SheetGrid, range: XlsxCellRange, viewport: Viewport) {
+  const rows = projectAxis(
+    grid.rows,
+    range.start.row,
+    range.end.row,
+    viewport.top,
+    viewport.height,
+  );
+  const cols = projectAxis(
+    grid.cols,
+    range.start.col,
+    range.end.col,
+    viewport.left,
+    viewport.width,
+  );
   return rows.flatMap((row) =>
     cols.map((col) => ({
       key: `${row.frozen}:${col.frozen}`,

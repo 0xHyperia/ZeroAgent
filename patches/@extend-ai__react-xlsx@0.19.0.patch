@@ -1,5 +1,5 @@
 diff --git a/dist/chunk-TYJLNPNE.cjs b/dist/chunk-TYJLNPNE.cjs
-index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bcb61c4bbc 100644
+index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..54eb99d09128e05448acf67d350a8f8476595923 100644
 --- a/dist/chunk-TYJLNPNE.cjs
 +++ b/dist/chunk-TYJLNPNE.cjs
 @@ -3758,7 +3758,7 @@ var MIN_COL_WIDTH_PX = 30;
@@ -19,7 +19,32 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
    const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
    const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
-@@ -4704,7 +4705,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+@@ -3796,20 +3797,15 @@ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
+   return width;
+ }
+ function sheetColumnWidthToPixels(width, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX) {
+-  if (!Number.isFinite(width) || width <= 0) {
+-    return MIN_COL_WIDTH_PX;
+-  }
+-  const digitWidth = Math.max(1, columnCharacterWidthPx);
+-  const pixels = width < 1 ? Math.floor(width * (digitWidth + 5) + 0.5) : Math.floor((256 * width + Math.floor(128 / digitWidth)) / 256 * digitWidth);
+-  return Math.max(MIN_COL_WIDTH_PX, pixels);
++  return Number.isFinite(width) && width > 0 ? width * Math.ceil(columnCharacterWidthPx) : 64;
+ }
+-function resolveWorksheetDefaultColumnWidthPixels(worksheet, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX, fallbackPx = sheetColumnWidthToPixels(8.43, columnCharacterWidthPx)) {
++function resolveWorksheetDefaultColumnWidthPixels(worksheet, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX, fallbackPx = 64) {
+   const width = typeof worksheet.defaultColumnWidth === "number" ? worksheet.defaultColumnWidth : Number.NaN;
+   return Number.isFinite(width) && width > 0 ? sheetColumnWidthToPixels(width, columnCharacterWidthPx) : fallbackPx;
+ }
+-function resolveWorksheetDefaultRowHeightPixels(worksheet, fallbackPx = Math.max(MIN_ROW_HEIGHT_PX, Math.round(15 * 1.33))) {
++function resolveWorksheetDefaultRowHeightPixels(worksheet, fallbackPx = (15 * 4) / 3) {
+   const height = typeof worksheet.defaultRowHeight === "number" ? worksheet.defaultRowHeight : Number.NaN;
+-  return Number.isFinite(height) && height > 0 ? Math.max(MIN_ROW_HEIGHT_PX, Math.round(height * 1.33)) : fallbackPx;
++  return Number.isFinite(height) && height > 0 ? (height * 4) / 3 : fallbackPx;
+ }
+ function resolveWorksheetHiddenRows(worksheet, maxRow) {
+   if (!Number.isFinite(maxRow) || maxRow < 0 || typeof worksheet.isRowHidden !== "function") {
+@@ -4704,7 +4700,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
      if (!iconSetNode) {
        return null;
      }
@@ -28,7 +53,46 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
      const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
      if (!iconSetName || cfvos.length === 0) {
        return null;
-@@ -6797,6 +6798,8 @@ function anyBecameError(workbook, positions) {
+@@ -4965,7 +4961,7 @@ function parseSheetState(archive, path, options) {
+     const height = Number(_nullishCoalesce(rowNode.getAttribute("ht"), () => ( Number.NaN)));
+     const styleId = Number(_nullishCoalesce(rowNode.getAttribute("s"), () => ( Number.NaN)));
+     if (rowIndex >= 0 && Number.isFinite(height)) {
+-      rowHeightOverridesPx[rowIndex] = Math.max(MIN_ROW_HEIGHT_PX, Math.round(height * 1.33));
++      rowHeightOverridesPx[rowIndex] = (height * 4) / 3;
+     }
+     if (rowIndex >= 0 && Number.isFinite(styleId)) {
+       rowStyleIds[rowIndex] = styleId;
+@@ -5020,7 +5016,7 @@ function parseSheetState(archive, path, options) {
+     colStyleIds,
+     conditionalFormatRules,
+     defaultColWidthPx: sheetColumnWidthToPixels(defaultColWidth, columnWidthCharacterWidthPx),
+-    defaultRowHeightPx: Math.max(MIN_ROW_HEIGHT_PX, Math.round(defaultRowHeight * 1.33)),
++    defaultRowHeightPx: (defaultRowHeight * 4) / 3,
+     hasHorizontalMerges: false,
+     hasVerticalMerges: false,
+     maxHorizontalMergeEndCol: -1,
+@@ -6597,13 +6593,15 @@ function resolveSheetColumnWidthPixels(width, columnWidthCharacterWidthPx) {
+   return sheetColumnWidthToPixels(width, columnWidthCharacterWidthPx);
+ }
+ function resolveSheetRowHeightPixels(height) {
+-  return Math.max(Math.round(height * 1.33), MIN_ROW_HEIGHT_PX);
++  return (height * 4) / 3;
+ }
+-function resolveRenderedSheetAxisPixels(sizePx, showGridLines = true) {
+-  return Math.max(0, sizePx) + (showGridLines ? resolveDeviceGridlineThicknessPx() : 0);
++function resolveRenderedSheetAxisPixels(sizePx) {
++  // Gridlines are painted on the cell edge and do not take space in the workbook.
++  return Math.max(0, sizePx);
+ }
+-function resolveContentSheetAxisPixels(sizePx, showGridLines = true) {
+-  return Math.max(0, sizePx - (showGridLines ? resolveDeviceGridlineThicknessPx() : 0));
++function resolveContentSheetAxisPixels(sizePx) {
++  // Gridlines are painted on the cell edge and do not take space in the workbook.
++  return Math.max(0, sizePx);
+ }
+ function markerFromOffset(offsetPx, getSizePx) {
+   let remaining = Math.max(0, offsetPx);
+@@ -6797,6 +6795,8 @@ function anyBecameError(workbook, positions) {
    });
  }
  function safeCalculate(workbook, options = {}) {
@@ -37,7 +101,14 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    if (hasUnresolvedSheetReferences(workbook)) {
      return { workbook, calculated: false, skipReason: "unresolved-sheet-refs" };
    }
-@@ -7244,7 +7247,7 @@ var DEFAULT_COL_WIDTH = 80;
+@@ -7239,12 +7239,12 @@ function normalizeWorkbookArrayBuffer(buffer) {
+ 
+ // src/controller.tsx
+ var FORMULA_COUNT_THRESHOLD = 1e3;
+-var DEFAULT_ROW_HEIGHT = 24;
+-var DEFAULT_COL_WIDTH = 80;
++var DEFAULT_ROW_HEIGHT = 20;
++var DEFAULT_COL_WIDTH = 64;
  var XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
  var CSV_MIME_TYPE = "text/csv;charset=utf-8";
  var MIN_ROW_HEIGHT_PX2 = 16;
@@ -46,16 +117,55 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
  var GRID_ROW_HEADER_WIDTH = 40;
  var HISTORY_LIMIT = 100;
  var INTERNAL_CLIPBOARD_MIME = "application/x-react-xlsx-range+json";
-@@ -13474,7 +13477,7 @@ var RANGE_HIGHLIGHT_STYLES = `
+@@ -7443,7 +7443,7 @@ function buildSheetList(workbook, sheetStatesByWorkbookSheetIndex, themePalette,
+     const resolveRowHeightPx = (row) => {
+       const height = worksheet.getRowHeight(row);
+       if (height !== void 0 && height !== null) {
+-        return Math.max(Math.round(height * 1.33), MIN_ROW_HEIGHT_PX2);
++        return (height * 4) / 3;
+       }
+       return _nullishCoalesce(_optionalChain([sheetState, 'optionalAccess', _560 => _560.rowHeightOverridesPx, 'optionalAccess', _561 => _561[row]]), () => ( defaultRowHeightPx));
+     };
+@@ -8020,7 +8020,7 @@ function fileStem(fileName) {
+   return lastDot > 0 ? normalized.slice(0, lastDot) : normalized;
+ }
+ function pxToSheetRowHeight(heightPx) {
+-  return Math.max(heightPx, MIN_ROW_HEIGHT_PX2) / 1.33;
++  return Math.max(heightPx, MIN_ROW_HEIGHT_PX2) * 3 / 4;
+ }
+ function cssColor(color) {
+   if (!_optionalChain([color, 'optionalAccess', _600 => _600.hex])) {
+@@ -13472,9 +13472,9 @@ var RANGE_HIGHLIGHT_STYLES = `
+   border: var(--xlsx-highlight-border, var(--xlsx-highlight-default-border-width, 1px) solid #93c5fd);
+ }
  `;
- var DEFAULT_ROW_HEIGHT2 = 24;
- var DEFAULT_COL_WIDTH2 = 80;
+-var DEFAULT_ROW_HEIGHT2 = 24;
+-var DEFAULT_COL_WIDTH2 = 80;
 -var HEADER_HEIGHT = 24;
++var DEFAULT_ROW_HEIGHT2 = 20;
++var DEFAULT_COL_WIDTH2 = 64;
 +var HEADER_HEIGHT = 20;
  var ROW_HEADER_WIDTH = 40;
  var INTERNAL_CLIPBOARD_MIME2 = "application/x-react-xlsx-range+json";
  var MIN_OPEN_GRID_ROWS = 200;
-@@ -16153,6 +16156,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
+@@ -13515,7 +13515,7 @@ var SHEET_SURFACE = "#ffffff";
+ var DRAWING_SELECTION_STROKE = "#64748b";
+ var DRAWING_SELECTION_HANDLE_FILL = "#ffffff";
+ var DRAWING_SELECTION_HANDLE_SHADOW = "rgba(15, 23, 42, 0.18)";
+-var DEFAULT_CELL_PADDING = "0 4px";
++var DEFAULT_CELL_PADDING = "0 2px";
+ var IMAGE_HANDLE_POSITIONS = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+ var CANVAS_CELL_STYLE_CACHE_LIMIT = 4096;
+ var CANVAS_TEXT_MEASURE_CACHE_LIMIT = 2e4;
+@@ -16010,6 +16010,7 @@ function buildCellStyle(style, palette, themePalette, options) {
+     }
+   }
+   css.lineHeight = String(resolveSpreadsheetLineHeight(resolvedFontSizePt));
++  css.padding = `0 ${Math.max(2, Math.floor(resolvedFontSizePt * 4 / 30))}px`;
+   if (paletteIsDark(palette) && !css.backgroundImage) {
+     const effectiveBackgroundColor = typeof css.backgroundColor === "string" ? css.backgroundColor : baseSurface;
+     css.color = resolveReadableTextColor(resolvedFontColor, effectiveBackgroundColor, palette);
+@@ -16153,6 +16154,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
    return cellValue.toString();
  }
  function getCellNumericValue(worksheet, row, col) {
@@ -63,7 +173,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    const cellValue = worksheet.getCalculatedValueAt(row, col);
    if (cellValue.is_number) {
      return _nullishCoalesce(cellValue.asNumber(), () => ( null));
-@@ -17665,10 +17669,23 @@ function normalizeConditionalTextOperand(value) {
+@@ -17665,10 +17667,23 @@ function normalizeConditionalTextOperand(value) {
    }
    return String(value).trim().toLowerCase();
  }
@@ -88,7 +198,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    if (normalizedRuleType === "cellis") {
      return resolveConditionalCellIsMatch(_nullishCoalesce(rule.operator, () => ( "equal")), left, right, numericValue, textValue);
    }
-@@ -17720,7 +17737,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+@@ -17720,7 +17735,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
      if (textValue === void 0) {
        textValue = readTextValue();
      }
@@ -97,7 +207,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
        continue;
      }
      matchedStyles.push(rule.style);
-@@ -17738,6 +17755,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+@@ -17738,6 +17753,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
    return resolved;
  }
  function buildConditionalIcon(iconSet, iconId) {
@@ -105,7 +215,163 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    switch (iconSet) {
      case "NoIcons":
        return null;
-@@ -19672,7 +19690,8 @@ function XlsxGrid({
+@@ -19357,11 +19373,7 @@ function XlsxGrid({
+   const actualColWidths = _chunkCJBI5F6Vcjs.T.call(void 0, 
+     () => {
+       const widths = new Array(displayColLimit).fill(0);
+-      const showGridLines = _nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1030 => _1030.showGridLines]), () => ( true));
+-      const fallbackWidth = Math.max(
+-        resolveRenderedSheetAxisPixels(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1031 => _1031.defaultColWidthPx]), () => ( DEFAULT_COL_WIDTH2)), showGridLines),
+-        DEFAULT_COL_WIDTH2 / 2
+-      );
++      const fallbackWidth = resolveRenderedSheetAxisPixels(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1031 => _1031.defaultColWidthPx]), () => ( DEFAULT_COL_WIDTH2)));
+       if (worksheet) {
+         for (let col = 0; col < displayColLimit; col += 1) {
+           if (worksheet.isColumnHidden(col)) {
+@@ -19369,21 +19381,13 @@ function XlsxGrid({
+           }
+           const width = worksheet.getColumnWidth(col);
+           if (width !== void 0 && width !== null) {
+-            widths[col] = Math.max(
+-              resolveRenderedSheetAxisPixels(
+-                resolveSheetColumnWidthPixels(width, _optionalChain([activeSheet, 'optionalAccess', _1032 => _1032.columnWidthCharacterWidthPx])),
+-                showGridLines
+-              ),
+-              DEFAULT_COL_WIDTH2 / 2
++            widths[col] = resolveRenderedSheetAxisPixels(
++              resolveSheetColumnWidthPixels(width, _optionalChain([activeSheet, 'optionalAccess', _1032 => _1032.columnWidthCharacterWidthPx]))
+             );
+             continue;
+           }
+-          widths[col] = Math.max(
+-            resolveRenderedSheetAxisPixels(
+-              _nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1033 => _1033.colWidthOverridesPx, 'access', _1034 => _1034[col]]), () => ( _optionalChain([activeSheet, 'optionalAccess', _1035 => _1035.defaultColWidthPx]))), () => ( DEFAULT_COL_WIDTH2)),
+-              showGridLines
+-            ),
+-            DEFAULT_COL_WIDTH2 / 2
++          widths[col] = resolveRenderedSheetAxisPixels(
++            _nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1033 => _1033.colWidthOverridesPx, 'access', _1034 => _1034[col]]), () => ( _optionalChain([activeSheet, 'optionalAccess', _1035 => _1035.defaultColWidthPx]))), () => ( DEFAULT_COL_WIDTH2))
+           );
+         }
+         return widths;
+@@ -19395,17 +19399,13 @@ function XlsxGrid({
+         if (col === void 0 || col >= displayColLimit) {
+           continue;
+         }
+-        widths[col] = Math.max(
+-          resolveRenderedSheetAxisPixels(
+-            _nullishCoalesce(_nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1038 => _1038.colWidthOverridesPx, 'access', _1039 => _1039[col]]), () => ( precomputedWidths[index])), () => ( _optionalChain([activeSheet, 'optionalAccess', _1040 => _1040.defaultColWidthPx]))), () => ( DEFAULT_COL_WIDTH2)),
+-            showGridLines
+-          ),
+-          DEFAULT_COL_WIDTH2 / 2
++        widths[col] = resolveRenderedSheetAxisPixels(
++          _nullishCoalesce(_nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1038 => _1038.colWidthOverridesPx, 'access', _1039 => _1039[col]]), () => ( precomputedWidths[index])), () => ( _optionalChain([activeSheet, 'optionalAccess', _1040 => _1040.defaultColWidthPx]))), () => ( DEFAULT_COL_WIDTH2))
+         );
+       }
+       for (let col = Math.max(0, (_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1041 => _1041.maxUsedCol]), () => ( -1))) + 1); col < displayColLimit; col += 1) {
+         const overrideWidth = _optionalChain([activeSheet, 'optionalAccess', _1042 => _1042.colWidthOverridesPx, 'access', _1043 => _1043[col]]);
+-        widths[col] = overrideWidth === void 0 ? fallbackWidth : Math.max(resolveRenderedSheetAxisPixels(overrideWidth, showGridLines), DEFAULT_COL_WIDTH2 / 2);
++        widths[col] = overrideWidth === void 0 ? fallbackWidth : resolveRenderedSheetAxisPixels(overrideWidth);
+       }
+       return widths;
+     },
+@@ -19414,7 +19414,6 @@ function XlsxGrid({
+       _optionalChain([activeSheet, 'optionalAccess', _1045 => _1045.colWidths]),
+       _optionalChain([activeSheet, 'optionalAccess', _1046 => _1046.defaultColWidthPx]),
+       _optionalChain([activeSheet, 'optionalAccess', _1047 => _1047.maxUsedCol]),
+-      _optionalChain([activeSheet, 'optionalAccess', _1048 => _1048.showGridLines]),
+       _optionalChain([activeSheet, 'optionalAccess', _1049 => _1049.visibleCols]),
+       displayColLimit,
+       worksheet,
+@@ -19424,11 +19423,7 @@ function XlsxGrid({
+   const actualRowHeights = _chunkCJBI5F6Vcjs.T.call(void 0, 
+     () => {
+       const heights = new Array(displayRowLimit).fill(0);
+-      const showGridLines = _nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1050 => _1050.showGridLines]), () => ( true));
+-      const fallbackHeight = Math.max(
+-        resolveRenderedSheetAxisPixels(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1051 => _1051.defaultRowHeightPx]), () => ( DEFAULT_ROW_HEIGHT2)), showGridLines),
+-        DEFAULT_ROW_HEIGHT2 / 1.5
+-      );
++      const fallbackHeight = resolveRenderedSheetAxisPixels(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1051 => _1051.defaultRowHeightPx]), () => ( DEFAULT_ROW_HEIGHT2)));
+       if (worksheet) {
+         for (let row = 0; row < displayRowLimit; row += 1) {
+           if (worksheet.isRowHidden(row)) {
+@@ -19436,10 +19431,7 @@ function XlsxGrid({
+           }
+           const height = worksheet.getRowHeight(row);
+           if (height !== void 0 && height !== null) {
+-            heights[row] = Math.max(
+-              resolveRenderedSheetAxisPixels(resolveSheetRowHeightPixels(height), showGridLines),
+-              DEFAULT_ROW_HEIGHT2 / 1.5
+-            );
++            heights[row] = resolveRenderedSheetAxisPixels(resolveSheetRowHeightPixels(height));
+             continue;
+           }
+           const maxMeasuredCol = Math.min(displayColLimit - 1, _nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1052 => _1052.maxUsedCol]), () => ( -1)));
+@@ -19474,17 +19466,13 @@ function XlsxGrid({
+           }
+           if (estimatedAutoHeight > 0) {
+             heights[row] = Math.max(
+-              resolveRenderedSheetAxisPixels(Math.ceil(estimatedAutoHeight), showGridLines),
++              resolveRenderedSheetAxisPixels(Math.ceil(estimatedAutoHeight)),
+               fallbackHeight
+             );
+             continue;
+           }
+-          heights[row] = Math.max(
+-            resolveRenderedSheetAxisPixels(
+-              _nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1057 => _1057.rowHeightOverridesPx, 'access', _1058 => _1058[row]]), () => ( _optionalChain([activeSheet, 'optionalAccess', _1059 => _1059.defaultRowHeightPx]))), () => ( DEFAULT_ROW_HEIGHT2)),
+-              showGridLines
+-            ),
+-            DEFAULT_ROW_HEIGHT2 / 1.5
++          heights[row] = resolveRenderedSheetAxisPixels(
++            _nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1057 => _1057.rowHeightOverridesPx, 'access', _1058 => _1058[row]]), () => ( _optionalChain([activeSheet, 'optionalAccess', _1059 => _1059.defaultRowHeightPx]))), () => ( DEFAULT_ROW_HEIGHT2))
+           );
+         }
+         return heights;
+@@ -19496,17 +19484,13 @@ function XlsxGrid({
+         if (row === void 0 || row >= displayRowLimit) {
+           continue;
+         }
+-        heights[row] = Math.max(
+-          resolveRenderedSheetAxisPixels(
+-            _nullishCoalesce(_nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1062 => _1062.rowHeightOverridesPx, 'access', _1063 => _1063[row]]), () => ( precomputedHeights[index])), () => ( _optionalChain([activeSheet, 'optionalAccess', _1064 => _1064.defaultRowHeightPx]))), () => ( DEFAULT_ROW_HEIGHT2)),
+-            showGridLines
+-          ),
+-          DEFAULT_ROW_HEIGHT2 / 1.5
++        heights[row] = resolveRenderedSheetAxisPixels(
++          _nullishCoalesce(_nullishCoalesce(_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1062 => _1062.rowHeightOverridesPx, 'access', _1063 => _1063[row]]), () => ( precomputedHeights[index])), () => ( _optionalChain([activeSheet, 'optionalAccess', _1064 => _1064.defaultRowHeightPx]))), () => ( DEFAULT_ROW_HEIGHT2))
+         );
+       }
+       for (let row = Math.max(0, (_nullishCoalesce(_optionalChain([activeSheet, 'optionalAccess', _1065 => _1065.maxUsedRow]), () => ( -1))) + 1); row < displayRowLimit; row += 1) {
+         const overrideHeight = _optionalChain([activeSheet, 'optionalAccess', _1066 => _1066.rowHeightOverridesPx, 'access', _1067 => _1067[row]]);
+-        heights[row] = overrideHeight === void 0 ? fallbackHeight : Math.max(resolveRenderedSheetAxisPixels(overrideHeight, showGridLines), DEFAULT_ROW_HEIGHT2 / 1.5);
++        heights[row] = overrideHeight === void 0 ? fallbackHeight : resolveRenderedSheetAxisPixels(overrideHeight);
+       }
+       return heights;
+     },
+@@ -19516,7 +19500,6 @@ function XlsxGrid({
+       _optionalChain([activeSheet, 'optionalAccess', _1070 => _1070.maxUsedCol]),
+       _optionalChain([activeSheet, 'optionalAccess', _1071 => _1071.rowHeightOverridesPx]),
+       _optionalChain([activeSheet, 'optionalAccess', _1072 => _1072.rowHeights]),
+-      _optionalChain([activeSheet, 'optionalAccess', _1073 => _1073.showGridLines]),
+       _optionalChain([activeSheet, 'optionalAccess', _1074 => _1074.themePalette]),
+       _optionalChain([activeSheet, 'optionalAccess', _1075 => _1075.visibleRows]),
+       actualColWidths,
+@@ -19553,6 +19536,12 @@ function XlsxGrid({
+   const colPrefixSums = _chunkCJBI5F6Vcjs.T.call(void 0, () => buildPrefixSums(displayEffectiveColWidths), [displayEffectiveColWidths]);
+   const actualRowPrefixSums = _chunkCJBI5F6Vcjs.T.call(void 0, () => buildPrefixSums(displayActualRowHeights), [displayActualRowHeights]);
+   const actualColPrefixSums = _chunkCJBI5F6Vcjs.T.call(void 0, () => buildPrefixSums(displayActualColWidths), [displayActualColWidths]);
++  const frozenCountRows = activeSheet?.freezePanes?.row ?? 0;
++  const frozenCountCols = activeSheet?.freezePanes?.col ?? 0;
++  const gridGeometry = _chunkCJBI5F6Vcjs.T.call(void 0, () => experimentalCanvas ? {
++    rows: { offsets: actualRowPrefixSums, header: displayHeaderHeight, frozenCount: frozenCountRows },
++    cols: { offsets: actualColPrefixSums, header: displayRowHeaderWidth, frozenCount: frozenCountCols }
++  } : undefined, [experimentalCanvas, actualRowPrefixSums, actualColPrefixSums, displayHeaderHeight, displayRowHeaderWidth, frozenCountRows, frozenCountCols]);
+   const stickyTopByRow = _chunkCJBI5F6Vcjs.T.call(void 0, 
+     () => buildStickyOffsets(frozenRows, displayActualRowHeights, displayHeaderHeight),
+     [displayActualRowHeights, displayHeaderHeight, frozenRows]
+@@ -19672,7 +19661,8 @@ function XlsxGrid({
      [colIndexByActual, frozenCols]
    );
    const indexedMergedRegions = _chunkCJBI5F6Vcjs.T.call(void 0, 
@@ -115,7 +381,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
        const startRowIndex = rowIndexByActual.get(region.start.row);
        const endRowIndex = rowIndexByActual.get(region.end.row);
        const startColIndex = colIndexByActual.get(region.start.col);
-@@ -19687,7 +19706,7 @@ function XlsxGrid({
+@@ -19687,7 +19677,7 @@ function XlsxGrid({
          startRowIndex
        }];
      }),
@@ -124,7 +390,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    );
    const domBaseRowIndices = _chunkCJBI5F6Vcjs.T.call(void 0, 
      () => Array.from(/* @__PURE__ */ new Set([
-@@ -20339,9 +20358,10 @@ function XlsxGrid({
+@@ -20339,9 +20329,10 @@ function XlsxGrid({
      return geometryCell;
    }, [displayHeaderHeight, displayRowHeaderWidth, frozenPaneBottom, frozenPaneRight]);
    const resolvePointerCellFromHitTest = _chunkCJBI5F6Vcjs.q.call(void 0, (clientX, clientY) => {
@@ -136,7 +402,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
          continue;
        }
        const cell = parseCellAddressAttribute(_nullishCoalesce(_optionalChain([element, 'access', _1115 => _1115.closest, 'call', _1116 => _1116("[data-xlsx-cell]"), 'optionalAccess', _1117 => _1117.getAttribute, 'call', _1118 => _1118("data-xlsx-cell")]), () => ( null)));
-@@ -20366,18 +20386,20 @@ function XlsxGrid({
+@@ -20366,18 +20357,20 @@ function XlsxGrid({
      return null;
    }, []);
    const resolvePointerCellFromClient = _chunkCJBI5F6Vcjs.q.call(void 0, (clientX, clientY) => {
@@ -160,7 +426,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
      if (actualRow === void 0 || actualCol === void 0) {
        return null;
      }
-@@ -20388,7 +20410,7 @@ function XlsxGrid({
+@@ -20388,7 +20381,7 @@ function XlsxGrid({
        return { row: dragState.originCell.row, col: actualCol };
      }
      return { row: actualRow, col: actualCol };
@@ -169,7 +435,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    const resolveCellPointerOrigin = _chunkCJBI5F6Vcjs.q.call(void 0, (cell, rect, clientX, clientY) => {
      const rowIndex = rowIndexByActual.get(cell.row);
      const colIndex = colIndexByActual.get(cell.col);
-@@ -20581,7 +20603,7 @@ function XlsxGrid({
+@@ -20581,7 +20574,7 @@ function XlsxGrid({
          return;
        }
      }
@@ -178,16 +444,17 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
      if (externalTarget && typeof window !== "undefined") {
        window.open(externalTarget, "_blank", "noopener,noreferrer");
      }
-@@ -20842,7 +20864,7 @@ function XlsxGrid({
+@@ -20842,7 +20835,8 @@ function XlsxGrid({
      const batchCoversRow = viewportRowBatch ? row >= viewportRowBatch.startRow && row <= viewportRowBatch.endRow : false;
      const batchedCell = batchCoversRow ? _optionalChain([viewportRowBatch, 'optionalAccess', _1139 => _1139.cells, 'access', _1140 => _1140.get, 'call', _1141 => _1141(cacheKey)]) : void 0;
      const worksheetMergedSecondary = _nullishCoalesce(_optionalChain([worksheet, 'optionalAccess', _1142 => _1142.isMergedSecondary, 'call', _1143 => _1143(row, col)]), () => ( false));
 -    if (!worksheet && !batchedCell) {
-+    if (!worksheet && !batchedCell && !sparklinesByCell.has(cacheKey)) {
++    const inheritedStyle = experimentalCanvas && !worksheet && !batchedCell ? resolveInheritedCellStyle2(activeSheet, row, col) : null;
++    if (!worksheet && !batchedCell && !inheritedStyle && !sparklinesByCell.has(cacheKey)) {
        const emptyData = {
          isMergedSecondary: false,
          style: scaleCssProperties({
-@@ -20934,17 +20956,18 @@ function XlsxGrid({
+@@ -20934,17 +20928,18 @@ function XlsxGrid({
      const headerRowCount = table ? Math.max(table.headerRowCount, 1) : 0;
      const rawHyperlink = batchCoversRow ? _optionalChain([batchedCell, 'optionalAccess', _1160 => _1160.hyperlink]) : _optionalChain([worksheet, 'optionalAccess', _1161 => _1161.getHyperlinkAt, 'call', _1162 => _1162(row, col)]);
      const sparkline = _nullishCoalesce(sparklinesByCell.get(cacheKey), () => ( null));
@@ -209,7 +476,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
          Math.min(sparkline.range.start.row, sparkline.range.end.row) + index,
          sparkline.range.start.col
        )
-@@ -20956,24 +20979,24 @@ function XlsxGrid({
+@@ -20956,27 +20951,28 @@ function XlsxGrid({
        chartHighlight,
        checkboxState,
        colSpan: _optionalChain([merge, 'optionalAccess', _1164 => _1164.colSpan]),
@@ -240,7 +507,11 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
          activeSheet,
          conditionalFormatMetricsCacheRef.current
        ) : null,
-@@ -21143,7 +21166,6 @@ function XlsxGrid({
++      hasExplicitFill: Boolean(finalResolvedStyle?.fill && Object.values(resolveWorkbookFillStyle(finalResolvedStyle.fill, activeSheet?.themePalette)).some(Boolean)),
+       hyperlink: _nullishCoalesce(rawHyperlink, () => ( null)),
+       isMergedSecondary: false,
+       shrinkToFit: _optionalChain([alignment, 'optionalAccess', _1165 => _1165.shrinkToFit]) === true,
+@@ -21143,7 +21139,6 @@ function XlsxGrid({
        width: sumPrefixRange(colPrefixSums, startColIndex, endColIndex)
      };
    }, [colIndexByActual, colPrefixSums, displayHeaderHeight, displayRowHeaderWidth, displayedSelection, rowIndexByActual, rowPrefixSums]);
@@ -248,7 +519,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    const rangeHighlightRects = _chunkCJBI5F6Vcjs.T.call(void 0, () => highlightedCellRanges.map(({ highlight, index, range }) => {
      const rows = getHighlightAxisExtent(visibleRows, rowPrefixSums, range.start.row, range.end.row);
      const cols = getHighlightAxisExtent(visibleCols, colPrefixSums, range.start.col, range.end.col);
-@@ -21519,12 +21541,13 @@ function XlsxGrid({
+@@ -21519,12 +21514,13 @@ function XlsxGrid({
      if (!wrapper) {
        return null;
      }
@@ -264,7 +535,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    const resolveGeometryOverlayRect = _chunkCJBI5F6Vcjs.q.call(void 0, (range) => {
      const normalized = normalizeRange2(range);
      const isSingleCellSelection = normalized.start.row === normalized.end.row && normalized.start.col === normalized.end.col;
-@@ -21648,6 +21671,8 @@ function XlsxGrid({
+@@ -21648,6 +21644,8 @@ function XlsxGrid({
      resolveGeometryOverlayRect,
      resolveMountedRangeOverlayRect
    ]);
@@ -273,7 +544,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    const resolveCellDisplayRect = _chunkCJBI5F6Vcjs.q.call(void 0, (cell) => {
      const rowIndex = rowIndexByActual.get(cell.row);
      const colIndex = colIndexByActual.get(cell.col);
-@@ -22267,6 +22292,12 @@ function XlsxGrid({
+@@ -22267,6 +22265,12 @@ function XlsxGrid({
        return;
      }
      applyPreviewOverlay(overlayRange);
@@ -286,7 +557,7 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
    }, [applyHeaderSelection, applyPreviewOverlay, displayedSelection, revision]);
    _chunkCJBI5F6Vcjs._.call(void 0, () => {
      syncActiveValidationOverlay(activeCell);
-@@ -22329,9 +22360,7 @@ function XlsxGrid({
+@@ -22329,9 +22333,7 @@ function XlsxGrid({
      event.preventDefault();
      focusGrid();
      axisSelectionRef.current = null;
@@ -297,7 +568,55 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
      const currentSelection = selectionRef.current;
      const anchor = event.shiftKey && currentSelection ? currentSelection.start : targetCell;
      const initialRange = resolveCellSelectionRange({ start: anchor, end: targetCell });
-@@ -26429,8 +26458,9 @@ function XlsxGrid({
+@@ -23314,8 +23316,8 @@ function XlsxGrid({
+           if (!hasPendingGridlinePath) {
+             return;
+           }
+-          paneContext.strokeStyle = palette.border;
+-          paneContext.lineWidth = 1;
++          paneContext.strokeStyle = paletteIsDark(palette) ? "#454545" : "#ccc";
++          paneContext.lineWidth = 0.5 / dpr;
+           paneContext.stroke();
+           hasPendingGridlinePath = false;
+         };
+@@ -23459,13 +23461,15 @@ function XlsxGrid({
+             }
+             const resolvedRightBorder = resolveCanvasBoundaryBorder(rightBorder, rightNeighborLeftBorder);
+             const resolvedBottomBorder = resolveCanvasBoundaryBorder(bottomBorder, bottomNeighborTopBorder);
+-            if (showGridLines && (!resolvedRightBorder || !resolvedBottomBorder)) {
++            const drawRightGridline = !resolvedRightBorder && !rightNeighborData?.hasExplicitFill;
++            const drawBottomGridline = !resolvedBottomBorder && !bottomNeighborData?.hasExplicitFill;
++            if (showGridLines && !cellData.hasExplicitFill && !cellData.conditionalColorScale && (drawRightGridline || drawBottomGridline)) {
+               enqueueGridlinePath();
+-              if (!resolvedRightBorder) {
++              if (drawRightGridline) {
+                 paneContext.moveTo(localRect.left + localRect.width - 0.5, localRect.top);
+                 paneContext.lineTo(localRect.left + localRect.width - 0.5, localRect.top + localRect.height);
+               }
+-              if (!resolvedBottomBorder) {
++              if (drawBottomGridline) {
+                 paneContext.moveTo(localRect.left, localRect.top + localRect.height - 0.5);
+                 paneContext.lineTo(localRect.left + localRect.width, localRect.top + localRect.height - 0.5);
+               }
+@@ -23884,7 +23888,7 @@ function XlsxGrid({
+         paneContext.moveTo(column.localLeft, column.height - 0.5);
+         paneContext.lineTo(column.localLeft + column.width, column.height - 0.5);
+         paneContext.stroke();
+-        paneContext.font = `600 ${11 * zoomFactor}px ui-sans-serif, system-ui, sans-serif`;
++        paneContext.font = `${12 * zoomFactor}px sans-serif`;
+         paneContext.fillStyle = palette.headerText;
+         paneContext.textAlign = "center";
+         paneContext.textBaseline = "middle";
+@@ -23932,7 +23936,7 @@ function XlsxGrid({
+         paneContext.moveTo(rowHeaderWidth - 0.5, row.localTop);
+         paneContext.lineTo(rowHeaderWidth - 0.5, row.localTop + row.height);
+         paneContext.stroke();
+-        paneContext.font = `600 ${11 * zoomFactor}px ui-sans-serif, system-ui, sans-serif`;
++        paneContext.font = `${12 * zoomFactor}px sans-serif`;
+         paneContext.fillStyle = palette.headerText;
+         paneContext.textAlign = "center";
+         paneContext.textBaseline = "middle";
+@@ -26429,8 +26433,9 @@ function XlsxGrid({
                        }
                        const previousEnd = index === 0 ? 0 : _nullishCoalesce(_optionalChain([virtualRows, 'access', _1390 => _1390[index - 1], 'optionalAccess', _1391 => _1391.end]), () => ( 0));
                        const gapHeight = Math.max(0, virtualRow.start - previousEnd);
@@ -308,8 +627,21 @@ index 7b449575c243f1a7eeb3c40a7e3980d4b587380e..b2ac1f43186a1c480eb07da745c065bc
                          /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, 
                            MemoGridRow,
                            {
+@@ -26598,7 +26603,11 @@ function XlsxGrid({
+     }
+   );
+   return /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, "div", { style: { backgroundColor: palette.canvas, display: "flex", flex: 1, minHeight: 0, minWidth: 0 }, children: [
+-    renderScroller ? renderScroller({ children: scrollerContent, viewportProps: scrollerViewportProps }) : /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, "div", { ...scrollerViewportProps, children: scrollerContent }, activeTabIndex),
++    renderScroller ? renderScroller({
++      children: scrollerContent,
++      viewportProps: scrollerViewportProps,
++      gridGeometry
++    }) : /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, "div", { ...scrollerViewportProps, children: scrollerContent }, activeTabIndex),
+     enableContextMenu && contextMenu && /* @__PURE__ */ _chunkCJBI5F6Vcjs.u.call(void 0, 
+       XlsxContextMenu,
+       {
 diff --git a/dist/chunk-Y737JKUG.js b/dist/chunk-Y737JKUG.js
-index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d5a27890c 100644
+index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..21123d224a66be955492fde416c2e96bb4841e6d 100644
 --- a/dist/chunk-Y737JKUG.js
 +++ b/dist/chunk-Y737JKUG.js
 @@ -3755,7 +3755,7 @@ var MIN_COL_WIDTH_PX = 30;
@@ -329,7 +661,32 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
    const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
    const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
-@@ -4701,7 +4702,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+@@ -3793,20 +3794,15 @@ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
+   return width;
+ }
+ function sheetColumnWidthToPixels(width, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX) {
+-  if (!Number.isFinite(width) || width <= 0) {
+-    return MIN_COL_WIDTH_PX;
+-  }
+-  const digitWidth = Math.max(1, columnCharacterWidthPx);
+-  const pixels = width < 1 ? Math.floor(width * (digitWidth + 5) + 0.5) : Math.floor((256 * width + Math.floor(128 / digitWidth)) / 256 * digitWidth);
+-  return Math.max(MIN_COL_WIDTH_PX, pixels);
++  return Number.isFinite(width) && width > 0 ? width * Math.ceil(columnCharacterWidthPx) : 64;
+ }
+-function resolveWorksheetDefaultColumnWidthPixels(worksheet, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX, fallbackPx = sheetColumnWidthToPixels(8.43, columnCharacterWidthPx)) {
++function resolveWorksheetDefaultColumnWidthPixels(worksheet, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX, fallbackPx = 64) {
+   const width = typeof worksheet.defaultColumnWidth === "number" ? worksheet.defaultColumnWidth : Number.NaN;
+   return Number.isFinite(width) && width > 0 ? sheetColumnWidthToPixels(width, columnCharacterWidthPx) : fallbackPx;
+ }
+-function resolveWorksheetDefaultRowHeightPixels(worksheet, fallbackPx = Math.max(MIN_ROW_HEIGHT_PX, Math.round(15 * 1.33))) {
++function resolveWorksheetDefaultRowHeightPixels(worksheet, fallbackPx = (15 * 4) / 3) {
+   const height = typeof worksheet.defaultRowHeight === "number" ? worksheet.defaultRowHeight : Number.NaN;
+-  return Number.isFinite(height) && height > 0 ? Math.max(MIN_ROW_HEIGHT_PX, Math.round(height * 1.33)) : fallbackPx;
++  return Number.isFinite(height) && height > 0 ? (height * 4) / 3 : fallbackPx;
+ }
+ function resolveWorksheetHiddenRows(worksheet, maxRow) {
+   if (!Number.isFinite(maxRow) || maxRow < 0 || typeof worksheet.isRowHidden !== "function") {
+@@ -4701,7 +4697,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
      if (!iconSetNode) {
        return null;
      }
@@ -338,7 +695,55 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
      const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
      if (!iconSetName || cfvos.length === 0) {
        return null;
-@@ -6794,6 +6795,8 @@ function anyBecameError(workbook, positions) {
+@@ -4931,7 +4927,7 @@ function parseSheetState(archive, path, options) {
+   );
+   const defaultRowHeight = Number(sheetFormatNode?.getAttribute("defaultRowHeight") ?? 15);
+   const defaultColWidth = Number(
+-    sheetFormatNode?.getAttribute("defaultColWidth") ?? sheetFormatNode?.getAttribute("baseColWidth") ?? 8.43
++    sheetFormatNode?.getAttribute("defaultColWidth") ?? sheetFormatNode?.getAttribute("baseColWidth") ?? Number.NaN
+   );
+   const rawZoomScale = Number(
+     sheetViewNode?.getAttribute("zoomScale") ?? sheetViewNode?.getAttribute("zoomScaleNormal") ?? Number.NaN
+@@ -4962,7 +4958,7 @@ function parseSheetState(archive, path, options) {
+     const height = Number(rowNode.getAttribute("ht") ?? Number.NaN);
+     const styleId = Number(rowNode.getAttribute("s") ?? Number.NaN);
+     if (rowIndex >= 0 && Number.isFinite(height)) {
+-      rowHeightOverridesPx[rowIndex] = Math.max(MIN_ROW_HEIGHT_PX, Math.round(height * 1.33));
++      rowHeightOverridesPx[rowIndex] = (height * 4) / 3;
+     }
+     if (rowIndex >= 0 && Number.isFinite(styleId)) {
+       rowStyleIds[rowIndex] = styleId;
+@@ -5017,7 +5013,7 @@ function parseSheetState(archive, path, options) {
+     colStyleIds,
+     conditionalFormatRules,
+     defaultColWidthPx: sheetColumnWidthToPixels(defaultColWidth, columnWidthCharacterWidthPx),
+-    defaultRowHeightPx: Math.max(MIN_ROW_HEIGHT_PX, Math.round(defaultRowHeight * 1.33)),
++    defaultRowHeightPx: (defaultRowHeight * 4) / 3,
+     hasHorizontalMerges: false,
+     hasVerticalMerges: false,
+     maxHorizontalMergeEndCol: -1,
+@@ -6594,13 +6590,15 @@ function resolveSheetColumnWidthPixels(width, columnWidthCharacterWidthPx) {
+   return sheetColumnWidthToPixels(width, columnWidthCharacterWidthPx);
+ }
+ function resolveSheetRowHeightPixels(height) {
+-  return Math.max(Math.round(height * 1.33), MIN_ROW_HEIGHT_PX);
++  return (height * 4) / 3;
+ }
+-function resolveRenderedSheetAxisPixels(sizePx, showGridLines = true) {
+-  return Math.max(0, sizePx) + (showGridLines ? resolveDeviceGridlineThicknessPx() : 0);
++function resolveRenderedSheetAxisPixels(sizePx) {
++  // Gridlines are painted on the cell edge and do not take space in the workbook.
++  return Math.max(0, sizePx);
+ }
+-function resolveContentSheetAxisPixels(sizePx, showGridLines = true) {
+-  return Math.max(0, sizePx - (showGridLines ? resolveDeviceGridlineThicknessPx() : 0));
++function resolveContentSheetAxisPixels(sizePx) {
++  // Gridlines are painted on the cell edge and do not take space in the workbook.
++  return Math.max(0, sizePx);
+ }
+ function markerFromOffset(offsetPx, getSizePx) {
+   let remaining = Math.max(0, offsetPx);
+@@ -6794,6 +6792,8 @@ function anyBecameError(workbook, positions) {
    });
  }
  function safeCalculate(workbook, options = {}) {
@@ -347,7 +752,14 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    if (hasUnresolvedSheetReferences(workbook)) {
      return { workbook, calculated: false, skipReason: "unresolved-sheet-refs" };
    }
-@@ -7241,7 +7244,7 @@ var DEFAULT_COL_WIDTH = 80;
+@@ -7236,12 +7236,12 @@ function normalizeWorkbookArrayBuffer(buffer) {
+ 
+ // src/controller.tsx
+ var FORMULA_COUNT_THRESHOLD = 1e3;
+-var DEFAULT_ROW_HEIGHT = 24;
+-var DEFAULT_COL_WIDTH = 80;
++var DEFAULT_ROW_HEIGHT = 20;
++var DEFAULT_COL_WIDTH = 64;
  var XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
  var CSV_MIME_TYPE = "text/csv;charset=utf-8";
  var MIN_ROW_HEIGHT_PX2 = 16;
@@ -356,16 +768,55 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
  var GRID_ROW_HEADER_WIDTH = 40;
  var HISTORY_LIMIT = 100;
  var INTERNAL_CLIPBOARD_MIME = "application/x-react-xlsx-range+json";
-@@ -13471,7 +13474,7 @@ var RANGE_HIGHLIGHT_STYLES = `
+@@ -7440,7 +7440,7 @@ function buildSheetList(workbook, sheetStatesByWorkbookSheetIndex, themePalette,
+     const resolveRowHeightPx = (row) => {
+       const height = worksheet.getRowHeight(row);
+       if (height !== void 0 && height !== null) {
+-        return Math.max(Math.round(height * 1.33), MIN_ROW_HEIGHT_PX2);
++        return (height * 4) / 3;
+       }
+       return sheetState?.rowHeightOverridesPx?.[row] ?? defaultRowHeightPx;
+     };
+@@ -8017,7 +8017,7 @@ function fileStem(fileName) {
+   return lastDot > 0 ? normalized.slice(0, lastDot) : normalized;
+ }
+ function pxToSheetRowHeight(heightPx) {
+-  return Math.max(heightPx, MIN_ROW_HEIGHT_PX2) / 1.33;
++  return Math.max(heightPx, MIN_ROW_HEIGHT_PX2) * 3 / 4;
+ }
+ function cssColor(color) {
+   if (!color?.hex) {
+@@ -13469,9 +13469,9 @@ var RANGE_HIGHLIGHT_STYLES = `
+   border: var(--xlsx-highlight-border, var(--xlsx-highlight-default-border-width, 1px) solid #93c5fd);
+ }
  `;
- var DEFAULT_ROW_HEIGHT2 = 24;
- var DEFAULT_COL_WIDTH2 = 80;
+-var DEFAULT_ROW_HEIGHT2 = 24;
+-var DEFAULT_COL_WIDTH2 = 80;
 -var HEADER_HEIGHT = 24;
++var DEFAULT_ROW_HEIGHT2 = 20;
++var DEFAULT_COL_WIDTH2 = 64;
 +var HEADER_HEIGHT = 20;
  var ROW_HEADER_WIDTH = 40;
  var INTERNAL_CLIPBOARD_MIME2 = "application/x-react-xlsx-range+json";
  var MIN_OPEN_GRID_ROWS = 200;
-@@ -16150,6 +16153,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
+@@ -13512,7 +13512,7 @@ var SHEET_SURFACE = "#ffffff";
+ var DRAWING_SELECTION_STROKE = "#64748b";
+ var DRAWING_SELECTION_HANDLE_FILL = "#ffffff";
+ var DRAWING_SELECTION_HANDLE_SHADOW = "rgba(15, 23, 42, 0.18)";
+-var DEFAULT_CELL_PADDING = "0 4px";
++var DEFAULT_CELL_PADDING = "0 2px";
+ var IMAGE_HANDLE_POSITIONS = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+ var CANVAS_CELL_STYLE_CACHE_LIMIT = 4096;
+ var CANVAS_TEXT_MEASURE_CACHE_LIMIT = 2e4;
+@@ -16007,6 +16007,7 @@ function buildCellStyle(style, palette, themePalette, options) {
+     }
+   }
+   css.lineHeight = String(resolveSpreadsheetLineHeight(resolvedFontSizePt));
++  css.padding = `0 ${Math.max(2, Math.floor(resolvedFontSizePt * 4 / 30))}px`;
+   if (paletteIsDark(palette) && !css.backgroundImage) {
+     const effectiveBackgroundColor = typeof css.backgroundColor === "string" ? css.backgroundColor : baseSurface;
+     css.color = resolveReadableTextColor(resolvedFontColor, effectiveBackgroundColor, palette);
+@@ -16150,6 +16151,7 @@ function getCellDisplayValue(worksheet, row, col, activeSheet) {
    return cellValue.toString();
  }
  function getCellNumericValue(worksheet, row, col) {
@@ -373,7 +824,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    const cellValue = worksheet.getCalculatedValueAt(row, col);
    if (cellValue.is_number) {
      return cellValue.asNumber() ?? null;
-@@ -17662,10 +17666,23 @@ function normalizeConditionalTextOperand(value) {
+@@ -17662,10 +17664,23 @@ function normalizeConditionalTextOperand(value) {
    }
    return String(value).trim().toLowerCase();
  }
@@ -398,7 +849,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    if (normalizedRuleType === "cellis") {
      return resolveConditionalCellIsMatch(rule.operator ?? "equal", left, right, numericValue, textValue);
    }
-@@ -17717,7 +17734,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+@@ -17717,7 +17732,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
      if (textValue === void 0) {
        textValue = readTextValue();
      }
@@ -407,7 +858,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
        continue;
      }
      matchedStyles.push(rule.style);
-@@ -17735,6 +17752,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
+@@ -17735,6 +17750,7 @@ function resolveConditionalCellStyleForCell(row, col, sheet, readNumericValue, r
    return resolved;
  }
  function buildConditionalIcon(iconSet, iconId) {
@@ -415,7 +866,163 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    switch (iconSet) {
      case "NoIcons":
        return null;
-@@ -19669,7 +19687,8 @@ function XlsxGrid({
+@@ -19354,11 +19370,7 @@ function XlsxGrid({
+   const actualColWidths = T(
+     () => {
+       const widths = new Array(displayColLimit).fill(0);
+-      const showGridLines = activeSheet?.showGridLines ?? true;
+-      const fallbackWidth = Math.max(
+-        resolveRenderedSheetAxisPixels(activeSheet?.defaultColWidthPx ?? DEFAULT_COL_WIDTH2, showGridLines),
+-        DEFAULT_COL_WIDTH2 / 2
+-      );
++      const fallbackWidth = resolveRenderedSheetAxisPixels(activeSheet?.defaultColWidthPx ?? DEFAULT_COL_WIDTH2);
+       if (worksheet) {
+         for (let col = 0; col < displayColLimit; col += 1) {
+           if (worksheet.isColumnHidden(col)) {
+@@ -19366,21 +19378,13 @@ function XlsxGrid({
+           }
+           const width = worksheet.getColumnWidth(col);
+           if (width !== void 0 && width !== null) {
+-            widths[col] = Math.max(
+-              resolveRenderedSheetAxisPixels(
+-                resolveSheetColumnWidthPixels(width, activeSheet?.columnWidthCharacterWidthPx),
+-                showGridLines
+-              ),
+-              DEFAULT_COL_WIDTH2 / 2
++            widths[col] = resolveRenderedSheetAxisPixels(
++              resolveSheetColumnWidthPixels(width, activeSheet?.columnWidthCharacterWidthPx)
+             );
+             continue;
+           }
+-          widths[col] = Math.max(
+-            resolveRenderedSheetAxisPixels(
+-              activeSheet?.colWidthOverridesPx[col] ?? activeSheet?.defaultColWidthPx ?? DEFAULT_COL_WIDTH2,
+-              showGridLines
+-            ),
+-            DEFAULT_COL_WIDTH2 / 2
++          widths[col] = resolveRenderedSheetAxisPixels(
++            activeSheet?.colWidthOverridesPx[col] ?? activeSheet?.defaultColWidthPx ?? DEFAULT_COL_WIDTH2
+           );
+         }
+         return widths;
+@@ -19392,17 +19396,13 @@ function XlsxGrid({
+         if (col === void 0 || col >= displayColLimit) {
+           continue;
+         }
+-        widths[col] = Math.max(
+-          resolveRenderedSheetAxisPixels(
+-            activeSheet?.colWidthOverridesPx[col] ?? precomputedWidths[index] ?? activeSheet?.defaultColWidthPx ?? DEFAULT_COL_WIDTH2,
+-            showGridLines
+-          ),
+-          DEFAULT_COL_WIDTH2 / 2
++        widths[col] = resolveRenderedSheetAxisPixels(
++          activeSheet?.colWidthOverridesPx[col] ?? precomputedWidths[index] ?? activeSheet?.defaultColWidthPx ?? DEFAULT_COL_WIDTH2
+         );
+       }
+       for (let col = Math.max(0, (activeSheet?.maxUsedCol ?? -1) + 1); col < displayColLimit; col += 1) {
+         const overrideWidth = activeSheet?.colWidthOverridesPx[col];
+-        widths[col] = overrideWidth === void 0 ? fallbackWidth : Math.max(resolveRenderedSheetAxisPixels(overrideWidth, showGridLines), DEFAULT_COL_WIDTH2 / 2);
++        widths[col] = overrideWidth === void 0 ? fallbackWidth : resolveRenderedSheetAxisPixels(overrideWidth);
+       }
+       return widths;
+     },
+@@ -19411,7 +19411,6 @@ function XlsxGrid({
+       activeSheet?.colWidths,
+       activeSheet?.defaultColWidthPx,
+       activeSheet?.maxUsedCol,
+-      activeSheet?.showGridLines,
+       activeSheet?.visibleCols,
+       displayColLimit,
+       worksheet,
+@@ -19421,11 +19420,7 @@ function XlsxGrid({
+   const actualRowHeights = T(
+     () => {
+       const heights = new Array(displayRowLimit).fill(0);
+-      const showGridLines = activeSheet?.showGridLines ?? true;
+-      const fallbackHeight = Math.max(
+-        resolveRenderedSheetAxisPixels(activeSheet?.defaultRowHeightPx ?? DEFAULT_ROW_HEIGHT2, showGridLines),
+-        DEFAULT_ROW_HEIGHT2 / 1.5
+-      );
++      const fallbackHeight = resolveRenderedSheetAxisPixels(activeSheet?.defaultRowHeightPx ?? DEFAULT_ROW_HEIGHT2);
+       if (worksheet) {
+         for (let row = 0; row < displayRowLimit; row += 1) {
+           if (worksheet.isRowHidden(row)) {
+@@ -19433,10 +19428,7 @@ function XlsxGrid({
+           }
+           const height = worksheet.getRowHeight(row);
+           if (height !== void 0 && height !== null) {
+-            heights[row] = Math.max(
+-              resolveRenderedSheetAxisPixels(resolveSheetRowHeightPixels(height), showGridLines),
+-              DEFAULT_ROW_HEIGHT2 / 1.5
+-            );
++            heights[row] = resolveRenderedSheetAxisPixels(resolveSheetRowHeightPixels(height));
+             continue;
+           }
+           const maxMeasuredCol = Math.min(displayColLimit - 1, activeSheet?.maxUsedCol ?? -1);
+@@ -19471,17 +19463,13 @@ function XlsxGrid({
+           }
+           if (estimatedAutoHeight > 0) {
+             heights[row] = Math.max(
+-              resolveRenderedSheetAxisPixels(Math.ceil(estimatedAutoHeight), showGridLines),
++              resolveRenderedSheetAxisPixels(Math.ceil(estimatedAutoHeight)),
+               fallbackHeight
+             );
+             continue;
+           }
+-          heights[row] = Math.max(
+-            resolveRenderedSheetAxisPixels(
+-              activeSheet?.rowHeightOverridesPx[row] ?? activeSheet?.defaultRowHeightPx ?? DEFAULT_ROW_HEIGHT2,
+-              showGridLines
+-            ),
+-            DEFAULT_ROW_HEIGHT2 / 1.5
++          heights[row] = resolveRenderedSheetAxisPixels(
++            activeSheet?.rowHeightOverridesPx[row] ?? activeSheet?.defaultRowHeightPx ?? DEFAULT_ROW_HEIGHT2
+           );
+         }
+         return heights;
+@@ -19493,17 +19481,13 @@ function XlsxGrid({
+         if (row === void 0 || row >= displayRowLimit) {
+           continue;
+         }
+-        heights[row] = Math.max(
+-          resolveRenderedSheetAxisPixels(
+-            activeSheet?.rowHeightOverridesPx[row] ?? precomputedHeights[index] ?? activeSheet?.defaultRowHeightPx ?? DEFAULT_ROW_HEIGHT2,
+-            showGridLines
+-          ),
+-          DEFAULT_ROW_HEIGHT2 / 1.5
++        heights[row] = resolveRenderedSheetAxisPixels(
++          activeSheet?.rowHeightOverridesPx[row] ?? precomputedHeights[index] ?? activeSheet?.defaultRowHeightPx ?? DEFAULT_ROW_HEIGHT2
+         );
+       }
+       for (let row = Math.max(0, (activeSheet?.maxUsedRow ?? -1) + 1); row < displayRowLimit; row += 1) {
+         const overrideHeight = activeSheet?.rowHeightOverridesPx[row];
+-        heights[row] = overrideHeight === void 0 ? fallbackHeight : Math.max(resolveRenderedSheetAxisPixels(overrideHeight, showGridLines), DEFAULT_ROW_HEIGHT2 / 1.5);
++        heights[row] = overrideHeight === void 0 ? fallbackHeight : resolveRenderedSheetAxisPixels(overrideHeight);
+       }
+       return heights;
+     },
+@@ -19513,7 +19497,6 @@ function XlsxGrid({
+       activeSheet?.maxUsedCol,
+       activeSheet?.rowHeightOverridesPx,
+       activeSheet?.rowHeights,
+-      activeSheet?.showGridLines,
+       activeSheet?.themePalette,
+       activeSheet?.visibleRows,
+       actualColWidths,
+@@ -19550,6 +19533,12 @@ function XlsxGrid({
+   const colPrefixSums = T(() => buildPrefixSums(displayEffectiveColWidths), [displayEffectiveColWidths]);
+   const actualRowPrefixSums = T(() => buildPrefixSums(displayActualRowHeights), [displayActualRowHeights]);
+   const actualColPrefixSums = T(() => buildPrefixSums(displayActualColWidths), [displayActualColWidths]);
++  const frozenCountRows = activeSheet?.freezePanes?.row ?? 0;
++  const frozenCountCols = activeSheet?.freezePanes?.col ?? 0;
++  const gridGeometry = T(() => experimentalCanvas ? {
++    rows: { offsets: actualRowPrefixSums, header: displayHeaderHeight, frozenCount: frozenCountRows },
++    cols: { offsets: actualColPrefixSums, header: displayRowHeaderWidth, frozenCount: frozenCountCols }
++  } : undefined, [experimentalCanvas, actualRowPrefixSums, actualColPrefixSums, displayHeaderHeight, displayRowHeaderWidth, frozenCountRows, frozenCountCols]);
+   const stickyTopByRow = T(
+     () => buildStickyOffsets(frozenRows, displayActualRowHeights, displayHeaderHeight),
+     [displayActualRowHeights, displayHeaderHeight, frozenRows]
+@@ -19669,7 +19658,8 @@ function XlsxGrid({
      [colIndexByActual, frozenCols]
    );
    const indexedMergedRegions = T(
@@ -425,7 +1032,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
        const startRowIndex = rowIndexByActual.get(region.start.row);
        const endRowIndex = rowIndexByActual.get(region.end.row);
        const startColIndex = colIndexByActual.get(region.start.col);
-@@ -19684,7 +19703,7 @@ function XlsxGrid({
+@@ -19684,7 +19674,7 @@ function XlsxGrid({
          startRowIndex
        }];
      }),
@@ -434,7 +1041,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    );
    const domBaseRowIndices = T(
      () => Array.from(/* @__PURE__ */ new Set([
-@@ -20336,9 +20355,10 @@ function XlsxGrid({
+@@ -20336,9 +20326,10 @@ function XlsxGrid({
      return geometryCell;
    }, [displayHeaderHeight, displayRowHeaderWidth, frozenPaneBottom, frozenPaneRight]);
    const resolvePointerCellFromHitTest = q((clientX, clientY) => {
@@ -446,7 +1053,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
          continue;
        }
        const cell = parseCellAddressAttribute(element.closest("[data-xlsx-cell]")?.getAttribute("data-xlsx-cell") ?? null);
-@@ -20363,18 +20383,20 @@ function XlsxGrid({
+@@ -20363,18 +20354,20 @@ function XlsxGrid({
      return null;
    }, []);
    const resolvePointerCellFromClient = q((clientX, clientY) => {
@@ -470,7 +1077,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
      if (actualRow === void 0 || actualCol === void 0) {
        return null;
      }
-@@ -20385,7 +20407,7 @@ function XlsxGrid({
+@@ -20385,7 +20378,7 @@ function XlsxGrid({
        return { row: dragState.originCell.row, col: actualCol };
      }
      return { row: actualRow, col: actualCol };
@@ -479,7 +1086,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    const resolveCellPointerOrigin = q((cell, rect, clientX, clientY) => {
      const rowIndex = rowIndexByActual.get(cell.row);
      const colIndex = colIndexByActual.get(cell.col);
-@@ -20578,7 +20600,7 @@ function XlsxGrid({
+@@ -20578,7 +20571,7 @@ function XlsxGrid({
          return;
        }
      }
@@ -488,16 +1095,17 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
      if (externalTarget && typeof window !== "undefined") {
        window.open(externalTarget, "_blank", "noopener,noreferrer");
      }
-@@ -20839,7 +20861,7 @@ function XlsxGrid({
+@@ -20839,7 +20832,8 @@ function XlsxGrid({
      const batchCoversRow = viewportRowBatch ? row >= viewportRowBatch.startRow && row <= viewportRowBatch.endRow : false;
      const batchedCell = batchCoversRow ? viewportRowBatch?.cells.get(cacheKey) : void 0;
      const worksheetMergedSecondary = worksheet?.isMergedSecondary(row, col) ?? false;
 -    if (!worksheet && !batchedCell) {
-+    if (!worksheet && !batchedCell && !sparklinesByCell.has(cacheKey)) {
++    const inheritedStyle = experimentalCanvas && !worksheet && !batchedCell ? resolveInheritedCellStyle2(activeSheet, row, col) : null;
++    if (!worksheet && !batchedCell && !inheritedStyle && !sparklinesByCell.has(cacheKey)) {
        const emptyData = {
          isMergedSecondary: false,
          style: scaleCssProperties({
-@@ -20931,17 +20953,18 @@ function XlsxGrid({
+@@ -20931,17 +20925,18 @@ function XlsxGrid({
      const headerRowCount = table ? Math.max(table.headerRowCount, 1) : 0;
      const rawHyperlink = batchCoversRow ? batchedCell?.hyperlink : worksheet?.getHyperlinkAt(row, col);
      const sparkline = sparklinesByCell.get(cacheKey) ?? null;
@@ -519,7 +1127,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
          Math.min(sparkline.range.start.row, sparkline.range.end.row) + index,
          sparkline.range.start.col
        )
-@@ -20953,24 +20976,24 @@ function XlsxGrid({
+@@ -20953,27 +20948,28 @@ function XlsxGrid({
        chartHighlight,
        checkboxState,
        colSpan: merge?.colSpan,
@@ -550,7 +1158,11 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
          activeSheet,
          conditionalFormatMetricsCacheRef.current
        ) : null,
-@@ -21140,7 +21163,6 @@ function XlsxGrid({
++      hasExplicitFill: Boolean(finalResolvedStyle?.fill && Object.values(resolveWorkbookFillStyle(finalResolvedStyle.fill, activeSheet?.themePalette)).some(Boolean)),
+       hyperlink: rawHyperlink ?? null,
+       isMergedSecondary: false,
+       shrinkToFit: alignment?.shrinkToFit === true,
+@@ -21140,7 +21136,6 @@ function XlsxGrid({
        width: sumPrefixRange(colPrefixSums, startColIndex, endColIndex)
      };
    }, [colIndexByActual, colPrefixSums, displayHeaderHeight, displayRowHeaderWidth, displayedSelection, rowIndexByActual, rowPrefixSums]);
@@ -558,7 +1170,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    const rangeHighlightRects = T(() => highlightedCellRanges.map(({ highlight, index, range }) => {
      const rows = getHighlightAxisExtent(visibleRows, rowPrefixSums, range.start.row, range.end.row);
      const cols = getHighlightAxisExtent(visibleCols, colPrefixSums, range.start.col, range.end.col);
-@@ -21516,12 +21538,13 @@ function XlsxGrid({
+@@ -21516,12 +21511,13 @@ function XlsxGrid({
      if (!wrapper) {
        return null;
      }
@@ -574,7 +1186,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    const resolveGeometryOverlayRect = q((range) => {
      const normalized = normalizeRange2(range);
      const isSingleCellSelection = normalized.start.row === normalized.end.row && normalized.start.col === normalized.end.col;
-@@ -21645,6 +21668,8 @@ function XlsxGrid({
+@@ -21645,6 +21641,8 @@ function XlsxGrid({
      resolveGeometryOverlayRect,
      resolveMountedRangeOverlayRect
    ]);
@@ -583,7 +1195,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    const resolveCellDisplayRect = q((cell) => {
      const rowIndex = rowIndexByActual.get(cell.row);
      const colIndex = colIndexByActual.get(cell.col);
-@@ -22264,6 +22289,12 @@ function XlsxGrid({
+@@ -22264,6 +22262,12 @@ function XlsxGrid({
        return;
      }
      applyPreviewOverlay(overlayRange);
@@ -596,7 +1208,7 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
    }, [applyHeaderSelection, applyPreviewOverlay, displayedSelection, revision]);
    _(() => {
      syncActiveValidationOverlay(activeCell);
-@@ -22326,9 +22357,7 @@ function XlsxGrid({
+@@ -22326,9 +22330,7 @@ function XlsxGrid({
      event.preventDefault();
      focusGrid();
      axisSelectionRef.current = null;
@@ -607,7 +1219,55 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
      const currentSelection = selectionRef.current;
      const anchor = event.shiftKey && currentSelection ? currentSelection.start : targetCell;
      const initialRange = resolveCellSelectionRange({ start: anchor, end: targetCell });
-@@ -26426,8 +26455,9 @@ function XlsxGrid({
+@@ -23311,8 +23313,8 @@ function XlsxGrid({
+           if (!hasPendingGridlinePath) {
+             return;
+           }
+-          paneContext.strokeStyle = palette.border;
+-          paneContext.lineWidth = 1;
++          paneContext.strokeStyle = paletteIsDark(palette) ? "#454545" : "#ccc";
++          paneContext.lineWidth = 0.5 / dpr;
+           paneContext.stroke();
+           hasPendingGridlinePath = false;
+         };
+@@ -23456,13 +23458,15 @@ function XlsxGrid({
+             }
+             const resolvedRightBorder = resolveCanvasBoundaryBorder(rightBorder, rightNeighborLeftBorder);
+             const resolvedBottomBorder = resolveCanvasBoundaryBorder(bottomBorder, bottomNeighborTopBorder);
+-            if (showGridLines && (!resolvedRightBorder || !resolvedBottomBorder)) {
++            const drawRightGridline = !resolvedRightBorder && !rightNeighborData?.hasExplicitFill;
++            const drawBottomGridline = !resolvedBottomBorder && !bottomNeighborData?.hasExplicitFill;
++            if (showGridLines && !cellData.hasExplicitFill && !cellData.conditionalColorScale && (drawRightGridline || drawBottomGridline)) {
+               enqueueGridlinePath();
+-              if (!resolvedRightBorder) {
++              if (drawRightGridline) {
+                 paneContext.moveTo(localRect.left + localRect.width - 0.5, localRect.top);
+                 paneContext.lineTo(localRect.left + localRect.width - 0.5, localRect.top + localRect.height);
+               }
+-              if (!resolvedBottomBorder) {
++              if (drawBottomGridline) {
+                 paneContext.moveTo(localRect.left, localRect.top + localRect.height - 0.5);
+                 paneContext.lineTo(localRect.left + localRect.width, localRect.top + localRect.height - 0.5);
+               }
+@@ -23881,7 +23885,7 @@ function XlsxGrid({
+         paneContext.moveTo(column.localLeft, column.height - 0.5);
+         paneContext.lineTo(column.localLeft + column.width, column.height - 0.5);
+         paneContext.stroke();
+-        paneContext.font = `600 ${11 * zoomFactor}px ui-sans-serif, system-ui, sans-serif`;
++        paneContext.font = `${12 * zoomFactor}px sans-serif`;
+         paneContext.fillStyle = palette.headerText;
+         paneContext.textAlign = "center";
+         paneContext.textBaseline = "middle";
+@@ -23929,7 +23933,7 @@ function XlsxGrid({
+         paneContext.moveTo(rowHeaderWidth - 0.5, row.localTop);
+         paneContext.lineTo(rowHeaderWidth - 0.5, row.localTop + row.height);
+         paneContext.stroke();
+-        paneContext.font = `600 ${11 * zoomFactor}px ui-sans-serif, system-ui, sans-serif`;
++        paneContext.font = `${12 * zoomFactor}px sans-serif`;
+         paneContext.fillStyle = palette.headerText;
+         paneContext.textAlign = "center";
+         paneContext.textBaseline = "middle";
+@@ -26426,8 +26430,9 @@ function XlsxGrid({
                        }
                        const previousEnd = index === 0 ? 0 : virtualRows[index - 1]?.end ?? 0;
                        const gapHeight = Math.max(0, virtualRow.start - previousEnd);
@@ -618,6 +1278,19 @@ index 5463ea2329c3027d5d83d0aed093a7a95005a2b7..a4f3eb43b318981ff246f264230b657d
                          /* @__PURE__ */ u(
                            MemoGridRow,
                            {
+@@ -26595,7 +26600,11 @@ function XlsxGrid({
+     }
+   );
+   return /* @__PURE__ */ u("div", { style: { backgroundColor: palette.canvas, display: "flex", flex: 1, minHeight: 0, minWidth: 0 }, children: [
+-    renderScroller ? renderScroller({ children: scrollerContent, viewportProps: scrollerViewportProps }) : /* @__PURE__ */ u("div", { ...scrollerViewportProps, children: scrollerContent }, activeTabIndex),
++    renderScroller ? renderScroller({
++      children: scrollerContent,
++      viewportProps: scrollerViewportProps,
++      gridGeometry
++    }) : /* @__PURE__ */ u("div", { ...scrollerViewportProps, children: scrollerContent }, activeTabIndex),
+     enableContextMenu && contextMenu && /* @__PURE__ */ u(
+       XlsxContextMenu,
+       {
 diff --git a/dist/index.cjs b/dist/index.cjs
 index b3d25302daae60fbc095ebdea3ddb89c1da50788..1d1102c79c7107ebabda9e9f1e5d7bc32eee476a 100644
 --- a/dist/index.cjs
@@ -736,6 +1409,46 @@ index b3d25302daae60fbc095ebdea3ddb89c1da50788..1d1102c79c7107ebabda9e9f1e5d7bc3
      let slot = this.slots.get(key);
      if (!slot) {
        const host = owner.createElement("span");
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index e8a252672939245394a910501ec8fd8fa6c132c2..51ee018fc5a5fe2ce16ae9cf56aac233e8ef5b2d 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -950,7 +950,15 @@ interface XlsxFileTooLargeRenderProps {
+     /** Configured maximum file size in bytes. */
+     maxFileSizeBytes: number;
+ }
++interface XlsxGridAxis {
++    /** Zoomed CSS pixel edges indexed by workbook row or column, including zero-size hidden cells. */
++    offsets: readonly number[];
++    header: number;
++    frozenCount: number;
++}
+ interface XlsxScrollerRenderProps {
++    /** Geometry from the canvas renderer for hit testing and scroll-synchronized overlays. */
++    gridGeometry?: { rows: XlsxGridAxis; cols: XlsxGridAxis };
+     /** Workbook grid content that should be rendered inside the scrollable viewport. */
+     children: React.ReactNode;
+     /** Props that must be applied to the actual scrollable viewport element. */
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index e8a252672939245394a910501ec8fd8fa6c132c2..51ee018fc5a5fe2ce16ae9cf56aac233e8ef5b2d 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -950,7 +950,15 @@ interface XlsxFileTooLargeRenderProps {
+     /** Configured maximum file size in bytes. */
+     maxFileSizeBytes: number;
+ }
++interface XlsxGridAxis {
++    /** Zoomed CSS pixel edges indexed by workbook row or column, including zero-size hidden cells. */
++    offsets: readonly number[];
++    header: number;
++    frozenCount: number;
++}
+ interface XlsxScrollerRenderProps {
++    /** Geometry from the canvas renderer for hit testing and scroll-synchronized overlays. */
++    gridGeometry?: { rows: XlsxGridAxis; cols: XlsxGridAxis };
+     /** Workbook grid content that should be rendered inside the scrollable viewport. */
+     children: React.ReactNode;
+     /** Props that must be applied to the actual scrollable viewport element. */
 diff --git a/dist/index.js b/dist/index.js
 index bc533f84d4aa28923c38cfd7b37ec78f15a4b277..c049ca1cb0fae3f0dbcb0cbec1b2025c88a16d7e 100644
 --- a/dist/index.js
@@ -855,7 +1568,7 @@ index bc533f84d4aa28923c38cfd7b37ec78f15a4b277..c049ca1cb0fae3f0dbcb0cbec1b2025c
      if (!slot) {
        const host = owner.createElement("span");
 diff --git a/dist/xlsx-worker.js b/dist/xlsx-worker.js
-index a09407a3a3c4088ae1800c239be567b22e703be0..0c7ee02dd9edcfb7a52c1100387bad3e7db53231 100644
+index a09407a3a3c4088ae1800c239be567b22e703be0..6008aec928c033e6f98f6d030bab3bc34c18a159 100644
 --- a/dist/xlsx-worker.js
 +++ b/dist/xlsx-worker.js
 @@ -1,3 +1,38 @@
@@ -909,7 +1622,32 @@ index a09407a3a3c4088ae1800c239be567b22e703be0..0c7ee02dd9edcfb7a52c1100387bad3e
    const normalizedFamily = typeof fontFamily === "string" && fontFamily.trim().length > 0 ? fontFamily.trim() : "Calibri";
    const normalizedSizePt = typeof fontSizePt === "number" && Number.isFinite(fontSizePt) && fontSizePt > 0 ? fontSizePt : 11;
    const cacheKey = `${normalizedFamily}|${normalizedSizePt}`;
-@@ -6803,7 +6839,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
+@@ -5968,20 +6004,15 @@ function measureColumnCharacterWidthPx(fontFamily, fontSizePt) {
+   return width;
+ }
+ function sheetColumnWidthToPixels(width, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX) {
+-  if (!Number.isFinite(width) || width <= 0) {
+-    return MIN_COL_WIDTH_PX;
+-  }
+-  const digitWidth = Math.max(1, columnCharacterWidthPx);
+-  const pixels = width < 1 ? Math.floor(width * (digitWidth + 5) + 0.5) : Math.floor((256 * width + Math.floor(128 / digitWidth)) / 256 * digitWidth);
+-  return Math.max(MIN_COL_WIDTH_PX, pixels);
++  return Number.isFinite(width) && width > 0 ? width * Math.ceil(columnCharacterWidthPx) : 64;
+ }
+-function resolveWorksheetDefaultColumnWidthPixels(worksheet, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX, fallbackPx = sheetColumnWidthToPixels(8.43, columnCharacterWidthPx)) {
++function resolveWorksheetDefaultColumnWidthPixels(worksheet, columnCharacterWidthPx = DEFAULT_COLUMN_CHARACTER_WIDTH_PX, fallbackPx = 64) {
+   const width = typeof worksheet.defaultColumnWidth === "number" ? worksheet.defaultColumnWidth : Number.NaN;
+   return Number.isFinite(width) && width > 0 ? sheetColumnWidthToPixels(width, columnCharacterWidthPx) : fallbackPx;
+ }
+-function resolveWorksheetDefaultRowHeightPixels(worksheet, fallbackPx = Math.max(MIN_ROW_HEIGHT_PX, Math.round(15 * 1.33))) {
++function resolveWorksheetDefaultRowHeightPixels(worksheet, fallbackPx = (15 * 4) / 3) {
+   const height = typeof worksheet.defaultRowHeight === "number" ? worksheet.defaultRowHeight : Number.NaN;
+-  return Number.isFinite(height) && height > 0 ? Math.max(MIN_ROW_HEIGHT_PX, Math.round(height * 1.33)) : fallbackPx;
++  return Number.isFinite(height) && height > 0 ? (height * 4) / 3 : fallbackPx;
+ }
+ function resolveWorksheetMergeMetadata(worksheet) {
+   const mergeMetadata = {
+@@ -6803,7 +6834,7 @@ function parseStandardConditionalFormatRule(cfRuleNode, ranges, differentialStyl
      if (!iconSetNode) {
        return null;
      }
@@ -918,7 +1656,34 @@ index a09407a3a3c4088ae1800c239be567b22e703be0..0c7ee02dd9edcfb7a52c1100387bad3e
      const cfvos = getChildElements(iconSetNode, "cfvo").map((node) => parseConditionalFormatValueObject(node)).filter((value) => Boolean(value));
      if (!iconSetName || cfvos.length === 0) {
        return null;
-@@ -7535,6 +7571,8 @@ function anyBecameError(workbook2, positions) {
+@@ -7033,7 +7064,7 @@ function parseSheetState(archive, path, options) {
+   );
+   const defaultRowHeight = Number(sheetFormatNode?.getAttribute("defaultRowHeight") ?? 15);
+   const defaultColWidth = Number(
+-    sheetFormatNode?.getAttribute("defaultColWidth") ?? sheetFormatNode?.getAttribute("baseColWidth") ?? 8.43
++    sheetFormatNode?.getAttribute("defaultColWidth") ?? sheetFormatNode?.getAttribute("baseColWidth") ?? Number.NaN
+   );
+   const rawZoomScale = Number(
+     sheetViewNode?.getAttribute("zoomScale") ?? sheetViewNode?.getAttribute("zoomScaleNormal") ?? Number.NaN
+@@ -7064,7 +7095,7 @@ function parseSheetState(archive, path, options) {
+     const height = Number(rowNode.getAttribute("ht") ?? Number.NaN);
+     const styleId = Number(rowNode.getAttribute("s") ?? Number.NaN);
+     if (rowIndex >= 0 && Number.isFinite(height)) {
+-      rowHeightOverridesPx[rowIndex] = Math.max(MIN_ROW_HEIGHT_PX, Math.round(height * 1.33));
++      rowHeightOverridesPx[rowIndex] = (height * 4) / 3;
+     }
+     if (rowIndex >= 0 && Number.isFinite(styleId)) {
+       rowStyleIds[rowIndex] = styleId;
+@@ -7119,7 +7150,7 @@ function parseSheetState(archive, path, options) {
+     colStyleIds,
+     conditionalFormatRules,
+     defaultColWidthPx: sheetColumnWidthToPixels(defaultColWidth, columnWidthCharacterWidthPx),
+-    defaultRowHeightPx: Math.max(MIN_ROW_HEIGHT_PX, Math.round(defaultRowHeight * 1.33)),
++    defaultRowHeightPx: (defaultRowHeight * 4) / 3,
+     hasHorizontalMerges: false,
+     hasVerticalMerges: false,
+     maxHorizontalMergeEndCol: -1,
+@@ -7535,6 +7566,8 @@ function anyBecameError(workbook2, positions) {
    });
  }
  function safeCalculate(workbook2, options = {}) {
@@ -927,7 +1692,41 @@ index a09407a3a3c4088ae1800c239be567b22e703be0..0c7ee02dd9edcfb7a52c1100387bad3e
    if (hasUnresolvedSheetReferences(workbook2)) {
      return { workbook: workbook2, calculated: false, skipReason: "unresolved-sheet-refs" };
    }
-@@ -8173,7 +8211,7 @@ async function loadWorkbook(buffer, skipXmlParsing = false, showHiddenSheets = f
+@@ -7613,8 +7646,8 @@ function getSheetsWasmModule() {
+ }
+ 
+ // src/xlsx-worker.ts
+-var DEFAULT_ROW_HEIGHT = 24;
+-var DEFAULT_COL_WIDTH = 80;
++var DEFAULT_ROW_HEIGHT = 20;
++var DEFAULT_COL_WIDTH = 64;
+ var DEFAULT_ZOOM_SCALE = 100;
+ var FORMULA_COUNT_THRESHOLD = 1e3;
+ var FAST_STRUCTURE_PARSE_THRESHOLD_BYTES = 5 * 1024 * 1024;
+@@ -7702,11 +7735,11 @@ function parseWorkerSheetLayoutAssets(bytes, sheetCount) {
+         const height = Number(readXmlAttribute(tag, "ht") ?? Number.NaN);
+         const rowIndex = rowNumber - 1;
+         if (rowIndex >= 0 && Number.isFinite(height)) {
+-          rowHeightOverridesPx[rowIndex] = Math.max(MIN_ROW_HEIGHT_PX2, Math.round(height * 1.33));
++          rowHeightOverridesPx[rowIndex] = (height * 4) / 3;
+         }
+       }
+       return {
+-        defaultRowHeightPx: Number.isFinite(defaultRowHeight) && defaultRowHeight > 0 ? Math.max(MIN_ROW_HEIGHT_PX2, Math.round(defaultRowHeight * 1.33)) : void 0,
++        defaultRowHeightPx: Number.isFinite(defaultRowHeight) && defaultRowHeight > 0 ? (defaultRowHeight * 4) / 3 : void 0,
+         defaultColWidthPx: Number.isFinite(defaultColWidth) && defaultColWidth > 0 ? resolveSheetColumnWidthPixels(defaultColWidth) : void 0,
+         rowHeightOverridesPx
+       };
+@@ -7922,7 +7955,7 @@ function buildSheetList(nextWorkbook, themePalette, structureAssets, sheetLayout
+     const resolveRowHeightPx = (row) => {
+       const height = worksheet.getRowHeight(row);
+       if (height !== void 0 && height !== null) {
+-        return Math.max(Math.round(height * 1.33), 16);
++        return (height * 4) / 3;
+       }
+       return sheetState?.rowHeightOverridesPx?.[row] ?? defaultRowHeightPx;
+     };
+@@ -8173,7 +8206,7 @@ async function loadWorkbook(buffer, skipXmlParsing = false, showHiddenSheets = f
      activeWorkbook = result.workbook;
    }
    const nextWorkbook = activeWorkbook;
@@ -936,7 +1735,7 @@ index a09407a3a3c4088ae1800c239be567b22e703be0..0c7ee02dd9edcfb7a52c1100387bad3e
    const structureAssets = effectiveSkipXmlParsing || shouldUseFastStructureParse || !canParseXmlInWorker() ? null : parseWorkbookStructureAssets(bytes, {
      includeCachedFormulaValues: true
    });
-@@ -8190,6 +8228,25 @@ async function loadWorkbook(buffer, skipXmlParsing = false, showHiddenSheets = f
+@@ -8190,6 +8223,25 @@ async function loadWorkbook(buffer, skipXmlParsing = false, showHiddenSheets = f
    const sheetLayoutStates = structureAssets ? void 0 : parseWorkerSheetLayoutAssets(bytes, nextWorkbook.sheetCount);
    workbook = nextWorkbook;
    sheets = buildSheetList(nextWorkbook, themePalette, structureAssets, sheetLayoutStates, showHiddenSheets);
