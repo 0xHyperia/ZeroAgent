@@ -30,4 +30,5 @@ export const PreviewToolbarMount = createContext<{
   workspaceTab?: boolean;
   fileMenu?: ReactNode;
   setFileMenu?: (content: ReactNode) => void;
+  registerEscapeHandler?: (handler: () => boolean) => () => void;
 } | null>(null);

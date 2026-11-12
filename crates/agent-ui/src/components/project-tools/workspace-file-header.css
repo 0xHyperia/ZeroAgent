@@ -9,6 +9,24 @@
   padding: 4px 8px;
   background: var(--za-surface);
 }
+[data-workspace-file-header-host]:has(> [data-floating-presentation-header]) {
+  position: relative;
+  z-index: 4;
+  height: 0;
+}
+[data-workspace-file-header-host] > [data-floating-presentation-header] {
+  position: absolute;
+  inset: 0 0 auto;
+  padding-block: 8px;
+  background: transparent;
+  pointer-events: none;
+}
+[data-floating-presentation-header] :is(button, a) {
+  pointer-events: auto;
+}
+[data-floating-presentation-header] :is(.za-workspace-file-path ol, .za-workspace-file-tool-group) {
+  background: var(--za-surface);
+}
 
 .za-workspace-file-path,
 .za-workspace-file-path ol,

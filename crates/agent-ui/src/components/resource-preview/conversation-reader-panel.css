@@ -9,6 +9,87 @@
   background: var(--za-surface-subtle);
   container: cloud-reader / inline-size;
 }
+.za-reader-revision-status {
+  position: absolute;
+  z-index: 4;
+  inset-inline-start: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 20px);
+  padding: 3px 6px;
+  border-radius: 999px;
+  box-shadow: 0 3px 12px #0002;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.za-reader-revision-status[data-state="working"] {
+  padding: 3px;
+  gap: 0;
+  background: #252525;
+  color: white;
+}
+.za-reader-revision-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+}
+.za-reader-revision-status .za-reader-revision-stop {
+  min-width: 56px;
+  border-radius: 999px;
+  background: #ffffff16;
+  color: inherit;
+}
+.za-reader-revision-status .za-reader-revision-stop:not(:disabled):hover {
+  background: #ffffff2b;
+  color: inherit;
+}
+@media (pointer: coarse) {
+  .za-reader-revision-status .za-reader-revision-stop {
+    min-height: 44px;
+  }
+}
+.za-reader-revision-status[data-state="latest"] {
+  background: #0879df;
+  color: white;
+}
+.za-reader-revision-status[data-state="latest"] button:hover {
+  background: #ffffff20;
+  color: white;
+}
+.za-reader-revision-dots {
+  display: flex;
+  gap: 3px;
+}
+.za-reader-revision-dots > i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: za-reader-revision-pulse 1000ms ease-in-out infinite alternate;
+}
+.za-reader-revision-dots > i:nth-child(2) {
+  animation-delay: 130ms;
+}
+.za-reader-revision-dots > i:nth-child(3) {
+  animation-delay: 260ms;
+}
+@keyframes za-reader-revision-pulse {
+  from {
+    opacity: 0.3;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .za-reader-revision-dots > i {
+    animation: none;
+  }
+}
 .cloud-reader-body {
   display: flex;
   flex: 1;
@@ -72,6 +153,9 @@
 }
 .cloud-resource-reader[data-workspace-tab-reader] .za-reader-stage {
   --za-reader-top-inset: 8px;
+}
+.cloud-resource-reader[data-workspace-tab-reader] .za-reader-stage:has(.za-preview-slides-layout) {
+  --za-reader-top-inset: 48px;
 }
 .cloud-resource-reader
   :is(.za-docx-zoom-viewport, .za-preview-pdf, .za-preview-media, .za-preview-markdown) {
@@ -387,6 +471,13 @@
 .cloud-reader-leading-tools:empty {
   flex: 1;
 }
+.cloud-resource-reader:has(.za-slide-view-controls) .cloud-reader-heading {
+  margin-inline-end: auto;
+}
+.cloud-reader-leading-tools:has(.za-slide-revision-trigger) {
+  flex: none;
+  margin-inline-end: 0;
+}
 .cloud-reader-format-tools {
   order: 2;
 }
@@ -512,7 +603,7 @@
     height: 44px;
     min-height: 44px;
   }
-  .cloud-reader-leading-tools {
+  .cloud-reader-leading-tools:not(:has(.za-slide-revision-trigger)) {
     display: none;
   }
   .cloud-reader-heading {

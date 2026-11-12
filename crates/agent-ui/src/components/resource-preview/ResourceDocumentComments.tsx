@@ -1,9 +1,11 @@
 import { type RefObject, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   ChevronDown,
   ChevronUp,
   GripVertical,
+  MessageSquareText,
   MoreHorizontal,
   SquarePen,
   Trash2,
@@ -24,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "../ui/popover";
+import { TooltipButton } from "../ui/tooltip-button";
 import type {
   DocumentPageGeometry,
   DocumentRegion,
@@ -50,6 +53,7 @@ export type DocumentRevisionTarget =
       };
       point?: { x: number; y: number };
       elementOffset?: { x: number; y: number };
+      elementIds?: string[];
     };
 type PdfRevisionTarget = {
   pageCount: number;
@@ -106,6 +110,8 @@ export function ResourceDocumentComments(props: {
   onMarks: (comments: readonly DocumentRevisionComment[]) => void;
   exitRef?: RefObject<(() => void) | null>;
   editRef?: RefObject<((id: string) => void) | null>;
+  dismissSelectionRef?: RefObject<(() => boolean) | null>;
+  toolbarTarget?: HTMLElement | null;
   prepareEvidence?: (comments: readonly DocumentRevisionComment[]) => Promise<readonly File[]>;
   resolveSelectionBounds?: (selection: RevisionSelection) => RevisionSelectionBounds | undefined;
 }) {
@@ -139,7 +145,7 @@ export function ResourceDocumentComments(props: {
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [listOpen, setListOpen] = useState(false);
+  const [listSource, setListSource] = useState<"toolbar" | "queue" | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const floating = useReaderFloatingPosition(props.enabled || comments.length > 0);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -204,6 +210,18 @@ export function ResourceDocumentComments(props: {
     };
   });
   useEffect(() => {
+    const ref = props.dismissSelectionRef;
+    if (!ref) return;
+    ref.current = () => {
+      if (busy || input.trim()) return false;
+      props.onSelection(null);
+      return true;
+    };
+    return () => {
+      ref.current = null;
+    };
+  }, [props.dismissSelectionRef, props.onSelection, busy, input]);
+  useEffect(() => {
     props.onMarks(comments);
   }, [comments, props.onMarks]);
   function publish(next: DocumentRevisionComment[]) {
@@ -264,7 +282,6 @@ export function ResourceDocumentComments(props: {
       if (props.editRef) props.editRef.current = null;
     };
   });
-  if (!props.enabled && !comments.length) return null;
   const current = comments[Math.min(index, comments.length - 1)];
   function move(direction: number) {
     const next = Math.max(0, Math.min(comments.length - 1, index + direction));
@@ -274,7 +291,7 @@ export function ResourceDocumentComments(props: {
   function editItem(item: DocumentRevisionComment | undefined) {
     if (!item || busy) return;
     setIndex(comments.indexOf(item));
-    setListOpen(false);
+    setListSource(null);
     props.onNavigate(item.block, item);
     setEditing(item.id);
     setInput(item.comment);
@@ -304,8 +321,96 @@ export function ResourceDocumentComments(props: {
     if (editing === item.id) props.onSelection(null);
     const currentIndex = current ? next.findIndex((old) => old.id === current.id) : -1;
     setIndex(currentIndex >= 0 ? currentIndex : Math.max(0, Math.min(index, next.length - 1)));
-    if (!next.length) setListOpen(false);
+    if (!next.length) setListSource(null);
   }
+  function reviewList(source: "toolbar" | "queue") {
+    const toolbar = source === "toolbar";
+    return (
+      <Popover
+        open={listSource === source && !!comments.length}
+        onOpenChange={(open) =>
+          setListSource((previous) => (open ? source : previous === source ? null : previous))
+        }
+      >
+        {toolbar ? (
+          <PopoverTrigger
+            render={<TooltipButton variant="ghost" size="icon-sm" tooltip="批注" />}
+            disabled={busy || !comments.length}
+            aria-label="批注"
+          >
+            <MessageSquareText className="size-4" />
+          </PopoverTrigger>
+        ) : (
+          <PopoverTrigger
+            openOnHover
+            delay={180}
+            closeDelay={160}
+            className="za-document-comment-count"
+            disabled={busy}
+            aria-label={`查看 ${comments.length} 条批注`}
+          >
+            这 {comments.length} 条批注
+          </PopoverTrigger>
+        )}
+        <PopoverContent
+          side={toolbar ? "bottom" : "top"}
+          align={toolbar ? "end" : "center"}
+          initialFocus={(type) => type === "keyboard"}
+          className="za-document-comment-list"
+          aria-label="批注列表"
+        >
+          <PopoverTitle className="sr-only">批注</PopoverTitle>
+          <ol>
+            {comments.map((item, itemIndex) => (
+              <li key={item.id} data-current={item.id === current?.id}>
+                <button
+                  type="button"
+                  className="za-document-comment-jump"
+                  disabled={busy}
+                  aria-label={`定位第 ${itemIndex + 1} 条批注，${documentRevisionLocation(item)}`}
+                  onClick={() => {
+                    setIndex(itemIndex);
+                    props.onNavigate(item.block, item);
+                    setListSource(null);
+                  }}
+                >
+                  <span className="za-document-comment-list-page">
+                    {documentRevisionLocation(item)}
+                  </span>
+                  {item.quote && <q>{item.quote}</q>}
+                  <span className="za-document-comment-list-text">{item.comment}</span>
+                </button>
+                <div className="za-document-comment-list-actions">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={busy}
+                    aria-label={`编辑第 ${itemIndex + 1} 条批注`}
+                    onClick={() => editItem(item)}
+                  >
+                    <SquarePen className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={busy}
+                    aria-label={`移除第 ${itemIndex + 1} 条批注`}
+                    onClick={() => removeItem(item)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+  const toolbarReview = props.toolbarTarget
+    ? createPortal(reviewList("toolbar"), props.toolbarTarget)
+    : null;
+  if (!props.enabled && !comments.length) return toolbarReview;
   return (
     <fieldset
       ref={floating.root}
@@ -316,10 +421,12 @@ export function ResourceDocumentComments(props: {
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
-          props.onSelection(null);
+          if (props.dismissSelectionRef) props.dismissSelectionRef.current?.();
+          else props.onSelection(null);
         }
       }}
     >
+      {toolbarReview}
       {selection && inputVisible ? (
         <form
           className="za-document-comment-input"
@@ -363,69 +470,7 @@ export function ResourceDocumentComments(props: {
           <GripVertical className="size-4" />
         </button>
         {comments.length ? (
-          <Popover open={listOpen} onOpenChange={setListOpen}>
-            <PopoverTrigger
-              openOnHover
-              delay={180}
-              closeDelay={160}
-              className="za-document-comment-count"
-              disabled={busy}
-              aria-label={`查看 ${comments.length} 条批注`}
-            >
-              这 {comments.length} 条批注
-            </PopoverTrigger>
-            <PopoverContent
-              side="top"
-              initialFocus={(type) => type === "keyboard"}
-              className="za-document-comment-list"
-              aria-label="批注列表"
-            >
-              <PopoverTitle className="sr-only">批注</PopoverTitle>
-              <ol>
-                {comments.map((item, itemIndex) => (
-                  <li key={item.id} data-current={item.id === current?.id}>
-                    <button
-                      type="button"
-                      className="za-document-comment-jump"
-                      disabled={busy}
-                      aria-label={`定位第 ${itemIndex + 1} 条批注，${documentRevisionLocation(item)}`}
-                      onClick={() => {
-                        setIndex(itemIndex);
-                        props.onNavigate(item.block, item);
-                        setListOpen(false);
-                      }}
-                    >
-                      <span className="za-document-comment-list-page">
-                        {documentRevisionLocation(item)}
-                      </span>
-                      {item.quote && <q>{item.quote}</q>}
-                      <span className="za-document-comment-list-text">{item.comment}</span>
-                    </button>
-                    <div className="za-document-comment-list-actions">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        disabled={busy}
-                        aria-label={`编辑第 ${itemIndex + 1} 条批注`}
-                        onClick={() => editItem(item)}
-                      >
-                        <SquarePen className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        disabled={busy}
-                        aria-label={`移除第 ${itemIndex + 1} 条批注`}
-                        onClick={() => removeItem(item)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </PopoverContent>
-          </Popover>
+          reviewList("queue")
         ) : (
           <span className="za-document-comment-count">选中内容并提出修改要求</span>
         )}

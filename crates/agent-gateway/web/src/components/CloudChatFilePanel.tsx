@@ -354,6 +354,7 @@ export function CloudChatFilePanel(props: Props) {
 
   return (
     <CloudChatResourcePanel
+      preserveOnEscape={!!selected && resourcePreviewKind(selected) === "pptx"}
       title={
         selected ? (
           <ResourceTitleMenu name={selected.name} triggerRef={titleMenu}>

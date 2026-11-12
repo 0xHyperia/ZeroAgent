@@ -197,9 +197,12 @@ async function handle(input: PreviewWorkerInput): Promise<PreviewWorkerResult> {
       throw new Error("此文件不是有效的 PPTX 演示文稿。");
     if (entries.filter((entry) => /^ppt\/slides\/slide\d+\.xml$/.test(entry.name)).length > 150)
       throw new Error("演示文稿超过 150 页，请下载原件查看。");
-    const { loadPresentation } = await import("@office-kit/pptx");
+    const { getSlides, isSlideHidden, loadPresentation } = await import("@office-kit/pptx");
     presentation = await loadPresentation(bytes);
-    return renderSlide(0, input.includeAnnotations);
+    const hiddenSlides = getSlides(presentation).flatMap((slide, index) =>
+      isSlideHidden(slide) ? [index + 1] : [],
+    );
+    return { ...(await renderSlide(0, input.includeAnnotations)), hiddenSlides };
   }
   const { read } = await import("xlsx");
   formatLimited =

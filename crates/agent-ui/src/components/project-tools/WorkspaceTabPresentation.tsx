@@ -405,6 +405,7 @@ function WorkspaceFileTabPane({
   }, [active, mode]);
   const editorHandle = useRef<WorkspaceFileEditorHandle>(null);
   const [formatTools, setFormatTools] = useState<HTMLDivElement | null>(null);
+  const isPresentation = getWorkspacePreviewKind(request.path) === "presentation";
   const [diffNavigation, setDiffNavigation] = useState<HTMLDivElement | null>(null);
   const [diffActions, setDiffActions] = useState<HTMLDivElement | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -489,7 +490,7 @@ function WorkspaceFileTabPane({
           onComparisonChange={resources.setComparison}
         />
       )}
-      {(canDiff || mode === "diff") && (
+      {((canDiff && !isPresentation) || mode === "diff") && (
         <TooltipButton
           type="button"
           variant="ghost"
@@ -541,6 +542,7 @@ function WorkspaceFileTabPane({
       viewAction={viewAction}
       comparisonActions={mode === "diff" && <div ref={setDiffActions} className="empty:hidden" />}
       fileTree={chrome.tree}
+      floating={isPresentation && mode === "preview"}
       setFormatTools={setFormatTools}
       onOpenFile={openRelatedFile}
       onError={options.onError}

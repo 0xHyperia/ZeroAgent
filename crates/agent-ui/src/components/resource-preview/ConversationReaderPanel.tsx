@@ -22,6 +22,7 @@ export type ConversationReaderPanelProps = {
   closeLabel?: string;
   tabbed?: boolean;
   tabbedToolbarTarget?: HTMLElement | null;
+  preserveOnEscape?: boolean;
   backToLibrary?: boolean;
   backLabel?: string;
   headerActions?: ReactNode;
@@ -55,6 +56,7 @@ export function ConversationReaderPanel(props: ConversationReaderPanelProps) {
   const [optionsTarget, setOptionsTarget] = useState<HTMLDivElement | null>(null);
   const [pageTarget, setPageTarget] = useState<HTMLDivElement | null>(null);
   const [fileMenu, setFileMenu] = useState<ReactNode>(null);
+  const escapeHandler = useRef<(() => boolean) | null>(null);
   const toolbarMount = useMemo(
     () => ({
       target: props.tabbed ? (props.tabbedToolbarTarget ?? null) : toolbarTarget,
@@ -65,6 +67,12 @@ export function ConversationReaderPanel(props: ConversationReaderPanelProps) {
       workspaceTab: props.tabbed,
       fileMenu,
       setFileMenu,
+      registerEscapeHandler(handler: () => boolean) {
+        escapeHandler.current = handler;
+        return () => {
+          if (escapeHandler.current === handler) escapeHandler.current = null;
+        };
+      },
     }),
     [
       toolbarTarget,
@@ -121,11 +129,13 @@ export function ConversationReaderPanel(props: ConversationReaderPanelProps) {
         data-workspace-tab-reader={props.tabbed ? "" : undefined}
         className={`cloud-resource-reader ${props.className ?? ""}`}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && !event.defaultPrevented) {
+          if (event.key === "Escape" && !event.defaultPrevented && !event.nativeEvent.isComposing) {
+            const consumed = escapeHandler.current?.();
+            if (!consumed && props.preserveOnEscape && props.tabbed) return;
             event.preventDefault();
             event.stopPropagation();
-            if (readerLayout?.expanded) readerLayout.toggleExpanded();
-            else props.onClose();
+            if (!consumed && readerLayout?.expanded) readerLayout.toggleExpanded();
+            else if (!consumed && !props.preserveOnEscape && !escapeHandler.current) props.onClose();
           }
         }}
       >

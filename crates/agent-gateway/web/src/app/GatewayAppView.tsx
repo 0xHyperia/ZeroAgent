@@ -1233,6 +1233,35 @@ export function GatewayAppView({
           isCurrentAgent,
           preserveComposerOnStart: true,
         });
+        const observer = revision.observeRun;
+        if (observer && !observer.signal.aborted && outcome && outcome.kind !== "failed") {
+          const canRead = () => isCurrentAgent() && revisionScopeRef.current === revisionScope;
+          const runId = outcome.kind === "accepted"
+            ? outcome.accepted.runId
+            : outcome.kind === "bound" || outcome.kind === "queued_in_gui"
+              ? outcome.update.runId
+              : undefined;
+          if (runId) {
+            const store = transcriptStoreRegistry.get(displayedConversationId);
+            observer.registerStop(() =>
+              canRead() && store.getTurn(runId)?.phase !== "settled" &&
+              api.cancelChat(displayedConversationId, runId),
+            );
+            const stop = () => {
+              unsubscribe();
+              observer.signal.removeEventListener("abort", stop);
+            };
+            const check = () => {
+              if (!canRead() || store.getTurn(runId)?.phase === "settled") {
+                stop();
+                observer.finish(canRead());
+              }
+            };
+            const unsubscribe = store.subscribe(check);
+            observer.signal.addEventListener("abort", stop, { once: true });
+            check();
+          } else observer.finish(canRead());
+        }
         return Boolean(outcome && outcome.kind !== "failed");
       },
     });

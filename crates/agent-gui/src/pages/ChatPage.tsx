@@ -1978,13 +1978,28 @@ function ChatPageContent(props: ChatPageProps) {
           false,
         ),
         send: (text, uploadedFiles) => new Promise<boolean>((resolve, reject) => {
+          let started = false;
+          const isCurrentView = () => revisionViewRef.current === view &&
+            currentConversationIdRef.current === conversationId;
+          const finish = () => {
+            if (started) revision.observeRun?.finish(isCurrentView());
+          };
           void sendActionRef.current({
             conversationIdOverride: conversationId,
             textOverride: text,
             uploadedFilesOverride: uploadedFiles,
             preserveComposerOnStart: true,
-            onRunStarted: () => resolve(true),
-          }).then(resolve, reject);
+            onRunStarted: (_turnId, isActive) => {
+              started = true;
+              revision.observeRun?.registerStop(() =>
+                isCurrentView() && isActive() && requestActiveConversationStop(conversationId, { force: false }),
+              );
+              resolve(true);
+            },
+          }).then(
+            (accepted) => { finish(); resolve(accepted); },
+            (error) => { finish(); reject(error); },
+          );
         }),
       });
     },

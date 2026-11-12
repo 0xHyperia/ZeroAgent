@@ -1260,7 +1260,9 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             </div>
           ) : null}
 
-          {workspace && <div ref={setFileHeaderTarget} className="z-10 shrink-0 empty:hidden" />}
+          {workspace && (
+            <div ref={setFileHeaderTarget} data-workspace-file-header-host="" className="z-10 shrink-0 empty:hidden" />
+          )}
           {filePicker && (
             <header className="za-workspace-file-header" data-workspace-file-picker-header="">
               <LabelTooltip

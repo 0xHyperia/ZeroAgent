@@ -696,6 +696,7 @@ export function CloudChatArtifactsPanel(props: Props) {
     );
   return (
     <CloudChatResourcePanel
+      preserveOnEscape={!!selected && !inspector && resourcePreviewKind(selected) === "pptx"}
       title={
         selected && inspector === "history" ? (
           <ReaderAction

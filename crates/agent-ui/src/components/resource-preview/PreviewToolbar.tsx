@@ -1,4 +1,12 @@
-import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useLocale } from "../../i18n";
 import { ChevronDown, ChevronRight } from "../IconSet";
@@ -152,33 +160,41 @@ export function PreviewZoomControl({
   value,
   onChange,
   maxPercent,
+  minPercent,
   actualPercent,
   gestures = true,
+  gestureRoot,
   fitPage = true,
   fitWidth = true,
+  windowFitLabel,
+  onZoomAnchor,
   percentages = [25, 50, 75, 100, 125, 150, 200, 300],
 }: {
   label: string;
   value: PreviewZoom;
   onChange: (value: PreviewZoom) => void;
   maxPercent?: number;
+  minPercent?: number;
   actualPercent?: number;
   /** Image canvases implement anchor-aware pan/pinch without a second gesture listener. */
   gestures?: boolean;
+  gestureRoot?: RefObject<HTMLElement | null>;
   fitPage?: boolean;
   fitWidth?: boolean;
+  windowFitLabel?: string;
+  onZoomAnchor?: (x: number, y: number) => void;
   percentages?: number[];
 }) {
   const { locale } = useLocale();
   const zh = locale === "zh-CN";
   const trigger = useRef<HTMLButtonElement>(null);
-  const latest = useRef({ value, actualPercent, onChange });
-  latest.current = { value, actualPercent, onChange };
+  const latest = useRef({ value, actualPercent, onChange, onZoomAnchor });
+  latest.current = { value, actualPercent, onChange, onZoomAnchor };
   useEffect(() => {
     if (!gestures) return;
-    const element = trigger.current?.closest<HTMLElement>(
-      "[data-cloud-resource-panel],.za-resource-preview",
-    );
+    const element =
+      gestureRoot?.current ??
+      trigger.current?.closest<HTMLElement>("[data-cloud-resource-panel],.za-resource-preview");
     if (!element || element.matches('[data-variant="thumbnail"]')) return;
     return bindReaderZoom(
       element,
@@ -189,26 +205,29 @@ export function PreviewZoomControl({
           : (snapshot.actualPercent ?? 100);
       },
       maxPercent ?? 400,
-      (next) => latest.current.onChange(next),
+      (next) => latest.current.onChange(next === "fit-width" && !fitWidth ? "fit-page" : next),
+      { minimum: minPercent, onAnchor: (x, y) => latest.current.onZoomAnchor?.(x, y) },
     );
-  }, [maxPercent, gestures]);
+  }, [maxPercent, minPercent, gestures, gestureRoot, fitWidth]);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={<button ref={trigger} type="button" className="za-preview-zoom-trigger" />}
         aria-label={label}
       >
-        {typeof value !== "number" && actualPercent !== undefined
-          ? `${Math.round(actualPercent)}%`
-          : typeof value === "number"
-            ? `${Math.round(Math.min(value, maxPercent ?? value) * 10) / 10}%`
-            : value === "fit-page"
-              ? zh
-                ? "适合窗口"
-                : "Fit to window"
-              : zh
-                ? "适合宽度"
-                : "Fit to width"}
+        {value === "fit-page" && windowFitLabel
+          ? windowFitLabel
+          : typeof value !== "number" && actualPercent !== undefined
+            ? `${Math.round(actualPercent)}%`
+            : typeof value === "number"
+              ? `${Math.round(Math.min(value, maxPercent ?? value) * 10) / 10}%`
+              : value === "fit-page"
+                ? zh
+                  ? "适合窗口"
+                  : "Fit to window"
+                : zh
+                  ? "适合宽度"
+                  : "Fit to width"}
         <ChevronDown className="size-3" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="za-preview-zoom-menu">
@@ -231,7 +250,7 @@ export function PreviewZoomControl({
           ) : null}
           {fitPage ? (
             <DropdownMenuRadioItem value="fit-page" closeOnClick>
-              {zh ? "缩放至适合窗口" : "Fit to window"}
+              {windowFitLabel ?? (zh ? "缩放至适合窗口" : "Fit to window")}
             </DropdownMenuRadioItem>
           ) : null}
         </DropdownMenuRadioGroup>
@@ -246,19 +265,24 @@ export function previewPageKey(
   page: number,
   count: number,
   onPage: (page: number) => void,
+  options?: { vertical?: boolean; descendants?: boolean },
 ) {
   if (
     event.defaultPrevented ||
-    event.target !== event.currentTarget ||
+    (!options?.descendants && event.target !== event.currentTarget) ||
     event.altKey ||
     event.ctrlKey ||
     event.metaKey
   )
     return;
   const target =
-    event.key === "ArrowRight" || event.key === "PageDown"
+    event.key === "ArrowRight" ||
+    event.key === "PageDown" ||
+    (options?.vertical && event.key === "ArrowDown")
       ? Math.min(count, page + 1)
-      : event.key === "ArrowLeft" || event.key === "PageUp"
+      : event.key === "ArrowLeft" ||
+          event.key === "PageUp" ||
+          (options?.vertical && event.key === "ArrowUp")
         ? Math.max(1, page - 1)
         : event.key === "Home"
           ? 1

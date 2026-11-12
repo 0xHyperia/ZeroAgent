@@ -140,6 +140,7 @@ export function WorkspaceFileReader(
             description={translate("workspaceFilePreview.title", locale)}
             closeLabel={translate("workspaceFilePreview.close", locale)}
             tabbed={props.tabbed}
+            preserveOnEscape={getWorkspacePreviewKind(openRequest?.path ?? "") === "presentation"}
             tabbedToolbarTarget={props.tabbedToolbarTarget}
             returnFocusTo={openRequest?.returnFocusTo}
             onClose={onRequestClose}

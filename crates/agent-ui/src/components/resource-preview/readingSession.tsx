@@ -83,7 +83,11 @@ function validCommentGeometry(item: DocumentRevisionComment) {
       (target.slideId !== undefined && !boundedText(target.slideId, 128)) ||
       (target.slideTitle !== undefined && !boundedText(target.slideTitle, 200)) ||
       (target.point !== undefined && !normalizedPoint(target.point)) ||
-      (target.elementOffset !== undefined && !normalizedPoint(target.elementOffset))
+      (target.elementOffset !== undefined && !normalizedPoint(target.elementOffset)) ||
+      (target.elementIds !== undefined &&
+        (!Array.isArray(target.elementIds) ||
+          target.elementIds.length > 20 ||
+          !target.elementIds.every((id) => boundedText(id, 64) && !!id)))
     )
       return false;
     const { element } = target;

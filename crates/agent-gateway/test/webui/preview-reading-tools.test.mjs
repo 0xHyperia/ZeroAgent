@@ -277,10 +277,16 @@ test("PPT rapid page jumps preserve only the newest result while navigation stay
   const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceSlidesPreview.tsx").default;
   await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),name:"演示.pptx",assertCurrent(){}}));await app.wait(()=>!!app.host.querySelector("img"));
   const canvas=app.host.querySelector(".za-preview-slide-scroll");canvas.focus();
+  const firstImage=canvas.querySelector("img");
+  const firstURL=firstImage.src;
   await app.key(canvas,"End");assert.equal(app.host.querySelector(".za-preview-slide-scroll"),canvas);assert.equal(document.activeElement,canvas);
-  await app.key(canvas,"ArrowLeft");assert.equal(document.activeElement,canvas);
+  assert.equal(canvas.querySelector("img"),firstImage);
+  assert.equal(firstImage.src,firstURL);
+  assert.equal(canvas.querySelector(".za-preview-loading"),null);
+  await app.key(canvas,"ArrowUp");assert.equal(document.activeElement,canvas);
   await app.env.act(async()=>{pending.get(2)();await flush();});await app.wait(()=>!!app.host.querySelector("img"));
   await app.env.act(async()=>{pending.get(3)();await flush();});assert.match(app.host.querySelector("img").alt,/第 2 页/);
+  await app.key(canvas,"ArrowLeft");assert.equal(canvas.querySelector("img").src,firstURL);
   await app.zoom("幻灯片缩放",300);
   assert.equal(parseFloat(app.host.querySelector("img").style.width),4096);assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"256%");
 });
@@ -305,39 +311,101 @@ test("read-only sheet snapshots restore a reopened immutable resource and retire
   await render("account-a");assert.equal(app.host.querySelector('.za-preview-sheets [aria-pressed="true"]').textContent,"预算");
 });
 
-test("slide grid, presentation keyboard and return share the selected page without reloading the original",async t=>{
+test("slide grid, presentation keyboard and return preserve the reader page and skip hidden slides",async t=>{
  const requests=[],svg=number=>`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text>${number}</text></svg>`;
- const app=await setup(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){requests.push(input);return {slideCount:3,svg:svg((input.index??0)+1)};}})}});
+ const app=await setup(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){requests.push(input);return {slideCount:4,hiddenSlides:[3],svg:svg((input.index??0)+1)};}})}});
+ const originalObserver=globalThis.IntersectionObserver;
+ globalThis.IntersectionObserver=class { observe(){} disconnect(){} };
+ t.after(()=>{globalThis.IntersectionObserver=originalObserver;});
  const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceSlidesPreview.tsx").default;
  await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),name:"deck.pptx",assertCurrent(){}}));
  await app.wait(()=>!!app.host.querySelector("img"));
+ await app.zoom("幻灯片缩放",75);
  await app.env.act(async()=>app.host.querySelector('button[aria-label="网格视图"]').click());
- assert.equal(app.host.querySelectorAll('.za-preview-slide-grid button').length,3);
- await app.env.act(async()=>{app.host.querySelector('button[aria-label="打开第 2 页"]').click();await flush();});
+ const grid=app.host.querySelector('.za-preview-slide-grid');
+ const gridPages=grid.querySelector('.za-preview-slide-grid-pages');
+ assert.equal(grid.querySelectorAll('button').length,4);
+ assert.equal(gridPages.style.gridTemplateColumns,"repeat(4, minmax(0, 1fr))");
+ const fitWidth=parseFloat(gridPages.style.width);
+ await app.zoom("幻灯片缩放",50);
+ assert.equal(parseFloat(gridPages.style.width),3380);
+ assert.ok(parseFloat(gridPages.style.width)>fitWidth);
+ await app.env.act(async()=>{app.host.querySelector('button[aria-label="幻灯片缩放"]').click();await flush();});
+ await app.env.act(async()=>{[...document.querySelectorAll('[role="menuitemradio"]')].find(el=>el.textContent==="适应网格").click();await flush();});
+ assert.equal(parseFloat(gridPages.style.width),fitWidth);
+ const tile=grid.querySelector('button[aria-label="选中第 2 页"]');
+ await app.env.act(async()=>{tile.click();await flush();});
+ assert.equal(tile.getAttribute("aria-pressed"),"true");
+ assert.equal(app.host.querySelector('.za-preview-slide-grid'),grid);
+ await app.key(tile,"Escape");
+ assert.equal(tile.getAttribute("aria-pressed"),"false");
+ assert.equal(app.host.querySelector('.za-preview-slide-grid'),grid);
+ await app.env.act(async()=>tile.click());
+ await app.env.act(async()=>{app.host.querySelector('button[aria-label="网格视图"]').click();await flush();});
  await app.wait(()=>/第 2 页/.test(app.host.querySelector('img')?.alt??""));
- await app.env.act(async()=>{app.host.querySelector('button[aria-label="演示"]').click();await flush();});
+ assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"75%");
+ const play=app.host.querySelector('button[aria-label="播放幻灯片"]');
+ play.focus();
+ await app.env.act(async()=>{play.click();await flush();});
  const dialog=document.querySelector('[role="dialog"]');assert.ok(dialog);
  await app.key(dialog,"ArrowRight");
- await app.wait(()=>/第 3 张/.test(document.querySelector('.za-slide-playback')?.textContent??""));
+ await app.wait(()=>/第 3 张，共 3 张/.test(document.querySelector('.za-slide-playback')?.textContent??""));
+ await app.key(dialog,"ArrowLeft");
+ await app.wait(()=>/第 2 张/.test(document.querySelector('.za-slide-playback')?.textContent??""));
  await app.env.act(async()=>{document.querySelector('button[aria-label="退出演示模式"]').click();await flush();});
  await app.wait(()=>document.querySelector('[role="dialog"]')===null);
  assert.equal(document.querySelector('[role="dialog"]'),null);
- assert.match(app.host.querySelector('img').alt,/第 3 页/);
+ assert.match(app.host.querySelector('img').alt,/第 2 页/);
  assert.equal(requests.filter(item=>item.type==="load").length,1);
+ assert.equal(requests.filter(item=>item.type==="slide"&&item.index===1).length,1);
+ assert.equal(requests.filter(item=>item.type==="slide"&&item.index===2).length,0);
 });
 
 
-test("format view menu mounts inside the actual file-title menu context",async t=>{
+test("presentation grid mounts next to zoom without modifying the filename menu",async t=>{
  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text x="20" y="40">页</text></svg>';
  const worker={dispose(){},async request(){return {slideCount:2,svg}}};
  const app=await setup(t,{"./previewWorkerClient":{createResourcePreviewWorker:()=>worker}}),h=app.env.React.createElement;
  const Slides=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceSlidesPreview.tsx").default;
  const {PreviewToolbarMount}=app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx"),{ResourceTitleMenu}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceReaderDetails.tsx");
- function Reader(){const [fileMenu,setFileMenu]=app.env.React.useState(null),[target,setTarget]=app.env.React.useState(null);const value=app.env.React.useMemo(()=>({target,fileMenu,setFileMenu}),[target,fileMenu]);return h(PreviewToolbarMount.Provider,{value},h(ResourceTitleMenu,{name:'演示.pptx'}),h('div',{ref:setTarget}),h(Slides,{bytes:new Uint8Array([1]),name:'演示.pptx',assertCurrent(){}}));}
- await app.render(h(Reader));await app.wait(()=>app.host.querySelector('[aria-label="文件菜单：演示.pptx"]'));
+ const bytes=new Uint8Array([1]),assertCurrent=()=>{};
+ function Reader(){const [fileMenu,setFileMenu]=app.env.React.useState(null),[target,setTarget]=app.env.React.useState(null);const value=app.env.React.useMemo(()=>({target,fileMenu,setFileMenu}),[target,fileMenu]);return h(PreviewToolbarMount.Provider,{value},h(ResourceTitleMenu,{name:'演示.pptx',onDownload(){}}),h('div',{ref:setTarget}),h(Slides,{bytes,name:'演示.pptx',assertCurrent}));}
+ await app.render(h(Reader));await app.wait(()=>!!app.host.querySelector('.za-preview-slide'));
  await app.env.act(async()=>{app.host.querySelector('[aria-label="文件菜单：演示.pptx"]').click();await flush();});
- const menu=document.querySelector('[role="menuitemcheckbox"]');assert.ok(menu);assert.match(menu.textContent,/网格视图/);
- await app.env.act(async()=>{menu.click();await flush();});assert.ok(app.host.querySelector('[aria-label="幻灯片网格"]'));
+ assert.equal(document.querySelector('[role="menuitemcheckbox"]'),null);
+ await app.key(document.activeElement,"Escape");
+ const grid=app.host.querySelector('.za-slide-view-controls button[aria-label="网格视图"]');
+ assert.ok(grid.parentElement.querySelector('button[aria-label="幻灯片缩放"]'));
+ await app.env.act(async()=>{grid.click();await flush();});assert.ok(app.host.querySelector('[aria-label="幻灯片网格"]'));
+ assert.equal(grid.getAttribute("aria-pressed"),"true");
+});
+
+test("Escape in a presentation tab preserves the file while loading and after closing the local selection", async (t) => {
+  const { env, host, render, key } = await setup(t);
+  const { createElement: h, useContext, useLayoutEffect } = env.React;
+  const { ConversationReaderPanel } = env.loadModule("@liveagent/ui/components/resource-preview/ConversationReaderPanel.tsx");
+  const { PreviewToolbarMount } = env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");
+  let closes = 0;
+  let selected = true;
+  function PresentationCanvas() {
+    const chrome = useContext(PreviewToolbarMount);
+    useLayoutEffect(() => chrome.registerEscapeHandler(() => {
+      const consumed = selected;
+      selected = false;
+      return consumed;
+    }), [chrome]);
+    return h("button", { type: "button" }, "幻灯片画布");
+  }
+  const panel = { tabbed: true, preserveOnEscape: true, title: "演示.pptx", onClose: () => closes++ };
+  await render(h(ConversationReaderPanel, panel, h("button", { type: "button" }, "重试")));
+  await key(host.querySelector("button"), "Escape");
+  assert.equal(closes, 0);
+  await render(h(ConversationReaderPanel, panel, h(PresentationCanvas)));
+  const canvas = host.querySelector("button");
+  await key(canvas, "Escape");
+  assert.equal(selected, false);
+  await key(canvas, "Escape");
+  assert.equal(closes, 0);
 });
 
 

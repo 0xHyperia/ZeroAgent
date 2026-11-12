@@ -187,7 +187,7 @@ test("compatible spreadsheet coordinates, zoom and worksheet switching use one r
 test("slides fit both pane dimensions and keep page navigation after zooming", async t => {
   const bytes=Buffer.from([0x50,0x4b,3,4]), created=[], revoked=[];
   const create=URL.createObjectURL,revoke=URL.revokeObjectURL;
-  const globals=new Map(["DOMParser","XMLSerializer"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  const globals=new Map(["DOMParser","XMLSerializer","IntersectionObserver"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   URL.createObjectURL=()=>{const url=`blob:slide-${created.length}`;created.push(url);return url;};
   URL.revokeObjectURL=url=>revoked.push(url);
   t.after(()=>{URL.createObjectURL=create;URL.revokeObjectURL=revoke;for(const [key,value] of globals){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}});
@@ -195,24 +195,27 @@ test("slides fit both pane dimensions and keep page navigation after zooming", a
     waitFor: host => Boolean(host.querySelector("img")),
     setup(env){
       globalThis.DOMParser=env.dom.window.DOMParser;globalThis.XMLSerializer=env.dom.window.XMLSerializer;
+      globalThis.IntersectionObserver=class { observe(){} disconnect(){} };
       Object.defineProperty(env.dom.window.HTMLElement.prototype,"clientWidth",{configurable:true,get(){return this.classList.contains("za-preview-slide-scroll")?640:0;}});
       Object.defineProperty(env.dom.window.HTMLElement.prototype,"clientHeight",{configurable:true,get(){return this.classList.contains("za-preview-slide-scroll")?300:0;}});
     },
     mocks:{"./previewWorkerClient":{createResourcePreviewWorker:()=>({dispose(){},async request(input){return {slideCount:2,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text x="20" y="40">第${input.index??0}页</text></svg>`};}})}},
   });
-  assert.ok(app.host.querySelector(".za-preview-frame-pending"),"decoded bytes retain feedback until the image has painted");
-  await app.env.act(async()=>app.host.querySelector("img").dispatchEvent(new Event("load")));
+  assert.equal(app.host.querySelector("img").dataset.ready,"true");
   assert.equal(app.host.querySelector(".za-preview-frame-pending"),null);
   const fittedWidth=parseFloat(app.host.querySelector("img").style.width);
-  assert.ok(Math.abs(fittedWidth-268*16/9)<0.01);
+  assert.ok(Math.abs(fittedWidth-300*16/9)<0.01);
   await chooseZoom(app,"幻灯片缩放","200%");
   assert.equal(parseFloat(app.host.querySelector("img").style.width),3200);
-  await app.env.act(async()=>{app.host.querySelector('button[aria-label="下一页"]').click();await flush();});
+  await app.env.act(async()=>{app.host.querySelector('.za-preview-slide-scroll').dispatchEvent(new window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));await flush();});
   assert.match(app.host.querySelector("img").alt,/第 2 页/);
-  assert.equal(app.host.querySelector('input[aria-label="页码"]').value,"2");
+  assert.equal(app.host.querySelector('[aria-current="page"]').getAttribute("aria-label"),"转到第 2 页");
   assert.equal(app.host.querySelector('button[aria-label="幻灯片缩放"]').textContent,"200%");
-  assert.equal(app.host.querySelector('button[aria-label="下一页"]').disabled,true);
-  assert.deepEqual(revoked,["blob:slide-0"]);
+  assert.ok(app.host.querySelector('.za-slide-view-controls [aria-label="播放幻灯片"]'));
+  assert.deepEqual(revoked,[],"page changes retain the decoded page for back navigation");
+  const textBytes=Buffer.from("new resource");
+  await app.render(descriptor(textBytes,{identity:"text:2",name:"next.txt",mime:"text/plain"}),async()=>({blob:new Blob([textBytes]),assertCurrent(){}}));
+  assert.deepEqual(revoked.sort(),["blob:slide-0","blob:slide-1"]);
 });
 
 test("cover read and image decode share the cover ring, while plain text covers skip reading the original", async t => {

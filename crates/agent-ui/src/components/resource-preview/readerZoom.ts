@@ -15,7 +15,12 @@ export function bindReaderZoom(
   percent: number | (() => number),
   maximum: number,
   change: (value: number | "fit-width") => void,
-  options: { capture?: boolean; readOnlyTextInput?: boolean; minimum?: number } = {},
+  options: {
+    capture?: boolean;
+    readOnlyTextInput?: boolean;
+    minimum?: number;
+    onAnchor?: (x: number, y: number) => void;
+  } = {},
 ) {
   const minimum = options.minimum ?? 25;
   const readPercent = () => (typeof percent === "function" ? percent() : percent);
@@ -41,12 +46,17 @@ export function bindReaderZoom(
   const move = (event: TouchEvent) => {
     if (event.touches.length !== 2 || !pinch || pinch.distance <= 0) return;
     event.preventDefault();
-    current =
+    const next =
       Math.round(
         Math.max(minimum, Math.min(maximum, (pinch.percent * distance(event)) / pinch.distance)) *
           10,
       ) / 10;
-    change(current);
+    if (next !== current) options.onAnchor?.(
+      (event.touches[0].clientX + event.touches[1].clientX) / 2,
+      (event.touches[0].clientY + event.touches[1].clientY) / 2,
+    );
+    current = next;
+    change(next);
   };
   const end = () => {
     pinch = null;
@@ -56,13 +66,15 @@ export function bindReaderZoom(
     event.preventDefault();
     event.stopPropagation();
     sync();
-    current = nextReaderZoom(
+    const next = nextReaderZoom(
       current,
       event.deltaY * (event.deltaMode === 1 ? 16 : 1),
       maximum,
       minimum,
     );
-    change(current);
+    if (next !== current) options.onAnchor?.(event.clientX, event.clientY);
+    current = next;
+    change(next);
   };
   const key = (event: KeyboardEvent) => {
     if (

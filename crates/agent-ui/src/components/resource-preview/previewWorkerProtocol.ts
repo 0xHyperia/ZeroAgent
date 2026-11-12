@@ -25,6 +25,7 @@ export type PreviewWorkerInput =
 export type PreviewWorkerResult = {
   entries?: PreviewArchiveEntry[];
   slideCount?: number;
+  hiddenSlides?: number[];
   svg?: string;
   slideRevision?: SlideRevisionMetadata;
   sheetNames?: string[];

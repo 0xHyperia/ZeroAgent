@@ -23,6 +23,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   RotateCwSquare,
+  Square,
   X,
 } from "@liveagent/ui/components/IconSet";
 import { RefreshButton } from "@liveagent/ui/components/ui/button";
@@ -114,6 +115,11 @@ export type WorkspaceDocumentRevision = {
   evidence?: readonly File[];
   workspacePath?: string;
   assertCurrent: () => void;
+  observeRun?: {
+    signal: AbortSignal;
+    registerStop: (stop: () => boolean | Promise<boolean>) => void;
+    finish: (canRead: boolean) => void;
+  };
 };
 
 export type WorkspaceFilePreviewOverlayProps = {
@@ -138,6 +144,12 @@ type LoadedPreview = ReadWorkspacePreviewResponse & {
   text: string | null;
   sha256: string;
 };
+
+async function previewSha256(bytes: ReturnType<typeof base64ToBytes>) {
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+    .map((part) => part.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 const FILE_PREVIEW_OVERLAY_ANIMATION_MS = 180;
 type ImagePreviewTransitionDirection = -1 | 0 | 1;
@@ -322,6 +334,16 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [revisionStatus, setRevisionStatus] = useState<"working" | "latest" | null>(null);
+  const [revisionStop, setRevisionStop] = useState<() => boolean | Promise<boolean>>();
+  const [stopState, setStopState] = useState<"stopping" | "failed" | null>(null);
+  const revisionWatch = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setRevisionStatus(null);
+    setRevisionStop(undefined);
+    setStopState(null);
+    return () => revisionWatch.current?.abort();
+  }, [openRequest, isOpen]);
 
   const replacePreview = useCallback((next: LoadedPreview | null) => {
     if (previewBlobUrlRef.current) {
@@ -374,6 +396,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
     async (
       request: WorkspaceFilePreviewOpenRequest,
       transitionDirection: ImagePreviewTransitionDirection = 0,
+      keepPrevious = false,
     ) => {
       const sequence = loadSequenceRef.current + 1;
       loadSequenceRef.current = sequence;
@@ -385,7 +408,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       setLoading(true);
       setError(null);
       setActiveRequest(request);
-      if (!keepCurrentImagePreview) {
+      if (!keepCurrentImagePreview && !keepPrevious) {
         replacePreview(null);
       }
       try {
@@ -402,9 +425,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         const bytes = base64ToBytes(response.data);
         // Native contentHash is a cache/version fingerprint, not SHA-256. Bind the
         // shared reader to exactly the bytes returned by the authorized FS bridge.
-        const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
-          .map((part) => part.toString(16).padStart(2, "0"))
-          .join("");
+        const sha256 = await previewSha256(bytes);
         if (loadSequenceRef.current !== sequence || !currentProps.current.isOpen) return;
         const kind = resolvePreviewKind(response.path || request.path, response.mimeType);
         const text = isTextPreviewKind(kind) ? decodePreviewText(bytes) : null;
@@ -428,9 +449,10 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           sha256,
         };
         replacePreview(loaded);
+        return true;
       } catch (loadError) {
         if (loadSequenceRef.current !== sequence) return;
-        if (!keepCurrentImagePreview) {
+        if (!keepCurrentImagePreview && !keepPrevious) {
           replacePreview(null);
         }
         setError(toMessage(loadError, t("workspaceFilePreview.openFailed")));
@@ -536,29 +558,82 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       (currentPreview.kind === "document" && /\.docx$/i.test(currentPreview.path)) ||
       (currentPreview.kind === "spreadsheet" && /\.xlsx$/i.test(currentPreview.path)) ||
       (currentPreview.kind === "presentation" && /\.pptx$/i.test(currentPreview.path)))
-      ? (comments: readonly DocumentRevisionComment[], evidence?: readonly File[]) => {
+      ? async (comments: readonly DocumentRevisionComment[], evidence?: readonly File[]) => {
           assertCurrent(currentPreview);
           // The FS bridge returns a project-relative logical path after a scoped read.
           const workdir = activePreviewRequest?.workdir ?? "";
           const workspacePath = activePreviewRequest?.stagedAttachment
             ? null
             : workspaceGitPathFromRoot(workdir, currentPreview.path);
-          return (
-            currentProps.current.onRequestRevision?.({
-              source: new File(
-                [bytesToArrayBuffer(currentPreview.bytes)],
-                basename(currentPreview.path),
-                { type: currentPreview.mimeType },
-              ),
-              comments,
-              evidence,
-              workspacePath:
-                workspacePath && workspaceGitRelativePath(workdir, workspacePath)
-                  ? workspacePath
-                  : undefined,
-              assertCurrent: () => assertCurrent(currentPreview),
-            }) ?? false
-          );
+          const authorizedPath =
+            workspacePath && workspaceGitRelativePath(workdir, workspacePath)
+              ? workspacePath
+              : undefined;
+          const watch = currentPreview.kind === "presentation" ? new AbortController() : null;
+          if (watch) {
+            revisionWatch.current?.abort();
+            revisionWatch.current = watch;
+            setRevisionStop(undefined);
+            setStopState(null);
+          }
+          const observeRun = watch
+            ? {
+                signal: watch.signal,
+                registerStop: (stop: () => boolean | Promise<boolean>) => {
+                  if (!watch.signal.aborted) setRevisionStop(() => stop);
+                },
+                finish: (canRead: boolean) => {
+                  if (watch.signal.aborted) return;
+                  void (async () => {
+                    let changed = false;
+                    try {
+                      assertCurrent(currentPreview);
+                      if (canRead && authorizedPath) {
+                        const response = await invokeFs<ReadWorkspacePreviewResponse>(
+                          "fs_read_workspace_image",
+                          {
+                            workdir,
+                            path: authorizedPath,
+                          },
+                        );
+                        assertCurrent(currentPreview);
+                        changed =
+                          (await previewSha256(base64ToBytes(response.data))) !==
+                          currentPreview.sha256;
+                      }
+                    } catch {
+                      // A disconnected or unauthorized reader cannot advertise a new version.
+                    }
+                    if (watch.signal.aborted) return;
+                    watch.abort();
+                    setRevisionStatus(changed ? "latest" : null);
+                  })();
+                },
+              }
+            : undefined;
+          try {
+            const accepted =
+              (await currentProps.current.onRequestRevision?.({
+                source: new File(
+                  [bytesToArrayBuffer(currentPreview.bytes)],
+                  basename(currentPreview.path),
+                  { type: currentPreview.mimeType },
+                ),
+                comments,
+                evidence,
+                workspacePath: authorizedPath,
+                assertCurrent: () => assertCurrent(currentPreview),
+                observeRun,
+              })) ?? false;
+            if (watch && !watch.signal.aborted) {
+              if (accepted) setRevisionStatus("working");
+              else watch.abort();
+            }
+            return accepted;
+          } catch (error) {
+            watch?.abort();
+            throw error;
+          }
         }
       : undefined;
   const previewBody = currentPreview && (
@@ -621,6 +696,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         description={t("workspaceFilePreview.title")}
         closeLabel={t("workspaceFilePreview.close")}
         tabbed={props.tabbed}
+        preserveOnEscape={kind === "presentation" || getWorkspacePreviewKind(activePath) === "presentation"}
         tabbedToolbarTarget={props.tabbedToolbarTarget}
         returnFocusTo={activePreviewRequest.returnFocusTo}
         headerActions={
@@ -658,6 +734,73 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
               </div>
             </PreviewIdentityContext.Provider>
           ) : null)}
+        {revisionStatus === "working" && (
+          <div className="za-reader-revision-status" data-state="working">
+            <span className="za-reader-revision-progress" role="status">
+              <span className="za-reader-revision-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              {stopState === "stopping"
+                ? locale === "zh-CN"
+                  ? "正在停止…"
+                  : "Stopping…"
+                : stopState === "failed"
+                  ? locale === "zh-CN"
+                    ? "未能停止修改"
+                    : "Could not stop editing"
+                  : locale === "zh-CN"
+                    ? "正在修改演示文稿…"
+                    : "Updating presentation…"}
+            </span>
+            {revisionStop && (
+              <TooltipButton
+                variant="ghost"
+                size="sm"
+                className="za-reader-revision-stop"
+                disabled={stopState === "stopping"}
+                aria-label={locale === "zh-CN" ? "停止修改演示文稿" : "Stop editing presentation"}
+                onClick={async () => {
+                  const watch = revisionWatch.current;
+                  setStopState("stopping");
+                  try {
+                    if (await revisionStop()) return;
+                  } catch {
+                    // Keep the request visible and allow another stop attempt.
+                  }
+                  if (watch && !watch.signal.aborted) setStopState("failed");
+                }}
+              >
+                <Square className="size-2.5 fill-current" />
+                {locale === "zh-CN" ? "停止" : "Stop"}
+              </TooltipButton>
+            )}
+          </div>
+        )}
+        {revisionStatus === "latest" && (
+          <div className="za-reader-revision-status" data-state="latest">
+            <TooltipButton
+              variant="ghost"
+              size="sm"
+              disabled={loading}
+              onClick={async () => {
+                if (await loadPreview(activePreviewRequest, 0, true)) setRevisionStatus(null);
+              }}
+            >
+              <RefreshCw className="size-3.5" />
+              {locale === "zh-CN" ? "查看最新" : "See latest changes"}
+            </TooltipButton>
+            <TooltipButton
+              variant="ghost"
+              size="icon-sm"
+              aria-label={locale === "zh-CN" ? "关闭更新提示" : "Dismiss latest changes"}
+              onClick={() => setRevisionStatus(null)}
+            >
+              <X className="size-3.5" />
+            </TooltipButton>
+          </div>
+        )}
       </ConversationReaderPanel>
     );
   }
