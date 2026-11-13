@@ -894,6 +894,7 @@ export function GatewayAppView({
     closeFileReader,
   });
   const conversationPaneHostContext: GatewayConversationPaneHostContext = {
+    mobileControls: compactDeviceHeader,
     api,
     registry: transcriptStoreRegistry,
     settings,
@@ -2397,6 +2398,7 @@ export function GatewayAppView({
                                 <ChatComposerBar
                                   focusImagePlacement
                                   presentation="column"
+                                  mobileControls={compactDeviceHeader}
                                   capabilities={DEVICE_COMPOSER_CAPABILITIES}
                                   overlayHeightOwnerRef={chatFrameRef}
                                   runClarifyTurn={

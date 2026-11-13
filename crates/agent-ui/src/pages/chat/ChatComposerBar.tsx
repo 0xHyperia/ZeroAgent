@@ -257,6 +257,8 @@ export type ChatComposerBarProps = {
   /** Upstream default only. Product hosts explicitly supply presentation. */
   surface?: "desktop" | "web";
   presentation?: ComposerPresentation;
+  /** The desktop remote host keeps desktop controls when its window narrows. */
+  mobileControls?: boolean;
   capabilities?: ComposerCapabilities;
   /** Web surface that owns the measured composer-height CSS variable. */
   overlayHeightOwnerRef?: RefObject<HTMLElement | null>;
@@ -576,8 +578,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const isComposerExpandedRef = useRef(false);
   const glassCardRef = useRef<HTMLDivElement | null>(null);
   const inlineLayout = props.layout === "inline" && !panePresentation && executionMode === "text";
-  const mobileComposer = useIsMobile() && !imageFocus && !panePresentation;
+  const mobileComposer = useIsMobile() && props.mobileControls !== false && !imageFocus && !panePresentation;
   const compactDeviceControls = mobileComposer && executionControls && !inlineLayout;
+  const desktopDeviceComposer = executionControls && !inlineLayout && !imageFocus && !mobileComposer;
   const singleLineInput = useInlineComposerLayout({
     enabled: inlineLayout && !imageFocus && !mobileComposer,
     expanded: Boolean(props.expandedInput) || isComposerExpanded,
@@ -1398,6 +1401,14 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       onConfirm={onManualCompactConfirm}
     />
   );
+  const commandSafetyControl = executionControls && commandSafetyMode && onCommandSafetyModeChange ? (
+    <CommandSafetyModeSelector
+      value={commandSafetyMode}
+      disabled={controlsDisabled || !isAgentMode}
+      mobileBlock={compactDeviceControls}
+      onChange={onCommandSafetyModeChange}
+    />
+  ) : null;
   const contextTray = props.contextBar ? (
     <div
       key="context-tray"
@@ -1420,6 +1431,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       data-composer-layout={inlineLayout ? "inline" : "standard"}
       data-mobile-composer={mobileComposer ? "" : undefined}
       data-composer-compact-device={compactDeviceControls ? "" : undefined}
+      data-desktop-device-composer={desktopDeviceComposer ? "" : undefined}
       data-image-focus-composer={imageFocus || undefined}
       data-composer-empty={composerIsEmpty ? "true" : "false"}
       className={cn(
@@ -2089,24 +2101,21 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     </button>
                   </RuntimeControlTooltip>
                 ) : null}
-                {imageFocus &&
-                executionControls &&
-                commandSafetyMode &&
-                onCommandSafetyModeChange ? (
-                  <CommandSafetyModeSelector
-                    value={commandSafetyMode}
-                    disabled={controlsDisabled || !isAgentMode}
-                    onChange={onCommandSafetyModeChange}
-                  />
-                ) : null}
-
+                {imageFocus ? commandSafetyControl : null}
                 {!imageFocus ? voiceControl : null}
+                {desktopDeviceComposer && (
+                  <div className="composer-device-runtime">
+                    {commandSafetyControl}
+                    {modelControls}
+                    {gitControls}
+                  </div>
+                )}
               </div>
 
               <div data-composer-trailing="" className="flex shrink-0 items-center gap-1">
                 {(inlineLayout && !mobileComposer) || imageFocus ? modelControls : null}
                 {imageFocus ? voiceControl : null}
-                {inlineLayout && !imageFocus ? contextRing : null}
+                {(inlineLayout && !imageFocus) || desktopDeviceComposer ? contextRing : null}
                 {!imageEdit && canQueueDraftWhileSending ? (
                   <Button
                     variant="ghost"
@@ -2189,7 +2198,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             </div>
           </div>
 
-          {(!inlineLayout && !imageFocus) || mobileComposer ? (
+          {(!inlineLayout && !imageFocus && !desktopDeviceComposer) || mobileComposer ? (
             <div
               className={cn(
                 "composer-control-deck relative z-0 flex min-h-9 shrink-0 items-center justify-between",
@@ -2198,15 +2207,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             >
               <div className="composer-control-deck-items flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
                 {mobileComposer ? contextTray : null}
-                {executionControls && commandSafetyMode && onCommandSafetyModeChange ? (
-                  <CommandSafetyModeSelector
-                    value={commandSafetyMode}
-                    disabled={controlsDisabled || !isAgentMode}
-                    mobileBlock={compactDeviceControls}
-                    onChange={onCommandSafetyModeChange}
-                  />
-                ) : null}
-
+                {commandSafetyControl}
                 {modelControls}
 
                 {!compactDeviceControls && gitControls}

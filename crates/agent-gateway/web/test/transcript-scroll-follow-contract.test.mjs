@@ -10,6 +10,11 @@ const paneHostSource = fs.readFileSync(
   new URL("../src/app/workbench/GatewayConversationPaneHost.tsx", import.meta.url),
   "utf8",
 );
+const gatewayStyles = fs.readFileSync(new URL("../src/index.css", import.meta.url), "utf8");
+const sharedTokens = fs.readFileSync(
+  new URL("../../../agent-ui/src/styles/tokens.css", import.meta.url),
+  "utf8",
+);
 
 // Both transcript surfaces attach to the bottom only at the physical clamp.
 // The engine's default 192px reattach zone pinned the viewport on the first
@@ -35,4 +40,13 @@ test("background panes share the follow engine instead of a hand-rolled 48px sna
   // wrote scrollTop on every row/revision change while "following".
   assert.doesNotMatch(paneHostSource, /scrollTop\s*=/);
   assert.doesNotMatch(paneHostSource, /nearBottom/);
+});
+
+test("the desktop device transcript spacer follows the composer and its floating controls", () => {
+  const desktopRule = gatewayStyles.match(/\.gateway-chat-frame:has\(\[data-desktop-device-composer\]\)\s*\{[^}]+\}/)?.[0];
+  assert.ok(desktopRule);
+  assert.match(desktopRule, /--gateway-transcript-bottom-minimum: 0px/);
+  assert.match(desktopRule, /--gateway-transcript-composer-reserve: var\(--gateway-chat-composer-clearance,/);
+  assert.match(sharedTokens, /var\(--gateway-transcript-bottom-minimum, 12rem\)/);
+  assert.match(sharedTokens, /calc\(var\(--gateway-transcript-composer-reserve,.*\+ var\(--spacing-18px\)\)/);
 });

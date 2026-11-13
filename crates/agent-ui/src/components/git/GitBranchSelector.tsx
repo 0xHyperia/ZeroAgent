@@ -1063,6 +1063,7 @@ export function GitBranchSelector(props: {
             />
           }
           title={visibleError || (!canWrite ? disabledMessage : "") || label}
+          aria-label={label}
         >
           {loading || mutating || initializing ? (
             <Loader2 className="size-4 shrink-0 animate-spin" />
@@ -1533,6 +1534,7 @@ export function GitBranchSelector(props: {
             (loading ? t("projectTools.loading") : noRepo ? label : "") ||
             t("git.branchSelector.worktreeDescription")
           }
+          aria-label={t("git.branchSelector.worktreeEntry")}
           onClick={openWorktreeModal}
         >
           <FolderTree className="size-3.5 shrink-0" />

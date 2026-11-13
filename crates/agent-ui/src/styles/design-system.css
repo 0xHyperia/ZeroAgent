@@ -212,6 +212,70 @@
   overflow-x: auto;
   scrollbar-width: none;
 }
+[data-desktop-device-composer] .composer-glass-card {
+  border-radius: 18px;
+}
+[data-desktop-device-composer] .composer-input-surface {
+  border-radius: inherit;
+}
+[data-desktop-device-composer] .composer-editor-field .mention-composer {
+  min-height: 46px;
+  line-height: 1.55;
+}
+[data-desktop-device-composer] .composer-actions-row {
+  gap: 6px;
+  padding: 2px 8px 6px;
+}
+[data-desktop-device-composer] [data-composer-leading] {
+  gap: 2px;
+}
+.composer-device-runtime {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.composer-device-runtime > * {
+  flex-shrink: 0;
+}
+[data-desktop-device-composer] :is(.composer-add-trigger, .composer-inline-model-trigger, .composer-inline-effort-trigger) {
+  height: 32px;
+}
+[data-desktop-device-composer] .composer-add-trigger {
+  width: 32px;
+}
+[data-desktop-device-composer] .composer-primary-key {
+  height: 34px;
+  min-width: 34px;
+}
+@container (max-width: 440px) {
+  [data-desktop-device-composer] .composer-editor-field .mention-composer.is-empty::before {
+    inset-inline: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .composer-device-runtime .composer-inline-model-trigger {
+    max-width: 112px;
+  }
+  .composer-device-runtime .composer-inline-effort-trigger {
+    min-width: 44px;
+    padding-inline: 4px;
+  }
+  .composer-device-runtime > .composer-model-trigger {
+    width: 28px;
+    min-width: 28px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .composer-device-runtime > .composer-model-trigger > :not(:first-child) {
+    display: none;
+  }
+}
 [data-composer-compact-device] :is(.composer-add-trigger, .composer-toolbar-action, .composer-primary-key) {
   min-inline-size: 44px;
   min-block-size: 44px;

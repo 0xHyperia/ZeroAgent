@@ -91,6 +91,10 @@ html[data-liveagent-webui="gateway"].dark {
   --status-violet: 169, 119, 255;
 }
 
+.gateway-chat-frame:has([data-desktop-device-composer]) {
+  --gateway-transcript-bottom-minimum: 0px;
+  --gateway-transcript-composer-reserve: var(--gateway-chat-composer-clearance, var(--gateway-chat-composer-overlay-height));
+}
 .gateway-chat-frame {
   --chat-transcript-content-width: var(--spacing-768px);
   --gateway-chat-column-gutter: var(--spacing-16px);

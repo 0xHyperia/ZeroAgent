@@ -101,12 +101,9 @@ test("upload stays leftmost before model controls in the composer toolbar", () =
   assert.match(composerSource, /<FolderOpen/);
   assert.doesNotMatch(composerSource, /chat\.upload\.filesAndFolders/);
   assert.match(composerSource, /<CommandSafetyModeSelector/);
-  assert.ok(
-    composerSource.indexOf("aria-label={addMenuTooltip}") <
-      composerSource.indexOf("<CommandSafetyModeSelector", composerSource.indexOf("composer-control-deck")),
-  );
+  assert.ok(composerSource.indexOf("aria-label={addMenuTooltip}") < composerSource.indexOf('className="composer-device-runtime"'));
   const standardDeck = composerSource.slice(composerSource.indexOf('"composer-control-deck'), composerSource.indexOf('{fileDropOverlay}'));
-  assert.ok(standardDeck.indexOf("<CommandSafetyModeSelector") < standardDeck.indexOf("{modelControls}"));
+  assert.match(standardDeck, /\{commandSafetyControl\}\s*\{modelControls\}/);
   assert.match(standardDeck, /\{modelControls\}[\s\S]*?\{!compactDeviceControls && gitControls\}/);
   assert.doesNotMatch(headerSource, /model-selector-trigger|Popover\.Root|currentModelLabel/);
 
@@ -132,14 +129,15 @@ test("compact composer controls remain equal-width centered icon buttons", () =>
   assert.match(composerControlStylesSource, /@max-\[480px\]:hidden/);
 });
 
-test("composer separates input actions from the stacked runtime control deck", () => {
+test("desktop devices group runtime controls and send in one row, leaving the mobile deck available", () => {
   assert.match(composerSource, /composer-input-surface/);
   assert.match(composerSource, /composer-control-deck/);
   assert.ok(
     composerSource.indexOf("composer-input-surface") <
       composerSource.indexOf("composer-control-deck"),
   );
-  assert.match(composerSource.slice(composerSource.indexOf("composer-control-deck")), /<CommandSafetyModeSelector/);
+  assert.match(composerSource, /\{desktopDeviceComposer && \(\s*<div className="composer-device-runtime">\s*\{commandSafetyControl\}\s*\{modelControls\}\s*\{gitControls\}/);
+  assert.match(composerSource, /\(!inlineLayout && !imageFocus && !desktopDeviceComposer\) \|\| mobileComposer/);
   assertJsxDimensions(composerSource, "ArrowUp", { width: "4", height: "4" });
   assert.doesNotMatch(composerSource, /<Send className=/);
 });
@@ -158,7 +156,7 @@ test("DeepSeek provider icon uses the logo-only mark", () => {
 
 
 test("Chat mode keeps the safety control slot stable when its host offers execution controls", () => {
-  assert.match(composerSource, /\{executionControls && commandSafetyMode && onCommandSafetyModeChange \? \(/);
+  assert.match(composerSource, /const commandSafetyControl = executionControls && commandSafetyMode && onCommandSafetyModeChange \? \(/);
   assert.match(composerSource, /disabled=\{controlsDisabled \|\| !isAgentMode\}/);
   assert.doesNotMatch(composerSource, /\{isAgentMode && commandSafetyMode &&/);
 });

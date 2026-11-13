@@ -96,7 +96,9 @@ test("the real inline composer retains its editor, selection and single model co
   props.isSending=false;props.isSubmissionDisabled=false;await render(true);assert.equal(host.querySelector('[data-composer-primary-action="send"]'),stop,'the same action button changes state');
   props.layout='standard';props.executionMode='tools';props.showGitControls=true;props.commandSafetyMode='auto';props.onCommandSafetyModeChange=noop;
   await render(false);
-  const deck=host.querySelector('.composer-control-deck');assert.ok(deck);
+  const deck=host.querySelector('[data-desktop-device-composer] .composer-device-runtime');assert.ok(deck);
+  assert.equal(host.querySelector('.composer-control-deck'),null);
+  assert.ok(deck.closest('.composer-actions-row').querySelector('[data-composer-primary-action]'));
   const safety=deck.querySelector('[data-safety]'),model=deck.querySelector('[data-model]'),git=deck.querySelector('[data-git]');
   assert.ok(safety);assert.ok(model);assert.ok(git);assert.ok(safety.compareDocumentPosition(model)&4);assert.ok(model.compareDocumentPosition(git)&4);
   assert.equal(host.querySelectorAll('[data-model]').length,1);assert.equal(sends,0);
@@ -105,6 +107,7 @@ test("the real inline composer retains its editor, selection and single model co
   const retainedEditor=host.querySelector('textarea'),retainedModelMounts=modelMounts;retainedEditor.focus();retainedEditor.setSelectionRange(1,3);
   props.presentation='pane';props.capabilities=DEVICE_COMPOSER_CAPABILITIES;
   await render(false);assert.equal(host.querySelector('textarea'),retainedEditor);
+  assert.equal(modelMounts,retainedModelMounts);
   props.presentation='column';props.capabilities=CLOUD_COMPOSER_CAPABILITIES;
   await render(false);
   assert.equal(host.querySelector('[data-safety]'),null,'cloud capabilities suppress device execution controls even if callbacks exist');
@@ -112,7 +115,7 @@ test("the real inline composer retains its editor, selection and single model co
   assert.equal(host.querySelector('textarea'),retainedEditor);assert.equal(retainedEditor.selectionStart,1);assert.equal(retainedEditor.selectionEnd,3);
   props.capabilities=DEVICE_COMPOSER_CAPABILITIES;
   await render(false);assert.ok(host.querySelector('[data-safety]'));assert.ok(host.querySelector('[data-git]'));
-  assert.equal(host.querySelector('textarea'),retainedEditor);assert.equal(mounts,1);assert.equal(modelMounts,retainedModelMounts);assert.equal(sends,0);
+  assert.equal(host.querySelector('textarea'),retainedEditor);assert.equal(mounts,1);assert.equal(host.querySelectorAll('[data-model]').length,1);assert.equal(sends,0);
 
   window.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
   props.layout='inline';props.executionMode='text';props.capabilities=CLOUD_COMPOSER_CAPABILITIES;

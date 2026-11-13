@@ -27,12 +27,16 @@ test("chat transcript uses one native viewport for scrolling and follow listener
 
 test("the transcript follow engine runs without a reattach zone", () => {
   // The 192px zone pinned the viewport on the first wheel tick that landed
-  // inside it (a 231px visible jump measured in the WebUI probe page). The
-  // constant still sizes the bottom reserve band, so the import stays.
+  // inside it (a 231px visible jump measured in the WebUI probe page).
   const call = source.match(/useScrollFollow\(\{[\s\S]*?\}\);/);
   assert.ok(call, "ChatTranscript wires the transcript follow engine");
   assert.match(call[0], /reattachZonePx:\s*0\b/);
-  assert.match(source, /Math\.max\(BOTTOM_REATTACH_ZONE_PX,/);
+});
+
+test("the transcript end clears the measured composer and its floating controls", () => {
+  assert.doesNotMatch(source, /BOTTOM_REATTACH_ZONE_PX/);
+  assert.match(source, /Math\.ceil\(bottomReservePx \+ floatingOverhangPx\) \+ 8/);
+  assert.match(source, /height: transcriptBottomReservePx/);
 });
 
 test("earlier-history rejection is handled before pagination cleanup", () => {

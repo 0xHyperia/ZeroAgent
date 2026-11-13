@@ -13,7 +13,6 @@ import {
   subscribeSearchJumpTarget,
 } from "@liveagent/ui/lib/chat/searchJumpTarget";
 import { buildFloorEntries } from "@liveagent/ui/lib/chat-floor-nav/floorModel";
-import { BOTTOM_REATTACH_ZONE_PX } from "@liveagent/ui/lib/chat-scroll/scrollFollowCore";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { isMacLikePlatform } from "@liveagent/ui/lib/transcript-find/transcriptFind";
@@ -86,11 +85,9 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
   const showNoModelsState = !hasModels && !pendingReply;
   const showStartChatState = hasModels && historyItems.length === 0 && !isSending && !pendingReply;
   const shouldReserveTranscriptBottomSpace = !(showNoModelsState || showStartChatState);
-  // The reserve minimum doubles as the scroll-follow reattach zone: stopping
-  // anywhere inside the reserve looks like "the bottom" to the user, so the
-  // zone must stay >= this minimum for scroll-back-to-bottom to re-stick.
+  // Leave 16px between the last row and the composer, including the transcript wrapper's 8px bottom padding.
   const transcriptBottomReservePx = shouldReserveTranscriptBottomSpace
-    ? Math.max(BOTTOM_REATTACH_ZONE_PX, Math.ceil(bottomReservePx) + 12)
+    ? Math.ceil(bottomReservePx + floatingOverhangPx) + 8
     : 0;
   // The native viewport arrives via a callback ref → state so scroll-follow
   // and the virtualizer re-bind on identity changes. Keeping the transcript
@@ -118,8 +115,7 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
     trackKeys: true,
     // 回贴区为 0：只有真正到达底部（8px 容差内）才恢复跟随。192px 回贴区会在
     // 滚轮下行进入该区间的那一 tick 直接 pin 到底，读者看到的是正文突然上跳；
-    // 到达底部后向下滚轮、手势落底、指针在底部释放仍会重新贴底。底部预留带
-    // 仍以 BOTTOM_REATTACH_ZONE_PX 为最小值（见 transcriptBottomReservePx）。
+    // 到达底部后向下滚轮、手势落底、指针在底部释放仍会重新贴底。
     config: { reattachZonePx: 0 },
   });
 
@@ -321,7 +317,7 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
             // transcript column gives that width back instead of widening the
             // reading measure. Keeps assistant text at its original width and
             // aligned with the composer, which is tuned off the same variable.
-            "mx-auto w-full max-w-transcript-web px-5 py-4 [overflow-anchor:none]",
+            "mx-auto w-full max-w-transcript-web px-5 pb-2 pt-4 [overflow-anchor:none]",
             // Empty states center against the scroll viewport (the pane), not
             // the window: a viewport-height min-height overflows half-height
             // panes in vertical splits and shifts the hero content.

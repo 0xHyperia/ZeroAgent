@@ -137,6 +137,7 @@ type ChatQueueSnapshotLike = Parameters<
  * 函数字段一律按 conversationId 显式路由,不依赖"当前展示会话"。
  */
 export type GatewayConversationPaneHostContext = {
+  mobileControls: boolean;
   api: GatewayWebSocketClient;
   registry: TranscriptStoreRegistry;
   settings: AppSettings;
@@ -1329,6 +1330,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
           <ChatComposerBar
             focusImagePlacement
             surface="web"
+            mobileControls={context.mobileControls}
             overlayHeightOwnerRef={chatFrameRef}
             runClarifyTurn={
               context.settings.customSettings.promptClarifyEnabled ? runClarifyTurn : undefined

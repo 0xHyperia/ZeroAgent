@@ -42,10 +42,8 @@
 // that boundary and can never re-attach at the physical clamp.
 export const BOTTOM_ATTACH_THRESHOLD_PX = 8;
 
-// Reserve-band minimum: ChatTranscript reserves max(192, composer height +
-// 12)px of blank space below the last message (the WebUI spacer mirrors it as
-// 12rem) so content clears the floating composer. It also sizes the default
-// reattach zone, but both transcript hosts now pass `reattachZonePx: 0`: a
+// Default reattach zone for callers without an explicit value. The transcript
+// hosts pass `reattachZonePx: 0`: a
 // gesture-latched arrival inside the zone pinned the viewport to the clamp in
 // one write, which reads as the page snapping up (231px measured in the WebUI
 // probe page). Attach happens at the physical clamp only; wheel-down at the
