@@ -25,6 +25,31 @@ html[data-zeroagent-keyboard="open"]
   height: var(--zeroagent-visual-viewport-height, 100dvh);
 }
 
+html[data-zeroagent-keyboard="open"] .project-tools-panel {
+  container: workspace-tools-sheet / size;
+}
+
+@container workspace-tools-sheet (max-height: 232px) {
+  .project-tools-panel-inner:has(
+    [data-workspace-tab-reader]:not([hidden], [hidden] *) .za-document-comment-editor
+  ) {
+    padding-top: max(
+      0px,
+      calc(var(--zeroagent-safe-area-top, 0px) - var(--zeroagent-visual-viewport-offset-top, 0px))
+    );
+    --za-comment-safe-left: var(--zeroagent-safe-area-left, 0px);
+    --za-comment-safe-right: var(--zeroagent-safe-area-right, 0px);
+
+    > :is(
+        [data-workspace-tools-handle],
+        [data-workspace-tools-header],
+        [data-workspace-file-header-host]
+      ) {
+      display: none;
+    }
+  }
+}
+
 /* Keep one complete result and its actions reachable over a landscape IME. */
 [data-right-workspace-tree][data-workspace-tree-compact-filter] {
   display: grid;

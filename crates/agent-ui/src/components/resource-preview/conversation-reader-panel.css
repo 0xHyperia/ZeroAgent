@@ -316,6 +316,18 @@
     display: none;
   }
 }
+html[data-zeroagent-keyboard="open"] .cloud-resource-reader:has(.za-document-comment-editor) {
+  container-type: size;
+}
+@container cloud-reader (max-height: 180px) {
+  html[data-zeroagent-keyboard="open"] .cloud-resource-reader:has(.za-document-comment-editor) {
+    > .cloud-reader-header,
+    .za-preview-toolbar,
+    :is(.za-sheet-formula-bar, .za-sheet-notice, .za-sheet-footer) {
+      display: none;
+    }
+  }
+}
 @container cloud-reader (max-width: 480px) {
   .cloud-reader-header {
     gap: 4px;

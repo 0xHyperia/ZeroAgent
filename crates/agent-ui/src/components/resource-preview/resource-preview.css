@@ -2452,8 +2452,12 @@
 .za-sheet-engine[data-sheet-comment-offscreen] .za-document-comment-editor {
   visibility: hidden;
 }
+html[data-zeroagent-keyboard="open"] .za-document-comments {
+  container: document-comment-area / size;
+}
 @media (pointer: coarse) {
-  html[data-zeroagent-keyboard="open"] .za-document-comments:has(> .za-document-comment-editor)
+  html[data-zeroagent-keyboard="open"]
+    .za-document-comments:has(> .za-document-comment-editor)
     > .za-document-comment-queue {
     display: none;
   }
@@ -2464,11 +2468,53 @@
     max-block-size: calc(100% - 16px);
     overflow: auto;
   }
-  html[data-zeroagent-keyboard="open"] .za-document-comment-editor[data-expanded="true"]
+  html[data-zeroagent-keyboard="open"]
+    .za-document-comment-editor[data-expanded="true"]
     .za-document-comment-body {
     min-block-size: var(--document-comment-line-height);
   }
   html[data-zeroagent-keyboard="open"] .za-document-comment-footer {
+    flex-shrink: 0;
+  }
+}
+@container document-comment-area (max-height: 200px) {
+  html[data-zeroagent-keyboard="open"] .za-document-comments > .za-document-comment-editor {
+    --document-comment-action-size: 44px;
+    visibility: visible;
+    inset: auto max(8px, var(--za-comment-safe-right, 0px)) 4px
+      max(8px, var(--za-comment-safe-left, 0px));
+    inline-size: auto;
+    margin-inline: auto;
+    max-inline-size: 640px;
+    max-block-size: calc(100% - 8px);
+    align-items: center;
+    flex-direction: row;
+    padding: 4px;
+    border-radius: 14px;
+    font-size: 16px;
+    overflow: hidden;
+  }
+  .za-document-comments:has(> .za-document-comment-editor) > .za-document-comment-queue {
+    display: none;
+  }
+  .za-document-comment-editor[data-expanded] > .za-document-comment-body {
+    display: block;
+    min-block-size: 44px;
+    block-size: 44px;
+    margin-inline: 5px;
+  }
+  .za-document-comment-editor[data-expanded] > .za-document-comment-body::before {
+    display: none;
+  }
+  .za-document-comment-editor[data-expanded] .za-document-comment-body textarea {
+    white-space: pre-wrap;
+    overflow-y: auto;
+  }
+  .za-document-comment-editor .za-document-comment-footer button {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+  .za-document-comment-editor > .za-document-comment-footer {
     flex-shrink: 0;
   }
 }

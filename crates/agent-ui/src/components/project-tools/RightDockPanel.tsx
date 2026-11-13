@@ -1114,6 +1114,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       >
         <div className="project-tools-panel-inner flex size-full min-h-0 flex-col">
           <div
+            data-workspace-tools-handle=""
             className={cn(
               "desktop:hidden web:hidden web:max-820:block web:max-820:w-36px web:max-820:h-4px web:max-820:flex-none web:max-820:self-center web:max-820:mt-8px",
               "web:max-820:rounded-full web:max-820:bg-muted-foreground/24",

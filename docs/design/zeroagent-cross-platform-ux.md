@@ -406,6 +406,16 @@ Android 15 开发模拟器验收云端、实际远程设备、底部模型弹层
 
 软键盘打开时，手机项目工具与文件树抽屉沿用同一可视视口的高度和顶部偏移。阅读器的批注输入和文件筛选继续在原抽屉内编辑，操作按钮及文件列表保持在键盘上方。系统返回收起键盘后恢复抽屉的全高，保留当前文件、批注和筛选。
 
+键盘上方空间很小时，正在编辑的批注优先占用阅读区域。文件标签与文件工具栏暂时收起，同一个输入框与添加或编辑操作并排，长文本在输入框内滚动。收起键盘后原工具栏和选区位置恢复，保留批注文本及已添加的批注。保存只更新当前批注，批量发送仍由用户操作。
+
+基于 `ff168329` 和同一工作树构建 Gateway 生产前端、Windows 本机前端与桌面远程模块。Edge 和 Playwright WebKit 在 863×304 与 390×430 CSS px 下，通过云端会话和浏览器远程设备打开 Word。模拟键盘上方仅剩 67 或 85px 时，长批注仍保持焦点并可滚动，44px 的输入及编辑操作均可用，保存后重开读到更新后的内容。隔离 Windows Debug 宿主加载同源前端，在 480×620 CSS px 的本机、浏览器远程及桌面远程验证同一会话、同一 Word 文件和 91px 的键盘上方空间，保留文件标签及会话草稿，并验证断线重连与撤销授权。记录位于 `.codex-artifacts/mobile-webui-goal/` 的 `comment-editor-{edge,webkit}-{cloud,device}-fixed.json` 和 `comment-editor-desktop-parity.json`。
+
+Android 15 模拟器的 Chrome 使用真实 Gboard 在 863×304 CSS px 横屏打开云端 Word。键盘上方约 67px 时，用触控新建和保存长批注，系统返回收起键盘后文本保留，重新编辑能读到保存后的内容。记录见 `.codex-artifacts/mobile-webui-goal/comment-editor-android-chrome-cloud.json`。
+
+基于 `ff168329` 和当前工作树构建 Android x64 Debug APK，用隔离账号、原生 WebView 和 Gboard 复验云端 Word 及远程 Windows 工作区的同一份文档。在 915×412 CSS px 横屏中，原生键盘占据 261px，键盘上方实际可用 151px。触控添加和保存后重开可读到更新，系统返回收起键盘并保留当前批注文本。远程入口也核对恢复文件工具栏、保留文件标签和会话草稿。记录见 `.codex-artifacts/mobile-webui-goal/comment-editor-android-native-{cloud,device}.json`。iOS Safari 实机仍待复验。
+
+Edge 在 390×430 CSS px 的云端会话分别打开 PDF、XLSX 和 PPTX。模拟 85px 可视高度和 14px 顶部偏移，从各自阅读器框选并添加批注，打开编辑时核对 44px 输入和操作的触控命中。表格在此高度暂时收起公式栏及工作表标签。保存后恢复工具栏，重新打开原批注读到更新内容。记录见 `.codex-artifacts/mobile-webui-goal/comment-editor-edge-{pdf,xlsx,pptx}-fixed.json`。
+
 Android 15 Chrome 和 Gboard 通过 Gateway 连接 Windows 被控端，在 863×304 CSS px 横屏中实测。键盘只留下 67px 时，原布局的匹配行位于可视区域外。采用并排布局后，筛选框、匹配行、行尾菜单和关闭按钮都从 6px 开始，占高 44px。直接点开图片、从行尾菜单选择预览、先按系统返回收起键盘再点开，均成功读取同一张图片并保留对话草稿。收起键盘时验证筛选词与原分组恢复。记录见 `.codex-artifacts/mobile-webui-goal/file-filter-short-*.json`。
 
 基于 `62103ecd` 和当前工作树构建 Gateway 生产前端、Windows 本机前端及桌面远程模块。使用 Windows Debug 宿主加载最新前端产物，在 480×620 CSS px 验证桌面本机、浏览器远程和桌面远程从同一隔离会话筛选并打开图片标签，关闭文件树后焦点离开筛选框，保留各自草稿。三处复验断线和重连后文件读取。撤销被控设备授权后，两处远程编辑器关闭，浏览器返回原云端草稿，本机草稿仍可继续编辑。浏览器另模拟 67px 可用高度和 16px 顶部偏移。记录见 `.codex-artifacts/mobile-webui-goal/file-filter-desktop-parity.json`。

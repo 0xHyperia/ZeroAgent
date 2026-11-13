@@ -40,6 +40,16 @@ html[data-zeroagent-platform="android"] .gateway-shell:not(.gateway-shell .gatew
   padding-top: var(--zeroagent-safe-area-top);
 }
 
+html[data-zeroagent-keyboard="open"]
+  .gateway-shell:not(.gateway-shell .gateway-shell):has(
+    .cloud-resource-workbench[data-reader-only="true"] .za-document-comment-editor
+  ) {
+  padding-top: max(
+    0px,
+    calc(var(--zeroagent-safe-area-top) - var(--zeroagent-visual-viewport-offset-top, 0px))
+  );
+}
+
 @media (pointer: coarse) {
   html:not([data-zeroagent-platform])[data-zeroagent-keyboard="open"] {
     --app-viewport-height: var(--zeroagent-visual-viewport-height, 100dvh);
