@@ -624,6 +624,43 @@
     min-height: 44px;
   }
 }
+@container cloud-reader (max-width: 480px) {
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "back title actions window"
+      "revision format format options";
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-back {
+    grid-area: back;
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-heading {
+    grid-area: title;
+    margin-inline-end: 0;
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-actions {
+    grid-area: actions;
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-window-actions {
+    grid-area: window;
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-leading-tools {
+    grid-area: revision;
+    margin-inline-end: 0;
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-format-tools {
+    grid-area: format;
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-options-tools {
+    grid-area: options;
+  }
+  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header
+    :is(.cloud-reader-heading, .cloud-reader-leading-tools, .cloud-reader-format-tools) button {
+    min-width: var(--za-touch-target);
+    min-height: var(--za-touch-target);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .cloud-reader-header button,
   .za-request-revision > svg {

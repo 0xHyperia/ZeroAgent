@@ -148,7 +148,7 @@ export const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentPro
           collisionPadding={collisionPadding}
           side={side}
           sideOffset={sideOffset}
-          className="layer-popover isolate data-[anchor-hidden]:invisible"
+          className="layer-popover isolate data-[anchor-hidden]:invisible data-[instant=focus]:pointer-events-none"
           style={zoneStyle}
         >
           <TooltipPrimitive.Popup

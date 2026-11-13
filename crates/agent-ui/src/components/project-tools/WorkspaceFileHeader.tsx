@@ -694,6 +694,7 @@ export function WorkspaceFileHeader({
   const activeRequest = useRef<WorkspaceFileRequest | null>(null);
   const [compact, setCompact] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [controlsPortal, setControlsPortal] = useState<HTMLElement | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [openWith, setOpenWith] = useState(false);
   const [editorTargets, setEditorTargets] = useState<string[]>([]);
@@ -739,6 +740,7 @@ export function WorkspaceFileHeader({
   useLayoutEffect(() => {
     const node = header.current;
     if (!active || !node) return;
+    setControlsPortal(node.closest<HTMLElement>('[data-slot="sheet-popup"]'));
     const apply = (width: number) => {
       if (!width) return;
       const next = width < FILE_TOOLBAR_COMPACT_WIDTH;
@@ -1076,6 +1078,7 @@ export function WorkspaceFileHeader({
             <PopoverContent
               keepMounted
               align="end"
+              portalContainer={controlsPortal ?? undefined}
               aria-label={formatLabel}
               className="za-workspace-compact-menu za-workspace-file-overflow"
             >

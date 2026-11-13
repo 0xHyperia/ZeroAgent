@@ -152,6 +152,7 @@ import {
   GATEWAY_MAIN_BACKDROP_CLASS,
   GATEWAY_MAIN_SHELL_CLASS,
   GATEWAY_SETTINGS_OVERLAY_CLASS,
+  GATEWAY_EMBEDDED_SHELL_CLASS,
   GATEWAY_SHELL_CLASS,
   GATEWAY_TRANSCRIPT_LATEST_BOTTOM,
   GATEWAY_TRANSCRIPT_SCROLL_CLASS,
@@ -1880,7 +1881,7 @@ export function GatewayAppView({
     <LocaleContext.Provider value={localeContextValue}>
       <Toaster />
       <AppErrorBoundary>
-        <div className={GATEWAY_SHELL_CLASS}>
+        <div className={desktopHost ? GATEWAY_EMBEDDED_SHELL_CLASS : GATEWAY_SHELL_CLASS}>
           <input
             ref={fileInputRef}
             type="file"

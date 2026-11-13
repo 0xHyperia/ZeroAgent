@@ -40,7 +40,9 @@ test("pointer hover observes the opening delay and leaving dismisses the hint", 
   });
   assert.equal(document.querySelector('[role="tooltip"]'), null);
   await app.env.act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
-  assert.match(document.querySelector('[role="tooltip"]').textContent, /设备/);
+  const tooltip = document.querySelector('[role="tooltip"]');
+  assert.match(tooltip.textContent, /设备/);
+  assert.notEqual(tooltip.parentElement.getAttribute("data-instant"), "focus");
   await app.env.act(async () => {
     button.dispatchEvent(new window.MouseEvent("mouseleave", { bubbles: false, relatedTarget: document.body, clientX: 500, clientY: 500 }));
     document.body.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 500, clientY: 500 }));
@@ -73,6 +75,8 @@ test("keyboard focus reveals label, description and shortcut through aria-descri
   assert.match(tooltip.textContent, /搜索会话.*Ctrl\+K.*查找已保存的对话/);
   assert.deepEqual(button.getAttribute("aria-describedby").split(/\s+/), ["existing-help", tooltip.id]);
   assert.ok(tooltip.classList.contains("app-tooltip-surface"));
+  assert.equal(tooltip.parentElement.getAttribute("data-instant"), "focus");
+  assert.ok(tooltip.parentElement.classList.contains("data-[instant=focus]:pointer-events-none"));
   await app.env.act(async () => {
     button.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await tick();
   });

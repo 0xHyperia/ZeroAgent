@@ -63,6 +63,7 @@ function mount(t) {
 
 test("file tools remain available in the compact header and keep their reader state", async (t) => {
   const { container, root } = mount(t);
+  container.dataset.slot = "sheet-popup";
   let resize;
   const previousObserver = globalThis.ResizeObserver;
   globalThis.ResizeObserver = class {
@@ -120,7 +121,9 @@ test("file tools remain available in the compact header and keep their reader st
   await act(async () => overflow.click());
   assert.equal(overflow.getAttribute("aria-expanded"), "true");
   assert.equal(pageButton()?.textContent, "Page 2");
-  assert.ok(pageButton().closest("[data-popover-content], [data-slot=popover-content]"));
+  const controls = pageButton().closest("[data-popover-content], [data-slot=popover-content]");
+  assert.ok(controls);
+  assert.ok(container.contains(controls), "compact tools stay in the full-width reader sheet");
   await act(async () => pageButton().click());
   await act(async () => pageButton().focus());
   await act(async () => resize(760));

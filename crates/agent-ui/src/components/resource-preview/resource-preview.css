@@ -1157,6 +1157,16 @@
   }
 }
 @media (pointer: coarse) {
+  .za-preview-slide-navigation > .za-preview-slide-rail-index {
+    inset-inline-start: 0;
+    width: var(--za-touch-target);
+    padding-inline-start: 8px;
+  }
+  .za-preview-rail-count > button,
+  .za-slide-playback button {
+    min-width: var(--za-touch-target);
+    min-height: var(--za-touch-target);
+  }
   .za-preview-toolbar button,
   .za-preview-toolbar select,
   .za-preview-toolbar input,

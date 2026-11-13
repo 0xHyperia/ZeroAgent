@@ -114,6 +114,7 @@ import {
   GATEWAY_CHAT_FRAME_CLASS,
   GATEWAY_MAIN_BACKDROP_CLASS,
   GATEWAY_MAIN_SHELL_CLASS,
+  GATEWAY_EMBEDDED_SHELL_CLASS,
   GATEWAY_SHELL_CLASS,
 } from "@/lib/webStyleClasses";
 import { AccountLoginPage } from "@/pages/AccountLoginPage";
@@ -3432,7 +3433,7 @@ function useGatewayAppController() {
     const zh = settings.locale === "zh-CN";
     return (
       <LocaleContext.Provider value={localeContextValue}>
-        <div className={GATEWAY_SHELL_CLASS}>
+        <div className={getDesktopRemoteHost() ? GATEWAY_EMBEDDED_SHELL_CLASS : GATEWAY_SHELL_CLASS}>
           <main className={GATEWAY_MAIN_SHELL_CLASS}>
             <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
             <div

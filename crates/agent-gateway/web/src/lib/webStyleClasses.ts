@@ -5,6 +5,9 @@
 export const GATEWAY_SHELL_CLASS =
   "gateway-shell relative flex w-full min-w-0 overflow-hidden bg-background text-foreground [height:var(--app-viewport-height)] [min-height:var(--app-viewport-height)] [&_button]:text-sm [&_button]:leading-1p2 [&_button]:font-normal";
 
+export const GATEWAY_EMBEDDED_SHELL_CLASS =
+  "gateway-shell relative flex size-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background text-foreground [&_button]:text-sm [&_button]:leading-1p2 [&_button]:font-normal";
+
 export const GATEWAY_MAIN_SHELL_CLASS =
   "gateway-main-shell relative flex h-full min-w-0 flex-1 flex-col items-stretch overflow-hidden max-820:size-full max-820:min-h-0 max-820:[&_[data-app-workbench-chrome]]:z-(--layer-raised) max-640:[&_[data-app-workbench-chrome]>header]:gap-6px max-640:[&_[data-app-workbench-chrome]>header]:px-10px max-640:[&_[data-app-workbench-chrome]>header]:py-8px max-380:[&_[data-app-workbench-chrome]>header]:px-8px";
 
