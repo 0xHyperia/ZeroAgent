@@ -1,4 +1,5 @@
-import { type RefObject, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
+import { usesMobileReturnKey } from "../../lib/chat/sendShortcut";
 import { Check, Trash2 } from "../IconSet";
 import { Button } from "../ui/button";
 import { TooltipButton } from "../ui/tooltip-button";
@@ -33,6 +34,7 @@ export function DocumentCommentEditor({
   const compactText = useRef<HTMLSpanElement>(null);
   const [wrapped, setWrapped] = useState(false);
   const expanded = editing || wrapped;
+  const mobileReturn = usesMobileReturnKey();
   useLayoutEffect(() => {
     const measure = compactText.current;
     if (!measure || editing) return;
@@ -52,11 +54,15 @@ export function DocumentCommentEditor({
       data-editing={editing}
       data-expanded={expanded}
       data-confirm-dismiss={confirmDismiss}
-      style={{
-        left: position?.x,
-        top: position?.y,
-        visibility: position === null ? "hidden" : undefined,
-      }}
+      data-anchor-hidden={position === null || undefined}
+      style={
+        position
+          ? ({
+              "--za-comment-editor-left": `${position.x}px`,
+              "--za-comment-editor-top": `${position.y}px`,
+            } as CSSProperties)
+          : undefined
+      }
       onSubmit={(event) => {
         event.preventDefault();
         if (canSave) onSave(false);
@@ -70,6 +76,7 @@ export function DocumentCommentEditor({
           ref={inputRef}
           aria-label="修改建议"
           placeholder="描述更改或提出问题"
+          enterKeyHint={mobileReturn ? "enter" : undefined}
           rows={1}
           maxLength={2000}
           value={value}
@@ -83,9 +90,13 @@ export function DocumentCommentEditor({
               event.altKey
             )
               return;
+            const send = event.ctrlKey || event.metaKey;
+            if (mobileReturn && !send) {
+              event.stopPropagation();
+              return;
+            }
             event.preventDefault();
             event.stopPropagation();
-            const send = event.ctrlKey || event.metaKey;
             if (!event.repeat && (send ? canSend : canSave)) onSave(send);
           }}
         />
@@ -114,7 +125,7 @@ export function DocumentCommentEditor({
           size="icon-sm"
           className="za-document-comment-add"
           tooltip="添加批注"
-          tooltipShortcut="Enter"
+          tooltipShortcut={mobileReturn ? undefined : "Enter"}
           disabled={!canSave}
           aria-label="添加批注"
         >

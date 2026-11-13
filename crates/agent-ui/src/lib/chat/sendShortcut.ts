@@ -12,15 +12,17 @@ export function readSendShortcut(): SendShortcut {
   }
 }
 
-/** Phone/tablet return keys insert paragraphs; viewport width never changes desktop shortcuts. */
+/** Viewport width does not change desktop input shortcuts. */
+export function usesMobileReturnKey() {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+  );
+}
+
 export function readComposerSendShortcut(): SendShortcut {
-  if (typeof navigator !== "undefined") {
-    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const tabletDesktopAgent =
-      /Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
-    if (mobile || tabletDesktopAgent) return "ctrlEnter";
-  }
-  return readSendShortcut();
+  return usesMobileReturnKey() ? "ctrlEnter" : readSendShortcut();
 }
 
 export function writeSendShortcut(shortcut: SendShortcut): void {

@@ -310,6 +310,12 @@
 .cloud-reader-compact-action {
   display: none;
 }
+@media (pointer: coarse) {
+  html[data-zeroagent-keyboard="open"] .cloud-resource-reader:has(.za-document-comment-editor)
+    > .cloud-reader-compact-action {
+    display: none;
+  }
+}
 @container cloud-reader (max-width: 480px) {
   .cloud-reader-header {
     gap: 4px;
@@ -434,7 +440,7 @@
 
 @container cloud-reader (max-width: 720px) {
   .cloud-reader-format-tools
-    :is(.za-request-revision, [aria-label="文档导航"], [aria-label="PDF 页面目录"]) {
+    :is([aria-label="文档导航"], [aria-label="PDF 页面目录"]) {
     display: none;
   }
   .cloud-reader-heading .za-reader-title-menu > .truncate {
@@ -607,7 +613,7 @@
     height: 44px;
     min-height: 44px;
   }
-  .cloud-reader-leading-tools:not(:has(.za-slide-revision-trigger)) {
+  .cloud-reader-leading-tools:empty {
     display: none;
   }
   .cloud-reader-heading {
@@ -624,38 +630,50 @@
     min-height: 44px;
   }
 }
-@container cloud-reader (max-width: 480px) {
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header {
+@container cloud-reader (max-width: 600px) {
+  .cloud-reader-header:has(.za-request-revision) {
+    position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     grid-template-areas:
       "back title actions window"
       "revision format format options";
+    background: var(--za-surface);
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-back {
+  .cloud-resource-reader:has(> .cloud-reader-header .za-request-revision) .za-reader-stage {
+    --za-reader-top-inset: 0px;
+  }
+  .cloud-reader-header:has(.za-request-revision) .cloud-reader-back {
     grid-area: back;
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-heading {
+  .cloud-reader-header:has(.za-request-revision) .cloud-reader-heading {
     grid-area: title;
     margin-inline-end: 0;
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-actions {
+  .cloud-reader-header:has(.za-request-revision) .cloud-reader-actions {
     grid-area: actions;
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-window-actions {
+  .cloud-reader-header:has(.za-request-revision) .cloud-reader-window-actions {
     grid-area: window;
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-leading-tools {
+  .cloud-reader-header:has(.za-request-revision) .cloud-reader-leading-tools {
     grid-area: revision;
     margin-inline-end: 0;
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-format-tools {
+  .cloud-reader-header .za-request-revision {
+    inline-size: var(--za-touch-target);
+    padding-inline: 0;
+  }
+  .cloud-reader-header .za-request-revision > span {
+    display: none;
+  }
+  .cloud-reader-header:has(.za-request-revision) .cloud-reader-format-tools {
     grid-area: format;
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header .cloud-reader-options-tools {
+  .cloud-reader-header:has(.za-request-revision) .cloud-reader-options-tools {
     grid-area: options;
   }
-  .cloud-resource-reader:has(.za-slide-view-controls) > .cloud-reader-header
+  .cloud-reader-header:has(.za-request-revision)
     :is(.cloud-reader-heading, .cloud-reader-leading-tools, .cloud-reader-format-tools) button {
     min-width: var(--za-touch-target);
     min-height: var(--za-touch-target);

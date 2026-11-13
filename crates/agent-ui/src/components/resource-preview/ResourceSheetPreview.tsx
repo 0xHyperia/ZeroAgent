@@ -622,12 +622,13 @@ function StyledSheet({
               size="sm"
               className="za-request-revision"
               data-active={annotating}
+              aria-label="请求修改"
               aria-pressed={annotating}
               disabled={busy || controller.activeTab?.kind !== "sheet"}
               onClick={() => changeAnnotationMode(!annotating)}
             >
-              <SquareMousePointer className="size-4" />
-              请求修改
+              <SquareMousePointer className="size-4" aria-hidden="true" />
+              <span>请求修改</span>
             </Button>
           )}
           {onRequestRevision && (

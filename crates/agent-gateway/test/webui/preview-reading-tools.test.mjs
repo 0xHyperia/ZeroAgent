@@ -36,6 +36,53 @@ test("document navigation keeps the hover path open, follows the active anchor a
  assert.equal(document.activeElement,rail);
 });
 
+test("annotation return inserts a newline on mobile and keeps desktop save and batch shortcuts", async (t) => {
+  const app = await setup(t);
+  const { React, act, loadModule } = app.env;
+  const { DocumentCommentEditor } = loadModule("@liveagent/ui/components/resource-preview/DocumentCommentEditor.tsx");
+  const testNavigator = navigator;
+  const userAgent = Object.getOwnPropertyDescriptor(testNavigator, "userAgent");
+  t.after(() => {
+    if (userAgent) Object.defineProperty(testNavigator, "userAgent", userAgent);
+    else Reflect.deleteProperty(testNavigator, "userAgent");
+  });
+  const saved = [];
+  const view = () => React.createElement(DocumentCommentEditor, {
+    formRef: React.createRef(),
+    inputRef: React.createRef(),
+    value: "Annotation draft",
+    editing: false,
+    canSave: true,
+    canSend: true,
+    confirmDismiss: false,
+    onChange() {},
+    onSave: (batch) => saved.push(batch),
+    onCancel() {},
+    onDelete() {},
+  });
+  const field = () => app.host.querySelector("textarea");
+  async function enter(init = {}) {
+    const event = new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...init });
+    await act(async () => field().dispatchEvent(event));
+    return event.defaultPrevented;
+  }
+
+  Object.defineProperty(testNavigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (Linux; Android 15)" });
+  await app.render(view());
+  assert.equal(field().getAttribute("enterkeyhint"), "enter");
+  assert.equal(await enter(), false);
+  assert.deepEqual(saved, []);
+  assert.equal(await enter({ ctrlKey: true }), true);
+  assert.deepEqual(saved, [true]);
+
+  Object.defineProperty(testNavigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (Windows NT 10.0)" });
+  await app.render(view());
+  assert.equal(field().hasAttribute("enterkeyhint"), false);
+  assert.equal(await enter({ shiftKey: true }), false);
+  assert.equal(await enter(), true);
+  assert.deepEqual(saved, [true, false]);
+});
+
 test("unsent region comments retain their anchors when cancelling discard and clear only after explicit discard",async t=>{
  const app=await setup(t),h=app.env.React.createElement;let choose;
  const {ResourceDocumentComments}=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourceDocumentComments.tsx");
@@ -511,6 +558,57 @@ test("presentation wheel accumulates vertical movement, ignores zoom gestures an
   assert.equal(nextReaderZoom(100, -50, 1600, 10, "camera"), 200);
   assert.equal(nextReaderZoom(100, -80, 800, 30, "pdf"), 100 * Math.exp(0.1));
   assert.equal(nextReaderZoom(100, -10, 400, 10, "document"), 100 * Math.exp(0.1));
+});
+
+test("presentation swipes turn one page and preserve taps, pinches and other reader interactions", async (t) => {
+  const app = await setup(t);
+  const { bindPresentationPageSwipe } = app.env.loadModule("@liveagent/ui/components/resource-preview/presentationViewport.ts");
+  const surface = app.host.appendChild(document.createElement("div"));
+  const browse = surface.appendChild(document.createElement("button"));
+  browse.dataset.slideAnnotationSurface = "browse";
+  const control = surface.appendChild(document.createElement("button"));
+  const pages = [];
+  let fits = true;
+  const cleanup = bindPresentationPageSwipe(surface, () => fits, (direction) => pages.push(direction));
+  t.after(cleanup);
+
+  function touch(target, type, positions, changed = positions, cancelable = true) {
+    const event = new window.Event(type, { bubbles: true, cancelable });
+    const points = (coords) => coords.map(([clientX, clientY], identifier) => ({ identifier, clientX, clientY }));
+    Object.defineProperties(event, {
+      touches: { value: points(positions) },
+      changedTouches: { value: points(changed) },
+    });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  function swipe(target, origin, finish) {
+    assert.equal(touch(target, "touchstart", [origin]), false);
+    assert.equal(touch(target, "touchmove", [finish]), false);
+    assert.equal(touch(target, "touchend", [], [finish]), false);
+  }
+
+  swipe(browse, [250, 100], [90, 101]);
+  swipe(browse, [90, 100], [250, 105]);
+  swipe(browse, [90, 100], [94, 102]);
+  swipe(browse, [90, 100], [105, 200]);
+  swipe(control, [90, 100], [250, 100]);
+  fits = false;
+  swipe(browse, [90, 100], [250, 100]);
+  fits = true;
+  touch(browse, "touchstart", [[90, 100]]);
+  touch(browse, "touchstart", [[90, 100], [190, 100]]);
+  assert.equal(touch(browse, "touchend", [], [[250, 100]]), false);
+  touch(browse, "touchstart", [[90, 100]]);
+  touch(browse, "touchcancel", []);
+  assert.equal(touch(browse, "touchend", [], [[250, 100]]), false);
+  touch(browse, "touchstart", [[250, 100]]);
+  assert.equal(touch(browse, "touchend", [], [[90, 100]], false), false);
+  const syntheticClick = new window.MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+  browse.dispatchEvent(syntheticClick);
+  assert.equal(syntheticClick.defaultPrevented, true);
+  assert.deepEqual(pages, [1, -1, 1]);
 });
 
 test("reader pinch survives React zoom updates and leaves ordinary touch scrolling alone",async t=>{

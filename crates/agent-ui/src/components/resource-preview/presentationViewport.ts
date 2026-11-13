@@ -113,6 +113,85 @@ export function bindPresentationPageWheel(
   return () => element.removeEventListener("wheel", wheel);
 }
 
+export function bindPresentationPageSwipe(
+  element: HTMLElement,
+  canSwipe: () => boolean,
+  advance: (direction: number) => void,
+) {
+  let start: { id: number; x: number; y: number } | null = null;
+  let lastSwipe = -Infinity;
+
+  function begin(event: TouchEvent) {
+    start = null;
+    lastSwipe = -Infinity;
+    const target = event.target;
+    if (
+      event.touches.length !== 1 ||
+      !canSwipe() ||
+      !(target instanceof Element) ||
+      target.closest(
+        "form,input,textarea,select,a,[role=menu],[data-slide-annotation-control],.za-slide-playback",
+      ) ||
+      target.closest("button:not([data-slide-annotation-surface=browse],.za-slide-advance)")
+    )
+      return;
+    const touch = event.touches[0];
+    start = { id: touch.identifier, x: touch.clientX, y: touch.clientY };
+  }
+
+  function move(event: TouchEvent) {
+    const touch = event.touches[0];
+    if (!start || event.touches.length !== 1 || touch.identifier !== start.id) {
+      start = null;
+      return;
+    }
+    const dx = Math.abs(touch.clientX - start.x);
+    const dy = Math.abs(touch.clientY - start.y);
+    if (dy > 12 && dy >= dx) start = null;
+  }
+
+  function end(event: TouchEvent) {
+    const origin = start;
+    start = null;
+    const touch = event.changedTouches[0];
+    if (!origin || touch?.identifier !== origin.id || !canSwipe() || event.defaultPrevented)
+      return;
+    const dx = touch.clientX - origin.x;
+    const dy = touch.clientY - origin.y;
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    lastSwipe = event.timeStamp;
+    advance(dx < 0 ? 1 : -1);
+  }
+
+  function cancel() {
+    start = null;
+  }
+
+  function click(event: MouseEvent) {
+    if (
+      !event.detail ||
+      ("pointerType" in event && event.pointerType === "mouse") ||
+      event.timeStamp - lastSwipe > 350
+    )
+      return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  element.addEventListener("touchstart", begin, { passive: true });
+  element.addEventListener("touchmove", move, { passive: true });
+  element.addEventListener("touchend", end, { passive: true });
+  element.addEventListener("touchcancel", cancel);
+  element.addEventListener("click", click, true);
+  return () => {
+    element.removeEventListener("touchstart", begin);
+    element.removeEventListener("touchmove", move);
+    element.removeEventListener("touchend", end);
+    element.removeEventListener("touchcancel", cancel);
+    element.removeEventListener("click", click, true);
+  };
+}
+
 export function usePresentationPlane(
   container: RefObject<HTMLDivElement | null>,
   viewport: Size,

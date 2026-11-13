@@ -25,6 +25,7 @@ import {
 } from "./PreviewToolbar";
 import {
   animatePresentationCamera,
+  bindPresentationPageSwipe,
   bindPresentationPageWheel,
   centerPresentationCamera,
   type PresentationCamera,
@@ -903,22 +904,24 @@ export default function ResourceSlidesPreview(
   );
   const nextSlide = playableSlides.find((number) => number > page);
   const previousSlide = playableSlides.filter((number) => number < page).at(-1);
-  const playbackWheel = useRef<(direction: number) => void>(() => {});
-  playbackWheel.current = (direction) => {
+  const playbackAdvance = useRef<(direction: number) => void>(() => {});
+  playbackAdvance.current = (direction) => {
     const target = direction > 0 ? nextSlide : previousSlide;
     if (target !== undefined) void navigate(target);
   };
-  const unbindPlaybackWheel = useRef<(() => void) | null>(null);
+  const unbindPlayback = useRef<(() => void) | null>(null);
   const attachPlaybackSurface = useCallback((element: HTMLDivElement | null) => {
-    unbindPlaybackWheel.current?.();
+    unbindPlayback.current?.();
+    unbindPlayback.current = null;
     presentationSurface.current = element;
-    unbindPlaybackWheel.current = element
-      ? bindPresentationPageWheel(
-          element,
-          () => true,
-          (direction) => playbackWheel.current(direction),
-        )
-      : null;
+    if (!element) return;
+    const advance = (direction: number) => playbackAdvance.current(direction);
+    const unbindWheel = bindPresentationPageWheel(element, () => true, advance);
+    const unbindSwipe = bindPresentationPageSwipe(element, () => true, advance);
+    unbindPlayback.current = () => {
+      unbindWheel();
+      unbindSwipe();
+    };
   }, []);
   const revealPlayback = useCallback(() => {
     clearTimeout(playbackTimeout.current);
@@ -1339,6 +1342,7 @@ export default function ResourceSlidesPreview(
           layout="lightbox"
           className="za-slide-presentation"
           data-controls-visible={playbackVisible}
+          data-slide-swipe=""
           onPointerMove={revealPlayback}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -1974,28 +1978,32 @@ function SlideImage({
         )
       : Math.max(0.1, Math.min(16, zoom / 100))
     : 1;
-  const wheelState = useRef({ image, page, count, onPage, scale });
-  wheelState.current = { image, page, count, onPage, scale };
+  const fullyVisible =
+    !!onPage &&
+    !!image &&
+    image.width * scale <= viewport.width + 0.5 &&
+    image.height * scale <= viewport.height + 0.5;
+  const canSwipe = fullyVisible && !annotation?.enabled && !annotation?.selection;
+  const navigation = useRef({ page, count, onPage, fullyVisible, canSwipe });
+  navigation.current = { page, count, onPage, fullyVisible, canSwipe };
   useLayoutEffect(() => {
     const element = container.current;
     if (!element) return;
-    return bindPresentationPageWheel(
+    const advance = (direction: number) => {
+      const state = navigation.current;
+      const target = state.page + direction;
+      if (target >= 1 && target <= state.count) state.onPage?.(target);
+    };
+    const unbindWheel = bindPresentationPageWheel(
       element,
-      () => {
-        const state = wheelState.current;
-        return (
-          !!state.onPage &&
-          !!state.image &&
-          state.image.width * state.scale <= element.clientWidth + 0.5 &&
-          state.image.height * state.scale <= element.clientHeight + 0.5
-        );
-      },
-      (direction) => {
-        const state = wheelState.current;
-        const target = state.page + direction;
-        if (target >= 1 && target <= state.count) state.onPage?.(target);
-      },
+      () => navigation.current.fullyVisible,
+      advance,
     );
+    const unbindSwipe = bindPresentationPageSwipe(element, () => navigation.current.canSwipe, advance);
+    return () => {
+      unbindWheel();
+      unbindSwipe();
+    };
   }, [container]);
   const plane = usePresentationPlane(
     container,
@@ -2014,6 +2022,7 @@ function SlideImage({
     <PreviewScrollArea
       ref={container}
       className="za-preview-slide-scroll"
+      data-slide-swipe={canSwipe ? "" : undefined}
       aria-label="幻灯片阅读画布"
       aria-busy={busy}
       tabIndex={presentation ? undefined : 0}

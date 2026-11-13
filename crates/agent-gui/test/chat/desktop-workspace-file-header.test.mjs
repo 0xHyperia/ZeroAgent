@@ -63,7 +63,9 @@ function mount(t) {
 
 test("file tools remain available in the compact header and keep their reader state", async (t) => {
   const { container, root } = mount(t);
-  container.dataset.slot = "sheet-popup";
+  const sheet = document.body.appendChild(document.createElement("div"));
+  sheet.dataset.slot = "sheet-popup";
+  t.after(() => sheet.remove());
   let resize;
   const previousObserver = globalThis.ResizeObserver;
   globalThis.ResizeObserver = class {
@@ -118,12 +120,13 @@ test("file tools remain available in the compact header and keep their reader st
   assert.ok(overflow);
   assert.equal(document.activeElement, overflow);
   assert.equal(overflow.hidden, false);
+  sheet.append(container);
   await act(async () => overflow.click());
   assert.equal(overflow.getAttribute("aria-expanded"), "true");
   assert.equal(pageButton()?.textContent, "Page 2");
   const controls = pageButton().closest("[data-popover-content], [data-slot=popover-content]");
   assert.ok(controls);
-  assert.ok(container.contains(controls), "compact tools stay in the full-width reader sheet");
+  assert.ok(sheet.contains(controls), "compact tools follow the reader into the full-width sheet");
   await act(async () => pageButton().click());
   await act(async () => pageButton().focus());
   await act(async () => resize(760));

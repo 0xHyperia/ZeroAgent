@@ -813,6 +813,7 @@ html,body{overflow:hidden;scrollbar-width:none}
 body{padding:0!important}
 .docx-wrapper{padding:var(--reader-content-inset,20px) 20px 20px!important}
 body[data-annotating]{cursor:${COMMENT_CURSOR};user-select:text}
+body[data-annotating] [data-reader-page]{touch-action:none}
 body[data-annotating] [data-reader-block]{position:relative;cursor:${COMMENT_CURSOR};outline:1px solid transparent;outline-offset:5px;border-radius:2px}
 body[data-annotating] [data-reader-block]:is(:hover,:focus-visible):not(:has([data-reader-block]:hover)){outline-color:#3478df}
 [data-reader-kind="image"]{display:inline-block;max-width:100%;line-height:0;position:relative}

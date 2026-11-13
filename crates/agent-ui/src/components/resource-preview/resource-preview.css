@@ -759,6 +759,9 @@
   inset: 0;
   cursor: pointer;
 }
+[data-slide-swipe] {
+  touch-action: pan-y pinch-zoom;
+}
 .za-slide-playback {
   position: absolute;
   inset-inline-start: 50%;
@@ -2069,6 +2072,8 @@
   --document-comment-action-size: 28px;
   --document-comment-line-height: 22px;
   position: absolute;
+  left: var(--za-comment-editor-left, auto);
+  top: var(--za-comment-editor-top, auto);
   z-index: 1;
   display: flex;
   align-items: center;
@@ -2082,6 +2087,9 @@
   font-size: 14px;
   line-height: var(--document-comment-line-height);
   animation: za-comment-enter 150ms ease-out;
+}
+.za-document-comment-editor[data-anchor-hidden] {
+  visibility: hidden;
 }
 .za-document-comment-editor[data-expanded="true"] {
   align-items: stretch;
@@ -2354,6 +2362,9 @@
 .za-sheet-engine[data-sheet-annotation-mode] [data-scroll-viewport] canvas {
   cursor: var(--za-sheet-comment-cursor);
 }
+.za-sheet-engine[data-sheet-annotation-mode] [data-scroll-viewport] {
+  touch-action: none;
+}
 .za-sheet-engine[data-sheet-own-selection] [data-xlsx-selection-overlay],
 .za-sheet-engine .za-sheet-navigation-highlight {
   visibility: hidden !important;
@@ -2435,11 +2446,31 @@
   }
 }
 .za-sheet-engine .za-document-comment-editor {
-  left: var(--za-sheet-comment-left, 12px);
-  top: var(--za-sheet-comment-top, 16px);
+  --za-comment-editor-left: var(--za-sheet-comment-left, 12px);
+  --za-comment-editor-top: var(--za-sheet-comment-top, 16px);
 }
 .za-sheet-engine[data-sheet-comment-offscreen] .za-document-comment-editor {
   visibility: hidden;
+}
+@media (pointer: coarse) {
+  html[data-zeroagent-keyboard="open"] .za-document-comments:has(> .za-document-comment-editor)
+    > .za-document-comment-queue {
+    display: none;
+  }
+  html[data-zeroagent-keyboard="open"] .za-document-comments > .za-document-comment-editor {
+    visibility: visible;
+    inset: auto 8px 8px;
+    margin-inline: auto;
+    max-block-size: calc(100% - 16px);
+    overflow: auto;
+  }
+  html[data-zeroagent-keyboard="open"] .za-document-comment-editor[data-expanded="true"]
+    .za-document-comment-body {
+    min-block-size: var(--document-comment-line-height);
+  }
+  html[data-zeroagent-keyboard="open"] .za-document-comment-footer {
+    flex-shrink: 0;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .za-sheet-range-action {

@@ -740,9 +740,9 @@ export function WorkspaceFileHeader({
   useLayoutEffect(() => {
     const node = header.current;
     if (!active || !node) return;
-    setControlsPortal(node.closest<HTMLElement>('[data-slot="sheet-popup"]'));
     const apply = (width: number) => {
       if (!width) return;
+      setControlsPortal(node.closest<HTMLElement>('[data-slot="sheet-popup"]'));
       const next = width < FILE_TOOLBAR_COMPACT_WIDTH;
       if (next === compactRef.current) return;
       const focused = node.ownerDocument.activeElement;
@@ -1060,7 +1060,14 @@ export function WorkspaceFileHeader({
       <div className="za-workspace-file-actions">
         {modeActions && <div className="za-workspace-file-mode-actions">{modeActions}</div>}
         {compact ? (
-          <Popover open={active && controlsOpen} onOpenChange={setControlsOpen}>
+          <Popover
+            open={active && controlsOpen}
+            onOpenChange={(open) => {
+              if (open)
+                setControlsPortal(header.current?.closest<HTMLElement>('[data-slot="sheet-popup"]') ?? null);
+              setControlsOpen(open);
+            }}
+          >
             <LabelTooltip
               label={formatLabel}
               side="bottom"

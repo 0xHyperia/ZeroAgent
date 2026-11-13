@@ -704,11 +704,12 @@ export default function ResourceDOCXPreview(props: ResourceDOCXPreviewProps) {
               size="sm"
               className="za-request-revision"
               data-active={annotating}
+              aria-label="请求修改"
               aria-pressed={annotating}
               onClick={toggleAnnotation}
             >
-              <SquareMousePointer className="size-4" />
-              请求修改
+              <SquareMousePointer className="size-4" aria-hidden="true" />
+              <span>请求修改</span>
             </Button>
           ) : null}
         </PreviewLeadingTools>
