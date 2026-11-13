@@ -8,6 +8,8 @@ import { Sheet, SheetContent, SheetTitle } from "../ui/sheet";
 
 export const DEFAULT_WORKSPACE_NAVIGATION_WIDTH = 250;
 const MINIMUM_WIDTH = 200;
+// The stacked header, filter, Git controls and one touch row need nearly 280px.
+const STACKED_FILE_TREE_MIN_HEIGHT = 288;
 
 export function workspaceNavigationWidth(width: number, containerWidth: number) {
   const maximum = Math.floor(containerWidth * 0.6);
@@ -20,7 +22,7 @@ export function WorkspaceNavigationSplit({
   onWidthChange,
   onClose,
 }: {
-  children: ReactNode;
+  children: (compactFilter: boolean) => ReactNode;
   width: number;
   onWidthChange: (width: number) => void;
   onClose: () => void;
@@ -31,7 +33,22 @@ export function WorkspaceNavigationSplit({
   const drag = useRef<{ pointer: number; startX: number; startWidth: number } | null>(null);
   const [parentWidth, setParentWidth] = useState(0);
   const [preview, setPreview] = useState<number | null>(null);
+  const [sheet, setSheet] = useState<HTMLDivElement | null>(null);
+  const [compactFilter, setCompactFilter] = useState(false);
   useLayoutEffect(() => {
+    if (!sheet) return;
+    const observer = new ResizeObserver(([{ contentRect }]) => {
+      setCompactFilter(
+        sheet.ownerDocument.documentElement.dataset.zeroagentKeyboard === "open" &&
+          contentRect.height < STACKED_FILE_TREE_MIN_HEIGHT,
+      );
+    });
+    observer.observe(sheet);
+    return () => observer.disconnect();
+  }, [sheet]);
+
+  useLayoutEffect(() => {
+    if (mobile) return;
     const parent = ref.current?.parentElement;
     if (!parent) return;
     const measure = () => setParentWidth(parent.getBoundingClientRect().width);
@@ -52,14 +69,19 @@ export function WorkspaceNavigationSplit({
         }}
       >
         <SheetContent
+          ref={setSheet}
           data-browser-back-surface=""
           data-right-workspace-tree=""
+          data-workspace-tree-compact-filter={compactFilter || undefined}
           className="w-full max-w-none border-0 p-0 pt-[var(--zeroagent-safe-area-top,0px)] pr-[var(--zeroagent-safe-area-right,0px)] pb-[var(--zeroagent-safe-area-bottom,0px)] pl-[var(--zeroagent-safe-area-left,0px)]"
           showCloseButton={false}
           aria-describedby={undefined}
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-border px-3">
-            <SheetTitle className="text-sm">{title}</SheetTitle>
+          <div
+            data-workspace-tree-header=""
+            className="flex shrink-0 items-center justify-between border-b border-border px-3"
+          >
+            <SheetTitle className={cn("text-sm", compactFilter && "sr-only")}>{title}</SheetTitle>
             <Button
               variant="ghost"
               size="icon"
@@ -70,7 +92,7 @@ export function WorkspaceNavigationSplit({
               <X className="size-4" />
             </Button>
           </div>
-          {children}
+          {children(compactFilter)}
         </SheetContent>
       </Sheet>
     );
@@ -86,7 +108,7 @@ export function WorkspaceNavigationSplit({
       className="relative flex min-h-0 max-w-[60%] shrink-0 flex-col border-l border-border bg-background"
       style={{ width: shown }}
     >
-      {children}
+      {children(false)}
       <hr
         tabIndex={0}
         aria-label={locale === "zh-CN" ? "调整文件树宽度" : "Resize file tree"}

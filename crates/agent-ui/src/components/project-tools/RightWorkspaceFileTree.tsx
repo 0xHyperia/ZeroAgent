@@ -26,6 +26,7 @@ import { useWorkspaceGitTurnRevision } from "./workspaceGitReviewState";
 
 type Props = {
   active: boolean;
+  compactFilter?: boolean;
   reviewOnly?: boolean;
   filterInputRef?: Ref<HTMLInputElement>;
   groups: { changes: boolean; files: boolean };
@@ -220,6 +221,7 @@ function changeRows(
 
 export function RightWorkspaceFileTree({
   active,
+  compactFilter = false,
   reviewOnly = false,
   filterInputRef,
   groups,
@@ -389,6 +391,7 @@ export function RightWorkspaceFileTree({
           all: "All files",
         };
   const showChanges = canReadGit && currentStatus?.state?.status !== "not_repo";
+  const filesExpanded = !reviewOnly && (compactFilter || filesOpen);
   const sectionRow = (section: "changes" | "files", expanded: boolean): FileTreeSectionRow => ({
     type: "section",
     key: `\0section:${section}`,
@@ -419,9 +422,14 @@ export function RightWorkspaceFileTree({
     ),
   });
   const changeSectionRows: FileTreeSectionRow[] = [];
-  if (showChanges) {
-    changeSectionRows.push(sectionRow("changes", changesOpen));
-    if (changesOpen && currentStatus && !currentStatus.error && changes.size > 0) {
+  if (showChanges && (!compactFilter || reviewOnly)) {
+    if (!compactFilter) changeSectionRows.push(sectionRow("changes", changesOpen));
+    if (
+      (compactFilter || changesOpen) &&
+      currentStatus &&
+      !currentStatus.error &&
+      changes.size > 0
+    ) {
       changeSectionRows.push(
         ...changeRows(
           changes,
@@ -443,7 +451,7 @@ export function RightWorkspaceFileTree({
           },
         ),
       );
-    } else if (changesOpen) {
+    } else if (compactFilter || changesOpen) {
       changeSectionRows.push({
         type: "section",
         key: "\0changed-notice",
@@ -476,15 +484,16 @@ export function RightWorkspaceFileTree({
       });
     }
   }
-  if (!reviewOnly) changeSectionRows.push(sectionRow("files", filesOpen));
+  if (!reviewOnly && !compactFilter) changeSectionRows.push(sectionRow("files", filesOpen));
 
   return (
     <aside
       aria-label={t("projectTools.fileTreeTitle")}
+      data-workspace-tree-body=""
       data-workspace-review-tree={reviewOnly || undefined}
       className="flex h-full min-h-0 min-w-0 flex-col bg-background text-[13px]"
     >
-      <div className="relative m-1.5 shrink-0">
+      <div data-workspace-tree-filter="" className="relative m-1.5 shrink-0">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={filterInputRef}
@@ -517,7 +526,7 @@ export function RightWorkspaceFileTree({
           </button>
         )}
       </div>
-      {showChanges && !reviewOnly && (
+      {showChanges && !reviewOnly && !compactFilter && (
         <button
           type="button"
           className={cn(
@@ -530,14 +539,15 @@ export function RightWorkspaceFileTree({
           {labels.review}
         </button>
       )}
-      <div className="min-h-0 flex-1">
+      <div data-workspace-tree-results="" className="min-h-0 flex-1">
         <FileTreePanel
-          active={active && !reviewOnly && filesOpen}
+          active={active && filesExpanded}
           workspaceSections={{
             rows: changeSectionRows,
-            filesExpanded: !reviewOnly && filesOpen,
+            filesExpanded,
             filesSelected: selectedSection === "files",
             onSelectFile: selectFileSection,
+            compactFilter,
           }}
         />
       </div>

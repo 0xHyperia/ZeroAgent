@@ -1428,33 +1428,36 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   onWidthChange={workspace.onTreeWidthChange}
                   onClose={workspace.onToggleTree}
                 >
-                  <RightWorkspaceFileTree
-                    key={workspaceViewScope}
-                    active={isOpen}
-                    reviewOnly={reviewTree}
-                    reviewRepository={
-                      reviewTree && comparison ? (currentReview?.repository ?? null) : undefined
-                    }
-                    reviewDiff={currentReview?.diff}
-                    reviewLoading={currentReview?.loading ?? true}
-                    reviewError={currentReview?.error}
-                    activeReviewPath={currentReview?.activePath}
-                    onRetryReview={currentReview?.retry}
-                    filterInputRef={filePicker ? fileFilterRef : undefined}
-                    groups={workspace.treeGroups}
-                    onToggleGroup={workspace.onToggleTreeGroup}
-                    comparison={workspace.comparison}
-                    conversationId={comparisonConversationId}
-                    onOpenReview={() => startToolTab("gitReview")}
-                    onOpenDiff={
-                      reviewTree
-                        ? (path) => {
-                            reviewFileJumpRef.current?.(path);
-                            closeCompactFileTree();
-                          }
-                        : openDiffFromTree
-                    }
-                  />
+                  {(compactFilter) => (
+                    <RightWorkspaceFileTree
+                      key={workspaceViewScope}
+                      active={isOpen}
+                      compactFilter={compactFilter}
+                      reviewOnly={reviewTree}
+                      reviewRepository={
+                        reviewTree && comparison ? (currentReview?.repository ?? null) : undefined
+                      }
+                      reviewDiff={currentReview?.diff}
+                      reviewLoading={currentReview?.loading ?? true}
+                      reviewError={currentReview?.error}
+                      activeReviewPath={currentReview?.activePath}
+                      onRetryReview={currentReview?.retry}
+                      filterInputRef={filePicker ? fileFilterRef : undefined}
+                      groups={workspace.treeGroups}
+                      onToggleGroup={workspace.onToggleTreeGroup}
+                      comparison={workspace.comparison}
+                      conversationId={comparisonConversationId}
+                      onOpenReview={() => startToolTab("gitReview")}
+                      onOpenDiff={
+                        reviewTree
+                          ? (path) => {
+                              reviewFileJumpRef.current?.(path);
+                              closeCompactFileTree();
+                            }
+                          : openDiffFromTree
+                      }
+                    />
+                  )}
                 </WorkspaceNavigationSplit>
               )}
           </div>

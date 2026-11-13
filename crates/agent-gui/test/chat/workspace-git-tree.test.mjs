@@ -276,7 +276,7 @@ test("the 250px workspace inspector uses one keyboard and scroll tree for both f
   container.style.width = "250px";
   const opened = [];
   const git = { status: async () => gitStatus("src/nested/report.md", "src/main.ts") };
-  function Inspector() {
+  function Inspector({ compactFilter }) {
     const [groups, setGroups] = React.useState({ changes: true, files: true });
     const [state, setState] = React.useState({
       query: "",
@@ -300,6 +300,7 @@ test("the 250px workspace inspector uses one keyboard and scroll tree for both f
       { value: context },
       React.createElement(RightWorkspaceFileTree, {
         active: true,
+        compactFilter,
         groups,
         onToggleGroup: (group) => setGroups((value) => ({ ...value, [group]: !value[group] })),
         onOpenReview() {},
@@ -358,6 +359,21 @@ test("the 250px workspace inspector uses one keyboard and scroll tree for both f
   await click(filteredFolders[1], "click", 0);
   assert.equal(reports().length, 2);
   assert.ok(!tree.querySelector('[title="main.ts"]'));
+
+  await click(sections[1], "click", 0);
+  assert.equal(sections[1].getAttribute("aria-expanded"), "false");
+  await act(async () => root.render(React.createElement(Inspector, { compactFilter: true })));
+  await waitForUpdate();
+  assert.equal(container.querySelector("input"), filter);
+  assert.equal(filter.value, "report");
+  assert.equal(tree.querySelectorAll("[data-workspace-tree-section]").length, 0);
+  assert.equal(reports().length, 1);
+  await click(reports()[0], "click", 0);
+  assert.deepEqual(opened.at(-1), ["file", "nested/report.md", true]);
+
+  await act(async () => root.render(React.createElement(Inspector)));
+  assert.equal(filter.value, "report");
+  assert.equal(tree.querySelector('[data-workspace-tree-section="files"]').getAttribute("aria-expanded"), "false");
 });
 
 test("file diff uses repository-relative paths and never loads a sibling of the workspace", async (t) => {

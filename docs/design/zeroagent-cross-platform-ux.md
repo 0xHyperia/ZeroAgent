@@ -406,6 +406,34 @@ Android 15 开发模拟器验收云端、实际远程设备、底部模型弹层
 
 软键盘打开时，手机项目工具与文件树抽屉沿用同一可视视口的高度和顶部偏移。阅读器的批注输入和文件筛选继续在原抽屉内编辑，操作按钮及文件列表保持在键盘上方。系统返回收起键盘后恢复抽屉的全高，保留当前文件、批注和筛选。
 
+Android 15 Chrome 和 Gboard 通过 Gateway 连接 Windows 被控端，在 863×304 CSS px 横屏中实测。键盘只留下 67px 时，原布局的匹配行位于可视区域外。采用并排布局后，筛选框、匹配行、行尾菜单和关闭按钮都从 6px 开始，占高 44px。直接点开图片、从行尾菜单选择预览、先按系统返回收起键盘再点开，均成功读取同一张图片并保留对话草稿。收起键盘时验证筛选词与原分组恢复。记录见 `.codex-artifacts/mobile-webui-goal/file-filter-short-*.json`。
+
+基于 `62103ecd` 和当前工作树构建 Gateway 生产前端、Windows 本机前端及桌面远程模块。使用 Windows Debug 宿主加载最新前端产物，在 480×620 CSS px 验证桌面本机、浏览器远程和桌面远程从同一隔离会话筛选并打开图片标签，关闭文件树后焦点离开筛选框，保留各自草稿。三处复验断线和重连后文件读取。撤销被控设备授权后，两处远程编辑器关闭，浏览器返回原云端草稿，本机草稿仍可继续编辑。浏览器另模拟 67px 可用高度和 16px 顶部偏移。记录见 `.codex-artifacts/mobile-webui-goal/file-filter-desktop-parity.json`。
+
+Android 15 x64 Debug APK 在隔离模拟器用户中，以原生 WebView 和 Gateway 桥连接同一 Windows 设备。在 915×412 CSS px 横屏使用 Gboard，键盘上方可用高度为 151px，44px 的匹配行和操作按钮底边为 78px。直接点开及按系统返回后点开都能读取图片并保留草稿。系统返回恢复文件树分组和查询。记录见 `.codex-artifacts/mobile-webui-goal/file-filter-native-*.json`。本轮尚未复验 iOS Safari 和实体设备。
+
+同一 Android 模拟器用 Chrome、Gboard 和实际 Windows 设备验证文件树新建与重命名。键盘上方只有 67px 时，原来的空名称提示从约 67px 开始，完全不可见。修改后输入、确认和取消各高 44px，空名称及同名冲突提示均位于可视范围，且冲突后保留已输入的名称。实测点击取消恢复原筛选，点击确认可新建文件和文件夹，并能在同名冲突后更正并完成重命名。记录见 `.codex-artifacts/mobile-webui-goal/file-mutation-chrome-*.json`。
+
+基于 `62103ecd` 和当前工作树构建 Gateway 生产前端、Windows 本机前端和桌面远程模块，使用隔离 Windows Debug 宿主加载前端产物。在 480×620 CSS px 的三个设备入口，用同一会话和图片复验空名称提示与输入框关联、Esc 取消并保留筛选、文件标签及草稿，以及断线重连和撤销授权。两处远程编辑器在撤销后关闭，浏览器恢复原云端草稿。记录见 `.codex-artifacts/mobile-webui-goal/file-mutation-desktop-parity.json`。
+
+Playwright WebKit 用同一 Windows 设备复验生产 WebUI，在 863×304 模拟 67px 可视高度，在 390×430 模拟 85px 可视高度和 14px 顶部偏移。两种布局均保留名称框焦点、错误描述关联和 44px 确认按钮，Esc 取消后筛选和草稿保留。记录见 `.codex-artifacts/mobile-webui-goal/file-mutation-webkit.json`。实体设备和 iOS Safari 尚待复验。
+
+由同一源码构建的 Android 15 x64 Debug APK 使用原生 WebView、Gboard 和 Gateway 桥连接同一 Windows 设备。915×412 横屏下软键盘上方实际可用 151px，名称框及确认、取消按钮底边为 78px，空名称及同名提示底边为 64px。两类错误都保留输入焦点，点按取消恢复查询，点按确认后新文件和文件夹出现在列表，重命名可在冲突后更正并成功。记录见 `.codex-artifacts/mobile-webui-goal/file-mutation-native-fixed.json`。
+
+Android 原生系统返回在同名冲突时先收起 Gboard，文件树恢复全高，名称、错误与输入框焦点继续保留，重新打开键盘后可以更正并确认。点按文件菜单的删除操作会收起键盘，确认框内取消与删除均高 44px。取消保留文件和查询，第二次点按确认后测试文件从列表及实际工作区消失。记录见 `.codex-artifacts/mobile-webui-goal/file-mutation-native-back-fixed.json`。
+
+共享确认框按软键盘上方的可视范围布局，并避开安全区。短横屏中，标题和说明在左侧独立滚动，取消、确认和关闭在右侧保持可操作。窄屏保留上下顺序和固定操作区。取消、关闭和返回继续按原有流程处理，打开确认框时的会话、文件与草稿状态由原入口管理。
+
+文件删除确认取消后，焦点回到打开菜单的行尾按钮或右键所在的文件行。原行在虚拟列表中卸载时，焦点留在文件树中。点按取消、关闭按钮、Esc 和系统返回都沿用同一回焦逻辑。确认删除后不向已移除的行移交焦点。
+
+Edge 和 Playwright WebKit 通过生产 Gateway 连接同一 Windows 设备，在 863×304 和 390×430 CSS px 下复验点按取消与 Esc，焦点回到打开确认的行尾按钮。以同一工作树构建的前端加载到隔离 Windows Debug 宿主，在 480×620 CSS px 下复验本机、浏览器远程和桌面远程，三处均回焦到右键打开菜单的文件行，保留文件标签及草稿，并复验断线重连和授权撤销。记录见 `.codex-artifacts/mobile-webui-goal/confirmation-focus-*.json`。
+
+Edge 和 Playwright WebKit 使用生产 Gateway 前端，从云端会话选项与真实 Windows 设备文件树分别打开删除确认。模拟 320、390 和 863 CSS px 宽度、67 至 119px 可视高度及非零顶部偏移。短横屏的三枚 44px 按钮底边由原来的 113 至 239px 收到 80px 以内，说明区可独立滚动，弹窗保留焦点，点按取消后原草稿保留。验收未执行删除。记录见 `.codex-artifacts/mobile-webui-goal/confirmation-viewport-*-fixed.json`。
+
+基于 `62103ecd` 和同一工作树构建 Windows 本机前端、桌面远程模块和 Gateway 生产前端。在隔离 Windows Debug 宿主和浏览器中，以 480×620 CSS px 打开同一设备会话及图片，在模拟 75px 可视高度下复验三处确认框的取消、文件筛选、文件标签、焦点及草稿。三个入口随后通过断线重连和撤销授权复验，浏览器返回原云端草稿。记录见 `.codex-artifacts/mobile-webui-goal/confirmation-viewport-desktop-parity.json`。
+
+同一工作树构建 Android 15 x64 Debug APK，以原生 WebView 和隔离 Gateway 登录，复验云端删除会话和远程删除文件。915×412 横屏真实 Gboard 打开时，筛选抽屉上方可用 151px。从文件菜单打开删除确认会收起键盘。另经原生安全区桥注入键盘占位，将可视高度缩至 97px，两个确认框内三枚按钮都高 44px、底边 82.5px，远程确认的说明可独立滚动。触控取消后保留云端对话、远程文件筛选及两处草稿。远程再用 Android 系统返回关闭确认，文件树仍打开，原文件仍可见。记录见 `.codex-artifacts/mobile-webui-goal/confirmation-viewport-native*.json`。iOS Safari 与实体设备尚待复验。
+
 项目、资料和技能选择器在键盘打开时贴住可视视口的下沿。短横屏中，搜索框留在列表顶部，结果和次要操作在同一弹层内滚动。收起键盘后弹层回到底部并保留搜索，关闭后返回原输入区。
 
 短横屏打开软键盘时，居中表单保留系统栏避让，减少垂直留白，并允许在弹窗内滚动。创建项目及重命名云端会话时，名称输入和提交同时可见，错误或较长内容可滚动，系统返回先收起键盘。

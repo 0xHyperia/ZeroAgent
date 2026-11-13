@@ -1,5 +1,5 @@
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogActions,
@@ -26,6 +26,7 @@ export type ConfirmDialogOptions = {
   /** Give the safe cancel action primary emphasis and render confirmation as destructive text. */
   preferCancel?: boolean;
   touchActions?: boolean;
+  returnFocusOnCancel?: () => HTMLElement | null;
 };
 
 type PendingConfirmDialog = ConfirmDialogOptions & {
@@ -46,55 +47,83 @@ function ConfirmDialog(
     hideCancel = false,
     preferCancel = false,
     touchActions = false,
+    returnFocusOnCancel,
     onCancel,
     onConfirm,
   } = props;
   const actionHeight = touchActions ? "h-11 md:h-8" : "h-8";
   const cancelAction = useRef<HTMLButtonElement>(null);
+  const cancelled = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!returnFocusOnCancel) return;
+    return () => {
+      if (!cancelled.current) return;
+      // Allow the enclosing menu and dialog to complete their own focus restoration first.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const target = returnFocusOnCancel();
+          if (
+            target?.isConnected &&
+            !target.closest('[inert], [aria-hidden="true"]') &&
+            !target.ownerDocument.activeElement?.closest('[role="alertdialog"][data-open]')
+          ) {
+            target.focus({ preventScroll: true });
+          }
+        });
+      });
+    };
+  }, [returnFocusOnCancel]);
 
   return (
     <AlertDialog
       open
       onOpenChange={(open) => {
-        if (!open) onCancel();
+        if (!open) {
+          cancelled.current = true;
+          onCancel();
+        }
       }}
     >
       <AlertDialogContent
-        className="max-w-md"
+        layout="confirmation"
         initialFocus={preferCancel && !hideCancel ? cancelAction : undefined}
       >
-        <AlertDialogHeader className="pr-14">
-          <AlertDialogTitle className="break-words">{title}</AlertDialogTitle>
-          {subtitle ? (
-            <div className="break-words text-xs leading-relaxed text-muted-foreground">
-              {subtitle}
-            </div>
-          ) : null}
-          <AlertDialogCloseButton
-            label={closeLabel}
-            className="absolute right-4 top-4 z-10 text-muted-foreground hover:text-foreground"
-          />
-        </AlertDialogHeader>
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
+          <AlertDialogHeader className="pr-14">
+            <AlertDialogTitle className="break-words">{title}</AlertDialogTitle>
+            {subtitle ? (
+              <div className="break-words text-xs leading-relaxed text-muted-foreground">
+                {subtitle}
+              </div>
+            ) : null}
+          </AlertDialogHeader>
 
-        {description || detail ? (
-          <AlertDialogBody>
-            <AlertDialogDescription className="space-y-2.5" render={<div />}>
-              {description ? (
-                <div className="text-sm leading-relaxed text-foreground">{description}</div>
-              ) : null}
-              {detail ? (
-                <div
-                  className={cn(
-                    "break-all rounded-md bg-muted/50 px-2.5 py-1.5",
-                    "font-mono text-xs leading-5 text-muted-foreground",
-                  )}
-                >
-                  {detail}
-                </div>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogBody>
-        ) : null}
+          {description || detail ? (
+            <AlertDialogBody>
+              <AlertDialogDescription className="space-y-2.5" render={<div />}>
+                {description ? (
+                  <div className="text-sm leading-relaxed text-foreground">{description}</div>
+                ) : null}
+                {detail ? (
+                  <div
+                    className={cn(
+                      "break-all rounded-md bg-muted/50 px-2.5 py-1.5",
+                      "font-mono text-xs leading-5 text-muted-foreground",
+                    )}
+                  >
+                    {detail}
+                  </div>
+                ) : null}
+              </AlertDialogDescription>
+            </AlertDialogBody>
+          ) : null}
+        </div>
+
+        <AlertDialogCloseButton
+          label={closeLabel}
+          className="za-confirmation-close absolute right-4 top-4 z-10 text-muted-foreground hover:text-foreground"
+        />
 
         <AlertDialogFooter>
           <AlertDialogActions>
@@ -170,6 +199,7 @@ export function useConfirmDialog() {
       hideCancel={pending.hideCancel}
       preferCancel={pending.preferCancel}
       touchActions={pending.touchActions}
+      returnFocusOnCancel={pending.returnFocusOnCancel}
       onCancel={() => close(false)}
       onConfirm={() => close(true)}
     />

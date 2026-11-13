@@ -29,6 +29,8 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -81,6 +83,7 @@ type ContextMenuState = {
   path: string;
   kind: FileTreeKind;
   trigger: HTMLButtonElement | null;
+  sourceRow: HTMLElement | null;
 };
 
 export type FileTreeSectionRow = {
@@ -108,6 +111,7 @@ type WorkspaceFileTreeSections = {
   filesExpanded: boolean;
   filesSelected: boolean;
   onSelectFile: () => void;
+  compactFilter?: boolean;
 };
 
 export function FileTreePanel(props: {
@@ -221,12 +225,19 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
   const [pendingTargetPath, setPendingTargetPath] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const actionErrorId = useId();
   const [busyAction, setBusyAction] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [revealTarget, setRevealTarget] = useState<string | null>(null);
   const [keyboardTarget, setKeyboardTarget] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const compactFilter = workspaceSections?.compactFilter;
+  useLayoutEffect(() => {
+    // Start a new result set at the top rather than carrying over a virtual row offset.
+    void searchScope;
+    if (compactFilter && scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [compactFilter, searchScope]);
   const { confirm: requestConfirmDialog, dialog: confirmDialog } = useConfirmDialog();
 
   const {
@@ -599,12 +610,17 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
       selectPath(targetPath);
       const rect = panelRef.current?.getBoundingClientRect();
       const buttonRect = trigger?.getBoundingClientRect();
+      const sourceRow =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>('[role="treeitem"]')
+          : null;
       setContextMenu({
         x: (buttonRect?.right ?? event.clientX) - (rect?.left ?? 0),
         y: (buttonRect?.bottom ?? event.clientY) - (rect?.top ?? 0),
         path: targetPath,
         kind: node?.kind ?? kind ?? "dir",
         trigger,
+        sourceRow,
       });
     },
     [selectPath],
@@ -626,6 +642,14 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     },
     [selectPath],
   );
+
+  const cancelAction = () => {
+    if (busyAction) return;
+    setPendingAction(null);
+    setPendingTargetPath(null);
+    setDraftName("");
+    setActionError(null);
+  };
 
   const finishAction = useCallback(async () => {
     if (!pendingAction || busyAction) return;
@@ -673,7 +697,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
   ]);
 
   const deletePath = useCallback(
-    async (targetPath: string) => {
+    async (targetPath: string, returnFocus: HTMLElement | null) => {
       if (!targetPath || busyAction) return;
       const confirmed = await requestConfirmDialog({
         title: t("projectTools.fileTree.deleteConfirm").replace("{path}", targetPath),
@@ -701,6 +725,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         confirmLabel: t("projectTools.fileTree.delete"),
         cancelLabel: t("settings.cancel"),
         closeLabel: t("projectTools.fileTree.deleteConfirmClose"),
+        returnFocusOnCancel: () => (returnFocus?.isConnected ? returnFocus : scrollRef.current),
       });
       if (!confirmed) return;
       setBusyAction(true);
@@ -842,63 +867,81 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
       )}
 
       {pendingAction ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
-          <Input
-            autoFocus
-            value={draftName}
-            aria-label={actionPlaceholder}
-            onChange={(event) => setDraftName(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void finishAction();
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                setPendingAction(null);
-                setPendingTargetPath(null);
+        <form
+          data-workspace-tree-action=""
+          className="shrink-0 border-b border-border/60 px-3 py-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void finishAction();
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            event.stopPropagation();
+            cancelAction();
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <Input
+              autoFocus
+              value={draftName}
+              aria-label={actionPlaceholder}
+              aria-invalid={Boolean(actionError) || undefined}
+              aria-describedby={actionError ? actionErrorId : undefined}
+              readOnly={busyAction}
+              onChange={(event) => {
+                setDraftName(event.currentTarget.value);
                 setActionError(null);
-              }
-            }}
-            placeholder={actionPlaceholder}
-            className={cn(
-              "min-w-0",
-              compact ? "h-11 text-base" : "h-8 text-xs placeholder:text-xs",
-            )}
-          />
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="rounded-lg"
-            aria-label={t("projectTools.fileTree.confirmAction")}
-            disabled={busyAction}
-            onClick={() => void finishAction()}
-          >
-            {busyAction ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Check className="size-4" />
-            )}
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="rounded-lg"
-            aria-label={t("settings.cancel")}
-            disabled={busyAction}
-            onClick={() => {
-              setPendingAction(null);
-              setPendingTargetPath(null);
-            }}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
+              }}
+              placeholder={actionPlaceholder}
+              className={cn(
+                "min-w-0",
+                compact ? "h-11 text-base" : "h-8 text-xs placeholder:text-xs",
+              )}
+            />
+            <Button
+              type="submit"
+              size="icon-sm"
+              variant="ghost"
+              className={cn("shrink-0 rounded-lg", compact && "size-11")}
+              aria-label={t("projectTools.fileTree.confirmAction")}
+              disabled={busyAction}
+              onMouseDown={compact ? (event) => event.preventDefault() : undefined}
+            >
+              {busyAction ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Check className="size-4" />
+              )}
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className={cn("shrink-0 rounded-lg", compact && "size-11")}
+              aria-label={t("settings.cancel")}
+              disabled={busyAction}
+              onClick={cancelAction}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+          {actionError && (
+            <div
+              id={actionErrorId}
+              role="alert"
+              className="mt-1 min-w-0 overflow-auto break-words text-xs leading-4 text-destructive"
+            >
+              {actionError}
+            </div>
+          )}
+        </form>
       ) : null}
 
-      {actionError ? (
-        <div className="shrink-0 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      {actionError && !pendingAction ? (
+        <div
+          role="alert"
+          className="shrink-0 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
           {actionError}
         </div>
       ) : null}
@@ -916,6 +959,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
 
       <div
         role="tree"
+        tabIndex={-1}
         aria-label={integratedSearch ? t("projectTools.fileTreeTitle") : undefined}
         data-workspace-tree-scroll={integratedSearch ? "" : undefined}
         ref={scrollRef}
@@ -1080,7 +1124,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
           onOpenExternal={handleOpenExternal}
           onOpenContainingDirectory={handleOpenContainingDirectory}
           onStartAction={startAction}
-          onDelete={(path) => void deletePath(path)}
+          onDelete={(path) => void deletePath(path, contextMenu.trigger ?? contextMenu.sourceRow)}
           onInsertMention={handleInsertMention}
           onRefresh={handleMenuRefresh}
           onToggleHidden={() => emitState({ showHidden: !syncState.showHidden })}

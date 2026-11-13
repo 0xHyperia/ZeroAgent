@@ -69,10 +69,11 @@ const ALERT_DIALOG_FONT_SCALE = 0.9;
 
 type AlertDialogContentProps = React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Popup> & {
   backdrop?: "default" | "image-edit";
+  layout?: "center" | "confirmation";
 };
 
 export const AlertDialogContent = React.forwardRef<HTMLDivElement, AlertDialogContentProps>(
-  ({ className, backdrop = "default", children, style, ...props }, ref) => {
+  ({ className, backdrop = "default", children, style, layout = "center", ...props }, ref) => {
     // 同 dialog.tsx：把缩放档位经 context 带过弹层的 portal 边界。
     const inheritedFontScale = React.useContext(ZoneFontScaleContext);
     const zoneFontScale = resolveZoneFontScale(
@@ -87,6 +88,7 @@ export const AlertDialogContent = React.forwardRef<HTMLDivElement, AlertDialogCo
           className={cn(
             "layer-modal fixed inset-0 flex min-h-0 flex-col items-center overflow-y-auto",
             "overscroll-contain px-4 pb-safe-bottom pt-safe-top",
+            layout === "confirmation" && "za-confirmation-viewport",
           )}
         >
           <AlertDialogPrimitive.Popup
@@ -104,6 +106,7 @@ export const AlertDialogContent = React.forwardRef<HTMLDivElement, AlertDialogCo
               "za-dialog-surface border border-border/70 bg-background text-foreground outline-none",
               "transition-opacity duration-150 ease-out",
               "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+              layout === "confirmation" && "za-confirmation",
               className,
             )}
             {...props}
