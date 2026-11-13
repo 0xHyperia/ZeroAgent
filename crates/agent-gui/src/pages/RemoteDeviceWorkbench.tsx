@@ -56,6 +56,7 @@ function connectionError(cause: unknown) {
 /** Desktop chrome around the exact, independently bundled WebUI device workbench. */
 export function RemoteDeviceWorkbench(props: Props) {
   const { environment, selectionLease, expiresAt, selectionError, headerLeadingActions } = props;
+  const selectedDeviceMissing = Boolean(props.selectedDeviceMissing);
   const deviceId = environment.device_id;
   const online = environment.online;
   const gatewayUrl = props.settings.remote.gatewayUrl;
@@ -79,7 +80,7 @@ export function RemoteDeviceWorkbench(props: Props) {
   const mountedTarget = useRef<typeof target | undefined>(undefined);
   // A listed device can reconnect on its current lease without discarding its workbench.
   const canStartOrKeep =
-    !props.selectedDeviceMissing && (online || mountedTarget.current === target);
+    !selectedDeviceMissing && (online || mountedTarget.current === target);
   const currentProps = useRef(props);
   currentProps.current = props;
 
@@ -121,6 +122,11 @@ export function RemoteDeviceWorkbench(props: Props) {
     if (selectionError) {
       setLoading(false);
       setError(selectionError);
+      return dispose;
+    }
+    if (selectedDeviceMissing) {
+      setLoading(false);
+      setError("设备控制权限已失效，请重新授权设备或切换工作台。");
       return dispose;
     }
     if (
@@ -180,7 +186,7 @@ export function RemoteDeviceWorkbench(props: Props) {
       window.clearTimeout(timer);
       dispose();
     };
-  }, [target, canStartOrKeep]);
+  }, [target, canStartOrKeep, selectedDeviceMissing]);
 
   async function reconnect() {
     setReconnecting(true);

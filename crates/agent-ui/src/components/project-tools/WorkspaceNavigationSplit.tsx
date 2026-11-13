@@ -1,6 +1,10 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
 import { cn } from "../../lib/shared/utils";
+import { X } from "../IconSet";
+import { Button } from "../ui/button";
+import { Sheet, SheetContent, SheetTitle } from "../ui/sheet";
 
 export const DEFAULT_WORKSPACE_NAVIGATION_WIDTH = 250;
 const MINIMUM_WIDTH = 200;
@@ -22,6 +26,7 @@ export function WorkspaceNavigationSplit({
   onClose: () => void;
 }) {
   const { locale, t } = useLocale();
+  const mobile = useIsMobile();
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointer: number; startX: number; startWidth: number } | null>(null);
   const [parentWidth, setParentWidth] = useState(0);
@@ -34,7 +39,42 @@ export function WorkspaceNavigationSplit({
     const observer = new ResizeObserver(measure);
     observer.observe(parent);
     return () => observer.disconnect();
-  }, []);
+  }, [mobile]);
+
+  if (mobile) {
+    const title = t("projectTools.fileTreeTitle");
+    const closeLabel = locale === "zh-CN" ? "关闭文件树" : "Close file tree";
+    return (
+      <Sheet
+        open
+        onOpenChange={(next) => {
+          if (!next) onClose();
+        }}
+      >
+        <SheetContent
+          data-browser-back-surface=""
+          data-right-workspace-tree=""
+          className="w-full max-w-none border-0 p-0 pt-[var(--zeroagent-safe-area-top,0px)] pr-[var(--zeroagent-safe-area-right,0px)] pb-[var(--zeroagent-safe-area-bottom,0px)] pl-[var(--zeroagent-safe-area-left,0px)]"
+          showCloseButton={false}
+          aria-describedby={undefined}
+        >
+          <div className="flex shrink-0 items-center justify-between border-b border-border px-3">
+            <SheetTitle className="text-sm">{title}</SheetTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11"
+              aria-label={closeLabel}
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+          {children}
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
   const shown = parentWidth ? workspaceNavigationWidth(preview ?? width, parentWidth) : width;
   const minimum = Math.min(MINIMUM_WIDTH, shown);

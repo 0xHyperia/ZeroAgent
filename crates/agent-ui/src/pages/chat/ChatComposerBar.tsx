@@ -43,6 +43,7 @@ import {
   Maximize2,
   Mic,
   Minimize2,
+  MoreHorizontal,
   Paperclip,
   Play,
   Plus,
@@ -56,6 +57,7 @@ import {
   getResourceFileIcon,
   getUploadedResourceFileIcon,
 } from "@liveagent/ui/components/resource-preview/ResourceFileIcon";
+import { Sheet, SheetHeader, SheetPanel, SheetPopup, SheetTitle, SheetTrigger } from "@liveagent/ui/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +69,7 @@ import { LabelTooltip as RuntimeControlTooltip } from "@liveagent/ui/components/
 import { SwitchIndicator } from "@liveagent/ui/components/ui/switch";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
+import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { requestCheckpointRewindLatest } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type { ComposerCommandHost } from "@liveagent/ui/lib/chat/composerCommands";
@@ -573,8 +576,10 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const isComposerExpandedRef = useRef(false);
   const glassCardRef = useRef<HTMLDivElement | null>(null);
   const inlineLayout = props.layout === "inline" && !panePresentation && executionMode === "text";
+  const mobileComposer = useIsMobile() && !imageFocus && !panePresentation;
+  const compactDeviceControls = mobileComposer && executionControls && !inlineLayout;
   const singleLineInput = useInlineComposerLayout({
-    enabled: inlineLayout && !imageFocus,
+    enabled: inlineLayout && !imageFocus && !mobileComposer,
     expanded: Boolean(props.expandedInput) || isComposerExpanded,
     hasAttachments: pendingUploadedFiles.length > 0 || Boolean(props.uploadingAttachments?.length),
     isEmpty: composerIsEmpty,
@@ -979,8 +984,10 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     if (pendingUploadedFiles.length <= previousCount) return;
 
     const attachmentList = attachmentListRef.current;
-    if (attachmentList) attachmentList.scrollTop = attachmentList.scrollHeight;
-  }, [pendingUploadedFiles.length]);
+    if (!attachmentList) return;
+    if (mobileComposer) attachmentList.scrollLeft = attachmentList.scrollWidth;
+    else attachmentList.scrollTop = attachmentList.scrollHeight;
+  }, [mobileComposer, pendingUploadedFiles.length]);
 
   // ref 与 state 同步更新：高度上报的 RO 回调可能先于 effect 执行，
   // 必须在布局变化前就能读到最新展开态。切换前记录卡片当前高度，
@@ -1318,6 +1325,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       <RuntimeControlTooltip label={stt.active ? "停止语音输入" : "开始语音输入"}>
         <button
           type="button"
+          data-composer-voice=""
           disabled={isInputDisabled}
           onClick={stt.toggle}
           aria-label={stt.active ? "停止语音输入" : "开始语音输入"}
@@ -1346,6 +1354,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const modelControls = (
     <ComposerModelControls
       presentation="inline"
+      mobileSheet={mobileComposer}
       showExecutionControls={executionControls}
       compactLabel={imageFocus || (inlineLayout && !props.expandedInput)}
       showProviderIcon
@@ -1368,6 +1377,27 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       onOpenChange={setModelPickerOpen}
     />
   );
+  const gitControls = showGitControls && (
+    <GitBranchSelector
+      workdir={workdir}
+      gitClient={gitClient}
+      workspaceActivityClient={workspaceActivityClient}
+      disabled={controlsDisabled}
+      canWrite={gitWriteEnabled}
+      disabledMessage={gitDisabledMessage}
+      onOpenWorktree={onOpenWorktree}
+      onWorktreeRemoved={onWorktreeRemoved}
+    />
+  );
+  const contextRing = (contextDisplayMode === "ring" || contextDisplayMode === "both") && (
+    <ComposerContextUsageRing
+      source={contextUsageTokensSource}
+      totalTokens={contextUsageTokens}
+      contextWindow={contextWindow}
+      disabled={controlsDisabled || isSending || manualCompactBlocked}
+      onConfirm={onManualCompactConfirm}
+    />
+  );
   const contextTray = props.contextBar ? (
     <div
       key="context-tray"
@@ -1378,10 +1408,18 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       {props.contextBar}
     </div>
   ) : null;
+  const separateContextTray = mobileComposer ? null : contextTray;
+  const mobileComposerIdle = mobileComposer && composerIsEmpty && !isComposerExpanded &&
+    !isSending && !stt.active && !clarifyOpen && !pendingUploadedFiles.length &&
+    !props.uploadingAttachments?.length &&
+    !(isAgentMode && chatRuntimeControls.planModeEnabled) &&
+    !(inlineLayout && chatRuntimeControls.nativeWebSearchEnabled && props.leadingControls);
   const composerLayer = (
     <div
       ref={composerLayerRef}
       data-composer-layout={inlineLayout ? "inline" : "standard"}
+      data-mobile-composer={mobileComposer ? "" : undefined}
+      data-composer-compact-device={compactDeviceControls ? "" : undefined}
       data-image-focus-composer={imageFocus || undefined}
       data-composer-empty={composerIsEmpty ? "true" : "false"}
       className={cn(
@@ -1652,12 +1690,13 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             {props.feedback}
           </div>
         ) : null}
-        {props.contextBarPosition === "above" ? contextTray : null}
+        {props.contextBarPosition === "above" ? separateContextTray : null}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape 捕获仅在展开态生效，焦点始终在内部 textbox 上，包装层不参与 Tab 序。 */}
         <div
           key="composer-card"
           hidden={approvalBar != null}
           data-composer-draft={composerIsEmpty ? undefined : ""}
+          data-mobile-composer-idle={mobileComposerIdle ? "" : undefined}
           ref={glassCardRef}
           data-composer-single-line={singleLineInput && !imageFocus ? "true" : "false"}
           data-composer-expanded-input={props.expandedInput || undefined}
@@ -1757,6 +1796,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             (pendingUploadedFiles.length > 0 || props.uploadingAttachments?.length) ? (
               <ComposerAttachmentList
                 ref={attachmentListRef}
+                compact={mobileComposer}
                 className="upload-file-list relative z-10"
               >
                 {pendingUploadedFiles.map((file) => (
@@ -1780,14 +1820,18 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     <ComposerAttachmentCard
                       key={file.id}
                       fileName={file.fileName}
-                      pathTitle={file.fileName}
-                      fallbackIcon={<FileIcon />}
+                      pathTitle={mobileComposer ? `${t("chat.upload.uploading")} ${file.fileName}` : file.fileName}
+                      fallbackIcon={mobileComposer ? (
+                        <span role="status" aria-label={`${t("chat.upload.uploading")} ${file.fileName}`}>
+                          <Loader2 className="size-4 motion-safe:animate-spin" />
+                        </span>
+                      ) : <FileIcon />}
                       disabled
                       removeLabel=""
                       onRemove={() => {}}
-                      previewContent={
+                      previewContent={mobileComposer ? undefined : (
                         <PreviewLoading variant="thumbnail" message={`正在上传 ${file.fileName}`} />
-                      }
+                      )}
                     />
                   );
                 })}
@@ -1841,7 +1885,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 onBusyChange={onComposerBusyChange}
                 onPasteFiles={draftOnly ? undefined : onPasteFiles}
                 loadHistoryPrompts={draftOnly ? undefined : loadHistoryPrompts}
-                placeholder={inputPlaceholder}
+                placeholder={compactDeviceControls ? t("chat.mobileInputPlaceholder") : inputPlaceholder}
                 disabled={(isInputDisabled && !draftOnly) || stt.active}
                 draftOnly={draftOnly}
                 workdir={workdir}
@@ -2028,6 +2072,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   <RuntimeControlTooltip label={t("chat.clarify.title")}>
                     <button
                       type="button"
+                      data-composer-clarify=""
                       disabled={clarifyButtonDisabled}
                       onClick={handleClarifyToggle}
                       aria-label={t("chat.clarify.title")}
@@ -2059,19 +2104,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
               </div>
 
               <div data-composer-trailing="" className="flex shrink-0 items-center gap-1">
-                {inlineLayout || imageFocus ? modelControls : null}
+                {(inlineLayout && !mobileComposer) || imageFocus ? modelControls : null}
                 {imageFocus ? voiceControl : null}
-                {inlineLayout &&
-                !imageFocus &&
-                (contextDisplayMode === "ring" || contextDisplayMode === "both") ? (
-                  <ComposerContextUsageRing
-                    source={contextUsageTokensSource}
-                    totalTokens={contextUsageTokens}
-                    contextWindow={contextWindow}
-                    disabled={controlsDisabled || isSending || manualCompactBlocked}
-                    onConfirm={onManualCompactConfirm}
-                  />
-                ) : null}
+                {inlineLayout && !imageFocus ? contextRing : null}
                 {!imageEdit && canQueueDraftWhileSending ? (
                   <Button
                     variant="ghost"
@@ -2154,14 +2189,15 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
             </div>
           </div>
 
-          {!inlineLayout && !imageFocus ? (
+          {(!inlineLayout && !imageFocus) || mobileComposer ? (
             <div
               className={cn(
                 "composer-control-deck relative z-0 flex min-h-9 shrink-0 items-center justify-between",
                 "gap-2 bg-muted px-3 py-1",
               )}
             >
-              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+              <div className="composer-control-deck-items flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+                {mobileComposer ? contextTray : null}
                 {executionControls && commandSafetyMode && onCommandSafetyModeChange ? (
                   <CommandSafetyModeSelector
                     value={commandSafetyMode}
@@ -2172,34 +2208,39 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
 
                 {modelControls}
 
-                {showGitControls ? (
-                  <GitBranchSelector
-                    workdir={workdir}
-                    gitClient={gitClient}
-                    workspaceActivityClient={workspaceActivityClient}
-                    disabled={controlsDisabled}
-                    canWrite={gitWriteEnabled}
-                    disabledMessage={gitDisabledMessage}
-                    onOpenWorktree={onOpenWorktree}
-                    onWorktreeRemoved={onWorktreeRemoved}
-                  />
-                ) : null}
+                {!compactDeviceControls && gitControls}
               </div>
 
-              {contextDisplayMode === "ring" || contextDisplayMode === "both" ? (
-                <ComposerContextUsageRing
-                  source={contextUsageTokensSource}
-                  totalTokens={contextUsageTokens}
-                  contextWindow={contextWindow}
-                  disabled={controlsDisabled || isSending || manualCompactBlocked}
-                  onConfirm={onManualCompactConfirm}
-                />
-              ) : null}
+              {compactDeviceControls ? (
+                (gitControls || contextRing) && (
+                  <Sheet key={conversationId}>
+                    <SheetTrigger render={
+                      <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-full"
+                        data-composer-option-block=""
+                        aria-label={t("chat.mobileComposerOptions")} title={t("chat.mobileComposerOptions")} />
+                    }>
+                      <MoreHorizontal className="size-5" />
+                    </SheetTrigger>
+                    <SheetPopup side="bottom" data-browser-back-surface="" className="za-mobile-choice-sheet" closeLabel={t("window.close")}>
+                      <SheetHeader className="px-5 pb-2 pt-6 pr-16">
+                        <SheetTitle>{t("chat.mobileComposerOptions")}</SheetTitle>
+                      </SheetHeader>
+                      <SheetPanel className="mobile-composer-options flex min-w-0 flex-col gap-3 px-5 py-3">
+                        {gitControls && <div className="flex min-w-0 flex-wrap items-center gap-1">{gitControls}</div>}
+                        {contextRing && <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-muted-foreground">{t("chat.contextWindow")}</span>
+                          {contextRing}
+                        </div>}
+                      </SheetPanel>
+                    </SheetPopup>
+                  </Sheet>
+                )
+              ) : !inlineLayout && contextRing}
             </div>
           ) : null}
           {fileDropOverlay}
         </div>
-        {props.contextBarPosition !== "above" ? contextTray : null}
+        {props.contextBarPosition !== "above" ? separateContextTray : null}
         {/* 会话统计状态栏插槽：贴卡片下缘，与卡片同宽；审批面板可见时让位；
             只在 "ring" 展示模式下不挂载——"statsBar" 与 "both" 都渲染（§4.7）。 */}
         {statsBar && !imageFocus && approvalBar == null && contextDisplayMode !== "ring"

@@ -1,5 +1,6 @@
 import { getAssistantAvatarUrl } from "@liveagent/adapters/assistantAvatar";
 import { FolderTree, Lightbulb, Settings, Wrench } from "@liveagent/ui/components/IconSet";
+import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useEffect, useState } from "react";
@@ -76,10 +77,11 @@ export function ChatEmptyState({
 }: ChatEmptyStateProps) {
   const { t } = useLocale();
   const period = useGreetingPeriod();
+  const compact = useIsMobile() && variant === "start-chat";
 
   return (
-    <div className="conversation-starter-container relative flex w-full flex-col items-center">
-      <div className="relative mb-5 flex size-14 items-center justify-center">
+    <div className="conversation-starter-container relative flex w-full flex-col items-center" data-compact-starters={compact ? "" : undefined}>
+      <div className={cn("conversation-starter-avatar relative flex items-center justify-center", compact ? "mb-2 size-9" : "mb-5 size-14")}>
         <div className="relative flex size-full items-center justify-center">
           <div aria-hidden="true" className="hidden" />
           <img
@@ -87,7 +89,7 @@ export function ChatEmptyState({
             alt=""
             aria-hidden="true"
             draggable={false}
-            className="relative size-12 select-none object-contain"
+            className={cn("relative select-none object-contain", compact ? "size-8" : "size-12")}
           />
         </div>
       </div>
@@ -120,16 +122,18 @@ export function ChatEmptyState({
         </>
       ) : (
         <>
-          <div className="text-center text-2xl font-normal leading-8 tracking-tight text-foreground">
-            {t(GREETING_KEYS[period])}，{t("chat.greetingSubtitle")}
+          <div className={cn("font-normal tracking-tight text-foreground", compact ? "conversation-starter-greeting text-start text-2xl leading-8" : "text-center text-2xl leading-8")}>
+            {t(GREETING_KEYS[period])}{compact ? "" : `，${t("chat.greetingSubtitle")}`}
+            {compact && <div className="mt-1 text-sm leading-5 text-muted-foreground">{t("chat.greetingSubtitle")}</div>}
           </div>
           {onSuggestionSelect ? (
-            <div className="conversation-starter-grid mt-7 w-full max-w-768px px-4">
+            <div className={cn("conversation-starter-grid w-full", compact ? "mt-3" : "mt-7 max-w-768px px-4")}>
               {SUGGESTION_CARDS.map((card) => (
                 <ConversationStarter
                   key={card.key}
                   title={t(card.titleKey)}
-                  description={t(card.promptKey)}
+                  description={compact ? undefined : t(card.promptKey)}
+                  layout={compact ? "inline" : "stacked"}
                   icon={<card.icon className="size-5" />}
                   onSelect={() => onSuggestionSelect(t(card.promptKey))}
                 />

@@ -17,6 +17,7 @@ import { getFileTypeIcon } from "../../chat/fileTypeIcons";
 import { FILE_TREE_ROW_HEIGHT, type FileTreeKind } from "./model";
 
 export type FileTreeRowProps = {
+  height?: number;
   path: string;
   name: string;
   kind: FileTreeKind;
@@ -42,6 +43,7 @@ export type FileTreeRowProps = {
 
 export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
   const {
+    height = FILE_TREE_ROW_HEIGHT,
     path,
     name,
     kind,
@@ -91,8 +93,8 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
       )}
       style={
         sectioned
-          ? ({ height: FILE_TREE_ROW_HEIGHT, "--za-workspace-tree-depth": depth } as CSSProperties)
-          : { height: FILE_TREE_ROW_HEIGHT, paddingLeft: 6 + depth * 14 }
+          ? ({ height, "--za-workspace-tree-depth": depth } as CSSProperties)
+          : { height, paddingLeft: 6 + depth * 14 }
       }
       title={title}
       draggable={Boolean(onDragStart)}

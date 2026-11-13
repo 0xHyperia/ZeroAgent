@@ -391,7 +391,12 @@ export default function App() {
         .then((result) => {
           if (cancelled || sessionEpoch !== executionSessionEpochRef.current || !result) return;
           setExecutionState((current) =>
-            refreshDesktopExecutionState(current, result.environments, result.localDeviceId),
+            refreshDesktopExecutionState(
+              current,
+              result.environments,
+              result.localDeviceId,
+              buildLocalOnlyEnvironment(settings)[0],
+            ),
           );
         })
         .catch((error) => {
@@ -426,7 +431,12 @@ export default function App() {
       .then((result) => {
         if (cancelled || sessionEpoch !== executionSessionEpochRef.current || !result) return;
         setExecutionState((current) =>
-          refreshDesktopExecutionState(current, result.environments, result.localDeviceId),
+          refreshDesktopExecutionState(
+            current,
+            result.environments,
+            result.localDeviceId,
+            buildLocalOnlyEnvironment(settings)[0],
+          ),
         );
       })
       .catch((error) => {

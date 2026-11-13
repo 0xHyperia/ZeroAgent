@@ -94,6 +94,10 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
   const pendingUploadedFilesRef = useRef(pendingUploadedFiles);
   const pendingUploadsRegistryRef = useRef(createPendingUploadsRegistry());
   const isUploadingFilesRef = useRef(isUploadingFiles);
+  const uploadScope = JSON.stringify([workspaceOwner, token]);
+  const uploadScopeRef = useRef(uploadScope);
+  uploadScopeRef.current = uploadScope;
+  const activeImportRef = useRef<{ scope: string; controller: AbortController } | null>(null);
   const uploadDragDepthRef = useRef(0);
   const displayedConversationIdRef = useRef("");
   // Render-assigned mirror: an in-flight import settling between a render and
@@ -110,6 +114,16 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     setIsUploadingFiles(active);
     setUploadingConversationId(active ? targetConversationId.trim() || null : null);
   }, []);
+
+  useEffect(() => {
+    const pending = activeImportRef.current;
+    if (!pending || pending.scope === uploadScope) return;
+    activeImportRef.current = null;
+    pending.controller.abort();
+    setUploadingFiles(false);
+  }, [setUploadingFiles, uploadScope]);
+
+  useEffect(() => () => activeImportRef.current?.controller.abort(), []);
 
   const handleImportSelectedDirectoryFiles = useCallback(
     (files: File[]) => {
@@ -201,6 +215,8 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
   }, []);
 
   const clearPendingUploads = useCallback(() => {
+    activeImportRef.current?.controller.abort();
+    activeImportRef.current = null;
     pendingUploadedFilesRef.current = [];
     pendingUploadsRegistryRef.current.clear();
     isUploadingFilesRef.current = false;
@@ -265,15 +281,31 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
       setPendingUploadsForConversation(targetConversationId, currentUploads);
       const importBatch = filesToImport.slice(0, MAX_UPLOAD_FILES);
       const ignoredForLimit = filesToImport.length - importBatch.length;
+      const pending = { scope: uploadScope, controller: new AbortController() };
+      const isCurrentImport = () =>
+        activeImportRef.current === pending &&
+        uploadScopeRef.current === uploadScope &&
+        !pending.controller.signal.aborted;
+      activeImportRef.current = pending;
       setUploadingFiles(true, targetConversationId);
       try {
         const agentID = await resolveAgentID();
-        const result = await importReadableFiles(token, agentID, workdir, importBatch);
+        if (!isCurrentImport()) return;
+        const result = await importReadableFiles(
+          token,
+          agentID,
+          workdir,
+          importBatch,
+          pending.controller.signal,
+        );
+        if (!isCurrentImport()) return;
         // An import that settles after its upload context was invalidated
         // must not resurrect cleared attachments: files picked inside the
         // old workspace are not readable from the new one.
+        const currentAgentId = await resolveAgentID();
+        if (!isCurrentImport()) return;
         if (
-          (await resolveAgentID()) !== agentID ||
+          currentAgentId !== agentID ||
           executionModeRef.current === "text" ||
           (isDisplayedConversation(targetConversationId) &&
             displayedConversationWorkdirRef.current.trim() !== workdir)
@@ -334,9 +366,12 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
           );
         }
       } catch (error) {
-        addNotify("error", asErrorMessage(error, "导入文件失败"));
+        if (isCurrentImport()) addNotify("error", asErrorMessage(error, "导入文件失败"));
       } finally {
-        setUploadingFiles(false);
+        if (activeImportRef.current === pending) {
+          activeImportRef.current = null;
+          setUploadingFiles(false);
+        }
       }
     },
     [
@@ -353,6 +388,7 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
       setUploadingFiles,
       token,
       updatePendingUploadsForConversation,
+      uploadScope,
       workspaceOwner,
     ],
   );

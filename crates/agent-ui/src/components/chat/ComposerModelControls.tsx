@@ -14,6 +14,7 @@ export type ComposerModelControlsProps = {
   showExecutionControls?: boolean;
   /** Compact chat shows effort; its accessible name still identifies the selected model. */
   compactLabel?: boolean;
+  mobileSheet?: boolean;
   showProviderIcon?: boolean;
   executionMode: ExecutionMode;
   hasModels: boolean;

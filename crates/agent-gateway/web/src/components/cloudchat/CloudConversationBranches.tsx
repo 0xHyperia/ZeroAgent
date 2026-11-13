@@ -83,7 +83,7 @@ export function CloudConversationBranches({
             variant="ghost"
             size="sm"
             aria-label={zh ? "查看对话分支" : "Conversation branches"}
-            className="gap-1.5 rounded-full text-muted-foreground hover:text-foreground"
+            className="gap-1.5 rounded-full text-muted-foreground hover:text-foreground max-820:min-h-11 max-820:min-w-11"
           />
         }
       >

@@ -19,6 +19,7 @@ import {
   X,
 } from "@liveagent/ui/components/IconSet";
 import type { WorkspaceProjectRootClient } from "@liveagent/ui/contracts/workspaceProjectRoots";
+import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -52,6 +53,7 @@ import {
   dirname,
   FILE_TREE_HAS_OS_INTEGRATION,
   FILE_TREE_ROW_HEIGHT,
+  FILE_TREE_TOUCH_ROW_HEIGHT,
   type FileTreeEntry,
   type FileTreeExternalRoot,
   type FileTreeKind,
@@ -181,6 +183,7 @@ export function FileTreePaneSurface(props: FileTreePaneSurfaceProps) {
 }
 
 export function FileTreeSurface(props: FileTreeSurfaceProps) {
+  const rowHeight = useIsMobile() ? FILE_TREE_TOUCH_ROW_HEIGHT : FILE_TREE_ROW_HEIGHT;
   const {
     active,
     workspaceSections,
@@ -443,7 +446,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     getItemKey: (index) => rows[index]?.key ?? index,
-    estimateSize: () => FILE_TREE_ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 12,
     rangeExtractor: (range) => {
       const visible = defaultRangeExtractor(range);
@@ -459,6 +462,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
       return [...extra.reverse(), ...visible];
     },
   });
+  useEffect(() => rowVirtualizer.measure(), [rowHeight, rowVirtualizer]);
   const virtualRows = rowVirtualizer.getVirtualItems();
   useEffect(() => {
     if (!keyboardTarget) return;
@@ -782,7 +786,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
           "text-left text-xs leading-5 text-muted-foreground hover:bg-muted hover:text-foreground",
           entry.hidden && "opacity-60 hover:opacity-80",
         )}
-        style={{ minHeight: FILE_TREE_ROW_HEIGHT }}
+        style={{ minHeight: rowHeight }}
         title={entry.path}
         onClick={() => void revealPath(entry.path, entry.kind)}
         onDragStart={(event) => handleWorkspacePathDragStart(event, entry.path, entry.kind)}
@@ -922,6 +926,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
               const { entry } = row;
               content = (
                 <FileTreeRow
+                  height={rowHeight}
                   path={entry.path}
                   name={basename(entry.path)}
                   kind={entry.kind}
@@ -956,6 +961,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
               if (!node) return null;
               content = (
                 <FileTreeRow
+                  height={rowHeight}
                   path={node.path}
                   name={node.name}
                   kind={node.kind}
@@ -980,11 +986,11 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
               );
             }
             const endIndex = stickyIndex?.ends[virtualRow.index];
-            const inset = (stickyIndex?.depths[virtualRow.index] ?? 0) * FILE_TREE_ROW_HEIGHT;
+            const inset = (stickyIndex?.depths[virtualRow.index] ?? 0) * rowHeight;
             const sticky =
               endIndex !== undefined &&
               endIndex > virtualRow.index + 1 &&
-              inset + 2 * FILE_TREE_ROW_HEIGHT <= (rowVirtualizer.scrollRect?.height ?? Infinity);
+              inset + 2 * rowHeight <= (rowVirtualizer.scrollRect?.height ?? Infinity);
             const subtreeEnd = sticky
               ? (rowVirtualizer.measurementsCache?.[endIndex]?.start ??
                 rowVirtualizer.getTotalSize())
@@ -998,7 +1004,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
                 style={{
                   top: virtualRow.start,
                   height: subtreeEnd === undefined ? undefined : subtreeEnd - virtualRow.start,
-                  zIndex: sticky ? 100 - inset / FILE_TREE_ROW_HEIGHT : undefined,
+                  zIndex: sticky ? 100 - inset / rowHeight : undefined,
                 }}
               >
                 <div

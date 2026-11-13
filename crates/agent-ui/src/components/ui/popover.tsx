@@ -20,6 +20,7 @@ export function PopoverClose(props: React.ComponentPropsWithoutRef<typeof Popove
 }
 
 type PopoverContentProps = React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Popup> & {
+  bottomSheet?: boolean;
   portalContainer?: React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Portal>["container"];
   keepMounted?: React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Portal>["keepMounted"];
 } & Pick<
@@ -37,6 +38,7 @@ export const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentPro
   (
     {
       align = "center",
+      bottomSheet,
       alignOffset,
       className,
       collisionPadding = 8,
@@ -53,6 +55,7 @@ export const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentPro
     const zoneStyle = useZoneFontScaleStyle();
     return (
       <PopoverPrimitive.Portal container={portalContainer} keepMounted={keepMounted}>
+        {bottomSheet && <PopoverPrimitive.Backdrop className="za-modal-backdrop layer-modal fixed inset-0" />}
         <PopoverPrimitive.Positioner
           anchor={anchor}
           positionMethod={positionMethod}
@@ -61,7 +64,7 @@ export const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentPro
           collisionPadding={collisionPadding}
           side={side}
           sideOffset={sideOffset}
-          className="layer-popover isolate"
+          className={bottomSheet ? "za-mobile-popover-positioner layer-modal isolate" : "layer-popover isolate"}
           style={zoneStyle}
         >
           <PopoverPrimitive.Popup
@@ -72,6 +75,7 @@ export const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentPro
               "w-72 origin-(--transform-origin) p-4",
               "text-sm outline-none transition-opacity duration-150",
               "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 motion-reduce:transition-none",
+              bottomSheet && "za-mobile-choice-sheet za-mobile-popover-sheet",
               className,
             )}
             {...props}

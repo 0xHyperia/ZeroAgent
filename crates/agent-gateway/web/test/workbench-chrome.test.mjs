@@ -76,7 +76,9 @@ test("gateway shows the conversation view switcher in chrome only after an assis
     /const hasConversationReply =[\s\S]*?displayedConversationId !== "" &&[\s\S]*?!isLocalDraftConversationId\(displayedConversationId\)[\s\S]*?trajectoryMessages\.some\(\(message\) => message\.role === "assistant"\)/,
   );
   const chrome = gatewayAppViewSource.slice(chromeIndex, bodyIndex);
-  assert.match(chrome, /!accountDestination\s*&&\s*activeView === "chat"\s*&&\s*hasConversationReply\s*&&\s*!workbenchHasMultiplePanes\s*\?\s*\(\s*<ConversationViewTabs/);
+  assert.match(gatewayAppViewSource, /const showConversationViews =\s*!accountDestination && activeView === "chat" &&\s*hasConversationReply && !workbenchHasMultiplePanes/);
+  assert.match(chrome, /!compactDeviceHeader && showConversationViews\s*\?\s*\(\s*<ConversationViewTabs/);
+  assert.match(chrome, /\{showConversationViews && \([\s\S]*?setActiveConversationView\(renderedConversationView === "trajectory" \? "conversation" : "trajectory"\)/);
   assert.match(
     gatewayAppViewSource,
     /useConversationViewState\(displayedConversationId\)/,

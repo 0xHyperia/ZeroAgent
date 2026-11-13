@@ -15,6 +15,7 @@ pub mod gateway;
 pub mod gateway_bridge;
 #[cfg(desktop)]
 mod file_runtime;
+#[cfg(desktop)]
 mod host_bridge;
 pub mod kbrain_backend;
 pub mod kbrain_health;

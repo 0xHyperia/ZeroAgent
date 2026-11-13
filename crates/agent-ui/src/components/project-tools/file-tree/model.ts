@@ -109,6 +109,7 @@ export const FILE_TREE_HAS_OS_INTEGRATION =
 // The desktop keeps the pre-rewrite compact 28px rows while the web build
 // keeps its larger touch-friendly 32px rows, preserving each host's previous styling.
 export const FILE_TREE_ROW_HEIGHT = FILE_TREE_HAS_OS_INTEGRATION ? 28 : 32;
+export const FILE_TREE_TOUCH_ROW_HEIGHT = 44;
 
 // ---------------------------------------------------------------------------
 // Path helpers

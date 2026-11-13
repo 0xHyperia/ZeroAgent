@@ -21,7 +21,11 @@ export function refreshDesktopExecutionState(
   current: DesktopExecutionState,
   environments: DesktopEnvironment[],
   localDeviceId: string,
+  localFallback?: DesktopEnvironment,
 ): DesktopExecutionState {
+  if (localFallback && !environments.some((item) => item.device_id === localDeviceId)) {
+    environments = [{ ...localFallback, device_id: localDeviceId }, ...environments];
+  }
   const selectedLocal =
     !current.selectedDeviceId ||
     current.selectedDeviceId === current.localDeviceId ||

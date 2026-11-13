@@ -86,6 +86,8 @@ export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps
             "layer-modal fixed inset-0 flex min-h-0 flex-col items-center overflow-y-auto",
             "overscroll-contain px-4 pb-safe-bottom pt-safe-top",
             fillsViewport && "overflow-hidden p-0",
+            !fillsViewport &&
+              "web:max-820:top-[var(--zeroagent-visual-viewport-offset-top,0px)] web:max-820:bottom-auto web:max-820:h-[var(--zeroagent-visual-viewport-height,100dvh)]",
             layout === "fullscreen-mobile" &&
               "max-[720px]:items-stretch max-[720px]:overflow-hidden max-[720px]:p-0",
             layout === "bottom-sheet-mobile" &&

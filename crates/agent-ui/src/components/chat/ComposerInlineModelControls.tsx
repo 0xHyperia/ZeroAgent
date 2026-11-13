@@ -11,10 +11,11 @@ import {
   Layers,
   RotateCcw,
   Settings2,
+  X,
 } from "@liveagent/ui/components/IconSet";
 import { ModelPickerContent } from "@liveagent/ui/components/models/ModelPickerContent";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
-import { Popover, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
 import { SwitchIndicator } from "@liveagent/ui/components/ui/switch";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
@@ -81,6 +82,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const open = props.open ?? localOpen;
   const triggerRequestedOpen = useRef(false);
+  const lastTriggerId = useRef(modelId);
   const anchorRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -213,6 +215,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
     <div className="composer-inline-model-controls" data-inline-model-controls="">
       <Popover
         open={open}
+        modal={props.mobileSheet}
         onOpenChange={(next, details) => {
           const trigger = details.trigger?.id;
           // Internal navigation can change the visible page without changing Base UI's
@@ -228,6 +231,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
           }
           if (next && (trigger === modelId || trigger === effortId)) {
             triggerRequestedOpen.current = true;
+            lastTriggerId.current = trigger;
             showView(trigger === effortId ? "effort" : "models");
           }
           if (!next && details.reason === "escape-key") cancelPreview();
@@ -286,6 +290,7 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
         </div>
         <PopoverContent
           ref={popupRef}
+          bottomSheet={props.mobileSheet}
           anchor={anchorRef.current ?? undefined}
           side="bottom"
           align="end"
@@ -301,11 +306,21 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
                 ? searchRef.current
                 : sliderRef.current
           }
+          finalFocus={props.mobileSheet ? () => {
+            const anchor = anchorRef.current;
+            return anchor?.querySelector<HTMLElement>(`[id="${lastTriggerId.current}"]`) ??
+              anchor?.querySelector<HTMLElement>("[data-composer-model-trigger]");
+          } : undefined}
           onKeyDown={(event) => {
             if (event.key === "Escape") cancelPreview();
             else event.stopPropagation();
           }}
         >
+          {props.mobileSheet && (
+            <PopoverClose render={<TooltipButton variant="ghost" size="icon" className="za-mobile-sheet-close" aria-label={t("window.close")} />}>
+              <X className="size-4" />
+            </PopoverClose>
+          )}
           {modelView ? (
             <>
               <div className="composer-model-popup-heading">

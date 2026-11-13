@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,9 +101,13 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 		}
 	}))
 	defer usa.Close()
-	store := account.NewMemoryStore()
+	store, schedules := openBrowserFixtureStore(t)
+	memory, _ := store.(*account.MemoryStore)
 	if os.Getenv("ZEROAGENT_CLOUDCHAT_BROWSER_IMAGE_MODEL") == "1" {
-		if _, err := store.SetCloudImageSettings(context.Background(), 700127, 0, account.CloudImageSettings{ProviderKeyID: 41, Model: "gpt-image-fixture"}); err != nil {
+		if memory == nil {
+			t.Fatal("image preference seeding requires the memory browser fixture")
+		}
+		if _, err := memory.SetCloudImageSettings(context.Background(), 700127, 0, account.CloudImageSettings{ProviderKeyID: 41, Model: "gpt-image-fixture"}); err != nil {
 			t.Fatal("seed isolated image model preference")
 		}
 	}
@@ -109,9 +115,12 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal("seed synthetic bounded conversation history")
 	}
-	recoverySeed, err := seedBrowserRecovery(context.Background(), store, 700127)
-	if err != nil {
-		t.Fatal("seed synthetic offline terminal recovery")
+	var recoverySeed []browserRecoverySeed
+	if memory != nil {
+		recoverySeed, err = seedBrowserRecovery(context.Background(), memory, 700127)
+		if err != nil {
+			t.Fatal("seed synthetic offline terminal recovery")
+		}
 	}
 	accounts := account.NewService(store, account.NewUSAClientWithHTTPClient(usa.URL, usa.Client()), time.Hour, time.Hour)
 	defer accounts.CloseCloudRuns()
@@ -145,12 +154,14 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 		status["history"] = historySeed
 		status["offline_recovery"] = recoverySeed
 		status["pagination_seed_count"] = 65
-		preferences, err := browserRunPreferences(r.Context(), store, 700127)
-		if err != nil {
-			http.Error(w, "fixture metadata unavailable", http.StatusInternalServerError)
-			return
+		if memory != nil {
+			preferences, err := browserRunPreferences(r.Context(), memory, 700127)
+			if err != nil {
+				http.Error(w, "fixture metadata unavailable", http.StatusInternalServerError)
+				return
+			}
+			status["run_preferences"] = preferences
 		}
-		status["run_preferences"] = preferences
 		digest := sha256.Sum256([]byte(browserFixtureText))
 		status["sample_sha256"] = hex.EncodeToString(digest[:])
 		_ = json.NewEncoder(w).Encode(status)
@@ -180,13 +191,33 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 		}
 		handler.ServeHTTP(w, r)
 	}))
-	web := httptest.NewServer(mux)
+	web := httptest.NewUnstartedServer(mux)
+	if os.Getenv("ZEROAGENT_BROWSER_FIXTURE_DESKTOP_PARITY") == "1" {
+		// Debug desktop clients pin their Gateway address at build time.
+		listener, err := net.Listen("tcp4", "127.0.0.1:19374")
+		if err != nil {
+			t.Fatal("listen on the isolated desktop parity port:", err)
+		}
+		_ = web.Listener.Close()
+		web.Listener = listener
+	}
+	web.Start()
 	defer web.Close()
 	if err := os.MkdirAll(filepath.Dir(output), 0700); err != nil {
 		t.Fatal(err)
 	}
-	seedBrowserSite(t, web, accounts, store, browserSession, previewStorage, output)
+	if memory != nil {
+		seedBrowserSite(t, web, accounts, memory, browserSession, previewStorage, output)
+	}
 	seedBrowserPreviewFiles(t, web, browserSession.ID, output)
+	if schedules {
+		accounts.EnableCloudSchedules()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		if accounts.StartCloudRuns(ctx) != nil {
+			t.Fatal("start isolated browser fixture scheduler")
+		}
+	}
 	// Known synthetic bytes only, alongside the explicitly requested artifact.
 	// Never overwrite another local file when reusing the fixture directory.
 	samplePath := filepath.Join(filepath.Dir(output), "cloudchat-source.txt")
@@ -214,4 +245,29 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 	case <-time.After(20 * time.Minute):
 		t.Fatal("local browser fixture expired")
 	}
+}
+
+func openBrowserFixtureStore(t *testing.T) (account.Store, bool) {
+	t.Helper()
+	database := os.Getenv("ZEROAGENT_BROWSER_FIXTURE_POSTGRES_URL")
+	cache := os.Getenv("ZEROAGENT_BROWSER_FIXTURE_REDIS_URL")
+	if database == "" && cache == "" {
+		return account.NewMemoryStore(), false
+	}
+	dbURL, dbErr := url.Parse(database)
+	cacheURL, cacheErr := url.Parse(cache)
+	if dbErr != nil || cacheErr != nil ||
+		dbURL.Scheme != "postgres" || dbURL.Hostname() != "127.0.0.1" || dbURL.Port() == "" ||
+		dbURL.User.Username() != "zeroagent_browser_fixture" || dbURL.Path != "/zeroagent_browser_fixture" ||
+		cacheURL.Scheme != "redis" || cacheURL.Hostname() != "127.0.0.1" || cacheURL.Port() == "" || cacheURL.Path != "/0" {
+		t.Fatal("schedule browser fixture requires explicitly isolated loopback PostgreSQL and Redis")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	store, err := account.OpenPersistentStore(ctx, database, cache)
+	if err != nil {
+		t.Fatal("open isolated browser fixture storage")
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store, true
 }

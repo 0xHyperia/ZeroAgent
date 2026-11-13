@@ -217,7 +217,8 @@ export function XTermViewport({
   // biome-ignore lint/correctness/useExhaustiveDependencies: project identity intentionally recreates the terminal session viewport
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const viewport = dropTargetRef.current;
+    if (!container || !viewport) return;
 
     let disposed = false;
     let snapshotLoaded = false;
@@ -301,7 +302,7 @@ export function XTermViewport({
     } catch {
       webglAddon = null;
     }
-    let touchScrollActive = false;
+    let touchScrollAxis: "horizontal" | "vertical" | null = null;
     let touchScrollCancelled = false;
     let lastTouchX = 0;
     let lastTouchY = 0;
@@ -414,14 +415,14 @@ export function XTermViewport({
     const handleTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) {
         touchScrollCancelled = true;
-        touchScrollActive = false;
+        touchScrollAxis = null;
         touchScrollRemainder = 0;
         return;
       }
       const touch = event.touches[0];
       if (!touch) return;
       touchScrollCancelled = false;
-      touchScrollActive = false;
+      touchScrollAxis = null;
       touchScrollRemainder = 0;
       lastTouchX = touch.clientX;
       lastTouchY = touch.clientY;
@@ -436,17 +437,26 @@ export function XTermViewport({
       const deltaY = touch.clientY - lastTouchY;
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
-      if (!touchScrollActive) {
+      if (!touchScrollAxis) {
         if (absX > absY && absX > 8) {
-          touchScrollCancelled = true;
-          return;
+          if (viewport.scrollWidth <= viewport.clientWidth) {
+            touchScrollCancelled = true;
+            return;
+          }
+          touchScrollAxis = "horizontal";
+        } else {
+          if (absY < 8) return;
+          touchScrollAxis = "vertical";
         }
-        if (absY < 8) return;
-        touchScrollActive = true;
       }
 
       lastTouchX = touch.clientX;
       lastTouchY = touch.clientY;
+      if (touchScrollAxis === "horizontal") {
+        viewport.scrollLeft -= deltaX;
+        event.preventDefault();
+        return;
+      }
       touchScrollRemainder += -deltaY;
       const rowHeight = getTouchScrollRowHeight();
       const rows = Math.trunc(touchScrollRemainder / rowHeight);
@@ -458,13 +468,13 @@ export function XTermViewport({
     };
 
     const resetTouchScroll = () => {
-      touchScrollActive = false;
+      touchScrollAxis = null;
       touchScrollCancelled = false;
       touchScrollRemainder = 0;
     };
 
     const handleTouchEnd = () => {
-      const shouldFocus = !touchScrollActive && !touchScrollCancelled;
+      const shouldFocus = !touchScrollAxis && !touchScrollCancelled;
       resetTouchScroll();
       if (shouldFocus) {
         focusTerminal();
@@ -677,7 +687,7 @@ export function XTermViewport({
       ref={dropTargetRef}
       style={viewportStyle}
       className={cn(
-        "project-terminal-viewport relative size-full min-h-0 overflow-hidden",
+        "project-terminal-viewport relative size-full min-h-0 overflow-hidden web:max-820:overflow-x-auto",
         "bg-[var(--project-terminal-background)]",
         "[&_.xterm]:size-full [&_.xterm]:box-border [&_.xterm]:bg-[var(--project-terminal-background)] [&_.xterm]:px-[var(--project-terminal-padding-x)] [&_.xterm]:py-[var(--project-terminal-padding-y)] [&_.xterm-viewport]:bg-[var(--project-terminal-background)]! [&_.xterm-screen]:bg-[var(--project-terminal-background)]! [&_.xterm-scrollable-element]:bg-[var(--project-terminal-background)]!",
         "[&_.xterm-scrollable-element>.scrollbar.vertical>.slider]:rounded-full [&_.xterm-viewport]:[scrollbar-width:thin] [&_.xterm-viewport]:[scrollbar-color:transparent_transparent] [&_.xterm-viewport]:transition-[scrollbar-color] [&_.xterm-viewport]:duration-200 hover:[&_.xterm-viewport]:[scrollbar-color:hsl(var(--muted-foreground)/0.32)_transparent] [&_.xterm-viewport::-webkit-scrollbar]:size-[var(--project-terminal-scrollbar-size)] [&_.xterm-viewport::-webkit-scrollbar-track]:bg-transparent",
@@ -694,7 +704,10 @@ export function XTermViewport({
       }}
       onDrop={handleWorkspacePathDrop}
     >
-      <div ref={containerRef} className="size-full min-h-0" />
+      <div
+        ref={containerRef}
+        className="size-full min-h-0 web:max-820:min-w-[calc(80ch_+_2_*_var(--project-terminal-padding-x))] web:max-820:font-mono web:max-820:text-[13px]"
+      />
       {workspacePathDropState ? (
         <div
           aria-hidden

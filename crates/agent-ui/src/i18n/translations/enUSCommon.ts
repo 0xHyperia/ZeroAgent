@@ -734,6 +734,12 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.safety.cycleNewMessages": "new messages",
   "chat.emptyRound": "(No reply)",
   "chat.inputHint": "Type a message, @ to reference files, prompts can be queued...",
+  "chat.mobileInputPlaceholder": "Type a message…",
+  "chat.mobileComposerOptions": "Conversation options",
+  "chat.mobileWorkbenchOptions": "More workbench actions",
+  "chat.mobileSwitchTheme": "Switch theme",
+  "chat.mobileShowConversation": "Show conversation",
+  "chat.mobileShowTrajectory": "Show trajectory",
   "chat.inputHintWithSkills":
     "Type a message, @ to reference files, / to reference Skills, prompts can be queued...",
   "chat.changedFiles.title": "Edited {count} files",

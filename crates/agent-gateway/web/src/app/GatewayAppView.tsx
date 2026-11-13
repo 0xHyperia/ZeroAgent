@@ -18,6 +18,7 @@ import {
 } from "@liveagent/ui/application/workbenchNavigation";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
+import { SquarePen } from "@liveagent/ui/components/IconSet";
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type {
@@ -46,6 +47,7 @@ import {
 } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { DropdownMenuItem } from "@liveagent/ui/components/ui/dropdown-menu";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
@@ -61,6 +63,7 @@ import { WorkbenchEmptyState } from "@liveagent/ui/components/workbench/Workbenc
 import { WorkspaceOverlayHost } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
+import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { LocaleContext, t as translate } from "@liveagent/ui/i18n/index";
 import {
   type CheckpointRewindClient,
@@ -427,6 +430,7 @@ export function GatewayAppView({
     setUserMenuOpen,
     setWorkspaceCreateModalOpen,
     switchExecutionTarget,
+    rememberDeviceDrafts,
     settings,
     settingsOpen,
     modelPreferencesOpen,
@@ -512,6 +516,7 @@ export function GatewayAppView({
   const transportInputDisabled =
     sidebarSectionsDisabled || Boolean(chatProtocolIncompatibleMessage);
   const sidebar = useSidebar();
+  const compactViewport = useIsMobile();
   const taskDeviceId = selection?.runtime_kind === "device_agent" ? selection.device_id : undefined;
   const taskOwner = relayUser?.id;
   const taskDeviceAuthorization = useRef({ owner: taskOwner, selection });
@@ -540,6 +545,7 @@ export function GatewayAppView({
     else navigate();
   };
   const accountDestination = useWorkbenchAccountDestination(accountNavigation);
+  const compactDeviceHeader = compactViewport && !desktopHost && !historyShareToken && !accountDestination;
   const committedDestination = accountDestination ?? activeView;
   const navigationPreview = useNavigationPreview(
     !sidebar.isMobile && !settingsOpen,
@@ -1793,6 +1799,24 @@ export function GatewayAppView({
       }
     />
   );
+  const showConversationViews = !accountDestination && activeView === "chat" &&
+    hasConversationReply && !workbenchHasMultiplePanes;
+  const executionSwitcher = !desktopHost && !historyShareToken && (
+    <ExecutionEnvironmentSwitcher
+      environments={environments}
+      selection={selection}
+      compact={compactDeviceHeader}
+      mobileSheet={compactDeviceHeader}
+      onSwitch={async (environment, workspace) => {
+        if (activeView === "chat") {
+          const draft = composerRef.current?.getDraft();
+          if (draft) setCachedComposerDraft(displayedConversationId, draft);
+        }
+        await switchExecutionTarget(environment, workspace, { beforeCommit: rememberDeviceDrafts });
+        setActiveView("chat");
+      }}
+    />
+  );
   const workbenchChrome = (
     <AppWorkbenchChrome
       settings={settings}
@@ -1805,13 +1829,17 @@ export function GatewayAppView({
         }))
       }
       onOpenSidebar={() => setSidebarOpen((open) => !open)}
+      navigationActions={compactDeviceHeader && displayedConversationId && !isLocalDraftConversationId(displayedConversationId) ? (
+        <Button variant="ghost" size="icon" className="order-1 size-11 shrink-0"
+          aria-label={translate("chat.newConversation", settings.locale)} onClick={handleSidebarNewConversation}>
+          <SquarePen className="size-4.5" />
+        </Button>
+      ) : undefined}
       leadingActions={
         <>
           {desktopHost && !accountDestination && <DesktopHostSlot kind="header" />}
-          {!accountDestination &&
-          activeView === "chat" &&
-          hasConversationReply &&
-          !workbenchHasMultiplePanes ? (
+          {compactDeviceHeader && executionSwitcher}
+          {!compactDeviceHeader && showConversationViews ? (
             <ConversationViewTabs
               active={renderedConversationView}
               onChange={setActiveConversationView}
@@ -1820,7 +1848,7 @@ export function GatewayAppView({
         </>
       }
       trailingActions={
-        !accountDestination && (
+        !accountDestination && !compactDeviceHeader && (
           <>
             <ProjectToolsPanelToggle
               isOpen={rightDockOpen}
@@ -1829,24 +1857,24 @@ export function GatewayAppView({
               className="mr-6px max-520:mr-8px"
               onToggle={() => setRightDockOpen((open) => !open)}
             />
-            {!desktopHost && !historyShareToken && (
-              <ExecutionEnvironmentSwitcher
-                environments={environments}
-                selection={selection}
-                disabled={isUploadingFiles}
-                onSwitch={async (environment, workspace) => {
-                  if (activeView === "chat") {
-                    const draft = composerRef.current?.getDraft();
-                    if (draft) setCachedComposerDraft(displayedConversationId, draft);
-                  }
-                  await switchExecutionTarget(environment, workspace);
-                  setActiveView("chat");
-                }}
-              />
-            )}
+            {executionSwitcher}
           </>
         )
       }
+      compactActions={compactDeviceHeader ? (
+        <>
+          <DropdownMenuItem className="min-h-11" disabled={!terminalClient && !rightDockOpen}
+            onClick={() => setRightDockOpen((open) => !open)}>
+            {translate(rightDockOpen ? "projectTools.collapsePanel" : "projectTools.expandPanel", settings.locale)}
+          </DropdownMenuItem>
+          {showConversationViews && (
+            <DropdownMenuItem className="min-h-11" onClick={() =>
+              setActiveConversationView(renderedConversationView === "trajectory" ? "conversation" : "trajectory")}>
+              {translate(renderedConversationView === "trajectory" ? "chat.mobileShowConversation" : "chat.mobileShowTrajectory", settings.locale)}
+            </DropdownMenuItem>
+          )}
+        </>
+      ) : undefined}
     />
   );
 

@@ -119,6 +119,16 @@ test("the actual refresh callback keeps a remote route on rejection and missing-
   }
 });
 
+test("the actual directory refresh retains the local workbench after its remote authorization is removed", async () => {
+  const harness = appHarness(async () => ({ environments: [remote], localDeviceId: local.device_id }));
+  await vm.runInContext("handleExecutionSwitch({ device_id: 'local' })", harness.context);
+  await vm.runInContext("refresh()", harness.context);
+  const next = harness.current();
+  assert.equal(next.selectedDeviceId, local.device_id);
+  assert.equal(next.environments.find(item => item.device_id === local.device_id)?.online, true);
+  assert.equal(next.environments.find(item => item.device_id === remote.device_id), remote);
+});
+
 test("account changes clear routes and leases before old refresh results or failures settle", async () => {
   for (const fails of [false, true]) {
     let finish;

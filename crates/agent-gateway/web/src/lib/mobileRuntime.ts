@@ -100,6 +100,7 @@ function nativeInvoke<T>(command: string, args?: Record<string, unknown>) {
 
 function updateMobileViewport() {
   const viewport = window.visualViewport;
+  if (viewport && Math.abs(viewport.scale - 1) > 0.01) return;
   const rawHeight = viewport?.height ?? window.innerHeight;
   const width = viewport?.width ?? window.innerWidth;
   const offsetTop = viewport?.offsetTop ?? 0;
@@ -128,6 +129,13 @@ function updateMobileViewport() {
   root.style.setProperty("--zeroagent-visual-viewport-offset-top", `${Math.round(offsetTop)}px`);
   root.style.setProperty("--zeroagent-keyboard-inset", `${Math.round(keyboardInset)}px`);
   root.dataset.zeroagentKeyboard = keyboardInset >= 96 ? "open" : "closed";
+}
+
+export function installMobileViewport() {
+  updateMobileViewport();
+  window.addEventListener("resize", updateMobileViewport, { passive: true });
+  window.visualViewport?.addEventListener("resize", updateMobileViewport, { passive: true });
+  window.visualViewport?.addEventListener("scroll", updateMobileViewport, { passive: true });
 }
 
 function applyMobileSafeAreaInsets(value: Partial<MobileSafeAreaInsets> | undefined) {
@@ -171,7 +179,7 @@ function syncMobileThemeColor() {
   meta.content = dark ? "#09090B" : "#FFFFFF";
 }
 
-export function handleMobileBack() {
+export function dismissTopMobileOverlay() {
   // Let Base UI dismiss its topmost layer through the same guarded Escape path
   // as a keyboard. A floating IME can keep reporting visible after a sheet opens;
   // blurring the sheet's focus in that state must not swallow every Back press.
@@ -187,8 +195,13 @@ export function handleMobileBack() {
     (focused && overlay.contains(focused) ? focused : overlay).dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     );
-    return;
+    return true;
   }
+  return false;
+}
+
+export function handleMobileBack() {
+  if (dismissTopMobileOverlay()) return;
   if (document.documentElement.dataset.zeroagentKeyboard === "open") {
     const activeElement = document.activeElement;
     if (activeElement instanceof HTMLElement) activeElement.blur();
@@ -220,10 +233,7 @@ async function installMobileExperience() {
     "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
   );
   installMobileSafeAreaBridge();
-  updateMobileViewport();
-  window.addEventListener("resize", updateMobileViewport, { passive: true });
-  window.visualViewport?.addEventListener("resize", updateMobileViewport, { passive: true });
-  window.visualViewport?.addEventListener("scroll", updateMobileViewport, { passive: true });
+  installMobileViewport();
   syncMobileThemeColor();
   new MutationObserver(syncMobileThemeColor).observe(document.documentElement, {
     attributes: true,

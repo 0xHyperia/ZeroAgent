@@ -106,7 +106,10 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
           <span className="min-w-0 flex-1">{t("projectTools.newTerminal")}</span>
           <ChevronRight className="size-3.5 text-muted-foreground" />
         </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent variant="soft" className="min-w-36">
+        <DropdownMenuSubContent
+          variant="soft"
+          className="min-w-36 web:max-820:[&_[role=menuitem]]:min-h-11"
+        >
           {shellOptions.map((option) => (
             <DropdownMenuItem
               key={option.id}
@@ -147,7 +150,7 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
             aria-label={t("projectTools.newProjectTool")}
             className={cn(
               buttonVariants({ variant: "ghost", size: "icon" }),
-              "size-8 rounded-lg text-muted-foreground hover:text-foreground",
+              "size-8 rounded-lg text-muted-foreground hover:text-foreground web:max-820:size-11",
             )}
           >
             {compact ? (
@@ -158,7 +161,12 @@ export function RightDockCreateMenu(props: RightDockCreateMenuProps) {
           </DropdownMenuTrigger>
         }
       />
-      <DropdownMenuContent variant="soft" align="end" sideOffset={6} className="min-w-40">
+      <DropdownMenuContent
+        variant="soft"
+        align="end"
+        sideOffset={6}
+        className="min-w-40 web:max-820:[&_[role=menuitem]]:min-h-11"
+      >
         {terminalItem}
         {onOpenNewTerminalInWorkbench ? (
           <DropdownMenuItem

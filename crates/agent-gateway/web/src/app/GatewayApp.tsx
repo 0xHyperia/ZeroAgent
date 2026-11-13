@@ -80,6 +80,7 @@ import { transcriptRowsToJumpCandidates } from "@/lib/chat/transcript/searchJump
 import {
   cloudChatRouteHref,
   DEFAULT_EXTENSION_LOCATION,
+  deviceWorkbenchRouteTarget,
   readCloudChatRoute,
 } from "@/lib/cloudChatRoute";
 import { CLOUD_SPACE_HOME } from "@/lib/cloudSpace";
@@ -93,6 +94,7 @@ import type {
 } from "@/lib/gatewayTypes";
 import { parseHistoryShareToken } from "@/lib/historyShare";
 import { isEmbeddedMobileRuntime, MOBILE_BACK_EVENT, mobileHaptic } from "@/lib/mobileRuntime";
+import { pushWorkbenchLocation } from "@/lib/browserMobileBack";
 import {
   getRelayDashboardStats,
   getRelayProfile,
@@ -207,6 +209,8 @@ function useGatewayAppController() {
     token,
     accountUser,
     environments,
+    environmentDirectoryUnavailable,
+    reloadEnvironments,
     selection,
     authInitializing,
     authSubmitting,
@@ -236,12 +240,6 @@ function useGatewayAppController() {
   const activeAgentIdRef = useRef(activeAgentId);
   const taskLandingAgentRef = useRef("");
   const activeAgentScope = selectedAgentId || activeAgentId || api?.getActiveAgent() || "";
-  useEffect(() => {
-    if (!api || !selectedAgentId) return;
-    api.setActiveAgent(selectedAgentId);
-    activeAgentIdRef.current = selectedAgentId;
-    setActiveAgentId(selectedAgentId);
-  }, [api, selectedAgentId]);
   useEffect(() => {
     if (!api || !accountUser || historyShareToken) return;
     const unsubscribe = api.subscribeAgents(applyExecutionPresence);
@@ -1676,7 +1674,7 @@ function useGatewayAppController() {
         if (saved.unfinishedUpload)
           copy.push(
             zh
-              ? "刷新中断的上传需要重新添加。"
+              ? "未完成上传的文件需要重新添加。"
               : "Add any files whose upload was interrupted again.",
           );
         if (saved.exceedsLimit)
@@ -1794,13 +1792,13 @@ function useGatewayAppController() {
       addNotify(
         "warning",
         settings.locale === "zh-CN"
-          ? "部分草稿内容未恢复。请重新添加刷新中断的上传，或补回超出浏览器保存上限的文字。"
+          ? "部分草稿内容未恢复。请重新添加未完成上传的文件，或补回超出浏览器保存上限的文字。"
           : "Some draft content could not be restored. Add interrupted uploads again or re-enter text that exceeded the browser limit.",
       );
     }
     return restored.composer;
   };
-  const rememberDeviceDrafts = useEffectEvent(() => {
+  const rememberDeviceDrafts = useStableCallback(() => {
     const scope = deviceDraftScope();
     if (!scope) return;
     const scopeKey = JSON.stringify([scope.ownerId, scope.agentId]);
@@ -1836,11 +1834,17 @@ function useGatewayAppController() {
       const project = settings.system.workspaceProjects.find(
         (candidate) => workspaceProjectPathKey(candidate.path) === key,
       );
+      // Browser Back can leave a saved reply's attachments in the registry
+      // after its composer unmounts. That capture has no text to replace.
+      const segments =
+        draft?.segments ??
+        (target?.kind === "session" ? readGatewayDeviceDraft(scope, target)?.segments : undefined) ??
+        [];
       saveGatewayDeviceDraft(
         scope,
         {
           workspace: key ? { id: project?.id ?? "", path } : null,
-          segments: draft?.segments ?? [],
+          segments,
           attachments,
           unfinishedUpload,
         },
@@ -1873,7 +1877,7 @@ function useGatewayAppController() {
     for (const [id, draft] of composerDraftCacheRef.current) {
       if (!captured.has(id) && !id.startsWith("scheduled-task-result:")) {
         captured.add(id);
-        capture(id, draft, false);
+        capture(id, draft.isEmpty ? undefined : draft, false);
       }
     }
     for (const id of sidebarStore.getSnapshot().byId.keys()) {
@@ -1897,9 +1901,23 @@ function useGatewayAppController() {
     const remember = (event: PageTransitionEvent) => {
       if (!event.persisted) rememberDeviceDrafts();
     };
+    const rememberBeforeLeavingDevice = () => {
+      const route = readCloudChatRoute(new URL(window.location.href));
+      if (
+        selectedTaskDevice &&
+        (deviceWorkbenchRouteTarget(route) !== selectedTaskDevice ||
+          (route.page === "chat" && route.id !== displayedConversationId))
+      ) {
+        rememberDeviceDrafts();
+      }
+    };
     window.addEventListener("pagehide", remember);
-    return () => window.removeEventListener("pagehide", remember);
-  }, []);
+    window.addEventListener("popstate", rememberBeforeLeavingDevice, true);
+    return () => {
+      window.removeEventListener("pagehide", remember);
+      window.removeEventListener("popstate", rememberBeforeLeavingDevice, true);
+    };
+  }, [displayedConversationId, rememberDeviceDrafts, selectedTaskDevice]);
   const recoverLocalPaneDrafts = useEffectEvent(() => {
     const scope = deviceDraftScope();
     if (!scope) return;
@@ -1976,6 +1994,7 @@ function useGatewayAppController() {
     if (landing.conversationId && !isLocalDraftConversationId(landing.conversationId)) {
       openSavedConversation({ ownerId, agentId, conversationId: landing.conversationId });
     } else if (landing.explicit && !isLocalDraftConversationId(getDisplayedConversationId())) {
+      rememberDeviceDrafts();
       startNewConversationRef.current({ preserveCurrentComposerDraft: true });
       if (api.getActiveAgent() === agentId) recoverUnsentDeviceDraft(ownerId, agentId);
     } else if (api.getActiveAgent() === agentId) {
@@ -1990,6 +2009,7 @@ function useGatewayAppController() {
     getDisplayedConversationId,
     historyShareToken,
     openSavedConversation,
+    rememberDeviceDrafts,
     selectedTaskDevice,
     settingsSyncTargetReady,
   ]);
@@ -2032,7 +2052,7 @@ function useGatewayAppController() {
       recentConversationId: restoredHere ? "" : loadGatewayConversationSelection(agentId, ownerId),
     });
     if (!href) return;
-    window.history.pushState(window.history.state, "", href);
+    pushWorkbenchLocation(window.history.state, href);
     if (restoredHere || requestedId) restoredConversationAgentRef.current = explicitScope;
     else setBrowserNavigationVersion((version) => version + 1);
   };
@@ -2636,6 +2656,12 @@ function useGatewayAppController() {
       setProjectPickerOpen,
     ],
   );
+
+  useLayoutEffect(() => {
+    if (!api || !selectedAgentId) return;
+    api.setActiveAgent(selectedAgentId);
+    if (activeAgentIdRef.current !== selectedAgentId) handleActiveAgentChange(selectedAgentId);
+  }, [api, handleActiveAgentChange, selectedAgentId]);
 
   const localeContextValue = useLocaleContextValue(settings.locale);
 
@@ -3273,7 +3299,9 @@ function useGatewayAppController() {
     const tasks = route.page === "tasks" && route.deviceView;
     const zh = settings.locale === "zh-CN";
     let message = zh ? "暂时无法访问此设备。" : "This device is unavailable.";
-    if (invalidLink)
+    if (deviceRouteStatus === "unauthorized")
+      message = zh ? "设备控制权限已失效。" : "Device control access has ended.";
+    else if (invalidLink)
       message = tasks
         ? zh
           ? "设备定时任务链接无效。"
@@ -3379,6 +3407,9 @@ function useGatewayAppController() {
           user={relayUser ?? accountUser}
           onUserChange={acceptRelayUser}
           environments={environments}
+          retryEnvironmentDirectory={
+            environmentDirectoryUnavailable ? () => reloadEnvironments(true) : undefined
+          }
           selection={selection}
           settings={settings}
           setSettings={setSettings}
@@ -3462,6 +3493,7 @@ function useGatewayAppController() {
   const viewModel = {
     environments,
     switchExecutionTarget,
+    rememberDeviceDrafts,
     selection,
     relayUser,
     relayStats,
@@ -3536,7 +3568,6 @@ function useGatewayAppController() {
     gitClient,
     gitDisabledMessage,
     gitReviewFocusRequest,
-    handleActiveAgentChange,
     handleArchiveWorkspaceProject,
     handleBranchConversation,
     handleBrowseWorkspaceProjectInFileTree,

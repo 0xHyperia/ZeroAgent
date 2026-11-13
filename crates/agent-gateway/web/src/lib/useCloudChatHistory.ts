@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { pushWorkbenchLocation, replaceWorkbenchState } from "./browserMobileBack";
 import {
   type CloudChatRoute,
   cloudChatRouteHref,
@@ -90,7 +91,11 @@ function write(method: "pushState" | "replaceState", entry: Entry, href: string)
     host.saveLocation(href, entry.conversation, entry.skillReaderReturn);
     return;
   }
-  window.history[method]({ ...window.history.state, [historyKey]: entry }, "", href);
+  const state = { ...window.history.state, [historyKey]: entry };
+  if (method === "pushState") pushWorkbenchLocation(state, href);
+  else if (new URL(href, window.location.href).href === window.location.href)
+    replaceWorkbenchState(state);
+  else window.history.replaceState(state, "", href);
 }
 
 export function useCloudChatHistory({

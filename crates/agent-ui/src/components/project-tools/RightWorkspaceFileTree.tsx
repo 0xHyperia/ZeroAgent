@@ -1,4 +1,5 @@
 import { type Ref, useCallback, useEffect, useMemo, useState } from "react";
+import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
 import type { GitCommitFile, GitDiffResponse, GitRepositoryState } from "../../lib/git/types";
 import { hostAwareErrorMessage } from "../../lib/shared/hostErrors";
@@ -7,7 +8,11 @@ import { useWorkspaceInvalidation } from "../../lib/workspace-activity/useWorksp
 import { ChevronRight, List, Loader2, Search, X } from "../IconSet";
 import { Input } from "../ui/input";
 import { FileTreePanel, type FileTreeSectionRow } from "./file-tree";
-import { compareWorkspaceReviewPaths, FILE_TREE_ROW_HEIGHT } from "./file-tree/model";
+import {
+  compareWorkspaceReviewPaths,
+  FILE_TREE_ROW_HEIGHT,
+  FILE_TREE_TOUCH_ROW_HEIGHT,
+} from "./file-tree/model";
 import { FileTreeRow } from "./file-tree/Row";
 import { statusLabel } from "./git-review/model";
 import { useRightDockToolContext } from "./RightDockContext";
@@ -143,6 +148,7 @@ function changeRows(
   selectedPath: string | null,
   collapsedDirectories: ReadonlySet<string>,
   formatNumber: Intl.NumberFormat,
+  rowHeight: number,
   onToggle: (path: string, expanded: boolean) => void,
   onOpen: (file: NonNullable<ChangeNode["file"]>, temporary?: boolean) => void,
 ) {
@@ -167,6 +173,7 @@ function changeRows(
         stickyFolder: !file && expanded,
         content: (
           <FileTreeRow
+            height={rowHeight}
             path={relativePath}
             name={node.name}
             kind={file ? "file" : "dir"}
@@ -229,6 +236,8 @@ export function RightWorkspaceFileTree({
   onOpenDiff,
 }: Props) {
   const { t, locale } = useLocale();
+  const mobile = useIsMobile();
+  const rowHeight = mobile ? FILE_TREE_TOUCH_ROW_HEIGHT : FILE_TREE_ROW_HEIGHT;
   const { cwd, fileTree, clients, capabilities } = useRightDockToolContext();
   const { git, workspaceActivity } = clients;
   const canReadGit = Boolean(
@@ -396,7 +405,7 @@ export function RightWorkspaceFileTree({
         className={cn(
           "flex w-full items-center gap-[5px] rounded-md px-[3px] text-left text-foreground hover:bg-muted",
         )}
-        style={{ height: FILE_TREE_ROW_HEIGHT }}
+        style={{ height: rowHeight }}
         onClick={() => onToggleGroup(section)}
       >
         <ChevronRight
@@ -419,6 +428,7 @@ export function RightWorkspaceFileTree({
           selectedPath,
           collapsedDirectories,
           formatNumber,
+          rowHeight,
           (path, expanded) =>
             setCollapsedDirectories((current) => {
               const next = new Set(current);
@@ -481,7 +491,10 @@ export function RightWorkspaceFileTree({
           aria-label={labels.filter}
           placeholder={`${labels.filter}…`}
           value={query}
-          className="h-7 rounded-full pl-8 pr-7 text-xs placeholder:text-xs"
+          className={cn(
+            "h-7 rounded-full pl-8 pr-7 text-xs placeholder:text-xs",
+            mobile && "h-11 pr-11 text-base",
+          )}
           onChange={(event) => fileTree.onStateChange({ query: event.currentTarget.value })}
           onKeyDown={(event) => {
             if (event.key !== "Escape" || !query) return;
@@ -494,7 +507,10 @@ export function RightWorkspaceFileTree({
           <button
             type="button"
             aria-label={labels.clear}
-            className="absolute inset-y-0 right-1 flex w-6 items-center justify-center text-muted-foreground hover:text-foreground"
+            className={cn(
+              "absolute inset-y-0 right-1 flex w-6 items-center justify-center text-muted-foreground hover:text-foreground",
+              mobile && "w-11",
+            )}
             onClick={() => fileTree.onStateChange({ query: "" })}
           >
             <X className="size-3.5" />
@@ -504,7 +520,10 @@ export function RightWorkspaceFileTree({
       {showChanges && !reviewOnly && (
         <button
           type="button"
-          className="mx-1 flex h-7 shrink-0 items-center gap-[5px] rounded-md px-[3px] text-left hover:bg-muted"
+          className={cn(
+            "mx-1 flex h-7 shrink-0 items-center gap-[5px] rounded-md px-[3px] text-left hover:bg-muted",
+            mobile && "h-11",
+          )}
           onClick={onOpenReview}
         >
           <List className="size-4 shrink-0" />

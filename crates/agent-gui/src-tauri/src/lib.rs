@@ -1226,6 +1226,11 @@ pub fn run() {
     #[cfg(debug_assertions)]
     let builder = builder.plugin(
         tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address(if runtime::data_home::isolation_requested() {
+                "127.0.0.1"
+            } else {
+                "0.0.0.0"
+            })
             .base_port(
                 std::env::var("ZEROAGENT_DEV_MCP_BRIDGE_PORT")
                     .ok()

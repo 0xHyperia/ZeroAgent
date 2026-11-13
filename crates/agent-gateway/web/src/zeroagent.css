@@ -31,6 +31,23 @@ html[data-zeroagent-platform="android"] .gateway-shell {
   min-height: 0;
 }
 
+html[data-zeroagent-platform="android"] .gateway-shell:not(.gateway-shell .gateway-shell) {
+  padding-top: var(--zeroagent-safe-area-top);
+}
+
+@media (pointer: coarse) {
+  html:not([data-zeroagent-platform])[data-zeroagent-keyboard="open"] {
+    --app-viewport-height: var(--zeroagent-visual-viewport-height, 100dvh);
+  }
+  html:not([data-zeroagent-platform])[data-zeroagent-keyboard="open"] body {
+    position: fixed;
+    top: var(--zeroagent-visual-viewport-offset-top, 0px);
+    inset-inline: 0;
+    height: var(--zeroagent-visual-viewport-height, 100dvh);
+    overflow: hidden;
+  }
+}
+
 html[data-zeroagent-platform="android"] button,
 html[data-zeroagent-platform="android"] a,
 html[data-zeroagent-platform="android"] [role="button"] {
@@ -113,7 +130,16 @@ html[data-zeroagent-platform="android"] [contenteditable="true"] {
   display: none;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
+  html:not([data-zeroagent-platform]) .gateway-shell {
+    padding-top: var(--zeroagent-safe-area-top);
+  }
+
+  html:not([data-zeroagent-platform]) [data-sidebar="sidebar"][data-mobile="true"] {
+    padding: var(--zeroagent-safe-area-top) var(--zeroagent-safe-area-right)
+      var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
+  }
+
   .gateway-main-shell {
     padding-right: var(--zeroagent-safe-area-right);
     padding-left: var(--zeroagent-safe-area-left);
@@ -193,14 +219,9 @@ html[data-zeroagent-platform="android"] .gateway-settings-overlay {
     var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
 }
 
-html[data-zeroagent-platform="android"] .gateway-chat-frame > header,
-html[data-zeroagent-platform="android"] .gateway-main-shell [data-app-workbench-chrome] > header {
-  box-sizing: border-box;
-  padding-top: calc(10px + var(--zeroagent-safe-area-top));
-}
-
-html[data-zeroagent-platform="android"] .gateway-main-shell [data-app-workbench-chrome] {
-  height: calc(48px + var(--zeroagent-safe-area-top));
+html[data-zeroagent-platform="android"] .gateway-shell [data-workspace-main-has-chrome] > [data-app-workbench-chrome] {
+  padding-right: var(--zeroagent-safe-area-right);
+  padding-left: var(--zeroagent-safe-area-left);
 }
 
 html[data-zeroagent-platform="android"] .settings-back-bar {
@@ -239,13 +260,6 @@ html[data-zeroagent-platform="android"] .workspace-clone-task-overlay {
 html[data-zeroagent-platform="android"] [data-slot="dialog-viewport"] {
   padding: max(16px, var(--zeroagent-safe-area-top)) max(16px, var(--zeroagent-safe-area-right))
     max(16px, var(--zeroagent-safe-area-bottom)) max(16px, var(--zeroagent-safe-area-left));
-}
-
-@media (max-width: 640px) {
-  html[data-zeroagent-platform="android"] .gateway-chat-frame > header,
-  html[data-zeroagent-platform="android"] .gateway-main-shell [data-app-workbench-chrome] > header {
-    padding-top: calc(8px + var(--zeroagent-safe-area-top));
-  }
 }
 
 html[data-zeroagent-platform="android"]
@@ -336,7 +350,7 @@ html[data-zeroagent-platform="android"]
 .desktop-cloud-header:has(+ [data-reader-open="true"]) {
   box-shadow: inset 0 -1px var(--za-workbench-border);
 }
-@media (min-width: 821px) {
+@media (min-width: 821px) and (not ((pointer: coarse) and (max-width: 1000px) and (max-height: 550px))) {
   .cloud-chat-shell[data-desktop-cloud-window] > [data-workbench-layout="page"] {
     padding: 4px 4px 4px 0;
   }
@@ -389,7 +403,7 @@ html[data-zeroagent-platform="android"]
   width: 36px;
   height: 36px;
 }
-@media (min-width: 821px) {
+@media (min-width: 821px) and (not ((pointer: coarse) and (max-width: 1000px) and (max-height: 550px))) {
   .cloud-chat-shell .gateway-cloud-main [data-app-workbench-chrome] {
     --app-header-height: 52px;
   }
@@ -463,7 +477,7 @@ html[data-zeroagent-platform="android"]
   background: hsl(var(--popover));
   box-shadow: 0 4px 16px #00000012;
 }
-@media (max-width: 820px) {
+@media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   .cloud-title-input {
     width: 100%;
     min-width: 0;
@@ -774,6 +788,9 @@ html[data-zeroagent-platform="android"]
   justify-content: flex-start;
   overflow: auto;
   padding-block: clamp(64px, calc(42dvh - 131px), 520px) 48px;
+}
+.cloud-landing-intro {
+  display: contents;
 }
 .cloud-chat-welcome {
   flex: 0 0 auto;
@@ -1115,7 +1132,7 @@ html[data-zeroagent-platform="android"]
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-@media (max-width: 820px) {
+@media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   .cloud-composer-menu [role^="menuitem"] { min-height: 44px; }
 }
 @media (hover: hover) {
@@ -1311,7 +1328,7 @@ html[data-zeroagent-platform="android"]
   line-height: 1.75;
 }
 
-@media (min-width: 821px) {
+@media (min-width: 821px) and (not ((pointer: coarse) and (max-width: 1000px) and (max-height: 550px))) {
   .cloud-sidebar-brand img {
     display: none;
   }
@@ -1338,19 +1355,28 @@ html[data-zeroagent-platform="android"]
     display: none;
   }
 }
-@media (max-width: 820px) {
+@media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   .application-rail {
     display: none;
+  }
+  [data-toast-position="top-right"] {
+    top: calc(60px + var(--zeroagent-safe-area-top, 0px));
+    max-height: calc(100dvh - 76px - var(--zeroagent-safe-area-top, 0px));
   }
   .cloud-chat-shell [data-app-workbench-chrome] {
     --app-header-height: 56px;
   }
   .cloud-chat-shell .cloud-mode-switch {
-    position: absolute;
-    left: 50%;
-    width: clamp(140px, 40vw, 176px);
-    transform: translateX(-50%);
-    flex-shrink: 0;
+    width: 176px;
+    min-width: 0;
+  }
+  .cloud-chat-shell .cloud-mode-switch button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .cloud-chat-shell .cloud-title-trigger {
+    min-width: 44px;
+    min-height: 44px;
   }
   .cloud-chat-shell [data-app-workbench-actions] {
     gap: 0;
@@ -1363,17 +1389,30 @@ html[data-zeroagent-platform="android"]
     padding-inline: 12px;
   }
   .cloud-chat-shell .cloud-conversation-layout[data-layout="landing"] {
-    padding: 0 0 max(36px, var(--zeroagent-safe-area-bottom, 0px));
+    padding: 0 0 max(12px, calc(var(--zeroagent-safe-area-bottom, 0px) + 6px));
     overflow-y: auto;
+  }
+  .cloud-landing-intro {
+    display: flex;
+    flex: 1 0 auto;
+    min-height: 0;
+    flex-direction: column;
+    justify-content: center;
+    padding-block: 12px;
   }
   .cloud-chat-welcome {
     display: flex;
-    min-height: 180px;
-    flex: 1 0 auto;
+    min-height: 0;
+    flex: 0 0 auto;
     align-items: center;
-    justify-content: center;
-    margin: 0 20px;
-    padding-bottom: 32px;
+    justify-content: flex-start;
+    margin: 0 auto;
+    width: min(100%, 38rem);
+    padding: 8px 24px;
+    text-align: start;
+  }
+  .cloud-welcome-titles {
+    justify-items: start;
   }
   .cloud-chat-welcome h1 {
     font-size: 24px;
@@ -1384,40 +1423,35 @@ html[data-zeroagent-platform="android"]
   .cloud-conversation-layout[data-layout="landing"] .gateway-composer-layer {
     order: 3;
   }
-  .cloud-chat-shell [data-composer-context-bar] {
-    order: -1;
-    margin: 0 12px;
-  }
-  .cloud-composer-context-tray {
-    min-height: 44px;
-    border-radius: 16px 16px 0 0;
-    padding-block: 0;
-  }
-  .cloud-composer-context-tray button {
-    min-height: 44px;
-    padding-inline: 7px;
-  }
-  .cloud-chat-shell [data-composer-layout="inline"] .composer-input-surface {
-    padding-bottom: 56px;
-  }
-  .cloud-chat-shell [data-composer-single-line="true"] {
-    border-radius: 24px;
-  }
-  .cloud-chat-shell [data-composer-single-line="true"] .composer-input-surface {
-    padding: 0 0 56px;
-  }
-  .cloud-chat-shell [data-composer-single-line="true"] .composer-editor-field {
+  .cloud-chat-shell .composer-control-deck [data-composer-context-bar] {
+    min-width: 0;
     margin: 0;
-    padding: 14px 16px 6px;
+    flex: 0 0 auto;
   }
-  .cloud-chat-shell [data-composer-single-line="false"] .composer-editor-field {
-    padding: 14px 16px 6px;
+  .cloud-chat-shell .composer-control-deck .cloud-context-motion-inner {
+    overflow: visible;
+  }
+  .cloud-composer-context-tray[data-compact-work-tools] {
+    gap: 6px;
+    min-height: 44px;
+    background: transparent;
+    padding: 0;
+  }
+  .cloud-composer-context-tray[data-compact-work-tools] button {
+    min-width: 44px;
+    max-width: clamp(72px, 25vw, 108px);
+    min-height: 44px;
+    gap: 4px;
+    padding-inline: 8px;
+  }
+  .cloud-composer-context-tray[data-compact-work-tools] [data-cloud-work-tool="tools"] {
+    flex-shrink: 0;
+  }
+  .cloud-composer-context-tray[data-compact-work-tools] [data-cloud-work-tool="projects"] span {
+    min-width: 0;
   }
   .cloud-chat-shell [data-composer-expanded-input="true"] .mention-composer {
     min-height: 26px;
-  }
-  .cloud-chat-shell [data-composer-single-line="true"] .composer-actions-row {
-    display: flex;
   }
   .cloud-chat-shell [data-composer-single-line="true"] [data-composer-leading],
   .cloud-chat-shell [data-composer-single-line="true"] [data-composer-trailing] {
@@ -1445,18 +1479,23 @@ html[data-zeroagent-platform="android"]
     font-size: 13px;
   }
   .cloud-chat-starters {
-    order: 2;
-    width: 100%;
-    margin: 16px 0 4px;
-    padding-inline: 16px;
+    width: min(100%, 38rem);
+    margin: 2px auto 0;
+    padding-inline: 24px;
   }
   .cloud-chat-starters[data-mode="work"] .cloud-starter-items {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
   .cloud-chat-starters[data-mode="work"] .conversation-starter {
-    min-height: 64px;
-    padding: 10px 12px;
+    min-height: 44px;
+    padding: 6px 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .cloud-chat-starters[data-mode="work"] .conversation-starter-description {
+    display: none;
   }
   .cloud-starters-trigger {
     min-height: 44px;
@@ -1464,8 +1503,36 @@ html[data-zeroagent-platform="android"]
   .cloud-chat-starters[data-mode="chat"] .conversation-starter {
     min-height: 44px;
   }
-  html[data-zeroagent-keyboard="open"] .cloud-chat-welcome,
-  html[data-zeroagent-keyboard="open"] .cloud-chat-starters {
+  .cloud-chat-shell [data-mobile-composer][data-composer-layout="inline"] .composer-glass-card {
+    background: transparent;
+    box-shadow: none;
+  }
+  .cloud-chat-shell [data-mobile-composer][data-composer-layout="inline"] .composer-input-surface {
+    padding: 0;
+    border-radius: 22px;
+  }
+  .cloud-chat-shell [data-mobile-composer][data-composer-layout="inline"] .composer-editor-field {
+    margin: 0;
+    padding: 8px 44px 0 12px;
+  }
+  .cloud-chat-shell [data-mobile-composer][data-composer-layout="inline"] .composer-actions-row {
+    position: relative;
+    inset: auto;
+    padding: 0 4px 2px;
+  }
+  .cloud-chat-shell [data-mobile-composer][data-composer-layout="inline"] [data-mobile-composer-idle] .composer-input-surface {
+    min-height: 50px;
+  }
+  .cloud-chat-shell [data-mobile-composer][data-composer-layout="inline"] [data-mobile-composer-idle] .composer-editor-field {
+    margin-inline: 50px 56px;
+    padding: 0;
+  }
+  .cloud-chat-shell [data-mobile-composer][data-composer-layout="inline"] [data-mobile-composer-idle] .composer-actions-row {
+    position: absolute;
+    inset: 0 3px;
+    padding: 0;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-landing-intro {
     display: none;
   }
   html[data-zeroagent-keyboard="open"] .cloud-conversation-layout[data-layout="landing"] {
@@ -1484,7 +1551,8 @@ html[data-zeroagent-platform="android"]
   }
 }
 @media (max-width: 480px) {
-  .cloud-chat-shell [data-app-workbench-actions] > button[aria-label^="切换"] {
+  .gateway-shell [data-app-workbench-actions]:has([data-conversation-execution-location]) > [data-theme-toggle],
+  .gateway-shell [data-app-workbench-actions]:has([data-project-tools-toggle]) > [data-theme-toggle] {
     display: none;
   }
 
@@ -1495,7 +1563,7 @@ html[data-zeroagent-platform="android"]
     min-height: 44px;
   }
 }
-@media (max-height: 560px) and (min-width: 821px) {
+@media (max-height: 560px) and (min-width: 821px) and (not ((pointer: coarse) and (max-width: 1000px) and (max-height: 550px))) {
   .cloud-chat-shell .cloud-conversation-layout[data-layout="landing"] {
     padding-block: 20px;
   }
@@ -1506,7 +1574,7 @@ html[data-zeroagent-platform="android"]
     display: none;
   }
 }
-@media (max-height: 560px) and (max-width: 820px) {
+@media (max-height: 560px) and (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   .cloud-chat-shell .cloud-chat-welcome {
     min-height: 0;
     padding-bottom: 0;
@@ -1518,7 +1586,7 @@ html[data-zeroagent-platform="android"]
     display: none;
   }
 }
-@media (max-height: 660px) and (min-width: 821px) {
+@media (max-height: 660px) and (min-width: 821px) and (not ((pointer: coarse) and (max-width: 1000px) and (max-height: 550px))) {
   .cloud-conversation-layout[data-layout="landing"] {
     justify-content: flex-start;
     padding-block: 32px;
@@ -1559,7 +1627,7 @@ html[data-zeroagent-platform="android"]
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   .cloud-chat-shell .composer-glass-card button[aria-label="添加资料与工具"],
   .cloud-chat-shell .composer-glass-card button[aria-label="发送消息"],
   .cloud-chat-shell .composer-glass-card button[aria-label="停止生成"] {
@@ -1571,8 +1639,8 @@ html[data-zeroagent-platform="android"]
   }
   .cloud-chat-shell [data-app-header-navigation] > button,
   .cloud-chat-shell [data-cloud-chat-actions] button {
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 @media (max-width: 380px) {

@@ -5,7 +5,12 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { MobileAppExperience } from "./components/mobile/MobileAppExperience";
-import { bootstrapEmbeddedMobileRuntime } from "./lib/mobileRuntime";
+import { installBrowserMobileBack } from "./lib/browserMobileBack";
+import {
+  bootstrapEmbeddedMobileRuntime,
+  installMobileViewport,
+  isEmbeddedMobileRuntime,
+} from "./lib/mobileRuntime";
 import "./index.css";
 import "katex/dist/katex.min.css";
 import "react-complex-tree/lib/style-modern.css";
@@ -20,6 +25,10 @@ import.meta.hot?.dispose(stopCatalogRefresh);
 // 渲染前写入 WebUI 运行时标记（isGatewayWebuiRuntime 的唯一权威写入点）。
 async function start() {
   await bootstrapEmbeddedMobileRuntime();
+  if (!isEmbeddedMobileRuntime() && window.matchMedia("(pointer: coarse)").matches) {
+    installMobileViewport();
+    installBrowserMobileBack();
+  }
   document.documentElement.dataset.liveagentWebui = GATEWAY_WEBUI_MARKER;
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>

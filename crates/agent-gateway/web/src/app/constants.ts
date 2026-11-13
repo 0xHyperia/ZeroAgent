@@ -1,3 +1,5 @@
+export { GATEWAY_COMPACT_VIEWPORT_QUERY as MOBILE_SIDEBAR_MEDIA_QUERY } from "@liveagent/ui/hooks/use-mobile";
+
 export const MAX_UPLOAD_FILES = 9;
 
 export const PROTECTED_DRAFT_CONVERSATION = "__protected_draft__";
@@ -18,5 +20,3 @@ export const NEW_CONVERSATION_BROWSER_TITLE = "ZeroAgent";
 export const SHARED_HISTORY_BROWSER_TITLE = "分享会话";
 export const SKILLS_HUB_BROWSER_TITLE = "Skills Hub";
 export const MCP_HUB_BROWSER_TITLE = "MCP Hub";
-
-export const MOBILE_SIDEBAR_MEDIA_QUERY = "(max-width: 820px)";

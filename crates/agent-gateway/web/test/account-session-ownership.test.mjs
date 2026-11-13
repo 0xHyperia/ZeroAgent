@@ -43,9 +43,33 @@ test("a delayed bootstrap identity cannot replace the user authenticated after i
   assert.equal(app.current.authInitializing,false);
 });
 
+test("device directory failure preserves Cloud sign-in and allows refreshing in place", async (t) => {
+  let available = false;
+  const app = await mountSession(t, {
+    href: "/c/cloud-conversation",
+    environments: async () => {
+      if (!available) throw new Error("Directory unavailable");
+      return cloud("account");
+    },
+  });
+  assert.equal(app.current.accountUser.id, 1);
+  assert.equal(app.current.environmentDirectoryUnavailable, true);
+  assert.equal(app.current.selection.runtime_kind, "web_chat");
+  available = true;
+  await app.env.act(async () => app.current.reloadEnvironments(true));
+  assert.equal(app.current.environmentDirectoryUnavailable, false);
+  assert.equal(app.current.environments[0].name, "account");
+  assert.equal(window.location.pathname, "/c/cloud-conversation");
+});
+
 test("a device selection completed after logout cannot activate the old lease",async(t)=>{
   const old=deferred();const app=await mountSession(t,{selection:()=>old.promise});
-  const pending=app.current.switchExecutionTarget({device_id:"a",runtime_kind:"device_agent"},{id:"a-workspace"}).catch((error)=>error);
+  let committed = false;
+  const pending=app.current.switchExecutionTarget(
+    {device_id:"a",runtime_kind:"device_agent"},
+    {id:"a-workspace"},
+    {beforeCommit:()=>{committed=true;}},
+  ).catch((error)=>error);
   await app.env.act(async()=>app.current.clearSession());
   await app.env.act(async()=>{await app.current.login("b@example.test","fixture");});
   let result;
@@ -55,6 +79,7 @@ test("a device selection completed after logout cannot activate the old lease",a
   assert.equal(app.current.selection.runtime_kind,"web_chat");
   assert.ok(app.tokens.every((value)=>!value.includes("lease:a")));
   assert.equal(window.history.state.zeroagentExecutionSelection,undefined);
+  assert.equal(committed,false);
 });
 
 test("a workspace preflight gates the device handoff and the draft intent is consumed once", async (t) => {
@@ -71,6 +96,7 @@ test("a workspace preflight gates the device handoff and the draft intent is con
   assert.equal(app.current.selection.runtime_kind, "web_chat");
   assert.ok(!app.tokens.includes("lease:a"));
   assert.equal(window.history.state?.zeroagentExecutionSelection, undefined);
+  let committedAt;
   await app.env.act(async () => {
     await app.current.switchExecutionTarget(environment, workspace, {
       prepareDeviceDraft: async (target) => {
@@ -78,8 +104,10 @@ test("a workspace preflight gates the device handoff and the draft intent is con
         assert.equal(target.workspace_id, "");
         return { id: workspace.id, path: workspace.path };
       },
+      beforeCommit: () => { committedAt = window.location.search; },
     });
   });
+  assert.equal(committedAt, "");
   const draft = { id: "second", path: "D:/workspace/second" };
   assert.deepEqual(app.current.selection.device_draft_workspace, draft);
   assert.deepEqual(window.history.state.zeroagentDeviceDraftIntent, {
@@ -153,8 +181,72 @@ test("top-level switching keeps the old conversation and binds the URL to the ne
   assert.equal(window.location.search, "?device=second");
   assert.equal(app.current.selection.device_id, "second");
   await switchTo(cloudTarget);
+  assert.equal(window.location.pathname, "/c/cloud-conversation");
   assert.equal(window.location.search, "");
   assert.equal(app.current.selection.runtime_kind, "web_chat");
+  assert.equal(window.history.state.zeroagentExecutionSelection, undefined);
+});
+
+test("returning after revocation restores the original Cloud conversation", async (t) => {
+  const target = device("office");
+  const app = await mountSession(t, {
+    href: "/c/retained-conversation",
+    environments: async () => [...cloud("account"), target],
+    selection: async () => lease(target.device_id),
+  });
+  await app.env.act(async () => app.current.switchExecutionTarget(target, { id: "", name: "" }));
+  await app.env.act(async () => window.dispatchEvent(new window.Event("selection-invalid")));
+  assert.equal(app.current.deviceRouteStatus, "unavailable");
+  assert.equal(app.current.token, "");
+  await app.env.act(async () => app.current.returnToCloudConversation());
+  assert.equal(window.location.pathname, "/c/retained-conversation");
+  assert.equal(app.current.selection.runtime_kind, "web_chat");
+  assert.equal(window.history.state.zeroagentCloudReturn, undefined);
+});
+
+test("an offline device keeps its lease, while removing the current device retires its control", async (t) => {
+  const first = device("office");
+  const next = device("lab");
+  const workspace = { id: "", name: "" };
+  const account = cloud("account");
+  let directory = Promise.resolve([...account, first, next]);
+  const app = await mountSession(t, {
+    href: "/c/retained-conversation",
+    environments: () => directory,
+    selection: async (target) => lease(target.device_id),
+  });
+  await app.env.act(async () => app.current.switchExecutionTarget(first, workspace));
+  directory = Promise.resolve([...account, device("office", false), next]);
+  await app.env.act(async () => app.current.reloadEnvironments(true));
+  assert.equal(app.current.token, "lease:office");
+  assert.equal(app.current.deviceRouteStatus, null);
+
+  const stale = deferred();
+  directory = stale.promise;
+  const refresh = app.current.reloadEnvironments(true);
+  await app.env.act(async () => app.current.switchExecutionTarget(next, workspace));
+  await app.env.act(async () => { stale.resolve(account); await refresh; });
+  assert.equal(app.current.token, "lease:lab");
+  assert.equal(app.current.deviceRouteStatus, null);
+
+  directory = Promise.resolve(account);
+  await app.env.act(async () => app.current.reloadEnvironments(true));
+  assert.equal(app.current.deviceRouteStatus, "unauthorized");
+  assert.equal(app.current.token, "");
+  assert.equal(window.location.search, "?device=lab");
+  await app.env.act(async () => app.current.returnToCloudConversation());
+  assert.equal(window.location.pathname, "/c/retained-conversation");
+});
+
+test("an expired device lease retires without refreshing the directory", async (t) => {
+  const target = device("office");
+  const app = await mountSession(t, {
+    environments: async () => [...cloud("account"), target],
+    selection: async () => ({ ...lease(target.device_id), expires_at: new Date(Date.now() - 1000).toISOString() }),
+  });
+  await app.env.act(async () => app.current.switchExecutionTarget(target, { id: "", name: "" }));
+  assert.equal(app.current.deviceRouteStatus, "unauthorized");
+  assert.equal(app.current.token, "");
   assert.equal(window.history.state.zeroagentExecutionSelection, undefined);
 });
 

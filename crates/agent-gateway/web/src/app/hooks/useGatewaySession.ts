@@ -1,6 +1,7 @@
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bindAccountRequests } from "@/lib/accountRequest";
+import { pushWorkbenchLocation, replaceWorkbenchState } from "@/lib/browserMobileBack";
 import {
   type CloudChatRoute,
   cloudChatRouteHref,
@@ -40,6 +41,7 @@ import { setEphemeralCredential } from "@/lib/storage";
 
 const EXECUTION_SELECTION_HISTORY_KEY = "zeroagentExecutionSelection";
 const DEVICE_DRAFT_INTENT_HISTORY_KEY = "zeroagentDeviceDraftIntent";
+const CLOUD_RETURN_HISTORY_KEY = "zeroagentCloudReturn";
 const EXECUTION_PRESENCE_FALLBACK_INTERVAL_MS = 5_000;
 
 type DeviceDraftIntent = {
@@ -50,6 +52,7 @@ type DeviceDraftIntent = {
 
 type SwitchExecutionOptions = {
   prepareDeviceDraft?: (selection: ExecutionSelection) => Promise<DeviceDraftWorkspace>;
+  beforeCommit?: () => void;
 };
 
 function readHistorySelection(): ExecutionSelection | null {
@@ -95,10 +98,12 @@ function persistHistorySelection(
     state[EXECUTION_SELECTION_HISTORY_KEY] = lease;
   } else {
     delete state[EXECUTION_SELECTION_HISTORY_KEY];
+    if (deviceWorkbenchRouteTarget(readCloudChatRoute(new URL(window.location.href))) === undefined)
+      delete state[CLOUD_RETURN_HISTORY_KEY];
   }
   if (draftIntent) state[DEVICE_DRAFT_INTENT_HISTORY_KEY] = draftIntent;
   else delete state[DEVICE_DRAFT_INTENT_HISTORY_KEY];
-  window.history.replaceState(state, "", window.location.href);
+  replaceWorkbenchState(state);
 }
 
 function defaultCloudSelection(
@@ -123,22 +128,36 @@ function pushGatewayLocation(route: CloudChatRoute) {
   const url = new URL(window.location.href);
   const href = cloudChatRouteHref(route, url);
   if (href !== `${url.pathname}${url.search}${url.hash}`)
-    window.history.pushState({ ...window.history.state }, "", href);
+    pushWorkbenchLocation({ ...window.history.state }, href);
 }
 
-function pushConversationLocation(deviceId?: string) {
-  pushGatewayLocation({ page: "chat", id: "", deviceId });
+function cloudReturnRoute(accountId: number | null): CloudChatRoute {
+  const entry = window.history.state?.[CLOUD_RETURN_HISTORY_KEY];
+  if (
+    accountId !== null &&
+    entry?.accountId === accountId &&
+    typeof entry.href === "string" &&
+    /^\/(?!\/)[^\\]*$/.test(entry.href)
+  ) {
+    const url = new URL(entry.href, window.location.href);
+    if (url.origin === window.location.origin) {
+      const route = readCloudChatRoute(url);
+      if (deviceWorkbenchRouteTarget(route) === undefined) return route;
+    }
+  }
+  return { page: "chat", id: "" };
 }
 
 function useBrowserGatewaySession(historyShareToken: string | null, enabled: boolean) {
   const [accountUser, setAccountUser] = useState<RelayUser | null>(null);
   const activeAccountId = useRef<number | null>(null);
   const [environments, setEnvironments] = useState<ExecutionEnvironment[]>([]);
+  const [environmentDirectoryUnavailable, setEnvironmentDirectoryUnavailable] = useState(false);
   const [selection, setSelection] = useState<ExecutionSelection | null>(null);
   const activeSelection = useRef(selection);
   activeSelection.current = selection;
   const [deviceRouteStatus, setDeviceRouteStatus] = useState<
-    "loading" | "unavailable" | "invalid-link" | null
+    "loading" | "unavailable" | "invalid-link" | "unauthorized" | null
   >(null);
   const [token, setToken] = useState("");
   const [authInitializing, setAuthInitializing] = useState(enabled && !historyShareToken);
@@ -160,6 +179,19 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     setEphemeralCredential(next);
     setToken(next);
   }, []);
+
+  const retireDeviceAuthorization = useCallback(
+    (draftIntent: DeviceDraftIntent | null) => {
+      sessionEpochRef.current++;
+      resetGatewayWebSocketClient();
+      activeSelection.current = null;
+      setSelection(null);
+      applyToken("");
+      persistHistorySelection(null, draftIntent);
+      setDeviceRouteStatus("unauthorized");
+    },
+    [applyToken],
+  );
 
   const loadEnvironments = useCallback(
     async (refreshOnly = false) => {
@@ -183,20 +215,35 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       let items: ExecutionEnvironment[];
       try {
         items = await getExecutionEnvironments(desktopEmbedded ? "desktop" : "web", localDeviceId);
-      } catch (error) {
-        if (refreshOnly || target === undefined) throw error;
+      } catch {
         if (epoch === sessionEpochRef.current) {
-          resetGatewayWebSocketClient();
-          setSelection(null);
-          applyToken("");
-          persistHistorySelection(null, draftIntent);
-          setDeviceRouteStatus("unavailable");
+          setEnvironmentDirectoryUnavailable(true);
+          if (!refreshOnly && target === undefined) {
+            setSelection((current) => current ?? defaultCloudSelection([], true));
+          } else if (!refreshOnly) {
+            resetGatewayWebSocketClient();
+            setSelection(null);
+            applyToken("");
+            persistHistorySelection(null, draftIntent);
+            setDeviceRouteStatus("unavailable");
+          }
         }
         return [];
       }
       if (epoch !== sessionEpochRef.current) return [];
+      setEnvironmentDirectoryUnavailable(false);
       setEnvironments(mergeExecutionPresence(items, executionPresenceRef.current));
-      if (refreshOnly) return items;
+      if (refreshOnly) {
+        const current = activeSelection.current;
+        if (
+          target &&
+          current?.runtime_kind === "device_agent" &&
+          current.device_id === target &&
+          !items.some((item) => item.runtime_kind === "device_agent" && item.device_id === target)
+        )
+          retireDeviceAuthorization(draftIntent);
+        return items;
+      }
       if (target !== undefined) {
         const environment = items.find(
           (item) =>
@@ -313,8 +360,33 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       });
       return items;
     },
-    [applyToken],
+    [applyToken, retireDeviceAuthorization],
   );
+
+  useEffect(() => {
+    if (!enabled || selection?.runtime_kind !== "device_agent") return;
+    const expiresAt = Date.parse(selection.expires_at);
+    if (!Number.isFinite(expiresAt)) return;
+    let timer: number | undefined;
+    const checkExpiry = () => {
+      window.clearTimeout(timer);
+      if (activeSelection.current?.selection_lease !== selection.selection_lease) return;
+      const remaining = expiresAt - Date.now();
+      if (remaining > 0) {
+        timer = window.setTimeout(checkExpiry, Math.min(remaining, 2_147_483_647));
+        return;
+      }
+      const route = readCloudChatRoute(new URL(window.location.href));
+      if (deviceWorkbenchRouteTarget(route) !== selection.device_id) return;
+      retireDeviceAuthorization(readHistoryDeviceDraftIntent(route, activeAccountId.current));
+    };
+    checkExpiry();
+    document.addEventListener("visibilitychange", checkExpiry);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", checkExpiry);
+    };
+  }, [enabled, retireDeviceAuthorization, selection]);
 
   const retryDeviceConversationRoute = useCallback(() => {
     const epoch = ++sessionEpochRef.current;
@@ -324,7 +396,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
   }, [loadEnvironments]);
 
   const returnToCloudConversation = useCallback(
-    (route: CloudChatRoute = { page: "chat", id: "" }) => {
+    (route: CloudChatRoute = cloudReturnRoute(activeAccountId.current)) => {
       const cloud = defaultCloudSelection(environments, true);
       sessionEpochRef.current++;
       pushGatewayLocation(route);
@@ -562,20 +634,30 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       }
       if (epoch !== sessionEpochRef.current)
         throw new Error("账号或执行目标已变更，请重新选择设备。");
+      options?.beforeCommit?.();
       const accountId = activeAccountId.current;
       const draftIntent =
         accountId !== null && next.device_id && next.device_draft_workspace
           ? { accountId, deviceId: next.device_id, workspace: next.device_draft_workspace }
           : null;
-      const currentRoute = readCloudChatRoute(new URL(window.location.href));
+      const url = new URL(window.location.href);
+      const currentRoute = readCloudChatRoute(url);
       const currentDevice = deviceWorkbenchRouteTarget(currentRoute);
       if (
         next.runtime_kind === "device_agent" &&
         (next.device_draft_workspace || next.device_id !== currentDevice)
       ) {
-        pushConversationLocation(next.device_id);
+        pushGatewayLocation({ page: "chat", id: "", deviceId: next.device_id });
+        if (accountId !== null && currentDevice === undefined) {
+          const state = { ...window.history.state };
+          state[CLOUD_RETURN_HISTORY_KEY] = {
+            accountId,
+            href: cloudChatRouteHref(currentRoute, url),
+          };
+          window.history.replaceState(state, "", window.location.href);
+        }
       } else if (next.runtime_kind === "web_chat" && currentDevice !== undefined) {
-        pushConversationLocation();
+        pushGatewayLocation(cloudReturnRoute(accountId));
       }
       resetGatewayWebSocketClient();
       setSelection(next);
@@ -614,6 +696,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
       applyAccount(null);
       resetGatewayWebSocketClient();
       setEnvironments([]);
+      setEnvironmentDirectoryUnavailable(false);
       setSelection(null);
       applyToken("");
       persistHistorySelection(null);
@@ -630,6 +713,7 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
     token,
     accountUser,
     environments,
+    environmentDirectoryUnavailable,
     selection,
     authInitializing,
     authSubmitting,
@@ -738,6 +822,7 @@ function useDesktopGatewaySession(host: DesktopRemoteHost | undefined) {
     token,
     accountUser: host?.accountUser ?? null,
     environments,
+    environmentDirectoryUnavailable: false,
     // An invalid remote mount retains its target; it never becomes Cloud Chat/local.
     selection: host?.selection ?? null,
     authInitializing: false,

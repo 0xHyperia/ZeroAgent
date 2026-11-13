@@ -25,6 +25,7 @@ export function ThemeToggleButton({
   const Icon = next === "light" ? Sun : next === "dark" ? Moon : MonitorSmartphone;
   return (
     <Button
+      data-theme-toggle=""
       variant="ghost"
       size="icon-sm"
       onClick={onToggle}

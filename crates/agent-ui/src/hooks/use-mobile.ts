@@ -1,10 +1,13 @@
 import { useSyncExternalStore } from "react";
 
-// Keep the gateway's existing 820px breakpoint; native compact windows use 768px.
+// Match the compact WebUI styles, including phones rotated past 820px.
+export const GATEWAY_COMPACT_VIEWPORT_QUERY =
+  "(max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px)";
+
 function query() {
   return window.matchMedia(
     document.documentElement.dataset.liveagentWebui === "gateway"
-      ? "(max-width: 820px)"
+      ? GATEWAY_COMPACT_VIEWPORT_QUERY
       : "(max-width: 767px)",
   );
 }

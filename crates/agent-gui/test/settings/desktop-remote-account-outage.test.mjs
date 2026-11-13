@@ -108,10 +108,13 @@ test("a directory outage preserves the authorized remote workbench across device
   assert.equal(parent.querySelector("textarea"), draft);
   await render(confirmedMissing);
   assert.equal(parent.querySelector("textarea"), null);
+  assert.match(parent.querySelector('[role="status"]').textContent, /设备控制权限已失效/);
   assert.deepEqual(counts, { mount: 1, dispose: 1, bridge: 1, close: 1 });
   await render(state.unavailableDesktopExecutionState(confirmedMissing, [local]));
+  assert.match(parent.querySelector('[role="status"]').textContent, /设备控制权限已失效/);
   await render(offline);
   assert.equal(parent.querySelector("textarea"), null);
+  assert.match(parent.querySelector('[role="status"]').textContent, /设备离线/);
   assert.deepEqual(counts, { mount: 1, dispose: 1, bridge: 1, close: 1 });
   await render(ready);
   await render(outage, "Device authorization revoked");

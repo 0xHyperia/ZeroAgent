@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useLocale } from "../../i18n";
 import { Check, ChevronDown, Cloud, FolderOpen, Loader2, MonitorSmartphone } from "../IconSet";
 import { Button } from "../ui/button";
@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { Sheet, SheetHeader, SheetPanel, SheetPopup, SheetTitle, SheetTrigger } from "../ui/sheet";
 
 const icons = { cloud: Cloud, device: MonitorSmartphone, workspace: FolderOpen };
 
@@ -40,14 +41,42 @@ function locationText(location: ExecutionLocation) {
   return [location.name, location.workspace].filter(Boolean).join(" · ");
 }
 
+function LocationAction({ sheet, closeOnClick, children, ...props }: {
+  sheet: boolean;
+  closeOnClick?: boolean;
+  className: string;
+  disabled?: boolean;
+  "aria-label"?: string;
+  "aria-current"?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  if (!sheet) {
+    return <DropdownMenuItem closeOnClick={closeOnClick} {...props}>{children}</DropdownMenuItem>;
+  }
+  return (
+    <Button variant="ghost" {...props} className={`h-auto w-full justify-start whitespace-normal rounded-xl px-3 text-left ${props.className}`}>
+      {children}
+    </Button>
+  );
+}
+
 export function ConversationExecutionLocation({
   current,
   choices,
   disabled,
+  retryDirectory,
+  onManageDevices,
+  compact = false,
+  mobileSheet = false,
 }: {
   current: ExecutionLocation;
   choices?: readonly ExecutionLocationChoice[];
   disabled?: boolean;
+  retryDirectory?: () => Promise<unknown>;
+  onManageDevices?: () => void;
+  compact?: boolean;
+  mobileSheet?: boolean;
 }) {
   const { locale } = useLocale();
   const zh = locale === "zh-CN";
@@ -56,20 +85,25 @@ export function ConversationExecutionLocation({
   const [pending, setPending] = useState<string>();
   const pendingRef = useRef(false);
   const [failure, setFailure] = useState<FailedExecutionLocation>();
+  const [refreshing, setRefreshing] = useState(false);
   const Icon = icons[current.kind];
   const name = locationText(current);
   const label = zh ? `执行位置 · ${name}` : `Execution location · ${name}`;
   const switchLabel = zh ? `切换工作台 · ${name}` : `Switch workbench · ${name}`;
+  const showDeviceType = compact && !mobileSheet && current.kind === "device";
   const content = (
     <>
       <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{current.name}</span>
+      <span className={showDeviceType ? "flex min-w-0 flex-col items-start gap-0.5 leading-tight" : "min-w-0 truncate"}>
+        {showDeviceType && <span className="font-medium text-foreground">{zh ? "远程设备" : "Remote device"}</span>}
+        <span className="max-w-full truncate">{current.name}</span>
+      </span>
       {current.workspace && (
         <span className="min-w-0 truncate max-[520px]:sr-only">· {current.workspace}</span>
       )}
     </>
   );
-  if (!choices?.length) {
+  if (!choices?.length && !retryDirectory && !onManageDevices) {
     return (
       <span
         data-conversation-execution-location="bound"
@@ -83,13 +117,13 @@ export function ConversationExecutionLocation({
   }
 
   const originalChoice = failure
-    ? choices.find(
+    ? choices?.find(
         (choice) => choice.id === failure.id && choice.retryIdentity === failure.identity,
       )
     : undefined;
   const originalDeviceOffline = Boolean(
     failure?.deviceId &&
-      choices.some((choice) => choice.deviceId === failure.deviceId && choice.offline),
+      choices?.some((choice) => choice.deviceId === failure.deviceId && choice.offline),
   );
   const canRetry = originalChoice?.choose && !originalChoice.offline && !originalChoice.unavailable;
   const retryHint = canRetry
@@ -138,31 +172,53 @@ export function ConversationExecutionLocation({
     }
   }
 
-  return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(next) => {
-        openRef.current = next;
-        setOpen(next);
-        if (!next) setFailure(undefined);
-      }}
-    >
-      <DropdownMenuTrigger
-        render={
-          <Button
+  const onOpenChange = (next: boolean) => {
+    openRef.current = next;
+    setOpen(next);
+    if (!next) setFailure(undefined);
+  };
+  const trigger = (
+    <Button
             data-conversation-execution-location="workbench"
             variant="ghost"
-            className="h-8 min-w-0 max-w-44 shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground max-[520px]:h-10"
+            className={compact
+              ? "h-11 min-w-11 max-w-44 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground"
+              : "h-8 min-w-0 max-w-44 shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground max-820:h-11 max-820:min-w-11 max-820:max-w-28 max-[380px]:max-w-24"}
             title={switchLabel}
             aria-label={switchLabel}
             disabled={disabled}
-          />
-        }
-      >
-        {content}
-        <ChevronDown aria-hidden="true" className="size-3 shrink-0" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64 max-w-[calc(100vw-1rem)]" align="start">
+    />
+  );
+  const triggerContent = <>{content}<ChevronDown aria-hidden="true" className="size-3 shrink-0" /></>;
+  const entries = (
+    <>
+        {retryDirectory && (
+          <>
+            <p role="status" className="px-2.5 py-2 text-xs text-muted-foreground">
+              {refreshing
+                ? zh
+                  ? "正在加载设备…"
+                  : "Loading devices…"
+                : zh
+                  ? "暂时无法加载设备。"
+                  : "Couldn't load devices."}
+            </p>
+            <LocationAction sheet={mobileSheet}
+              className="min-h-9 max-820:min-h-11"
+              closeOnClick={false}
+              disabled={refreshing || pending !== undefined}
+              onClick={() => {
+                setRefreshing(true);
+                void retryDirectory()
+                  .catch(() => undefined)
+                  .finally(() => setRefreshing(false));
+              }}
+            >
+              {zh ? "重新加载设备" : "Reload devices"}
+            </LocationAction>
+            {choices?.length ? <DropdownMenuSeparator /> : null}
+          </>
+        )}
         {failure && (
           <div className="sticky top-0 z-10 bg-popover">
             <div role={pending ? "status" : "alert"} className="space-y-1 px-2.5 py-2 text-xs">
@@ -184,32 +240,35 @@ export function ConversationExecutionLocation({
               )}
             </div>
             {canRetry && originalChoice && (
-              <DropdownMenuItem
-                className="min-h-9 max-[520px]:min-h-11"
+              <LocationAction sheet={mobileSheet}
+                className="min-h-9 max-820:min-h-11"
                 closeOnClick={false}
                 disabled={disabled || pending !== undefined}
                 aria-label={zh ? `重试 ${failure.name}` : `Retry ${failure.name}`}
                 onClick={() => void choose(originalChoice)}
               >
                 {zh ? "重试" : "Retry"}
-              </DropdownMenuItem>
+              </LocationAction>
             )}
             <DropdownMenuSeparator />
           </div>
         )}
-        {choices.map((choice) => {
+        {choices?.map((choice) => {
           const ChoiceIcon = icons[choice.kind];
           return (
-            <DropdownMenuItem
+            <LocationAction sheet={mobileSheet}
               key={choice.id}
               closeOnClick={false}
               disabled={choice.offline || !!choice.unavailable || pending !== undefined}
               aria-current={choice.selected || undefined}
-              className="min-h-9 gap-2 max-[520px]:min-h-11"
+              className={mobileSheet ? "min-h-12 py-2 gap-3" : "min-h-9 gap-2 max-820:min-h-11"}
               onClick={() => void choose(choice)}
             >
               <ChoiceIcon aria-hidden="true" className="size-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate" title={locationText(choice)}>
+              <span
+                className={mobileSheet ? "min-w-0 flex-1 break-words" : "min-w-0 flex-1 truncate"}
+                title={locationText(choice)}
+              >
                 {locationText(choice)}
               </span>
               {(choice.offline || choice.unavailable) && (
@@ -222,10 +281,47 @@ export function ConversationExecutionLocation({
               ) : (
                 choice.selected && <Check aria-hidden="true" className="size-4 shrink-0" />
               )}
-            </DropdownMenuItem>
+            </LocationAction>
           );
         })}
-      </DropdownMenuContent>
+        {onManageDevices && (
+          <>
+            <DropdownMenuSeparator />
+            {!retryDirectory && !choices?.some((choice) => choice.kind === "device") && (
+              <p className="px-2.5 py-2 text-xs text-muted-foreground">
+                {zh
+                  ? "登录 ZeroAgent 桌面端后，设备会出现在这里。"
+                  : "Sign in to ZeroAgent on your desktop to see the device here."}
+              </p>
+            )}
+            <LocationAction sheet={mobileSheet}
+              className="min-h-9 max-820:min-h-11"
+              disabled={pending !== undefined}
+              onClick={() => { onOpenChange(false); onManageDevices(); }}
+            >
+              {zh ? "管理设备" : "Manage devices"}
+            </LocationAction>
+          </>
+        )}
+    </>
+  );
+  if (mobileSheet) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetTrigger render={trigger}>{triggerContent}</SheetTrigger>
+        <SheetPopup side="bottom" data-browser-back-surface="" className="za-mobile-choice-sheet" closeLabel={zh ? "关闭" : "Close"}>
+          <SheetHeader className="px-5 pb-2 pt-6 pr-16">
+            <SheetTitle>{zh ? "选择设备" : "Choose a device"}</SheetTitle>
+          </SheetHeader>
+          <SheetPanel className="px-2 pb-2 pt-0">{entries}</SheetPanel>
+        </SheetPopup>
+      </Sheet>
+    );
+  }
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger render={trigger}>{triggerContent}</DropdownMenuTrigger>
+      <DropdownMenuContent className="w-64 max-w-[calc(100vw-1rem)]" align="start">{entries}</DropdownMenuContent>
     </DropdownMenu>
   );
 }

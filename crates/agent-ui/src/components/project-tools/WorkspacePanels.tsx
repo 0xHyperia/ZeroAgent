@@ -373,6 +373,7 @@ export function WorkspaceToolsPanel({
           }}
         >
           <SheetContent
+            data-browser-back-surface=""
             side="right"
             className="w-full max-w-none p-0 [&_[data-project-tools-close]]:inline-flex"
             showCloseButton={false}

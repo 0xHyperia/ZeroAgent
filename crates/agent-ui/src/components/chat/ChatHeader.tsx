@@ -1,6 +1,9 @@
 import { isDesktopChatHeaderInset } from "@liveagent/adapters/chatHeaderChrome";
 import type { AppSettings } from "@liveagent/app/lib/settings";
-import { PanelLeft, Settings } from "@liveagent/ui/components/IconSet";
+import { MoreHorizontal, PanelLeft, Settings } from "@liveagent/ui/components/IconSet";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@liveagent/ui/components/ui/dropdown-menu";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -21,6 +24,7 @@ export type ChatHeaderProps = {
   leadingActions?: ReactNode;
   preThemeActions?: ReactNode;
   trailingActions?: ReactNode;
+  compactActions?: ReactNode;
   windowControls?: ReactNode;
   className?: string;
 };
@@ -38,6 +42,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
     leadingActions,
     preThemeActions,
     trailingActions,
+    compactActions,
     windowControls,
     className,
   } = props;
@@ -49,7 +54,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
     <header
       data-tauri-drag-region
       className={cn(
-        "flex items-center gap-4 pl-4 pr-4 has-[[data-windows-window-controls]]:pr-0",
+        "flex items-center gap-4 pl-4 pr-4 max-820:gap-1.5 max-820:px-2 has-[[data-windows-window-controls]]:pr-0",
         className,
       )}
     >
@@ -76,7 +81,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
             data-sidebar-open=""
             aria-label={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}
             className={cn(
-              "rounded-lg text-muted-foreground hover:text-foreground",
+              "rounded-lg text-muted-foreground hover:text-foreground max-820:size-11",
               // The open sidebar owns its collapse button beside search.
               sidebarOpen && "hidden",
             )}
@@ -98,8 +103,8 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
         className="flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
       >
         {preThemeActions}
-        <ThemeToggleButton theme={settings.theme} onToggle={onToggleTheme} />
-        {!sidebarOpen && !desktopTitleBarInset && !accountInRail ? (
+        {compactActions == null && <ThemeToggleButton theme={settings.theme} onToggle={onToggleTheme} />}
+        {compactActions == null && !sidebarOpen && !desktopTitleBarInset && !accountInRail ? (
           <Button
             variant="ghost"
             size="icon-sm"
@@ -112,6 +117,25 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
           </Button>
         ) : null}
         {trailingActions}
+        {compactActions != null && (
+          <DropdownMenu>
+            <DropdownMenuTrigger render={
+              <Button variant="ghost" size="icon" className="size-11 shrink-0"
+                aria-label={t("chat.mobileWorkbenchOptions")} title={t("chat.mobileWorkbenchOptions")} />
+            }>
+              <MoreHorizontal className="size-5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {compactActions}
+              <DropdownMenuItem className="min-h-11" onClick={() => onOpenSettings()}>
+                {t("tooltip.settings")}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-11" onClick={onToggleTheme}>
+                {t("chat.mobileSwitchTheme")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
       {windowControls}
     </header>

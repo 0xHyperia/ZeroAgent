@@ -16,6 +16,7 @@ import type {
   GitFileContextPayload,
 } from "@liveagent/ui/components/project-tools/git-review/index";
 import type { WorkspaceProjectRootClient } from "@liveagent/ui/contracts/workspaceProjectRoots";
+import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { GitClient } from "@liveagent/ui/lib/git/types";
 import {
@@ -504,6 +505,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     onClose,
   } = props;
   const { t, locale } = useLocale();
+  const mobile = useIsMobile();
   const onActivateWorkspaceTool = workspace?.onActivateTool;
   const onOpenWorkspaceTree = workspace?.onOpenTree;
   const browserActive = workspace?.browserActive ?? false;
@@ -543,6 +545,9 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
   const projectReady = projectPathKey.trim() !== "" && cwd.trim() !== "" && !disabledMessage;
   const workspaceTreeOpen = workspace?.treeOpen;
   const toggleWorkspaceTree = workspace?.onToggleTree;
+  const closeCompactFileTree = useCallback(() => {
+    if (mobile && workspaceTreeOpen) toggleWorkspaceTree?.();
+  }, [mobile, toggleWorkspaceTree, workspaceTreeOpen]);
   const fileTreeToggle = useMemo(
     () =>
       projectReady &&
@@ -866,17 +871,19 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     (path: string, imagePaths?: string[], temporary?: boolean) => {
       if (!onOpenFile) return;
       onOpenFile(path, imagePaths, temporary);
+      closeCompactFileTree();
       if (filePicker) closeToolTab("fileTree");
     },
-    [closeToolTab, filePicker, onOpenFile],
+    [closeCompactFileTree, closeToolTab, filePicker, onOpenFile],
   );
   const openDiffFromTree = useCallback(
     (path: string, temporary?: boolean) => {
       if (!openWorkspaceDiff || gitDisabledMessage) return;
       openWorkspaceDiff(path, temporary);
+      closeCompactFileTree();
       if (filePicker) closeToolTab("fileTree");
     },
-    [closeToolTab, filePicker, gitDisabledMessage, openWorkspaceDiff],
+    [closeCompactFileTree, closeToolTab, filePicker, gitDisabledMessage, openWorkspaceDiff],
   );
   const reviewFileJumpRef = useRef<((path: string) => void) | null>(null);
   const [reviewState, setReviewState] = useState<{
@@ -1043,7 +1050,11 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     workspace && !workspace.activeTabId && currentActiveTab === "gitReview" && gitClient,
   );
   const canFocusEmptyFileFilter =
-    fileFilterFocusScope === currentViewScope && filePicker && isOpen && fileTreeToggle?.open;
+    !mobile &&
+    fileFilterFocusScope === currentViewScope &&
+    filePicker &&
+    isOpen &&
+    fileTreeToggle?.open;
   useLayoutEffect(() => {
     if (fileFilterFocusScope === null) return;
     setFileFilterFocusScope(null);
@@ -1231,7 +1242,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                 data-workspace-close-docked={workspace ? "" : undefined}
                 tooltipSide="bottom"
                 className={cn(
-                  "rounded-lg text-muted-foreground hover:text-foreground",
+                  "rounded-lg text-muted-foreground hover:text-foreground web:max-820:size-11",
                   !workspace && "md:hidden web:max-820:inline-flex",
                 )}
               >
@@ -1279,7 +1290,11 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
           ) : null}
 
           {workspace && (
-            <div ref={setFileHeaderTarget} data-workspace-file-header-host="" className="z-10 shrink-0 empty:hidden" />
+            <div
+              ref={setFileHeaderTarget}
+              data-workspace-file-header-host=""
+              className="z-10 shrink-0 empty:hidden"
+            />
           )}
           {filePicker && (
             <header className="za-workspace-file-header" data-workspace-file-picker-header="">
@@ -1397,6 +1412,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
               </div>
             </div>
             {workspace?.treeOpen &&
+              (!mobile || isOpen) &&
               !browserActive &&
               projectReady &&
               !leasedTools.has("fileTree") && (
@@ -1424,7 +1440,12 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                     conversationId={comparisonConversationId}
                     onOpenReview={() => startToolTab("gitReview")}
                     onOpenDiff={
-                      reviewTree ? (path) => reviewFileJumpRef.current?.(path) : openDiffFromTree
+                      reviewTree
+                        ? (path) => {
+                            reviewFileJumpRef.current?.(path);
+                            closeCompactFileTree();
+                          }
+                        : openDiffFromTree
                     }
                   />
                 </WorkspaceNavigationSplit>

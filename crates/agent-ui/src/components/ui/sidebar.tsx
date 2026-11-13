@@ -236,6 +236,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          data-browser-back-surface=""
           data-mobile-rail={mobileRail ? "true" : undefined}
           backdropVariant="navigation"
           className={cn(

@@ -45,13 +45,13 @@ export function ConversationViewTabs(props: {
             value={tab.id}
             variant="plain"
             className={cn(
-              "flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition-colors",
+              "flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition-colors max-820:h-11 max-820:min-w-11 max-[430px]:justify-center",
               "text-muted-foreground hover:bg-background/70 hover:text-foreground",
               selected && "bg-background font-medium text-foreground shadow-sm",
             )}
           >
             <Icon className="size-3.5" />
-            <span>{t(tab.labelKey)}</span>
+            <span className="max-[430px]:sr-only">{t(tab.labelKey)}</span>
           </TabsTrigger>
         );
       })}

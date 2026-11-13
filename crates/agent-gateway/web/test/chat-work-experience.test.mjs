@@ -113,4 +113,15 @@ test("the real inline composer retains its editor, selection and single model co
   props.capabilities=DEVICE_COMPOSER_CAPABILITIES;
   await render(false);assert.ok(host.querySelector('[data-safety]'));assert.ok(host.querySelector('[data-git]'));
   assert.equal(host.querySelector('textarea'),retainedEditor);assert.equal(mounts,1);assert.equal(modelMounts,retainedModelMounts);assert.equal(sends,0);
+
+  window.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
+  props.layout='inline';props.executionMode='text';props.capabilities=CLOUD_COMPOSER_CAPABILITIES;
+  await render(true);
+  const mobileDeck=host.querySelector('[data-mobile-composer] .composer-control-deck');
+  assert.ok(mobileDeck);
+  assert.equal(host.querySelectorAll('[data-composer-context-bar]').length,1);
+  assert.ok(mobileDeck.querySelector('[data-composer-context-bar]'));
+  assert.ok(mobileDeck.querySelector('[data-model]'));
+  assert.equal(host.querySelector('textarea'),retainedEditor);
+  assert.equal(retainedEditor.value,'第一行\n第二行');
 });

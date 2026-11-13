@@ -46,7 +46,7 @@ test("model pickers use popover semantics instead of menu semantics", () => {
   for (const source of pickerSources) {
     assert.match(
       source,
-      /import \{ Popover, PopoverContent, PopoverTrigger \} from "@liveagent\/ui\/components\/ui\/popover"/,
+      /import \{ Popover, (?:PopoverClose, )?PopoverContent, PopoverTrigger \} from "@liveagent\/ui\/components\/ui\/popover"/,
     );
     assert.match(source, /<Popover[\s\S]*?open=\{open\}/);
     assert.match(source, /<PopoverContent/);
@@ -107,7 +107,7 @@ test("upload stays leftmost before model controls in the composer toolbar", () =
   );
   const standardDeck = composerSource.slice(composerSource.indexOf('"composer-control-deck'), composerSource.indexOf('{fileDropOverlay}'));
   assert.ok(standardDeck.indexOf("<CommandSafetyModeSelector") < standardDeck.indexOf("{modelControls}"));
-  assert.ok(standardDeck.indexOf("{modelControls}") < standardDeck.indexOf("<GitBranchSelector"));
+  assert.match(standardDeck, /\{modelControls\}[\s\S]*?\{!compactDeviceControls && gitControls\}/);
   assert.doesNotMatch(headerSource, /model-selector-trigger|Popover\.Root|currentModelLabel/);
 
   assert.match(pickerSources[0], /thinkingEnabled: true, reasoning: level/);
@@ -145,7 +145,7 @@ test("composer separates input actions from the stacked runtime control deck", (
 });
 
 test("composer dropdown portals stay above the composer surface", () => {
-  assert.match(popoverSource, /className="layer-popover isolate"/);
+  assert.match(popoverSource, /bottomSheet \? "za-mobile-popover-positioner layer-modal isolate" : "layer-popover isolate"/);
   assert.match(selectSource, /className="layer-popover"/);
   assert.match(baseStylesSource, /--layer-popover: 10000;/);
   assert.match(baseStylesSource, /--layer-modal: 10000;/);

@@ -35,7 +35,7 @@ export function CloudChatResearchConfirmation({
         if (!open) onCancel();
       }}
     >
-      <DialogContent className="flex max-h-[85dvh] w-full max-w-640px flex-col gap-16px overflow-auto p-20px">
+      <DialogContent className="flex max-h-[min(85dvh,calc(var(--zeroagent-visual-viewport-height,100dvh)-24px))] w-full max-w-640px flex-col gap-16px overflow-auto p-20px">
         <DialogTitle>确认公开检索主题</DialogTitle>
         <DialogDescription>
           下面这段主题可用于公开搜索和网页查询。公开研究无法看到对话历史、项目资料、记忆或附件；完成检索后，再结合你的私有资料作答。请移除不希望发送到搜索服务或网页站点的信息。
@@ -61,10 +61,10 @@ export function CloudChatResearchConfirmation({
             {validation.error}
           </p>
         ) : null}
-        <div className="flex justify-end gap-8px">
+        <div className="flex flex-wrap justify-end gap-8px">
           <button
             type="button"
-            className="rounded-lg border border-border px-12px py-6px text-sm"
+            className="rounded-lg border border-border px-12px py-6px text-sm max-820:min-h-11"
             onClick={onCancel}
           >
             取消联网发送
@@ -72,7 +72,7 @@ export function CloudChatResearchConfirmation({
           <button
             type="button"
             disabled={!validation.research}
-            className="rounded-lg bg-primary px-12px py-6px text-sm text-primary-foreground disabled:opacity-50"
+            className="rounded-lg bg-primary px-12px py-6px text-sm text-primary-foreground disabled:opacity-50 max-820:min-h-11"
             onClick={() => {
               if (validation.research) onConfirm(validation.research);
             }}

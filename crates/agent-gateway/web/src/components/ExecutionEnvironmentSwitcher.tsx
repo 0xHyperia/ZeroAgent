@@ -10,11 +10,19 @@ export function ExecutionEnvironmentSwitcher({
   environments,
   selection,
   disabled,
+  retryDirectory,
+  onManageDevices,
+  compact,
+  mobileSheet,
   onSwitch,
 }: {
   environments: ExecutionEnvironment[];
   selection: ExecutionSelection | null;
   disabled?: boolean;
+  retryDirectory?: () => Promise<unknown>;
+  onManageDevices?: () => void;
+  compact?: boolean;
+  mobileSheet?: boolean;
   onSwitch: (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => Promise<unknown>;
 }) {
   const { locale } = useLocale();
@@ -33,6 +41,10 @@ export function ExecutionEnvironmentSwitcher({
     <ConversationExecutionLocation
       current={current}
       disabled={disabled}
+      retryDirectory={retryDirectory}
+      onManageDevices={onManageDevices}
+      compact={compact}
+      mobileSheet={mobileSheet}
       choices={environments.map((environment) => ({
         id: environment.device_id ?? "cloud",
         deviceId: environment.device_id,

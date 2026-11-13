@@ -108,6 +108,7 @@ enum StartupEvent {
 
 pub struct KBrainBackendManager {
     process: Mutex<Option<BackendProcess>>,
+    #[cfg(desktop)]
     file_runtime: Option<super::file_runtime::FileRuntime>,
     connection: KBrainBackendConnection,
     facade: Mutex<Option<BackendFacade>>,
@@ -315,8 +316,11 @@ impl KBrainBackendManager {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let file_runtime = super::file_runtime::configure(&mut command, resource_dir);
-        command.env("ZEROAGENT_FILE_SKILL_ROOT", backend_dir.join("skills"));
+        #[cfg(desktop)]
+        let file_runtime = {
+            command.env("ZEROAGENT_FILE_SKILL_ROOT", backend_dir.join("skills"));
+            super::file_runtime::configure(&mut command, resource_dir)
+        };
         if let Some(host) = &mcp_credentials {
             command
                 .env("ZEROAGENT_MCP_CREDENTIAL_ENDPOINT", host.endpoint())
@@ -451,6 +455,7 @@ impl KBrainBackendManager {
 
         Ok(Arc::new(Self {
             process: Mutex::new(Some(process)),
+            #[cfg(desktop)]
             file_runtime,
             connection,
             facade: Mutex::new(None),
@@ -1463,6 +1468,7 @@ impl KBrainBackendState {
         manager.is_running().then(|| manager.connection())
     }
 
+    #[cfg(desktop)]
     pub(crate) async fn file_runtime_ready(&self) -> bool {
         let Some(manager) = self.manager.lock().ok().and_then(|manager| manager.as_ref().cloned())
         else {
@@ -1472,6 +1478,11 @@ impl KBrainBackendState {
             return false;
         };
         manager.is_running() && runtime.ready().await && manager.is_running()
+    }
+
+    #[cfg(mobile)]
+    pub(crate) async fn file_runtime_ready(&self) -> bool {
+        false
     }
 
     pub fn verify_portable_backup(&self, value: &serde_json::Value) -> Result<(), String> {

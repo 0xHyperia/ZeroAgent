@@ -34,6 +34,7 @@ import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { CLOUD_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
+import { GATEWAY_COMPACT_VIEWPORT_QUERY } from "@liveagent/ui/hooks/use-mobile";
 import type {
   ExtensionCatalog,
   ExtensionPackage,
@@ -390,6 +391,7 @@ type Props = {
   user: RelayUser;
   onUserChange: (user: RelayUser) => void;
   environments: ExecutionEnvironment[];
+  retryEnvironmentDirectory?: () => Promise<unknown>;
   selection: ExecutionSelection | null;
   settings: AppSettings;
   setSettings: (updater: (previous: AppSettings) => AppSettings) => void;
@@ -492,6 +494,7 @@ export function CloudChatPage({
   user,
   onUserChange,
   environments,
+  retryEnvironmentDirectory,
   selection,
   settings,
   setSettings,
@@ -2442,7 +2445,8 @@ export function CloudChatPage({
             if (!history.some((message) => message.id === latest.assistant_message_id))
               displayRun(latest, view);
           } else if (!anchor) await restoreTerminalNotice(history);
-          if (window.matchMedia("(max-width: 820px)").matches) setSidebarOpenRef.current(false);
+          if (window.matchMedia(GATEWAY_COMPACT_VIEWPORT_QUERY).matches)
+            setSidebarOpenRef.current(false);
         })
         .catch((cause) => {
           if (controller.signal.aborted || !isCurrentView(view)) return;
@@ -6309,7 +6313,7 @@ export function CloudChatPage({
                               title="新对话"
                               aria-label="新对话"
                               onClick={() => navigateConversation()}
-                              className="cloud-header-new-chat shrink-0 rounded-lg"
+                              className="cloud-header-new-chat size-11 shrink-0 rounded-lg max-[360px]:hidden"
                             >
                               <SquarePen className="size-4.5" />
                             </Button>
@@ -6416,7 +6420,10 @@ export function CloudChatPage({
                         !desktopCloudHost && onSwitch && workspaceView === "chat" ? (
                           <ExecutionEnvironmentSwitcher
                             environments={environments}
+                            retryDirectory={retryEnvironmentDirectory}
+                            onManageDevices={() => openComposerSettings("account")}
                             selection={selection}
+                            mobileSheet={sidebar.isMobile}
                             disabled={workbenchSwitchBusy}
                             onSwitch={switchWorkbench}
                           />
@@ -6462,7 +6469,12 @@ export function CloudChatPage({
                               data-presentation={presentation}
                             >
                               {landing && !workingInSpace ? (
-                                <CloudChatEmptyState mode={presentation} />
+                                <div className="cloud-landing-intro">
+                                  <CloudChatEmptyState mode={presentation} />
+                                  {sidebar.isMobile && (
+                                    <CloudChatStarters mode={presentation} onSelect={fillStarter} />
+                                  )}
+                                </div>
                               ) : null}
                               <div className="gateway-transcript-scroll-shell relative h-full min-h-0">
                                 <ScrollArea
@@ -6660,7 +6672,6 @@ export function CloudChatPage({
                                 feedback={composerFeedback}
                                 layout="inline"
                                 expandedInput={presentation === "work"}
-                                contextBarPosition={sidebar.isMobile ? "above" : "below"}
                                 allowQueueWhileSending
                                 submitLabel={
                                   pendingQueue.editingItem ? "保存待发送消息" : undefined
@@ -6767,7 +6778,7 @@ export function CloudChatPage({
                                   </>
                                 }
                                 contextBar={
-                                  scheduledConversation ? undefined : (
+                                  scheduledConversation || (sidebar.isMobile && presentation !== "work") ? undefined : (
                                     <div
                                       className="cloud-context-motion"
                                       data-open={presentation === "work"}
@@ -6776,6 +6787,7 @@ export function CloudChatPage({
                                     >
                                       <div className="cloud-context-motion-inner">
                                         <CloudChatWorkToolbar
+                                          compact={sidebar.isMobile}
                                           open={composerMenu}
                                           busy={projectContextBusy}
                                           disabled={composerLocked}
@@ -6975,7 +6987,7 @@ export function CloudChatPage({
                                 onEditQueuedTurn={(id) => void pendingQueue.beginEdit(id)}
                                 onRemoveQueuedTurn={(id) => void pendingQueue.remove(id)}
                               />
-                              {landing && !workingInSpace ? (
+                              {landing && !workingInSpace && !sidebar.isMobile ? (
                                 <CloudChatStarters mode={presentation} onSelect={fillStarter} />
                               ) : null}
                             </div>
