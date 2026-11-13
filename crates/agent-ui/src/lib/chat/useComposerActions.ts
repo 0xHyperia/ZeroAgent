@@ -128,7 +128,11 @@ export function useComposerActions(composerRef: MutableRefObject<MentionComposer
     (text: string) => {
       const composer = composerRef.current;
       if (!composer) return;
-      composer.setText(text);
+      if (composer.getDraft().isEmpty) {
+        composer.setText(text);
+      } else {
+        composer.appendSegments([{ type: "text", text }]);
+      }
       composer.focus();
     },
     [composerRef],

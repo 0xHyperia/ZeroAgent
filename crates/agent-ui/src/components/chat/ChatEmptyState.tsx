@@ -1,4 +1,4 @@
-import { getAssistantAvatarUrl } from "@liveagent/adapters/assistantAvatar";
+import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { FolderTree, Lightbulb, Settings, Wrench } from "@liveagent/ui/components/IconSet";
 import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { useLocale } from "@liveagent/ui/i18n/index";
@@ -45,6 +45,7 @@ const SUGGESTION_CARDS = [
     icon: FolderTree,
     chipClassName: "text-sky-600 dark:text-sky-400",
     titleKey: "chat.suggestExploreTitle",
+    hintKey: "chat.suggestExploreHint",
     promptKey: "chat.suggestExplorePrompt",
   },
   {
@@ -52,6 +53,7 @@ const SUGGESTION_CARDS = [
     icon: Wrench,
     chipClassName: "text-amber-600 dark:text-amber-400",
     titleKey: "chat.suggestFixTitle",
+    hintKey: "chat.suggestFixHint",
     promptKey: "chat.suggestFixPrompt",
   },
   {
@@ -59,6 +61,7 @@ const SUGGESTION_CARDS = [
     icon: Lightbulb,
     chipClassName: "text-emerald-600 dark:text-emerald-400",
     titleKey: "chat.suggestIdeateTitle",
+    hintKey: "chat.suggestIdeateHint",
     promptKey: "chat.suggestIdeatePrompt",
   },
 ] as const;
@@ -67,7 +70,6 @@ export type ChatEmptyStateProps = {
   variant: "no-models" | "start-chat";
   onOpenSettings?: (section?: "providers") => void;
   onSuggestionSelect?: (text: string) => void;
-  /** Locks the suggestion cards while a picked prompt is still typing in. */
 };
 
 export function ChatEmptyState({
@@ -81,18 +83,11 @@ export function ChatEmptyState({
 
   return (
     <div className="conversation-starter-container relative flex w-full flex-col items-center" data-compact-starters={compact ? "" : undefined}>
-      <div className={cn("conversation-starter-avatar relative flex items-center justify-center", compact ? "mb-2 size-9" : "mb-5 size-14")}>
-        <div className="relative flex size-full items-center justify-center">
-          <div aria-hidden="true" className="hidden" />
-          <img
-            src={getAssistantAvatarUrl()}
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            className={cn("relative select-none object-contain", compact ? "size-8" : "size-12")}
-          />
-        </div>
-      </div>
+      <BrandMark
+        alt=""
+        aria-hidden="true"
+        className={cn(compact ? "mb-3 size-10" : "mb-5 size-12")}
+      />
 
       {variant === "no-models" ? (
         <>
@@ -122,9 +117,8 @@ export function ChatEmptyState({
         </>
       ) : (
         <>
-          <div className={cn("font-normal tracking-tight text-foreground", compact ? "conversation-starter-greeting text-start text-2xl leading-8" : "text-center text-2xl leading-8")}>
-            {t(GREETING_KEYS[period])}{compact ? "" : `，${t("chat.greetingSubtitle")}`}
-            {compact && <div className="mt-1 text-sm leading-5 text-muted-foreground">{t("chat.greetingSubtitle")}</div>}
+          <div className="text-center text-2xl font-normal leading-8 tracking-tight text-foreground">
+            {t(GREETING_KEYS[period])}，{t("chat.greetingSubtitle")}
           </div>
           {onSuggestionSelect ? (
             <div className={cn("conversation-starter-grid w-full", compact ? "mt-3" : "mt-7 max-w-768px px-4")}>
@@ -132,9 +126,9 @@ export function ChatEmptyState({
                 <ConversationStarter
                   key={card.key}
                   title={t(card.titleKey)}
-                  description={compact ? undefined : t(card.promptKey)}
-                  layout={compact ? "inline" : "stacked"}
-                  icon={<card.icon className="size-5" />}
+                  description={t(card.hintKey)}
+                  layout="inline"
+                  icon={<card.icon className={cn("size-5", card.chipClassName)} />}
                   onSelect={() => onSuggestionSelect(t(card.promptKey))}
                 />
               ))}

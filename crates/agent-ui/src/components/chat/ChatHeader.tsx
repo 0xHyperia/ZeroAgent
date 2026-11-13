@@ -114,6 +114,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
             onClick={() => onOpenSettings()}
             title={t("tooltip.settings")}
             aria-label={t("tooltip.settings")}
+            data-workbench-settings=""
             className="rounded-lg text-muted-foreground hover:text-foreground"
           >
             <Settings className="size-4" />

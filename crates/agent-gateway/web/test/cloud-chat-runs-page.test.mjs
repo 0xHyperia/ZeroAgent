@@ -1606,23 +1606,20 @@ test("an 8k report previews briefly but copies and edits the complete canonical 
 
 test("Cloud work starters append to the existing draft without creating a paid Run or enabling research",async(t)=>{
  const app=await mount(t,{initialMessages:[],newDraft:true});assert.match(app.host.textContent,/我们要做什么/);const originalDraft=app.draft;
- const examples=app.host.querySelector(".cloud-starters-trigger");
- assert.equal(examples.getAttribute("aria-expanded"),"false");
- assert.equal(app.host.querySelectorAll("button.conversation-starter").length,0);
- for(const [label,prompt]of [["研究一个问题","研究一个问题"],["分析表格与数据","分析表格与数据"],["撰写或完善文档","撰写或完善"]]){
-   await app.clickText("查看工作示例");
-   assert.equal(examples.getAttribute("aria-expanded"),"true");
+ assert.equal(app.host.querySelector(".cloud-welcome-logo").getAttribute("src"),"/zeroagent-logo.png");
+ assert.equal(app.host.querySelectorAll("button.conversation-starter").length,3);
+ for(const [label,prompt]of [["制作对比报告","方案对比报告"],["分析一份表格","分析我提供的表格"],["整理项目周报","一份周报"]]){
    const starter=[...app.host.querySelectorAll("button.conversation-starter")].find(node=>node.querySelector(".conversation-starter-title").textContent===label);
    assert.ok(starter);
    await app.env.act(async()=>{starter.click();await tick();});
-   assert.equal(examples.getAttribute("aria-expanded"),"false");
    assert.ok(app.draft.includes(prompt));assert.ok(app.draft.startsWith(originalDraft));
  }
  assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled,false);
  assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
  const editor=app.host.querySelector("footer");const clearBefore=app.clearCount;
- await app.clickText("对话");assert.equal(app.host.querySelector("footer"),editor);assert.equal(app.clearCount,clearBefore);assert.ok(app.draft.includes("撰写或完善"));assert.match(app.host.textContent,/今天有什么安排/);
- await app.clickText("工作");assert.equal(app.host.querySelector("footer"),editor);assert.ok(app.draft.includes("撰写或完善"));
+ await app.clickText("对话");assert.equal(app.host.querySelector("footer"),editor);assert.equal(app.clearCount,clearBefore);assert.ok(app.draft.includes("一份周报"));assert.match(app.host.textContent,/今天有什么安排/);
+ assert.match(app.host.querySelector(".cloud-chat-starters").textContent,/用例子解释一个概念/);
+ await app.clickText("工作");assert.equal(app.host.querySelector("footer"),editor);assert.ok(app.draft.includes("一份周报"));
 });
 
 test("the actual model controls off callback persists none across reload and later high selection",async(t)=>{
