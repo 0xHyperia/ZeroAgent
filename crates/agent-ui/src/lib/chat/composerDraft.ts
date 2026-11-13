@@ -24,6 +24,10 @@ import {
 import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 import { formatWorkspaceExcerpt } from "./workspaceExcerpt";
 
+export function draftContainsStarter(draft: MentionComposerDraft, prompt: string): boolean {
+  return draft.segments.some((segment) => segment.type === "text" && segment.text.includes(prompt));
+}
+
 export function buildPastedTextFileName(paste: MentionComposerLargePaste, index: number) {
   const baseName = paste.label
     .trim()

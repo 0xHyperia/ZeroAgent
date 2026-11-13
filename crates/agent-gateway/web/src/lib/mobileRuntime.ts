@@ -52,6 +52,7 @@ declare global {
     };
     __ZEROAGENT_ANDROID__?: {
       getSafeAreaInsets(): string;
+      setSystemBarTheme?(dark: boolean): void;
       moveTaskToBack(): void;
       getPendingOAuthCallback(): string | null;
       acknowledgeOAuthCallback(url: string): void;
@@ -168,15 +169,9 @@ function installMobileSafeAreaBridge() {
   });
 }
 
-function syncMobileThemeColor() {
+function syncMobileSystemBars() {
   const dark = document.documentElement.classList.contains("dark");
-  let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (!meta) {
-    meta = document.createElement("meta");
-    meta.name = "theme-color";
-    document.head.append(meta);
-  }
-  meta.content = dark ? "#09090B" : "#FFFFFF";
+  window.__ZEROAGENT_ANDROID__?.setSystemBarTheme?.(dark);
 }
 
 export function dismissTopMobileOverlay() {
@@ -234,8 +229,8 @@ async function installMobileExperience() {
   );
   installMobileSafeAreaBridge();
   installMobileViewport();
-  syncMobileThemeColor();
-  new MutationObserver(syncMobileThemeColor).observe(document.documentElement, {
+  syncMobileSystemBars();
+  new MutationObserver(syncMobileSystemBars).observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["class"],
   });

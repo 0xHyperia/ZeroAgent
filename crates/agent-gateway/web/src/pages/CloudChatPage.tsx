@@ -45,7 +45,7 @@ import type {
 import { t as translate } from "@liveagent/ui/i18n/index";
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
-import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
+import { createTextComposerDraft, draftContainsStarter } from "@liveagent/ui/lib/chat/composerDraft";
 import {
   buildDocumentRevisionMessage,
   documentRevisionSkill,
@@ -4952,10 +4952,16 @@ export function CloudChatPage({
   }
   function fillStarter(text: string) {
     if (!isCurrentView(viewRef.current) || pendingSubmissionRef.current || composerLocked) return;
-    const draft = composerRef.current?.getDraft();
-    if (draft && !draft.isEmpty) {
+    const composer = composerRef.current;
+    if (!composer) return;
+    const draft = composer.getDraft();
+    if (draftContainsStarter(draft, text)) {
+      composer.focus();
+      return;
+    }
+    if (!draft.isEmpty) {
       const suffix = `\n\n${text}`;
-      composerRef.current?.setDraft({
+      composer.setDraft({
         ...draft,
         segments: [...draft.segments, { type: "text", text: suffix }],
         text: draft.text + suffix,
@@ -4963,9 +4969,9 @@ export function CloudChatPage({
         isEmpty: false,
       });
       setContextNotice("已添加到现有草稿，发送前可继续编辑。");
-    } else composerRef.current?.setText(text);
+    } else composer.setText(text);
     savedDraft.scheduleCapture();
-    composerRef.current?.focus();
+    composer.focus();
   }
   async function editGeneratedImage(
     item: AssistantDeliverable,
@@ -6621,11 +6627,7 @@ export function CloudChatPage({
                                       isStreaming={streaming}
                                       assistantLiveMode="streaming"
                                       isLoading={historyLoading}
-                                      onSuggestionSelect={(text) => {
-                                        composerRef.current?.setText(text);
-                                        savedDraft.scheduleCapture();
-                                        composerRef.current?.focus();
-                                      }}
+                                      onSuggestionSelect={fillStarter}
                                       onOpenFileLink={openCloudMessageLink}
                                       onResendFromEdit={
                                         branchBusy ||

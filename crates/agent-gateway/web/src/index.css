@@ -202,3 +202,7 @@ html.dark body {
     radial-gradient(circle at bottom right, var(--ui-color-hsl-260-50-55-0p08), transparent 28%),
     hsl(var(--background));
 }
+
+html[data-zeroagent-platform="android"] body {
+  background: hsl(var(--background));
+}

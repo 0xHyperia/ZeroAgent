@@ -1604,15 +1604,23 @@ test("an 8k report previews briefly but copies and edits the complete canonical 
  await app.click(`[data-conversation="${secondFileConversation}"]`);await app.env.act(async()=>{assert.equal(await row.copyContent(),false);});assert.equal(copied.length,2,"a stale row must not copy its old conversation text after navigation");
 });
 
-test("Cloud work starters append to the existing draft without creating a paid Run or enabling research",async(t)=>{
- const app=await mount(t,{initialMessages:[],newDraft:true});assert.match(app.host.textContent,/我们要做什么/);const originalDraft=app.draft;
+test("Cloud work starters append once to the existing draft without creating a Run or enabling research",async(t)=>{
+ const app=await mount(t,{initialMessages:[],newDraft:true});
+ const originalDraft=richComposerDraft();
+ app.structuredDraft=originalDraft;
+ assert.match(app.host.textContent,/我们要做什么/);
  assert.equal(app.host.querySelector(".cloud-welcome-logo").getAttribute("src"),"/zeroagent-logo.png");
  assert.equal(app.host.querySelectorAll("button.conversation-starter").length,3);
- for(const [label,prompt]of [["制作对比报告","方案对比报告"],["分析一份表格","分析我提供的表格"],["整理项目周报","一份周报"]]){
-   const starter=[...app.host.querySelectorAll("button.conversation-starter")].find(node=>node.querySelector(".conversation-starter-title").textContent===label);
+ const selectStarter = (label) => {
+   const starter = [...app.host.querySelectorAll("button.conversation-starter")]
+     .find(node => node.querySelector(".conversation-starter-title").textContent === label);
    assert.ok(starter);
-   await app.env.act(async()=>{starter.click();await tick();});
-   assert.ok(app.draft.includes(prompt));assert.ok(app.draft.startsWith(originalDraft));
+   starter.click();
+ };
+ for(const [label,prompt]of [["制作对比报告","方案对比报告"],["分析一份表格","分析我提供的表格"],["整理项目周报","一份周报"]]){
+   await app.env.act(async()=>{selectStarter(label);selectStarter(label);await tick();});
+   assert.equal(app.draft.split(prompt).length,2);
+   assert.ok(app.draft.startsWith(originalDraft.text));
  }
  assert.equal(app.composer.chatRuntimeControls.nativeWebSearchEnabled,false);
  assert.equal(app.calls.some(call=>call.path==="/api/web-chat/runs"&&call.method==="POST"),false);
@@ -1620,6 +1628,13 @@ test("Cloud work starters append to the existing draft without creating a paid R
  await app.clickText("对话");assert.equal(app.host.querySelector("footer"),editor);assert.equal(app.clearCount,clearBefore);assert.ok(app.draft.includes("一份周报"));assert.match(app.host.textContent,/今天有什么安排/);
  assert.match(app.host.querySelector(".cloud-chat-starters").textContent,/用例子解释一个概念/);
  await app.clickText("工作");assert.equal(app.host.querySelector("footer"),editor);assert.ok(app.draft.includes("一份周报"));
+ const allExamples=app.structuredDraft;
+ await app.env.act(async()=>{selectStarter("制作对比报告");await tick();});
+ assert.deepEqual(app.structuredDraft,allExamples);
+ assert.deepEqual(allExamples.segments.slice(0,originalDraft.segments.length),originalDraft.segments);
+ await app.typeDraft(originalDraft.text);
+ await app.env.act(async()=>{selectStarter("制作对比报告");await tick();});
+ assert.equal(app.draft.split("方案对比报告").length,2);
 });
 
 test("the actual model controls off callback persists none across reload and later high selection",async(t)=>{

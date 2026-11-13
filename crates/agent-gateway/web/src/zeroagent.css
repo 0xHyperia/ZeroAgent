@@ -15,6 +15,7 @@ html[data-zeroagent-platform="android"] #root {
 }
 
 html[data-zeroagent-platform="android"] {
+  background: hsl(var(--background));
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
 }
@@ -24,6 +25,10 @@ html[data-zeroagent-platform="android"] body {
   top: var(--zeroagent-visual-viewport-offset-top, 0px);
   inset-inline: 0;
   width: 100%;
+}
+
+html[data-zeroagent-platform="android"] .cloud-chat-shell {
+  background: hsl(var(--background));
 }
 
 html[data-zeroagent-platform="android"] .gateway-shell {
@@ -219,7 +224,7 @@ html[data-zeroagent-platform="android"] .gateway-settings-overlay {
     var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
 }
 
-html[data-zeroagent-platform="android"] .gateway-shell [data-workspace-main-has-chrome] > [data-app-workbench-chrome] {
+html[data-zeroagent-platform="android"] .gateway-shell [data-workspace-main-has-chrome] [data-app-workbench-chrome] {
   padding-right: var(--zeroagent-safe-area-right);
   padding-left: var(--zeroagent-safe-area-left);
 }

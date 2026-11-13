@@ -137,17 +137,15 @@ test("Android bundles the ZeroAgent Gateway WebUI instead of redirecting to a si
   assert.match(mainActivity, /addJavascriptInterface\(AndroidSafeAreaBridge\(\)/);
   assert.match(mainActivity, /@JavascriptInterface[\s\S]*getSafeAreaInsets/);
   assert.match(mainActivity, /zeroagent:native-insets/);
+  assert.match(mobileRuntime, /setSystemBarTheme\?\.\(dark\)/);
+  assert.match(mainActivity, /isAppearanceLightStatusBars = !dark/);
+  assert.match(mainActivity, /isAppearanceLightNavigationBars = !dark/);
   for (const edge of ["top", "right", "bottom", "left"]) {
     assert.match(mobileStyles, new RegExp(`--zeroagent-safe-area-${edge}`));
   }
-  assert.match(mobileStyles, /\.gateway-chat-frame > header[\s\S]*safe-area-top/);
   assert.match(
     mobileStyles,
-    /\.gateway-main-shell \[data-app-workbench-chrome\] > header\s*\{[^}]*padding-top: calc\([^}]*var\(--zeroagent-safe-area-top\)/,
-  );
-  assert.match(
-    mobileStyles,
-    /\.gateway-main-shell \[data-app-workbench-chrome\]\s*\{[^}]*height: calc\(48px \+ var\(--zeroagent-safe-area-top\)\)/,
+    /data-zeroagent-platform="android"\] \.gateway-shell:not\(\.gateway-shell \.gateway-shell\)\s*\{[^}]*padding-top: var\(--zeroagent-safe-area-top\)/,
   );
   assert.match(mobileStyles, /\.gateway-main-shell[\s\S]*safe-area-right[\s\S]*safe-area-left/);
   assert.match(

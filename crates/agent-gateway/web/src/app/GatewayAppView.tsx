@@ -1914,6 +1914,7 @@ export function GatewayAppView({
             inert={settingsOpen}
             aria-hidden={settingsOpen || undefined}
             className="gateway-editor-host flex-1"
+            data-workbench-edge-to-edge={(sidebar.isMobile && !desktopHost) || undefined}
             windowControls={
               desktopHost && !settingsOpen ? <DesktopHostSlot kind="window" /> : undefined
             }

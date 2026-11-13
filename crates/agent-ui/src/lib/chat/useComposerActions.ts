@@ -12,6 +12,7 @@ import { type MutableRefObject, useCallback, useMemo } from "react";
 import type { AppSettings } from "../settings";
 import { updateSkills } from "../settings";
 import { mergeAlwaysEnabledSkillNames } from "../skills";
+import { draftContainsStarter } from "./composerDraft";
 
 export function resolveEnabledComposerSkills<TSkill extends MentionComposerSkill>(
   availableSkills: readonly TSkill[],
@@ -128,7 +129,12 @@ export function useComposerActions(composerRef: MutableRefObject<MentionComposer
     (text: string) => {
       const composer = composerRef.current;
       if (!composer) return;
-      if (composer.getDraft().isEmpty) {
+      const draft = composer.getDraft();
+      if (draftContainsStarter(draft, text)) {
+        composer.focus();
+        return;
+      }
+      if (draft.isEmpty) {
         composer.setText(text);
       } else {
         composer.appendSegments([{ type: "text", text }]);
