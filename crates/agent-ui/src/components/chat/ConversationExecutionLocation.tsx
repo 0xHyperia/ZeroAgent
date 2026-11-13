@@ -177,13 +177,14 @@ export function ConversationExecutionLocation({
     setOpen(next);
     if (!next) setFailure(undefined);
   };
+  const actionHeight = mobileSheet ? "min-h-11" : "min-h-9";
   const trigger = (
     <Button
             data-conversation-execution-location="workbench"
             variant="ghost"
-            className={compact
-              ? "h-11 min-w-11 max-w-44 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground"
-              : "h-8 min-w-0 max-w-44 shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground max-820:h-11 max-820:min-w-11 max-820:max-w-28 max-[380px]:max-w-24"}
+            className={`shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground ${mobileSheet
+              ? compact ? "h-11 min-w-11 max-w-44" : "h-11 min-w-11 max-w-28 max-[380px]:max-w-24"
+              : "h-8 min-w-0 max-w-44 max-[640px]:max-w-28"}`}
             title={switchLabel}
             aria-label={switchLabel}
             disabled={disabled}
@@ -204,7 +205,7 @@ export function ConversationExecutionLocation({
                   : "Couldn't load devices."}
             </p>
             <LocationAction sheet={mobileSheet}
-              className="min-h-9 max-820:min-h-11"
+              className={actionHeight}
               closeOnClick={false}
               disabled={refreshing || pending !== undefined}
               onClick={() => {
@@ -241,7 +242,7 @@ export function ConversationExecutionLocation({
             </div>
             {canRetry && originalChoice && (
               <LocationAction sheet={mobileSheet}
-                className="min-h-9 max-820:min-h-11"
+                className={actionHeight}
                 closeOnClick={false}
                 disabled={disabled || pending !== undefined}
                 aria-label={zh ? `重试 ${failure.name}` : `Retry ${failure.name}`}
@@ -261,7 +262,7 @@ export function ConversationExecutionLocation({
               closeOnClick={false}
               disabled={choice.offline || !!choice.unavailable || pending !== undefined}
               aria-current={choice.selected || undefined}
-              className={mobileSheet ? "min-h-12 py-2 gap-3" : "min-h-9 gap-2 max-820:min-h-11"}
+              className={mobileSheet ? "min-h-12 py-2 gap-3" : "min-h-9 gap-2"}
               onClick={() => void choose(choice)}
             >
               <ChoiceIcon aria-hidden="true" className="size-4 shrink-0" />
@@ -295,7 +296,7 @@ export function ConversationExecutionLocation({
               </p>
             )}
             <LocationAction sheet={mobileSheet}
-              className="min-h-9 max-820:min-h-11"
+              className={actionHeight}
               disabled={pending !== undefined}
               onClick={() => { onOpenChange(false); onManageDevices(); }}
             >

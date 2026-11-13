@@ -1820,6 +1820,7 @@ export function GatewayAppView({
   const workbenchChrome = (
     <AppWorkbenchChrome
       settings={settings}
+      mobile={compactDeviceHeader}
       sidebarOpen={sidebarOpen}
       onOpenSettings={openSettings}
       onToggleTheme={() =>

@@ -31,7 +31,7 @@ export function ConversationViewTabs(props: {
       }}
       render={<TabsList variant="plain" activateOnFocus={false} loopFocus={false} />}
       className={cn(
-        "flex shrink-0 items-center gap-0.5",
+        "flex h-8 shrink-0 items-center gap-0.5",
         "rounded-lg border border-border/60 bg-muted/40 p-0.5",
         props.className,
       )}
@@ -45,13 +45,13 @@ export function ConversationViewTabs(props: {
             value={tab.id}
             variant="plain"
             className={cn(
-              "flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition-colors max-820:h-11 max-820:min-w-11 max-[430px]:justify-center",
+              "flex h-full min-w-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors max-[520px]:justify-center max-[520px]:px-1.5",
               "text-muted-foreground hover:bg-background/70 hover:text-foreground",
               selected && "bg-background font-medium text-foreground shadow-sm",
             )}
           >
-            <Icon className="size-3.5" />
-            <span className="max-[430px]:sr-only">{t(tab.labelKey)}</span>
+            <Icon className="size-4 shrink-0" />
+            <span className="max-[520px]:sr-only">{t(tab.labelKey)}</span>
           </TabsTrigger>
         );
       })}

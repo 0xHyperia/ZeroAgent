@@ -44,7 +44,7 @@ export function ProjectToolsPanelToggle(props: {
           aria-label={label}
           className={cn(
             className,
-            "relative size-8 rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 hover:text-foreground active:scale-95 max-820:size-11",
+            "relative size-8 rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 hover:text-foreground active:scale-95",
             isOpen ? "bg-muted text-foreground" : "",
           )}
         >

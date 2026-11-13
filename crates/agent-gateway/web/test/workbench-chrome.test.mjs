@@ -94,6 +94,23 @@ test("gateway shows the conversation view switcher in chrome only after an assis
   );
 });
 
+test("the device header enables touch targets only in the mobile workbench", () => {
+  assert.match(
+    gatewayAppViewSource,
+    /const compactDeviceHeader = compactViewport && !desktopHost && !historyShareToken && !accountDestination/,
+  );
+  assert.match(gatewayAppViewSource, /<AppWorkbenchChrome\s+settings=\{settings\}\s+mobile=\{compactDeviceHeader\}/);
+  assert.match(gatewayAppViewSource, /compactDeviceHeader \? "min-h-11 min-w-11"/);
+  for (const path of [
+    "components/chat/ChatHeader.tsx",
+    "components/chat/ConversationViewTabs.tsx",
+    "components/project-tools/ProjectToolsPanelToggle.tsx",
+  ]) {
+    const source = readFileSync(new URL(`../../../agent-ui/src/${path}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /max-820:(?:size|h|min-h|min-w)-11/);
+  }
+});
+
 test("web composer column clamps the clarify panel so new turns scroll inside it", () => {
   // 输入层 absolute 贴底、聊天区 overflow-hidden：面板 max-h-[40vh] 在矮 Pane
   // 里可能还没触顶就被外层裁掉，内部 overflow-y-auto 永不生效。列必须是

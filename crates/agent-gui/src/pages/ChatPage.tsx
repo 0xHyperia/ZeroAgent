@@ -5194,12 +5194,12 @@ function ChatPageContent(props: ChatPageProps) {
             !sidebarOpen ? (
               <TooltipButton
                 variant="ghost"
-                size="icon"
+                size="icon-sm"
                 title={t("chat.newConversation")}
                 aria-label={t("chat.newConversation")}
                 onClick={handleNewRecentConversation}
               >
-                <SquarePen className="size-4.5" />
+                <SquarePen className="size-4" />
               </TooltipButton>
             ) : null}
             {!accountDestination && headerLeadingActions}

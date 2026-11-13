@@ -200,7 +200,7 @@ export function CloudChatHeaderActions(props: {
           aria-label="对话选项"
           disabled={deleting}
           title="对话选项"
-          className="rounded-lg text-muted-foreground hover:text-foreground max-820:size-11"
+          className="rounded-lg text-muted-foreground hover:text-foreground"
         >
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>

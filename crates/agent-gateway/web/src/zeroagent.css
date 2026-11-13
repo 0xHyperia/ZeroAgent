@@ -1363,18 +1363,14 @@ html[data-zeroagent-platform="android"]
     top: calc(60px + var(--zeroagent-safe-area-top, 0px));
     max-height: calc(100dvh - 76px - var(--zeroagent-safe-area-top, 0px));
   }
-  .cloud-chat-shell [data-app-workbench-chrome] {
+  .cloud-chat-shell:not([data-desktop-cloud-window]) [data-app-workbench-chrome] {
     --app-header-height: 56px;
   }
   .cloud-chat-shell .cloud-mode-switch {
     width: 176px;
     min-width: 0;
   }
-  .cloud-chat-shell .cloud-mode-switch button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .cloud-chat-shell .cloud-title-trigger {
+  .cloud-chat-shell:not([data-desktop-cloud-window]) .cloud-mode-switch button {
     min-width: 44px;
     min-height: 44px;
   }
@@ -1637,8 +1633,8 @@ html[data-zeroagent-platform="android"]
   .cloud-chat-shell [data-app-workbench-actions] > button[aria-label="设置"] {
     display: none;
   }
-  .cloud-chat-shell [data-app-header-navigation] > button,
-  .cloud-chat-shell [data-cloud-chat-actions] button {
+  .cloud-chat-shell:not([data-desktop-cloud-window]) [data-app-header-navigation] > button,
+  .cloud-chat-shell:not([data-desktop-cloud-window]) [data-cloud-chat-actions] button {
     min-width: 44px;
     min-height: 44px;
   }

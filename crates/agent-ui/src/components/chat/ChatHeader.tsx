@@ -24,6 +24,7 @@ export type ChatHeaderProps = {
   leadingActions?: ReactNode;
   preThemeActions?: ReactNode;
   trailingActions?: ReactNode;
+  mobile?: boolean;
   compactActions?: ReactNode;
   windowControls?: ReactNode;
   className?: string;
@@ -42,6 +43,7 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
     leadingActions,
     preThemeActions,
     trailingActions,
+    mobile = false,
     compactActions,
     windowControls,
     className,
@@ -81,12 +83,13 @@ export const ChatHeader = memo(function ChatHeader(props: ChatHeaderProps) {
             data-sidebar-open=""
             aria-label={t(sidebarOpen ? "sidebar.closeSidebar" : "tooltip.openSidebar")}
             className={cn(
-              "rounded-lg text-muted-foreground hover:text-foreground max-820:size-11",
+              "rounded-lg text-muted-foreground hover:text-foreground",
+              mobile && "size-11",
               // The open sidebar owns its collapse button beside search.
               sidebarOpen && "hidden",
             )}
           >
-            <PanelLeft className="size-4.5" />
+            <PanelLeft className={mobile ? "size-4.5" : "size-4"} />
           </Button>
         ) : null}
       </div>
