@@ -1,5 +1,7 @@
 import type { RightDockTabKind } from "@liveagent/app/lib/settings";
 import {
+  ArrowLeft,
+  ArrowRight,
   Check,
   Columns2,
   Cpu,
@@ -280,6 +282,8 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
   const latestDescriptors = useRef<DockTabDescriptor[]>([]);
   const workspaceDrag = useRef<string | null>(null);
   const closeFocus = useRef<{ id: string; strip: Element } | null>(null);
+  const tabMoreTrigger = useRef<HTMLButtonElement>(null);
+  const menuEscapeFocus = useRef<HTMLButtonElement | null>(null);
   const bulkClose = async (targets: DockTabDescriptor[], all: boolean) => {
     const dirty = targets.filter((tab) => tab.dirty);
     if (all || dirty.length > 0) {
@@ -434,6 +438,12 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
     const toRight = all.length
       ? descriptors.slice(descriptors.indexOf(tab) + 1).filter(closable)
       : [];
+    const moveTab = menu?.source === "button" && tab.workspaceTab ? onMoveWorkspaceTab : undefined;
+    const workspaceIndex = moveTab
+      ? (workspaceTabs?.findIndex((entry) => entry.id === tab.id) ?? -1)
+      : -1;
+    const previousTab = workspaceIndex > 0 ? workspaceTabs?.[workspaceIndex - 1] : undefined;
+    const nextTab = workspaceIndex >= 0 ? workspaceTabs?.[workspaceIndex + 1] : undefined;
     const closeTab = () => {
       if (track?.parentElement) closeFocus.current = { id: tab.id, strip: track.parentElement };
       tab.onClose();
@@ -441,9 +451,28 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
     const menuItems = menuOpen && (
       <>
         {tab.menuItems}
-        {desktopWorkspace && (
+        {moveTab && (previousTab || nextTab) && (
           <>
             {tab.menuItems && <ContextMenuSeparator />}
+            <ContextMenuItem
+              disabled={!previousTab}
+              onSelect={() => previousTab && moveTab(tab.id, previousTab.id)}
+            >
+              <ArrowLeft className="rtl:rotate-180" />
+              {t("projectTools.moveTabEarlier")}
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={!nextTab}
+              onSelect={() => nextTab && moveTab(tab.id, nextTab.id)}
+            >
+              <ArrowRight className="rtl:rotate-180" />
+              {t("projectTools.moveTabLater")}
+            </ContextMenuItem>
+          </>
+        )}
+        {desktopWorkspace && (
+          <>
+            {(tab.menuItems || previousTab || nextTab) && <ContextMenuSeparator />}
             <ContextMenuItem disabled={tab.closeDisabled} onSelect={closeTab}>
               <X />
               {copy("关闭", "Close")}
@@ -497,7 +526,6 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
           tab.isPendingClose && "bg-destructive/10 text-destructive hover:bg-destructive/15",
           draggingTabId === tab.id && "z-10 cursor-grabbing opacity-80 ring-1 ring-ring",
         )}
-        onDoubleClick={tab.onKeepOpen}
         onPointerEnter={(event) => {
           if (desktopWorkspace && !read) hoverPreview.dismiss();
           if (
@@ -581,6 +609,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             if (consumeSuppressedTabClick(tab.id)) return;
             tab.onActivate();
           }}
+          onDoubleClick={tab.onKeepOpen}
           onMouseDown={(event) => {
             if (desktopWorkspace && event.button === 1) {
               event.preventDefault();
@@ -699,11 +728,34 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
         {showMore ? (
           <DropdownMenu
             open={menuOpen && menu?.source === "button"}
-            onOpenChange={(open) => changeMenu("button", open)}
+            onOpenChange={(open, details) => {
+              menuEscapeFocus.current =
+                !open && details.reason === "escape-key" ? tabMoreTrigger.current : null;
+              changeMenu("button", open);
+            }}
+            onOpenChangeComplete={(open) => {
+              if (open) return;
+              const trigger = menuEscapeFocus.current;
+              menuEscapeFocus.current = null;
+              if (!trigger) return;
+              // The enclosing reader sheet can reclaim focus while the menu unmounts.
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  const { activeElement, body } = trigger.ownerDocument;
+                  if (
+                    trigger.isConnected &&
+                    (activeElement === body || activeElement === menuPortal)
+                  ) {
+                    trigger.focus({ preventScroll: true });
+                  }
+                });
+              });
+            }}
           >
             <DropdownMenuTrigger
               render={
                 <Button
+                  ref={tabMoreTrigger}
                   variant="ghost"
                   size="icon-sm"
                   aria-label={copy(`${tab.label} 的标签操作`, `Tab actions for ${tab.label}`)}

@@ -740,16 +740,22 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     reorderLabel: t("projectTools.reorderTab"),
   });
 
+  const activeWorkspaceTabId = workspace?.activeTabId;
+  const activeWorkspaceTabIndex =
+    workspace?.tabs.findIndex((tab) => tab.id === activeWorkspaceTabId) ?? -1;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Compact mode changes the active tab's width.
   useLayoutEffect(() => {
-    if (!workspace?.activeTabId || !isOpen) return;
+    if (!activeWorkspaceTabId || activeWorkspaceTabIndex < 0 || !isOpen) return;
     const strip = tabsScrollRef.current;
     const active = strip?.querySelector<HTMLElement>('[data-workspace-tab-active="true"]');
     if (!active || !strip) return;
-    const left = active.offsetLeft - strip.offsetLeft;
-    if (left < strip.scrollLeft) strip.scrollLeft = left;
-    else if (left + active.offsetWidth > strip.scrollLeft + strip.clientWidth)
-      strip.scrollLeft = left + active.offsetWidth - strip.clientWidth;
-  }, [isOpen, tabsScrollRef, workspace?.activeTabId]);
+    const stripBounds = strip.getBoundingClientRect();
+    const activeBounds = active.getBoundingClientRect();
+    if (activeBounds.left < stripBounds.left)
+      strip.scrollLeft += activeBounds.left - stripBounds.left;
+    else if (activeBounds.right > stripBounds.right)
+      strip.scrollLeft += activeBounds.right - stripBounds.right;
+  }, [activeWorkspaceTabId, activeWorkspaceTabIndex, isOpen, mobile, tabsScrollRef]);
 
   const handleTabsWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {

@@ -348,6 +348,8 @@ Shift 加速，Home/End 到边界。Escape、指针取消、窗口失焦或卸�
 内层浮层沿用 Escape 的关闭守卫和焦点归还；禁止关闭时不能穿透到背景页面。手机设置先从详情返回分类，
 未保存的项目仍须确认放弃，返回操作不得取消运行中的任务或清除草稿。
 手机和平板的软键盘回车换行，发送使用明确按钮或 Ctrl/Command+Enter；窄桌面窗口继续遵循原本机发送快捷键偏好。
+
+Android 停靠键盘的底部边界以系统 IME inset 为准。WebView 铺到系统导航区时，从完整窗口高度扣除整个 IME inset，并与 `visualViewport` 的可视高度取较小值。输入区留在键盘上方，系统返回先收起键盘，保留输入内容和会话。
 支持减少动态、强制颜色、系统字号和缩放。鼠标使用手型、文字使用I型，拖拽/缩放保留专用光标。
 
 手机浏览器和 Android 内嵌 WebUI 使用同一工作台。对话头部保留当前执行位置和切换入口。窄屏限制设备名显示宽度，菜单内保留完整名称和状态，常用切换动作至少 44 CSS px。云端和设备各自保有会话、草稿与附件。选择设备失败时继续显示当前工作台并支持原位重试；连接成功后使用该设备的租约和会话。主动切回云端恢复离开时的对话或工作页面。设备链接独立打开时从云端入口返回。
@@ -420,7 +422,11 @@ Android 15 开发模拟器验收云端、实际远程设备、底部模型弹层
 
 云端复验了工作模式发布及打开 CSV、表格内横向滚动、公开检索确认的取消和提交，以及项目创建和消息操作。320 和 430 CSS px 通过 Gateway 打开 DOCX、PDF、XLSX、PPTX、Markdown、图片、音频、视频和源代码，并验证长代码可在编辑器内横向触摸滚动。定时任务用隔离 PostgreSQL、Redis 和模拟模型复验了批准、执行完成及拒绝回执核对。Edge Chromium 完成主要浏览器验收，Playwright WebKit 在相同六种视口补验顶栏、浏览器返回、模型选择、键盘模拟和旋转后提交。两种浏览器都用真实 Gateway 复验了远程附件、上传中切换、审批和发送。
 
-同一工作树的两套 Windows Debug 客户端和 Gateway 在 1100×800 CSS px 完成桌面本机、桌面远程和浏览器远程对照。三个入口使用同一在线设备、历史会话、Markdown 和 PNG，文件树统一为 200 CSS px。复验了调整窗格时的键盘焦点、固定标签切换、各入口独立草稿、桌面远程的失效租约原位重连，以及被控设备断线和重连后的文件读取。撤销设备授权后，两处远程编辑区关闭，浏览器返回原云端会话并恢复草稿，被控电脑继续显示本机草稿。证据和复验命令见 `.codex-artifacts/mobile-webui-goal/README.md`。iOS Safari、Android 系统键盘和实际网络中的首次设备配对属于后续实机验证。
+同一工作树的两套 Windows Debug 客户端和 Gateway 在 1100×800 CSS px 完成桌面本机、桌面远程和浏览器远程对照。三个入口使用同一在线设备、历史会话、Markdown 和 PNG，文件树统一为 200 CSS px。复验了调整窗格时的键盘焦点、固定标签切换、各入口独立草稿、桌面远程的失效租约原位重连，以及被控设备断线和重连后的文件读取。撤销设备授权后，两处远程编辑区关闭，浏览器返回原云端会话并恢复草稿，被控电脑继续显示本机草稿。480×620 CSS px 用更新后的同源构建复验上述标签和连接操作，见[标签验收](workbench-project-tool-panes.md)。宽屏证据和复验命令见 `.codex-artifacts/mobile-webui-goal/README.md`。
+
+Android 15 模拟器的 Chrome 使用隔离 Gateway、实际 Windows 被控设备和可停靠的测试输入法，在 412 CSS px 宽度复验云端对话、云端工作和浏览器远程的输入。系统键盘将可视高度从约 783 缩到 511 CSS px，三处输入区的发送按钮都可点击。按 Android 返回键收起键盘后，草稿与会话保留。证据见 `.codex-artifacts/reader-touch/image-actions/android-docked-ime-*-results.json`。Gboard 的实体键盘辅助栏与浮动键盘没有为网页预留同等高度。Android 应用 WebView、手机真机的输入法、iOS Safari 和实际网络中的首次设备配对仍待复验。
+
+现有 Android Debug 包的原生 WebView 在 412 CSS px 实测系统键盘、IME inset 和 Android 返回。完整窗口高 915 CSS px，系统报告键盘底部 inset 为 296 CSS px，旧布局按 643 CSS px 排版，发送按钮下缘与键盘重叠。修复后的内嵌构建在 390px Chromium 中使用相同桥接事件与隔离 Gateway 验证，844px 窗口收到 340px IME inset 后布局高 504px，发送按钮底边为 493px。证据见 `.codex-artifacts/reader-touch/image-actions/android-native-login-ime-results.json` 与 `.codex-artifacts/mobile-webui-goal/android-inset-fix-bridge-results.json`。含修复的 APK 仍待构建并复验。
 
 ## 维护和验收
 

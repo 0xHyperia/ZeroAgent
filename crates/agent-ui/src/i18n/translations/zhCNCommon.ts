@@ -1761,6 +1761,8 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
     "将在所选目录下创建 Worktree 文件夹，创建后自动在侧边栏打开。",
   "git.branchSelector.worktreeFailed": "创建 Worktree 失败",
   "projectTools.reorderTab": "调整标签排序",
+  "projectTools.moveTabEarlier": "前移标签页",
+  "projectTools.moveTabLater": "后移标签页",
   "projectTools.reorderTabHint": "拖动排序，或聚焦后按左右方向键移动",
   "projectTools.shell": "Shell",
   "projectTools.loading": "加载中...",

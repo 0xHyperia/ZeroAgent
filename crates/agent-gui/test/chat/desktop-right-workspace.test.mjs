@@ -170,6 +170,7 @@ test("the compact tab menu keeps the active preview and leaves the other tab alo
       label: "notes.md",
       temporary: true,
       onClose: () => calls.push("close-preview"),
+      onKeepOpen: () => calls.push("double-click-tab"),
       menuItems: React.createElement(ContextMenuItem, { onSelect: () => calls.push("keep") }, "Keep"),
     },
   ].map((tab) => ({ ...tab, onActivate: () => calls.push(tab.id) }));
@@ -182,6 +183,7 @@ test("the compact tab menu keeps the active preview and leaves the other tab alo
     tabs: [],
     workspaceTabs: tabs,
     activeWorkspaceTabId: "preview",
+    onMoveWorkspaceTab: (id, target) => calls.push(`move-${id}-${target}`),
     backgroundTasksRunning: 0,
     pendingCloseSessionId: "",
     closingSessionIds: new Set(),
@@ -193,12 +195,27 @@ test("the compact tab menu keeps the active preview and leaves the other tab alo
   const triggers = container.querySelectorAll(".za-workspace-tab-more");
   assert.equal(triggers.length, 1);
   assert.match(triggers[0].getAttribute("aria-label"), /notes\.md/);
+  const doubleClick = () => new window.MouseEvent("dblclick", { bubbles: true });
+  await act(async () => triggers[0].dispatchEvent(doubleClick()));
+  assert.deepEqual(calls, []);
   await act(async () => triggers[0].click());
   const menu = container.querySelector('[role="menu"]');
   assert.ok(menu);
-  await act(async () => [...menu.querySelectorAll('[role="menuitem"]')]
-    .find((item) => item.textContent === "Keep").click());
-  assert.deepEqual(calls, ["keep"]);
+  const menuItem = (label) => [...container.querySelectorAll('[role="menuitem"]')]
+    .find((item) => label.test(item.textContent));
+  const earlier = menuItem(/^(Move tab earlier|前移标签页|projectTools\.moveTabEarlier)$/);
+  const later = menuItem(/^(Move tab later|后移标签页|projectTools\.moveTabLater)$/);
+  assert.equal(earlier?.hasAttribute("data-disabled"), false);
+  assert.equal(later?.hasAttribute("data-disabled"), true);
+  await act(async () => earlier.click());
+  assert.deepEqual(calls, ["move-preview-old"]);
+  assert.equal(container.querySelector('[role="tab"][aria-selected="true"]').getAttribute("aria-label"), "notes.md");
+  await act(async () => triggers[0].click());
+  await act(async () => menuItem(/^Keep$/).click());
+  assert.deepEqual(calls, ["move-preview-old", "keep"]);
+  const activeTab = container.querySelector('[role="tab"][aria-selected="true"]');
+  await act(async () => activeTab.dispatchEvent(doubleClick()));
+  assert.deepEqual(calls, ["move-preview-old", "keep", "double-click-tab"]);
 });
 
 test("file identity is shared by transcript, Git and file-tree links on Windows", () => {

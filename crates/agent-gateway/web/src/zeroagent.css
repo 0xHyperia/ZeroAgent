@@ -1547,9 +1547,6 @@ html[data-zeroagent-platform="android"]
   .cloud-chat-shell:not([data-desktop-cloud-window]) .cloud-mode-switch {
     width: 112px;
   }
-  .cloud-header-landing:has(.cloud-mode-switch) [data-conversation-execution-location="workbench"] {
-    max-width: 88px;
-  }
 
   .cloud-chat-shell .mention-composer {
     font-size: 16px;
@@ -1658,7 +1655,8 @@ html[data-zeroagent-platform="android"]
     min-height: 44px;
   }
 }
-@media (max-width: 400px) {
+/* Reserve the mode switch's right half, theme button, and header spacing before showing a label. */
+@media (max-width: 464px) {
   .cloud-header-landing:has(.cloud-mode-switch) [data-conversation-execution-location="workbench"] {
     width: 44px;
     justify-content: center;

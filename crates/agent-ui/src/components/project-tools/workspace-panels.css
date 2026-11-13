@@ -164,10 +164,6 @@
   height: 44px;
 }
 
-[data-workspace-tab-with-menu][data-desktop-workspace-tab] [data-workspace-tab-content] {
-  padding-inline-end: 44px;
-}
-
 [data-workspace-tab-with-menu] .za-workspace-tab-more.za-control {
   position: absolute;
   z-index: 11;
@@ -201,6 +197,10 @@
 [data-desktop-workspace-tab]:is([data-desktop-workspace-tab-selected], :hover, :focus-within)
   [data-workspace-tab-content] {
   padding-inline-end: 22px;
+}
+
+[data-workspace-tab-with-menu][data-desktop-workspace-tab] [data-workspace-tab-content] {
+  padding-inline-end: 44px;
 }
 
 [data-workspace-tab-label][data-title-overflow] {

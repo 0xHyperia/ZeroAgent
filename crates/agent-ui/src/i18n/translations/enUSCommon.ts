@@ -1848,6 +1848,8 @@ export const EN_US_COMMON_TRANSLATIONS = {
     "The worktree folder is created inside the chosen directory and opened in the sidebar automatically.",
   "git.branchSelector.worktreeFailed": "Failed to create worktree",
   "projectTools.reorderTab": "Reorder tab",
+  "projectTools.moveTabEarlier": "Move tab earlier",
+  "projectTools.moveTabLater": "Move tab later",
   "projectTools.reorderTabHint": "Drag to reorder, or focus and use Left/Right",
   "projectTools.shell": "Shell",
   "projectTools.loading": "Loading...",

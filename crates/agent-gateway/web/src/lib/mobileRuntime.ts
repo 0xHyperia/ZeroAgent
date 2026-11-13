@@ -68,7 +68,6 @@ let socketSequence = 0;
 const MOBILE_NATIVE_INSETS_EVENT = "zeroagent:native-insets";
 const MOBILE_NATIVE_BACK_EVENT = "zeroagent:native-back";
 
-let mobileSafeAreaBottom = 0;
 let mobileImeBottom = 0;
 let mobileImeVisible = false;
 let mobileStableViewportHeight = 0;
@@ -110,9 +109,9 @@ function updateMobileViewport() {
     mobileStableViewportHeight = 0;
   }
 
-  const nativeKeyboardInset = mobileImeVisible
-    ? Math.max(0, mobileImeBottom - mobileSafeAreaBottom)
-    : 0;
+  // The edge-to-edge WebView extends behind the navigation bar, which is
+  // already included in the IME inset measured from the bottom of the window.
+  const nativeKeyboardInset = mobileImeVisible ? mobileImeBottom : 0;
   if (!mobileImeVisible) {
     mobileStableViewportHeight = Math.max(rawHeight + offsetTop, window.innerHeight);
   } else if (mobileStableViewportHeight <= 0) {
@@ -146,7 +145,6 @@ function applyMobileSafeAreaInsets(value: Partial<MobileSafeAreaInsets> | undefi
     const inset = Number(value[edge]);
     if (!Number.isFinite(inset)) continue;
     root.style.setProperty(`--zeroagent-safe-area-${edge}`, `${Math.max(0, Math.round(inset))}px`);
-    if (edge === "bottom") mobileSafeAreaBottom = Math.max(0, inset);
   }
   mobileImeBottom = Math.max(0, Number(value.imeBottom) || 0);
   mobileImeVisible = value.imeVisible === true;
