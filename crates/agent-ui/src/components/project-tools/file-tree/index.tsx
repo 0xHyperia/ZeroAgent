@@ -66,7 +66,7 @@ import {
   removeExpandedPath,
   removeExpandedSubtree,
 } from "./model";
-import { FileTreeErrorRow, FileTreeRow } from "./Row";
+import { FileTreeErrorRow, FileTreeMoreButton, FileTreeRow } from "./Row";
 import { useFileTreeData } from "./useFileTreeData";
 import { useFileTreeExternalRoots } from "./useFileTreeExternalRoots";
 
@@ -79,6 +79,8 @@ type ContextMenuState = {
   x: number;
   y: number;
   path: string;
+  kind: FileTreeKind;
+  trigger: HTMLButtonElement | null;
 };
 
 export type FileTreeSectionRow = {
@@ -183,7 +185,8 @@ export function FileTreePaneSurface(props: FileTreePaneSurfaceProps) {
 }
 
 export function FileTreeSurface(props: FileTreeSurfaceProps) {
-  const rowHeight = useIsMobile() ? FILE_TREE_TOUCH_ROW_HEIGHT : FILE_TREE_ROW_HEIGHT;
+  const compact = useIsMobile();
+  const rowHeight = compact ? FILE_TREE_TOUCH_ROW_HEIGHT : FILE_TREE_ROW_HEIGHT;
   const {
     active,
     workspaceSections,
@@ -549,10 +552,9 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     onInsertFileMentionRef.current = onInsertFileMention;
   }, [onInsertFileMention]);
   const handleInsertMention = useCallback(
-    (path: string) => {
-      const node = nodesRef.current[path];
-      if (!path || !node || isExternalPath(path)) return;
-      onInsertFileMentionRef.current?.(path, node.kind);
+    (path: string, kind: FileTreeKind) => {
+      if (!path || isExternalPath(path)) return;
+      onInsertFileMentionRef.current?.(path, kind);
     },
     [isExternalPath],
   );
@@ -584,32 +586,43 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
   );
 
   const openContextMenu = useCallback(
-    (event: ReactMouseEvent, path: string) => {
+    (
+      event: ReactMouseEvent,
+      path: string,
+      kind?: FileTreeKind,
+      trigger: HTMLButtonElement | null = null,
+    ) => {
       event.preventDefault();
       event.stopPropagation();
-      const targetPath = nodesRef.current[path] ? path : ROOT_PATH;
+      const node = nodesRef.current[path];
+      const targetPath = node || kind ? path : ROOT_PATH;
       selectPath(targetPath);
       const rect = panelRef.current?.getBoundingClientRect();
+      const buttonRect = trigger?.getBoundingClientRect();
       setContextMenu({
-        x: event.clientX - (rect?.left ?? 0),
-        y: event.clientY - (rect?.top ?? 0),
+        x: (buttonRect?.right ?? event.clientX) - (rect?.left ?? 0),
+        y: (buttonRect?.bottom ?? event.clientY) - (rect?.top ?? 0),
         path: targetPath,
+        kind: node?.kind ?? kind ?? "dir",
+        trigger,
       });
     },
     [selectPath],
   );
+  const openMore = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>, path: string, kind: FileTreeKind) =>
+      openContextMenu(event, path, kind, event.currentTarget),
+    [openContextMenu],
+  );
 
   const startAction = useCallback(
     (action: Exclude<PendingAction, null>, targetPath: string) => {
-      const currentNodes = nodesRef.current;
-      const targetNode = currentNodes[targetPath] ?? currentNodes[ROOT_PATH];
-      const normalizedTargetPath = targetNode?.path ?? ROOT_PATH;
-      if (action === "rename" && !normalizedTargetPath) return;
-      selectPath(normalizedTargetPath);
-      setPendingTargetPath(normalizedTargetPath);
+      if (action === "rename" && !targetPath) return;
+      selectPath(targetPath);
+      setPendingTargetPath(targetPath);
       setPendingAction(action);
       setActionError(null);
-      setDraftName(action === "rename" ? basename(normalizedTargetPath) : "");
+      setDraftName(action === "rename" ? basename(targetPath) : "");
     },
     [selectPath],
   );
@@ -624,18 +637,14 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     setBusyAction(true);
     setActionError(null);
     try {
-      const currentNodes = nodesRef.current;
       const targetPath = pendingTargetPath ?? selectedPath;
-      const targetNode = currentNodes[targetPath] ?? currentNodes[ROOT_PATH];
-      const targetDir =
-        targetNode?.kind === "dir" ? targetNode.path : dirname(targetNode?.path ?? targetPath);
       if (pendingAction === "file") {
-        const nextPath = await createEntry("file", targetDir, name);
-        setExpanded(addExpandedPaths(expandedRef.current, [targetDir]));
+        const nextPath = await createEntry("file", targetPath, name);
+        setExpanded(addExpandedPaths(expandedRef.current, [targetPath]));
         selectPath(nextPath);
       } else if (pendingAction === "folder") {
-        const nextPath = await createEntry("dir", targetDir, name);
-        setExpanded(addExpandedPaths(expandedRef.current, [targetDir, nextPath]));
+        const nextPath = await createEntry("dir", targetPath, name);
+        setExpanded(addExpandedPaths(expandedRef.current, [targetPath, nextPath]));
         selectPath(nextPath);
       } else if (pendingAction === "rename" && targetPath) {
         const nextPath = await renameEntry(targetPath, name);
@@ -773,7 +782,6 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     );
   }
 
-  const contextNode = contextMenu ? (nodes[contextMenu.path] ?? nodes[ROOT_PATH]) : null;
   const renderSearchEntry = (entry: FileTreeEntry) => {
     const TypeIcon = getFileTypeIcon(entry.path, entry.kind);
     return (
@@ -824,6 +832,12 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
           >
             <RefreshCw data-refresh-icon className="size-4" />
           </RefreshButton>
+          {compact && (
+            <FileTreeMoreButton
+              label={t("projectTools.fileTree.rootActions")}
+              onClick={(event) => openMore(event, ROOT_PATH, "dir")}
+            />
+          )}
         </div>
       )}
 
@@ -832,6 +846,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
           <Input
             autoFocus
             value={draftName}
+            aria-label={actionPlaceholder}
             onChange={(event) => setDraftName(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -840,18 +855,23 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
               }
               if (event.key === "Escape") {
                 event.preventDefault();
+                event.stopPropagation();
                 setPendingAction(null);
                 setPendingTargetPath(null);
                 setActionError(null);
               }
             }}
             placeholder={actionPlaceholder}
-            className="h-8 text-xs placeholder:text-xs"
+            className={cn(
+              "min-w-0",
+              compact ? "h-11 text-base" : "h-8 text-xs placeholder:text-xs",
+            )}
           />
           <Button
             size="icon-sm"
             variant="ghost"
             className="rounded-lg"
+            aria-label={t("projectTools.fileTree.confirmAction")}
             disabled={busyAction}
             onClick={() => void finishAction()}
           >
@@ -865,6 +885,8 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
             size="icon-sm"
             variant="ghost"
             className="rounded-lg"
+            aria-label={t("settings.cancel")}
+            disabled={busyAction}
             onClick={() => {
               setPendingAction(null);
               setPendingTargetPath(null);
@@ -921,7 +943,18 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
             if (row.type === "error") {
               content = <FileTreeErrorRow depth={row.depth} message={row.message} />;
             } else if (row.type === "section") {
-              content = row.content;
+              content =
+                compact && row.key === "\0section:files" ? (
+                  <div className="flex items-center">
+                    <div className="min-w-0 flex-1">{row.content}</div>
+                    <FileTreeMoreButton
+                      label={t("projectTools.fileTree.rootActions")}
+                      onClick={(event) => openMore(event, ROOT_PATH, "dir")}
+                    />
+                  </div>
+                ) : (
+                  row.content
+                );
             } else if (row.type === "search") {
               const { entry } = row;
               content = (
@@ -952,6 +985,8 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
                   onOpen={handleOpenFile}
                   transientFiles
                   sectioned
+                  onMore={compact ? openMore : undefined}
+                  onContextMenu={(event) => openContextMenu(event, entry.path, entry.kind)}
                   onDragStart={handleWorkspacePathDragStart}
                   onDragEnd={finishWorkspacePathDrag}
                 />
@@ -980,6 +1015,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
                   transientFiles={integratedSearch}
                   sectioned={integratedSearch}
                   onContextMenu={openContextMenu}
+                  onMore={compact ? openMore : undefined}
                   onDragStart={handleWorkspacePathDragStart}
                   onDragEnd={finishWorkspacePathDrag}
                 />
@@ -1024,19 +1060,20 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         </div>
       </div>
 
-      {contextMenu && contextNode ? (
+      {contextMenu ? (
         <FileTreeContextMenu
           key={`${contextMenu.path}:${contextMenu.x}:${contextMenu.y}`}
           anchor={{ x: contextMenu.x, y: contextMenu.y }}
           containerRef={panelRef}
-          path={contextNode.path}
+          path={contextMenu.path}
+          trigger={contextMenu.trigger}
           displayPath={
-            isExternalPath(contextNode.path) ? getDisplayPath(contextNode.path) : undefined
+            isExternalPath(contextMenu.path) ? getDisplayPath(contextMenu.path) : undefined
           }
-          kind={contextNode.kind}
-          canMutate={canMutate && !isExternalPath(contextNode.path)}
-          canOpenFile={Boolean(onOpenFile) && !isExternalPath(contextNode.path)}
-          canInsertMention={Boolean(onInsertFileMention) && !isExternalPath(contextNode.path)}
+          kind={contextMenu.kind}
+          canMutate={canMutate && !isExternalPath(contextMenu.path)}
+          canOpenFile={Boolean(onOpenFile) && !isExternalPath(contextMenu.path)}
+          canInsertMention={Boolean(onInsertFileMention) && !isExternalPath(contextMenu.path)}
           showHidden={syncState.showHidden}
           onClose={() => setContextMenu(null)}
           onOpenFile={handleOpenFile}

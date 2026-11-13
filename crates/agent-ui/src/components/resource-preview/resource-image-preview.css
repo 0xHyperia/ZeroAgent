@@ -115,6 +115,34 @@
   background: transparent;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
 }
+.za-image-actions-menu {
+  width: max-content;
+  min-width: min(12rem, var(--available-width, 100vw));
+  max-width: min(18rem, var(--available-width, 100vw));
+  overscroll-behavior: contain;
+}
+.za-image-actions-menu .za-menu-item {
+  gap: 8px;
+}
+.za-image-workspace[data-fullscreen] {
+  background: var(--za-surface);
+}
+.za-image-exit-fullscreen.za-control {
+  position: absolute;
+  z-index: 11;
+  top: max(12px, env(safe-area-inset-top));
+  inset-inline-end: max(12px, env(safe-area-inset-right));
+  border: 1px solid var(--za-border);
+  border-radius: 50%;
+  background: var(--za-surface);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 8%);
+}
+.za-image-exit-fullscreen.za-control:hover {
+  background: var(--za-control-hover);
+}
+.za-image-workspace[data-fullscreen] .za-image-info {
+  top: max(64px, calc(env(safe-area-inset-top) + 52px));
+}
 .za-image-workspace[data-workspace-image="svg"] .za-image-canvas {
   overflow: visible;
 }
@@ -156,9 +184,12 @@
   }
 }
 @media (pointer: coarse) {
-  .za-image-tools button {
-    min-width: 44px;
-    min-height: 44px;
+  .za-image-tools button,
+  .za-image-actions-trigger.za-control,
+  .za-image-exit-fullscreen.za-control,
+  .za-image-info button {
+    min-width: var(--za-touch-target);
+    min-height: var(--za-touch-target);
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,5 @@
 import {
+  type ComponentType,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
@@ -15,17 +16,22 @@ import Plus from "~icons/lucide/plus";
 import RotateCw from "~icons/lucide/rotate-cw";
 import Scan from "~icons/lucide/scan";
 import { useLocale } from "../../i18n";
-import { Copy, Download, ExternalLink, Info, Maximize2, MoreHorizontal, X } from "../IconSet";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "../ui/context-menu";
+  Copy,
+  Download,
+  ExternalLink,
+  Info,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  X,
+} from "../IconSet";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "../ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { floatingSurfaceClassName } from "../ui/menu-surface";
@@ -86,6 +92,7 @@ function ImageCanvas(props: Props) {
   const [moving, setMoving] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [actionsPortal, setActionsPortal] = useState<HTMLElement | null>(null);
   const [size, setSize] = useState(props.decodedDimensions ?? props.dimensions);
   const focusArea = props.conversation?.focusArea;
   const left = focusArea ? 0 : workspaceTab ? workspaceInset : 16;
@@ -113,8 +120,10 @@ function ImageCanvas(props: Props) {
     scale: number;
   } | null>(null);
   const movingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wheelZoom = useRef<{ frame: number; percent: number; x: number; y: number } | null>(null);
   const image = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const actionsTrigger = useRef<HTMLButtonElement>(null);
   const alive = useRef(false);
   const closeInfo = useCallback(() => {
     setShowInfo(false);
@@ -138,8 +147,14 @@ function ImageCanvas(props: Props) {
       return false;
     }
   }, []);
+  const cancelWheelZoom = useCallback(() => {
+    if (!wheelZoom.current) return;
+    cancelAnimationFrame(wheelZoom.current.frame);
+    wheelZoom.current = null;
+  }, []);
   const commit = useCallback(
     (next: ImageView) => {
+      cancelWheelZoom();
       if (!authorized()) return;
       const geometry = imageViewGeometry(
         latest.current.geometry.size,
@@ -156,7 +171,7 @@ function ImageCanvas(props: Props) {
       };
       setView(bounded);
     },
-    [authorized],
+    [authorized, cancelWheelZoom],
   );
   const zoom = useCallback(
     (next: ImageView["zoom"], anchor = { x: 0, y: 0 }) => {
@@ -198,9 +213,15 @@ function ImageCanvas(props: Props) {
     };
   }, [loaded]);
   useEffect(() => {
-    if (!workspaceImageActions) return;
-    const onFullscreenChange = () =>
-      setFullscreen(document.fullscreenElement === container.current);
+    if (!workspaceImageActions || !container.current) return;
+    const element = container.current;
+    let wasFullscreen = document.fullscreenElement === element;
+    const onFullscreenChange = () => {
+      const next = document.fullscreenElement === element;
+      if (wasFullscreen && !next) canvasRef.current?.focus({ preventScroll: true });
+      wasFullscreen = next;
+      setFullscreen(next);
+    };
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, [container, workspaceImageActions]);
@@ -214,8 +235,6 @@ function ImageCanvas(props: Props) {
         y: clientY - rect.top - top - latest.current.geometry.viewport.height / 2,
       };
     };
-    let wheelFrame: number | null = null;
-    let pending: { percent: number; x: number; y: number } | null = null;
     const wheel = (event: WheelEvent) => {
       if (
         event.defaultPrevented ||
@@ -232,9 +251,16 @@ function ImageCanvas(props: Props) {
         event.preventDefault();
         event.stopPropagation();
         settleMotion();
-        pending = {
+        wheelZoom.current = {
+          frame:
+            wheelZoom.current?.frame ??
+            requestAnimationFrame(() => {
+              const next = wheelZoom.current;
+              wheelZoom.current = null;
+              if (next) zoom(next.percent, anchor(next.x, next.y));
+            }),
           percent: nextReaderZoom(
-            pending?.percent ?? latest.current.scale * 100,
+            wheelZoom.current?.percent ?? latest.current.scale * 100,
             event.deltaY,
             400,
             10,
@@ -244,12 +270,6 @@ function ImageCanvas(props: Props) {
           x: event.clientX,
           y: event.clientY,
         };
-        wheelFrame ??= requestAnimationFrame(() => {
-          wheelFrame = null;
-          const next = pending;
-          pending = null;
-          if (next) zoom(next.percent, anchor(next.x, next.y));
-        });
       } else if (latest.current.scale > latest.current.geometry.fit + 0.001) {
         event.preventDefault();
         settleMotion();
@@ -262,14 +282,14 @@ function ImageCanvas(props: Props) {
     };
     element.addEventListener("wheel", wheel, { passive: false });
     return () => {
-      if (wheelFrame !== null) cancelAnimationFrame(wheelFrame);
+      cancelWheelZoom();
       element.removeEventListener("wheel", wheel);
       if (movingTimer.current) clearTimeout(movingTimer.current);
       pointers.current.clear();
       drag.current = null;
       pinch.current = null;
     };
-  }, [container, commit, zoom, settleMotion, left, top]);
+  }, [container, cancelWheelZoom, commit, zoom, settleMotion, left, top]);
 
   const point = (event: { clientX: number; clientY: number }) => {
     const rect = container.current?.getBoundingClientRect();
@@ -282,6 +302,7 @@ function ImageCanvas(props: Props) {
     if (!ready || (event.pointerType === "mouse" && event.button !== 0) || !authorized()) return;
     if (event.target instanceof Element && event.target.closest("[data-image-gesture-exempt]"))
       return;
+    cancelWheelZoom();
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture?.(event.pointerId);
     pointers.current.set(event.pointerId, point(event));
@@ -371,6 +392,105 @@ function ImageCanvas(props: Props) {
       }
     })();
   };
+  const toggleFullscreen = () =>
+    run(
+      () =>
+        document.fullscreenElement === container.current
+          ? document.exitFullscreen()
+          : container.current?.requestFullscreen(),
+      t("workspaceFilePreview.fullscreenFailed"),
+    );
+  const exitFullscreenLabel = t("chat.imageViewer.exitFullscreen");
+  const fileImageActions =
+    workspaceImageActions && !props.conversation ? workspaceImageActions : null;
+  const actionsLabel = zh ? "图像操作" : "Image actions";
+  const menuItem = (
+    Icon: ComponentType<{ className?: string }>,
+    label: string,
+    action: () => void,
+  ) => (
+    <DropdownMenuItem onClick={action}>
+      <Icon className="size-4 shrink-0" aria-hidden="true" />
+      {label}
+    </DropdownMenuItem>
+  );
+  const imageCommands = (
+    <>
+      <DropdownMenuItem onClick={() => rotate(-1)}>
+        <RotateCw className="size-4 shrink-0 -scale-x-100" aria-hidden="true" />
+        {t("workspaceFilePreview.rotateLeft")}
+      </DropdownMenuItem>
+      {menuItem(RotateCw, t("workspaceFilePreview.rotateRight"), () => rotate(1))}
+      {menuItem(Scan, t("workspaceFilePreview.resetImage"), reset)}
+      {props.onViewSource &&
+        menuItem(ExternalLink, zh ? "查看源码" : "View source", props.onViewSource)}
+      {fileImageActions && (
+        <>
+          <DropdownMenuSeparator />
+          {props.onDownload &&
+            menuItem(Download, t("workspaceFilePreview.downloadImage"), props.onDownload)}
+          {menuItem(Copy, t("workspaceFilePreview.copyImage"), () =>
+            run(fileImageActions.onCopy, t("workspaceFilePreview.copyImageFailed")),
+          )}
+          {copyAbsolutePath &&
+            menuItem(Copy, t("workspaceFilePreview.copyImageAbsolutePath"), () =>
+              run(copyAbsolutePath, t("workspaceFilePreview.copyPathFailed")),
+            )}
+          {copyRelativePath &&
+            menuItem(Copy, t("workspaceFilePreview.copyImageRelativePath"), () =>
+              run(copyRelativePath, t("workspaceFilePreview.copyPathFailed")),
+            )}
+          {fileImageActions.onOpenInSystemViewer &&
+            menuItem(ExternalLink, t("workspaceFilePreview.openInSystemImageViewer"), () => {
+              if (authorized()) fileImageActions.onOpenInSystemViewer?.();
+            })}
+          <DropdownMenuSeparator />
+          {menuItem(Info, t("workspaceFilePreview.imageInfo"), () => {
+            if (authorized()) setShowInfo(true);
+          })}
+          {(fullscreen || container.current?.ownerDocument.fullscreenEnabled) &&
+            menuItem(
+              fullscreen ? Minimize2 : Maximize2,
+              fullscreen ? exitFullscreenLabel : t("workspaceFilePreview.fullscreen"),
+              toggleFullscreen,
+            )}
+        </>
+      )}
+    </>
+  );
+  const actionsMenu = (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open)
+          setActionsPortal(
+            actionsTrigger.current?.closest<HTMLElement>('[data-slot="sheet-popup"]') ?? null,
+          );
+      }}
+    >
+      <DropdownMenuTrigger
+        ref={actionsTrigger}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={actionsLabel}
+            tooltip={actionsLabel}
+            disabled={!ready}
+            className="za-image-actions-trigger"
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent
+        align="end"
+        className="za-image-actions-menu"
+        portalContainer={actionsPortal ?? undefined}
+      >
+        {imageCommands}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
   const imageTools = (
     <>
       <Button
@@ -490,38 +610,7 @@ function ImageCanvas(props: Props) {
           gestures={false}
           onChange={(next) => zoom(typeof next === "number" ? next : "fit-page")}
         />
-        {workspaceTab ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={zh ? "图像操作" : "Image actions"}
-                  tooltip={zh ? "图像操作" : "Image actions"}
-                  disabled={!ready}
-                >
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => rotate(1)}>
-                <RotateCw className="size-4" />
-                {zh ? "顺时针旋转" : "Rotate clockwise"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={reset}>
-                <Scan className="size-4" />
-                {zh ? "重置视图" : "Reset view"}
-              </DropdownMenuItem>
-              {props.onViewSource ? (
-                <DropdownMenuItem onClick={props.onViewSource}>
-                  {zh ? "查看源码" : "View source"}
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+        {workspaceTab && actionsMenu}
       </PreviewToolbar>
       <div
         ref={container}
@@ -534,99 +623,48 @@ function ImageCanvas(props: Props) {
         }
         data-moving={moving}
         data-ready={ready && (!props.decodedDimensions || viewport.width > 0)}
+        data-fullscreen={fullscreen || undefined}
         data-can-pan={scale > geometry.fit + 0.001}
         data-conversation-image={props.conversation ? "" : undefined}
         data-workspace-image={workspaceTab ? (props.document ? "svg" : "raster") : undefined}
       >
-        {workspaceImageActions && !props.conversation ? (
-          <ContextMenu disabled={!ready}>
+        {fileImageActions ? (
+          <ContextMenu
+            disabled={!ready}
+            onOpenChange={(open) => {
+              if (open)
+                setActionsPortal(
+                  canvasRef.current?.closest<HTMLElement>('[data-slot="sheet-popup"]') ?? null,
+                );
+            }}
+          >
             <ContextMenuTrigger render={canvas} />
-            <ContextMenuContent portalContainer={fullscreen ? container.current : undefined}>
-              <ContextMenuItem onClick={reset}>
-                <Scan className="size-4" />
-                {t("workspaceFilePreview.resetImage")}
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => rotate(-1)}>
-                <RotateCw className="size-4 -scale-x-100" />
-                {t("workspaceFilePreview.rotateLeft")}
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => rotate(1)}>
-                <RotateCw className="size-4" />
-                {t("workspaceFilePreview.rotateRight")}
-              </ContextMenuItem>
-              {props.onDownload && (
-                <ContextMenuItem onClick={props.onDownload}>
-                  <Download className="size-4" />
-                  {t("workspaceFilePreview.downloadImage")}
-                </ContextMenuItem>
-              )}
-              {workspaceImageActions.onOpenInSystemViewer && (
-                <ContextMenuItem
-                  onClick={() => {
-                    if (authorized()) workspaceImageActions.onOpenInSystemViewer?.();
-                  }}
-                >
-                  <ExternalLink className="size-4" />
-                  {t("workspaceFilePreview.openInSystemImageViewer")}
-                </ContextMenuItem>
-              )}
-              <ContextMenuItem
-                onClick={() =>
-                  run(workspaceImageActions.onCopy, t("workspaceFilePreview.copyImageFailed"))
-                }
-              >
-                <Copy className="size-4" />
-                {t("workspaceFilePreview.copyImage")}
-              </ContextMenuItem>
-              {copyAbsolutePath && (
-                <ContextMenuItem
-                  onClick={() => run(copyAbsolutePath, t("workspaceFilePreview.copyPathFailed"))}
-                >
-                  <Copy className="size-4" />
-                  {t("workspaceFilePreview.copyImageAbsolutePath")}
-                </ContextMenuItem>
-              )}
-              {copyRelativePath && (
-                <ContextMenuItem
-                  onClick={() => run(copyRelativePath, t("workspaceFilePreview.copyPathFailed"))}
-                >
-                  <Copy className="size-4" />
-                  {t("workspaceFilePreview.copyImageRelativePath")}
-                </ContextMenuItem>
-              )}
-              <ContextMenuItem onClick={() => setShowInfo(true)}>
-                <Info className="size-4" />
-                {t("workspaceFilePreview.imageInfo")}
-              </ContextMenuItem>
-              {container.current?.requestFullscreen && (
-                <ContextMenuItem
-                  onClick={() =>
-                    run(
-                      () =>
-                        fullscreen
-                          ? document.exitFullscreen()
-                          : container.current?.requestFullscreen(),
-                      t("workspaceFilePreview.fullscreenFailed"),
-                    )
-                  }
-                >
-                  <Maximize2 className="size-4" />
-                  {t(
-                    fullscreen
-                      ? "chat.imageViewer.exitFullscreen"
-                      : "workspaceFilePreview.fullscreen",
-                  )}
-                </ContextMenuItem>
-              )}
+            <ContextMenuContent
+              className="za-image-actions-menu"
+              portalContainer={(fullscreen ? container.current : actionsPortal) ?? undefined}
+            >
+              {imageCommands}
             </ContextMenuContent>
           </ContextMenu>
         ) : (
           canvas
         )}
-        {showInfo && workspaceImageActions && (
+        {fullscreen && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="za-image-exit-fullscreen"
+            aria-label={exitFullscreenLabel}
+            tooltip={exitFullscreenLabel}
+            onClick={toggleFullscreen}
+          >
+            <Minimize2 className="size-4" aria-hidden="true" />
+          </Button>
+        )}
+        {showInfo && fileImageActions && (
           <aside
             aria-label={t("workspaceFilePreview.imageInfo")}
-            className={`absolute right-3 top-3 z-10 w-64 max-w-[calc(100%-1.5rem)] p-3 text-xs ${floatingSurfaceClassName}`}
+            className={`za-image-info absolute right-3 top-3 z-10 w-64 max-w-[calc(100%-1.5rem)] p-3 text-xs ${floatingSurfaceClassName}`}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-sm font-semibold">{t("workspaceFilePreview.imageInfo")}</span>
@@ -650,7 +688,7 @@ function ImageCanvas(props: Props) {
               <dt>{t("workspaceFilePreview.fileSize")}</dt>
               <dd className="text-right text-foreground">
                 {new Intl.NumberFormat(zh ? "zh-CN" : "en", { style: "unit", unit: "byte" }).format(
-                  workspaceImageActions.sizeBytes,
+                  fileImageActions.sizeBytes,
                 )}
               </dd>
               <dt>{t("workspaceFilePreview.fileType")}</dt>
@@ -671,6 +709,7 @@ function ImageCanvas(props: Props) {
           <div className="za-image-dock-position">
             <PreviewDock label="图像查看工具" className="za-image-tools">
               {imageTools}
+              {fileImageActions && actionsMenu}
             </PreviewDock>
           </div>
         )}

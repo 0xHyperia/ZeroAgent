@@ -72,11 +72,55 @@ test("workspace image uses the full reading canvas and keeps actions in the shar
     menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
   });
   const rotate = [...document.querySelectorAll('[role="menuitem"]')].find(
-    (item) => /^(顺时针旋转|Rotate clockwise)$/.test(item.textContent),
+    (item) => /^(向右旋转|Rotate right)/.test(item.textContent),
   );
   assert.ok(rotate);
   await app.env.act(async () => rotate.click());
   assert.match(app.host.querySelector("img").style.transform, /rotate\(90deg\)/);
+});
+
+test("workspace image actions are reachable by tapping the toolbar inside a reader sheet", async (t) => {
+  let valid = true;
+  const actions = [];
+  const app = await setup(t, {
+    assertCurrent() { if (!valid) throw new Error("expired"); },
+    onDownload() { actions.push("download"); },
+  });
+  app.host.dataset.slot = "sheet-popup";
+  await app.render({}, false, true, {
+    sizeBytes: 64,
+    onCopy: async () => { actions.push("copy"); },
+    onCopyRelativePath: async () => { actions.push("path"); },
+  });
+  await app.decode();
+  const trigger = app.host.querySelector(".za-image-actions-trigger");
+  async function openMenu() {
+    await app.env.act(async () => trigger.click());
+    const menu = app.host.querySelector('[role="menu"]');
+    assert.ok(menu);
+    return menu;
+  }
+  async function choose(pattern) {
+    const menu = await openMenu();
+    const item = [...menu.querySelectorAll('[role="menuitem"]')].find(({ textContent }) =>
+      pattern.test(textContent),
+    );
+    assert.ok(item, String(pattern));
+    await app.env.act(async () => item.click());
+  }
+  await choose(/^(向左旋转|Rotate left)/);
+  assert.match(app.host.querySelector("img").style.transform, /rotate\(-90deg\)/);
+  await choose(/^(复制图片|Copy image)$/);
+  await choose(/下载\/另存为|Download \/ Save as/);
+  await choose(/图片信息|Image information/);
+  const info = app.host.querySelector("aside");
+  assert.match(info.textContent, /1200 × 800/);
+  await app.env.act(async () => info.querySelector("button").click());
+  assert.equal(app.host.querySelector("aside"), null);
+  valid = false;
+  await choose(/^(复制图片|Copy image)$/);
+  assert.deepEqual(actions, ["copy", "download"]);
+  assert.match(app.errors.at(-1), /此预览已失效/);
 });
 
 test("workspace image right-click executes the menu item without restarting the canvas", async (t) => {

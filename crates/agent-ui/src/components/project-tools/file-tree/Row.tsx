@@ -3,7 +3,7 @@
 // Shared implementation owned by @liveagent/ui. Host-specific icons, settings
 // and backend capabilities resolve through the current application's contracts.
 
-import { ChevronRight, Loader2 } from "@liveagent/ui/components/IconSet";
+import { ChevronRight, Loader2, MoreHorizontal } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
   type CSSProperties,
@@ -34,12 +34,38 @@ export type FileTreeRowProps = {
   onOpen: (path: string, temporary?: boolean) => void;
   transientFiles?: boolean;
   onContextMenu?: (event: ReactMouseEvent, path: string) => void;
+  onMore?: (event: ReactMouseEvent<HTMLButtonElement>, path: string, kind: FileTreeKind) => void;
   decoration?: ReactNode;
   changeTone?: "added" | "deleted" | "modified" | "directory";
   sectioned?: boolean;
   onDragStart?: (event: ReactDragEvent, path: string, kind: FileTreeKind) => void;
   onDragEnd?: () => void;
 };
+
+export function FileTreeMoreButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-haspopup="menu"
+      aria-label={label}
+      className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-ring"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick(event);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onDragStart={(event) => event.preventDefault()}
+    >
+      <MoreHorizontal aria-hidden="true" className="size-4" />
+    </button>
+  );
+}
 
 export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
   const {
@@ -58,6 +84,7 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
     onOpen,
     transientFiles,
     onContextMenu,
+    onMore,
     decoration,
     changeTone,
     sectioned,
@@ -157,6 +184,12 @@ export const FileTreeRow = memo(function FileTreeRow(props: FileTreeRowProps) {
         </span>
       </div>
       {decoration}
+      {onMore && (
+        <FileTreeMoreButton
+          label={t("projectTools.fileTree.entryActions").replace("{name}", name)}
+          onClick={(event) => onMore(event, path, kind)}
+        />
+      )}
     </div>
   );
 });

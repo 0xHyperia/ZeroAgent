@@ -160,6 +160,28 @@
   translate: 0 -50%;
 }
 
+[data-workspace-tab-with-menu][data-desktop-workspace-tab] {
+  height: 44px;
+}
+
+[data-workspace-tab-with-menu][data-desktop-workspace-tab] [data-workspace-tab-content] {
+  padding-inline-end: 44px;
+}
+
+[data-workspace-tab-with-menu] .za-workspace-tab-more.za-control {
+  position: absolute;
+  z-index: 11;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+}
+
+.za-workspace-tab-menu.za-workspace-tab-touch-menu .za-menu-item {
+  min-height: 44px;
+}
+
 @media (min-width: 768px) and (hover: hover) {
   [data-desktop-workspace-tab]:not([data-desktop-workspace-tab-selected], :hover, :focus-within)
     [data-project-tools-tab-action="close"] {

@@ -1142,6 +1142,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                 )}
               >
                 <RightDockTabStrip
+                  compact={mobile}
                   key={tabbed ? workspaceViewScope : undefined}
                   tabs={orderedProjectTabs}
                   workspaceTabs={workspace?.tabs}

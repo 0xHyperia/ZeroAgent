@@ -35,6 +35,7 @@ const env = await createDomTestEnv({
       useVirtualizer: ({ count, estimateSize }) => ({
         getVirtualItems: () => Array.from({ length: count }, (_, index) => ({ index, start: index * estimateSize() })),
         getTotalSize: () => count * estimateSize(),
+        measure() {},
         measureElement() {},
         scrollToIndex() {},
       }),
@@ -49,6 +50,7 @@ const env = await createDomTestEnv({
   },
 });
 const { React, act, createRoot, loadModule } = env;
+window.matchMedia = (media) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} });
 test.after(() => env.cleanup());
 
 const { RightWorkspaceFileTree } = loadModule("@liveagent/ui/components/project-tools/RightWorkspaceFileTree.tsx");

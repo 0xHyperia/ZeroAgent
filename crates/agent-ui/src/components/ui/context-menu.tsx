@@ -51,7 +51,9 @@ type ContextMenuPopupProps = Omit<
 > & {
   point: { x: number; y: number };
   coordinateRoot?: React.RefObject<HTMLElement | null>;
-  onClose: () => void;
+  open?: boolean;
+  onOpenChangeComplete?: ContextMenuPrimitive.Root.Props["onOpenChangeComplete"];
+  onClose: (reason: ContextMenuPrimitive.Root.ChangeEventDetails["reason"]) => void;
 };
 
 /** For delegated right-click handlers (virtual rows and editor selections).
@@ -59,7 +61,7 @@ type ContextMenuPopupProps = Omit<
  * Base UI owns collision handling, focus, keyboard navigation and dismissal.
  */
 export const ContextMenuPopup = React.forwardRef<HTMLDivElement, ContextMenuPopupProps>(
-  ({ point, coordinateRoot, onClose, ...props }, ref) => {
+  ({ point, coordinateRoot, open = true, onOpenChangeComplete, onClose, ...props }, ref) => {
     const anchor = React.useMemo(
       () => ({
         getBoundingClientRect: () => {
@@ -77,9 +79,10 @@ export const ContextMenuPopup = React.forwardRef<HTMLDivElement, ContextMenuPopu
 
     return (
       <ContextMenu
-        open
-        onOpenChange={(open) => {
-          if (!open) onClose();
+        open={open}
+        onOpenChangeComplete={onOpenChangeComplete}
+        onOpenChange={(open, details) => {
+          if (!open) onClose(details.reason);
         }}
       >
         <DropdownMenuContent

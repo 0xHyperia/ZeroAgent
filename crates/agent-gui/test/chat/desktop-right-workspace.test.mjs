@@ -154,6 +154,53 @@ test("the desktop Changes tab exposes its close action and restores focus to the
   assert.equal(document.activeElement.getAttribute("aria-label"), "README.md");
 });
 
+test("the compact tab menu keeps the active preview and leaves the other tab alone", async (t) => {
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  t.after(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+  const { ContextMenuItem } = loadModule("@liveagent/ui/components/ui/context-menu");
+  const calls = [];
+  const tabs = [
+    { id: "old", label: "README.md", onClose: () => calls.push("close-old") },
+    {
+      id: "preview",
+      label: "notes.md",
+      temporary: true,
+      onClose: () => calls.push("close-preview"),
+      menuItems: React.createElement(ContextMenuItem, { onSelect: () => calls.push("keep") }, "Keep"),
+    },
+  ].map((tab) => ({ ...tab, onActivate: () => calls.push(tab.id) }));
+  const noop = () => {};
+  await act(async () => root.render(React.createElement("div", {
+    "data-slot": "sheet-popup",
+    className: "project-tools-panel-tabs",
+  }, React.createElement(RightDockTabStrip, {
+    compact: true,
+    tabs: [],
+    workspaceTabs: tabs,
+    activeWorkspaceTabId: "preview",
+    backgroundTasksRunning: 0,
+    pendingCloseSessionId: "",
+    closingSessionIds: new Set(),
+    draggingTabId: "",
+    renderTabDragHandle: noop,
+    getTabDragProps: noop,
+    getTabDragStyle: noop,
+  }))));
+  const triggers = container.querySelectorAll(".za-workspace-tab-more");
+  assert.equal(triggers.length, 1);
+  assert.match(triggers[0].getAttribute("aria-label"), /notes\.md/);
+  await act(async () => triggers[0].click());
+  const menu = container.querySelector('[role="menu"]');
+  assert.ok(menu);
+  await act(async () => [...menu.querySelectorAll('[role="menuitem"]')]
+    .find((item) => item.textContent === "Keep").click());
+  assert.deepEqual(calls, ["keep"]);
+});
+
 test("file identity is shared by transcript, Git and file-tree links on Windows", () => {
   assert.equal(workspaceFileTabId(file("docs/README.md")), workspaceFileTabId(file("d:\\repo\\DOCS\\readme.md")));
   assert.notEqual(workspaceFileTabId(file("docs/README.md")), workspaceFileTabId(file("d:\\other\\docs\\README.md")));

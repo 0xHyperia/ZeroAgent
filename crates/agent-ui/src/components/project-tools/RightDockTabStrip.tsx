@@ -6,6 +6,7 @@ import {
   DiffSquare,
   File,
   GripVertical,
+  MoreHorizontal,
   Terminal,
   X,
 } from "@liveagent/ui/components/IconSet";
@@ -23,6 +24,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../ui/context-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { TooltipButton as Button } from "../ui/tooltip-button";
 import {
   desktopWorkspaceTabWidths,
@@ -42,6 +44,7 @@ import {
 } from "./WorkspaceTabHoverPreview";
 
 type RightDockTabStripProps = {
+  compact?: boolean;
   tabs: RightDockVisibleTab[];
   currentActiveTab: RightDockTabKind;
   workspaceTabs?: readonly RightDockWorkspaceTab[];
@@ -269,7 +272,9 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
   const [pointerClose, setPointerClose] = useState<PointerCloseLayout | null>(null);
   // One open menu at a time, keyed by tab id — the strip is a single row, so a
   // per-tab open flag would only add bookkeeping.
-  const [menuTabId, setMenuTabId] = useState("");
+  const [menu, setMenu] = useState<{ id: string; source: "context" | "button" } | null>(null);
+  const menuTabId = menu?.id;
+  const menuPortal = track?.closest<HTMLElement>('[data-slot="sheet-popup"]') ?? undefined;
   const hoverPreview = useWorkspaceTabHoverPreview();
   const { confirm, dialog: closeTabsDialog } = useConfirmDialog();
   const latestDescriptors = useRef<DockTabDescriptor[]>([]);
@@ -413,11 +418,61 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
     const closable = (candidate: DockTabDescriptor) =>
       candidate.bulkClose && !candidate.closeDisabled;
     const menuOpen = menuTabId === tab.id;
+    const showMore = desktopWorkspace && props.compact && tab.isActive && hasMenu;
+    const changeMenu = (source: "context" | "button", open: boolean) => {
+      hoverPreview.dismiss();
+      setMenu((current) =>
+        open
+          ? { id: tab.id, source }
+          : current?.id === tab.id && current.source === source
+            ? null
+            : current,
+      );
+    };
     const all = menuOpen && desktopWorkspace ? descriptors.filter(closable) : [];
     const others = all.filter((candidate) => candidate !== tab);
     const toRight = all.length
       ? descriptors.slice(descriptors.indexOf(tab) + 1).filter(closable)
       : [];
+    const closeTab = () => {
+      if (track?.parentElement) closeFocus.current = { id: tab.id, strip: track.parentElement };
+      tab.onClose();
+    };
+    const menuItems = menuOpen && (
+      <>
+        {tab.menuItems}
+        {desktopWorkspace && (
+          <>
+            {tab.menuItems && <ContextMenuSeparator />}
+            <ContextMenuItem disabled={tab.closeDisabled} onSelect={closeTab}>
+              <X />
+              {copy("关闭", "Close")}
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={!others.length}
+              onSelect={() => void bulkClose(others, false)}
+            >
+              <X />
+              {copy("关闭其他标签页", "Close other tabs")}
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={!toRight.length}
+              onSelect={() => void bulkClose(toRight, false)}
+            >
+              <X />
+              {copy("关闭右侧标签页", "Close tabs to the right")}
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={descriptors.length < 2 || !all.length}
+              onSelect={() => void bulkClose(all, true)}
+            >
+              <X />
+              {copy("关闭所有标签页", "Close all tabs")}
+            </ContextMenuItem>
+          </>
+        )}
+      </>
+    );
     const tabBody = (
       // biome-ignore lint/a11y/noStaticElementInteractions: The named tab button handles focus and activation. The surrounding row handles drag geometry only.
       <div
@@ -427,6 +482,7 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
         data-desktop-workspace-tab={desktopWorkspace ? "" : undefined}
         data-desktop-workspace-tab-selected={desktopWorkspace && tab.isActive ? "" : undefined}
         data-desktop-workspace-tab-preview={desktopWorkspace && tab.temporary ? "" : undefined}
+        data-workspace-tab-with-menu={showMore || undefined}
         draggable={tab.workspaceTab && Boolean(onMoveWorkspaceTab)}
         className={cn(
           desktopWorkspace
@@ -638,43 +694,73 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
               )}
             />
           ) : null}
+          {showMore && tab.dirty && <span className="size-1.5 shrink-0 rounded-full bg-current" />}
         </div>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          type="button"
-          data-project-tools-tab-action="close"
-          aria-label={tab.closeLabel}
-          title={desktopWorkspace ? undefined : tab.closeTitle}
-          tooltipSide="bottom"
-          disabled={tab.closeDisabled}
-          className={cn(
-            CLOSE_BUTTON_CLASS,
-            tab.isPendingClose
-              ? "bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground md:opacity-100"
-              : desktopWorkspace && tab.isActive
-                ? "opacity-100"
-                : "md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100",
-          )}
-          onPointerDown={(event) => {
-            event.stopPropagation();
-            if (event.button === 0 && event.pointerType !== "touch" && !tab.closeDisabled)
-              onPointerClose?.();
-          }}
-          onMouseDown={(event) => {
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            const strip =
-              desktopWorkspace && event.currentTarget.closest(".project-tools-panel-tabs");
-            if (strip) closeFocus.current = { id: tab.id, strip };
-            consumeSuppressedTabClick(tab.id);
-            tab.onClose();
-          }}
-        >
-          {tab.closeIcon ?? <X className="size-3" />}
-        </Button>
+        {showMore ? (
+          <DropdownMenu
+            open={menuOpen && menu?.source === "button"}
+            onOpenChange={(open) => changeMenu("button", open)}
+          >
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={copy(`${tab.label} 的标签操作`, `Tab actions for ${tab.label}`)}
+                  className="za-workspace-tab-more"
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent
+              align="end"
+              sideOffset={2}
+              className="za-workspace-compact-menu za-workspace-tab-menu za-workspace-tab-touch-menu"
+              portalContainer={menuPortal}
+            >
+              {menu?.source === "button" && menuItems}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            data-project-tools-tab-action="close"
+            aria-label={tab.closeLabel}
+            title={desktopWorkspace ? undefined : tab.closeTitle}
+            tooltipSide="bottom"
+            disabled={tab.closeDisabled}
+            className={cn(
+              CLOSE_BUTTON_CLASS,
+              tab.isPendingClose
+                ? "bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground md:opacity-100"
+                : desktopWorkspace && tab.isActive
+                  ? "opacity-100"
+                  : "md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100",
+            )}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              if (event.button === 0 && event.pointerType !== "touch" && !tab.closeDisabled)
+                onPointerClose?.();
+            }}
+            onMouseDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              const strip =
+                desktopWorkspace && event.currentTarget.closest(".project-tools-panel-tabs");
+              if (strip) closeFocus.current = { id: tab.id, strip };
+              consumeSuppressedTabClick(tab.id);
+              tab.onClose();
+            }}
+          >
+            {tab.closeIcon ?? <X className="size-3" />}
+          </Button>
+        )}
       </div>
     );
 
@@ -682,11 +768,8 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
     return (
       <ContextMenu
         key={tab.id}
-        open={menuOpen}
-        onOpenChange={(open) => {
-          hoverPreview.dismiss();
-          setMenuTabId((current) => (open ? tab.id : current === tab.id ? "" : current));
-        }}
+        open={menuOpen && menu?.source === "context"}
+        onOpenChange={(open) => changeMenu("context", open)}
       >
         {/* biome-ignore lint/complexity/noUselessFragments: DropdownMenu keeps trigger and popup siblings under one provider child */}
         <>
@@ -696,38 +779,9 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
             align="start"
             sideOffset={2}
             className="za-workspace-compact-menu za-workspace-tab-menu"
+            portalContainer={menuPortal}
           >
-            {menuOpen && tab.menuItems}
-            {desktopWorkspace && (
-              <>
-                {tab.menuItems && <ContextMenuSeparator />}
-                <ContextMenuItem disabled={tab.closeDisabled} onSelect={tab.onClose}>
-                  <X />
-                  {copy("关闭", "Close")}
-                </ContextMenuItem>
-                <ContextMenuItem
-                  disabled={!others.length}
-                  onSelect={() => void bulkClose(others, false)}
-                >
-                  <X />
-                  {copy("关闭其他标签页", "Close other tabs")}
-                </ContextMenuItem>
-                <ContextMenuItem
-                  disabled={!toRight.length}
-                  onSelect={() => void bulkClose(toRight, false)}
-                >
-                  <X />
-                  {copy("关闭右侧标签页", "Close tabs to the right")}
-                </ContextMenuItem>
-                <ContextMenuItem
-                  disabled={descriptors.length < 2 || !all.length}
-                  onSelect={() => void bulkClose(all, true)}
-                >
-                  <X />
-                  {copy("关闭所有标签页", "Close all tabs")}
-                </ContextMenuItem>
-              </>
-            )}
+            {menu?.source === "context" && menuItems}
           </ContextMenuContent>
         </>
       </ContextMenu>
@@ -877,6 +931,14 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
   useEffect(() => {
     if (hoverPreview.preview && !descriptors.some((tab) => tab.id === hoverPreview.preview?.id))
       hoverPreview.dismiss();
+    if (
+      menu &&
+      !descriptors.some(
+        (tab) =>
+          tab.id === menu.id && (menu.source === "context" || (props.compact && tab.isActive)),
+      )
+    )
+      setMenu(null);
   });
 
   const count = descriptors.length;
@@ -916,7 +978,9 @@ export function RightDockTabStrip(props: RightDockTabStripProps) {
       : lock?.sharedWidth;
   const widths = desktopWorkspaceTabWidths(
     availableWidth,
-    tabIds.map((id) => actionWidths[id] ?? 0),
+    descriptors.map(
+      (tab) => (actionWidths[tab.id] ?? 0) + (props.compact && tab.isActive ? 24 : 0),
+    ),
     lockedWidth,
   );
   const animate = !prefersReducedMotion && Boolean(track);

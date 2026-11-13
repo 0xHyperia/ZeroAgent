@@ -26,17 +26,18 @@ import {
   Trash2,
 } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { type MouseEvent as ReactMouseEvent, type RefObject, useCallback } from "react";
+import { type MouseEvent as ReactMouseEvent, type RefObject, useCallback, useState } from "react";
 import {
   isWorkspaceEditablePreviewPath,
   isWorkspacePreviewPath,
 } from "../../workspace-editor/workspaceImagePreview";
-import { FILE_TREE_HAS_OS_INTEGRATION, type FileTreeKind } from "./model";
+import { dirname, FILE_TREE_HAS_OS_INTEGRATION, type FileTreeKind } from "./model";
 
 export type FileTreeContextMenuProps = {
   // Anchor relative to the panel (containerRef) coordinate space.
   anchor: { x: number; y: number };
   containerRef: RefObject<HTMLDivElement | null>;
+  trigger?: HTMLButtonElement | null;
   path: string;
   displayPath?: string;
   kind: FileTreeKind;
@@ -50,7 +51,7 @@ export type FileTreeContextMenuProps = {
   onOpenContainingDirectory: (path: string) => void;
   onStartAction: (action: "file" | "folder" | "rename", path: string) => void;
   onDelete: (path: string) => void;
-  onInsertMention: (path: string) => void;
+  onInsertMention: (path: string, kind: FileTreeKind) => void;
   onRefresh: (path: string, kind: FileTreeKind) => void;
   onToggleHidden: () => void;
   onActionError: (message: string) => void;
@@ -60,6 +61,7 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
   const {
     anchor,
     containerRef,
+    trigger,
     path,
     displayPath,
     kind,
@@ -79,10 +81,12 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
     onActionError,
   } = props;
   const { t } = useLocale();
+  const [closingForEscape, setClosingForEscape] = useState(false);
 
   const { copied, showCopied } = useCopyFeedback(false, COPY_FEEDBACK_DURATION.short);
 
   const hasPathAction = Boolean(path);
+  const targetDirectory = kind === "dir" ? path : dirname(path);
 
   const handleCopy = useCallback(
     async (event: ReactMouseEvent) => {
@@ -105,8 +109,30 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
     <ContextMenuPopup
       point={anchor}
       coordinateRoot={containerRef}
-      onClose={onClose}
-      className="min-w-52 text-xs"
+      open={!closingForEscape}
+      onClose={(reason) => {
+        if (reason === "escape-key" && trigger) setClosingForEscape(true);
+        else onClose();
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open && closingForEscape) {
+          onClose();
+          // The enclosing sheet can first reclaim focus from the removed menu.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const focused = trigger?.ownerDocument.activeElement;
+              if (
+                focused === trigger?.ownerDocument.body ||
+                focused === trigger?.closest('[role="dialog"]')
+              )
+                trigger?.focus({ preventScroll: true });
+            });
+          });
+        }
+      }}
+      portalContainer={containerRef.current?.closest<HTMLElement>('[data-slot="sheet-popup"]')}
+      finalFocus={trigger ? false : undefined}
+      className="min-w-[min(13rem,var(--available-width,100vw))] max-w-[min(18rem,var(--available-width,100vw))] overscroll-contain text-xs"
     >
       {kind === "file" ? (
         <>
@@ -146,7 +172,7 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
       <ContextMenuItem
         disabled={!canMutate}
         onClick={() => {
-          onStartAction("file", path);
+          onStartAction("file", targetDirectory);
           onClose();
         }}
       >
@@ -156,7 +182,7 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
       <ContextMenuItem
         disabled={!canMutate}
         onClick={() => {
-          onStartAction("folder", path);
+          onStartAction("folder", targetDirectory);
           onClose();
         }}
       >
@@ -185,7 +211,11 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
         {t("projectTools.fileTree.delete")}
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuCheckboxItem checked={showHidden} onCheckedChange={onToggleHidden}>
+      <ContextMenuCheckboxItem
+        className="za-menu-item"
+        checked={showHidden}
+        onCheckedChange={onToggleHidden}
+      >
         {showHidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
         {t(
           showHidden
@@ -216,7 +246,7 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
       <ContextMenuItem
         disabled={!hasPathAction || !canInsertMention}
         onClick={() => {
-          onInsertMention(path);
+          onInsertMention(path, kind);
           onClose();
         }}
       >

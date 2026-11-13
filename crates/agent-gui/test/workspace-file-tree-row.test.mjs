@@ -19,6 +19,7 @@ function createRowHarness() {
       "@liveagent/ui/components/IconSet": {
         ChevronRight: (props) => ({ type: "ChevronRight", props }),
         Loader2: (props) => ({ type: "Loader2", props }),
+        MoreHorizontal: (props) => ({ type: "MoreHorizontal", props }),
       },
       "@liveagent/ui/lib/shared/utils": {
         cn(...values) {
@@ -118,6 +119,22 @@ test("keyboard and synthesized activation also open a temporary file tab", () =>
     ["select", "assets/preview.png"],
     ["open", "assets/preview.png", true],
   ]);
+});
+
+test("compact row actions target the exact file without activating the row", () => {
+  const entries = [];
+  const { tree, calls } = renderRow({ onMore: (...args) => entries.push(args) });
+  const { FileTreeMoreButton } = createRowHarness();
+  const [menu] = findAll(tree, (node) => node.type?.name === "FileTreeMoreButton");
+  assert.ok(menu);
+  const button = FileTreeMoreButton(menu.props);
+  let stopped = false;
+  const event = { stopPropagation() { stopped = true; } };
+  button.props.onClick(event);
+  assert.equal(stopped, true);
+  assert.equal(button.props["aria-haspopup"], "menu");
+  assert.deepEqual(entries, [[event, "assets/preview.png", "file"]]);
+  assert.deepEqual(calls, []);
 });
 
 test("workspace file tree expands directories with one click", () => {
