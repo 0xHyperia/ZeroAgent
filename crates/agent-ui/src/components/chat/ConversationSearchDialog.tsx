@@ -489,7 +489,10 @@ export function ConversationSearchDialog({
                               ) : null}
                             </div>
                             {item.matchType || item.cwd ? (
-                              <div className="flex w-full min-w-0 items-center gap-2 text-xs leading-4 text-muted-foreground">
+                              <div
+                                data-conversation-search-result-meta=""
+                                className="flex w-full min-w-0 items-center gap-2 text-xs leading-4 text-muted-foreground"
+                              >
                                 {item.matchType ? (
                                   <span className="shrink-0">
                                     {item.matchType === "message"
@@ -514,7 +517,10 @@ export function ConversationSearchDialog({
                               </div>
                             ) : null}
                             {item.searchPreview ? (
-                              <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">
+                              <div
+                                data-conversation-search-result-preview=""
+                                className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground"
+                              >
                                 {renderSearchPreview(
                                   item.searchPreview,
                                   searchAdapter ? normalizedQuery : undefined,

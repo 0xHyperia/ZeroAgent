@@ -134,6 +134,18 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
   const [activeFloorKey, setActiveFloorKey] = useState<string | null>(null);
   const transcriptNavRef = useRef<TranscriptNavHandle | null>(null);
   const saveReadingPositionRef = useRef<(() => void) | null>(null);
+  const shouldDeferTranscriptReveal =
+    !isSending && historyItems.length >= DEFER_REVEAL_HISTORY_ITEM_THRESHOLD;
+  const [settledConversationId, setSettledConversationId] = useState<string | null>(null);
+  const handleFirstLayoutSettled = useCallback(() => {
+    setSettledConversationId(conversationId);
+  }, [conversationId]);
+  const isTranscriptSettling =
+    shouldReserveTranscriptBottomSpace &&
+    shouldDeferTranscriptReveal &&
+    settledConversationId !== conversationId;
+  // Width controls must suspend while the loading overlay covers them.
+  const isTranscriptBusy = isHistorySwitching || isTranscriptSettling;
   const handleFloorJump = useCallback(
     (rowKey: string) => {
       // 粘底跟随激活时程序化滚动会被立即拽回底部——先按「跳入历史」语义解除
@@ -165,7 +177,7 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
     getSearchJumpTargetSnapshot,
   );
   useEffect(() => {
-    if (isHistorySwitching) return;
+    if (isTranscriptBusy || !scrollViewport) return;
     const target = pendingSearchJump?.conversationId === conversationId ? pendingSearchJump : null;
     if (!target) {
       searchJumpPagesRef.current = 0;
@@ -186,9 +198,14 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
       target,
     );
     if (rowKey) {
-      clearSearchJumpTarget(target);
-      searchJumpPagesRef.current = 0;
-      const frame = requestAnimationFrame(() => handleFloorJump(rowKey));
+      const frame = requestAnimationFrame(() => {
+        if (getSearchJumpTargetSnapshot() !== target || !transcriptNavRef.current) return;
+        // A page prepend can rerender before the frame runs. Keep the target
+        // pending until the current virtualizer can actually perform the jump.
+        clearSearchJumpTarget(target);
+        searchJumpPagesRef.current = 0;
+        handleFloorJump(rowKey);
+      });
       return () => cancelAnimationFrame(frame);
     }
     if (!hasMoreHistory || searchJumpPagesRef.current >= SEARCH_JUMP_MAX_PAGES) {
@@ -204,8 +221,9 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
     pendingSearchJump,
     hasMoreHistory,
     historyItems,
-    isHistorySwitching,
+    isTranscriptBusy,
     onLoadEarlierHistory,
+    scrollViewport,
   ]);
 
   // Find in conversation (Cmd/Ctrl+F): matches are counted on the row model
@@ -233,26 +251,6 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
     isSending,
     branchPendingMessageId: branchPendingMessageId ?? null,
   });
-
-  // Large conversations stay behind the loading overlay until their first
-  // layout settles. Ordinary conversations paint immediately instead of
-  // paying a second loading-state transition after history is already ready.
-  const shouldDeferTranscriptReveal =
-    !isSending && historyItems.length >= DEFER_REVEAL_HISTORY_ITEM_THRESHOLD;
-  const [settledConversationId, setSettledConversationId] = useState<string | null>(null);
-  const handleFirstLayoutSettled = useCallback(() => {
-    setSettledConversationId(conversationId);
-  }, [conversationId]);
-  const isTranscriptSettling =
-    shouldReserveTranscriptBottomSpace &&
-    shouldDeferTranscriptReveal &&
-    settledConversationId !== conversationId;
-  // Loading overlays own the stage while mounted. The width handles suspend
-  // behind them (an opaque skeleton leaves nothing to grab, and a focusable
-  // separator must not hide under a blocking layer) and come back in the very
-  // commit the overlay leaves, re-measured against the pane as it is then —
-  // no unrelated layout change is needed to wake them (#749).
-  const isTranscriptBusy = isHistorySwitching || isTranscriptSettling;
 
   useLayoutEffect(() => {
     const handle = {

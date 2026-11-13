@@ -450,7 +450,19 @@ Android 15 x64 开发包在 915×412 CSS px 使用停靠测试输入法，键盘
 
 隔离 Gateway 的 Edge Chromium 在 390×844 与 915×412 CSS px 验证同一设置流程。从设备管理进入设置，选择系统设置后触发宿主返回事件，两种布局均回到 `/settings` 分类页。Android 15 开发包在 915×412 CSS px 验证系统返回先回分类页，再回原对话。短横屏此前会直接退出设置。记录见 `.codex-artifacts/mobile-webui-goal/settings-back-viewport-evidence.json` 和 `search-ime-android-results.json`。
 
-Windows 被控端使用包含引擎搜索桥接的 Debug 构建，桌面远程工作台使用同一工作树构建的内嵌 WebUI，浏览器远程使用 Gateway 生产前端。三个入口在 480×620 CSS px 搜索同一设备会话中的首条消息，Esc 关闭后保留草稿，重新搜索并点按结果后，滚动稳定时仍可看到目标消息和原草稿。三处还用同一 PNG 复验文件标签、断线重连后的文件读取及撤销授权。Edge 另在 390×844 CSS px 模拟触屏并点按同一结果，目标消息保持在视口内。该会话的首条消息已在初次加载的历史窗口中，更早分页窗口的运行时跳转仍待复验。记录见 `.codex-artifacts/mobile-webui-goal/search-ime-desktop-parity.json` 和 `desktop-parity/older-phone-scroll-probe.json`。
+Windows 被控端使用包含引擎搜索桥接的 Debug 构建，桌面远程工作台使用同一工作树构建的内嵌 WebUI，浏览器远程使用 Gateway 生产前端。三个入口在 480×620 CSS px 搜索同一设备会话中的首条消息，Esc 关闭后保留草稿，重新搜索并点按结果后，滚动稳定时仍可看到目标消息和原草稿。三处还用同一 PNG 复验文件标签、断线重连后的文件读取及撤销授权。Edge 另在 390×844 CSS px 模拟触屏并点按同一结果，目标消息保持在视口内。记录见 `.codex-artifacts/mobile-webui-goal/search-ime-desktop-parity.json` 和 `desktop-parity/older-phone-scroll-probe.json`。
+
+另用 420 条合成消息验证跨页搜索。首批 360 条中没有目标消息，设备读取更早历史后才返回命中。Windows 本机曾在读到该页后仍停在底部，现等到阅读区布局就绪，并在真正执行滚动时消费待定位的目标。重新构建的 Windows Debug 被控端、带内嵌 WebUI 的桌面控制端，以及 Gateway 生产前端在 480×620 和 915×412 CSS px 都能定位到首条消息并保留草稿。Edge 在 390×844 CSS px 模拟触屏复验浏览器远程入口，点按后发起一次扩窗读取，稳定后仍显示命中消息。记录见 `.codex-artifacts/mobile-webui-goal/paged-history-parity.json`、`paged-history-landscape.json` 和 `desktop-parity/paged-history-phone.json`。
+
+同批构建复验三入口的文件标签、断线草稿和重连后的文件读取。撤销远程授权后，远程编辑器关闭，浏览器从远程入口返回云端时恢复原会话与草稿，本机草稿仍可编辑。云端另用 Playwright WebKit 复验软键盘下的搜索结果与分页重试。记录见 `.codex-artifacts/mobile-webui-goal/paged-jump-packaged-companion.json` 和 `paged-jump-cloud-webkit-after.json`。
+
+Android 15 x64 模拟器用 Chrome 和 Gboard 连接隔离 Gateway 及同一 Windows 被控设备。412×783 CSS px 竖屏可在键盘打开时点按命中项。863×304 CSS px 横屏的可视高度仅 67px，原布局下首条结果底边为 124px，无法点按。并排布局中搜索栏保持 44px，首条结果底边为 53px。直接点按和先按 Android 返回键再点按都能跨页定位并保留草稿。云端在同一 Android 横屏实测手势滚动结果区，Edge 与 WebKit 另验证 67px 时的分页和失败重试，以及可用高度恢复时回到原布局。记录见 `.codex-artifacts/mobile-webui-goal/paged-android-*-fixed.json` 和 `compact-cloud-*.json`。
+
+Android Debug APK 在独立模拟器用户中使用原生 WebView 和 Gateway 桥验证云端搜索。915×412 CSS px 横屏的 Gboard 留下 151px 应用可用高度，首条结果完整可见，系统返回收起键盘后保留搜索词和草稿。记录见 `.codex-artifacts/mobile-webui-goal/compact-search-native-android.json`。
+
+同一 Android Debug APK 通过应用内设备切换连接隔离 Windows 被控端，在 915×412 CSS px 复验 420 条消息的会话。原生连接先读 360 条，点按命中后以 720 条为上限读取并定位到首条。键盘开启时输入区高 44px，首条搜索结果底边为 77px，位于 151px 的可用区域内。直接点按和先按 Android 返回收起键盘再点按均保留远程草稿。用设备菜单切回云端后恢复原会话及云端草稿。记录见 `.codex-artifacts/mobile-webui-goal/paged-native-remote-direct.json` 和 `paged-native-remote-back.json`。
+
+并排布局纳入同一工作树的 Windows Debug 被控端、桌面内嵌 WebUI 和 Gateway 生产前端后，三个设备入口在 480×620 与 915×412 复验跨页跳转及草稿。文件标签、断线、重连与撤销授权后的云端返回通过同批回归。记录见 `.codex-artifacts/mobile-webui-goal/compact-search-desktop-*.json`。
 
 ## 维护和验收
 

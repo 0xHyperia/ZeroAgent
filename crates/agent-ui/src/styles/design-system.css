@@ -345,6 +345,7 @@
 }
 @media (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   html[data-zeroagent-keyboard="open"] [data-slot="command-dialog-viewport"][data-layout="visual-viewport"] {
+    container: command-viewport / size;
     padding-block: max(
       4px,
       calc(var(--zeroagent-safe-area-top, 0px) - var(--zeroagent-visual-viewport-offset-top, 0px))
@@ -379,6 +380,57 @@
   }
   html[data-zeroagent-keyboard="open"] [data-conversation-search-pagination] [role="alert"] {
     margin: 0;
+  }
+}
+
+@container command-viewport (min-width: 560px) and (max-height: 124px) {
+  [data-conversation-search-dialog] {
+    display: grid;
+    grid-template-columns: minmax(240px, 2fr) minmax(0, 3fr);
+    max-width: 48rem;
+  }
+  [data-conversation-search-dialog] [data-slot="command-input-row"] {
+    align-self: center;
+    gap: 8px;
+    padding-inline: 12px;
+  }
+  [data-conversation-search-dialog] [data-slot="command-panel"] {
+    border-block-start: 0;
+    border-inline-start: 1px solid hsl(var(--foreground) / 0.08);
+    border-start-start-radius: 0;
+    scroll-padding-block: 0;
+  }
+  [data-conversation-search-dialog] [data-slot="command-list"] {
+    padding-block: 0;
+    scroll-padding-block: 0;
+  }
+  [data-conversation-search-dialog] [data-slot="command-group-label"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  [data-conversation-search-dialog] [data-slot="command-item"] {
+    justify-content: center;
+    padding-block: 4px;
+  }
+  [data-conversation-search-result-meta] {
+    display: none;
+  }
+  [data-conversation-search-result-preview] {
+    -webkit-line-clamp: 1;
+    margin-top: 0;
+  }
+  [data-conversation-search-dialog] [data-conversation-search-status] {
+    min-height: 44px;
+    flex-direction: row;
+    gap: 8px;
+    padding-inline: 8px;
+  }
+  [data-conversation-search-dialog] [data-conversation-search-status] > svg {
+    display: none;
   }
 }
 
