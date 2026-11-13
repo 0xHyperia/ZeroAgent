@@ -141,7 +141,7 @@ export function CloudProjectCreateDialog(props: {
       }}
     >
       <DialogContent
-        className="max-w-lg rounded-3xl p-6"
+        className="cloud-project-create-dialog max-w-lg rounded-3xl p-6"
         showCloseButton
         closeDisabled={busy}
         closeLabel={copy("关闭新建项目", "Close new project")}
@@ -152,7 +152,7 @@ export function CloudProjectCreateDialog(props: {
           <DialogDescription>{intent.description}</DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-4"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();

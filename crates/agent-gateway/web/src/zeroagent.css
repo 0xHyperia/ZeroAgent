@@ -267,6 +267,51 @@ html[data-zeroagent-platform="android"] [data-slot="dialog-viewport"] {
     max(16px, var(--zeroagent-safe-area-bottom)) max(16px, var(--zeroagent-safe-area-left));
 }
 
+@media (pointer: coarse) and (max-height: 550px) {
+  html[data-zeroagent-keyboard="open"] [data-slot="dialog-viewport"][data-layout="center"] {
+    padding-block: max(
+      4px,
+      calc(var(--zeroagent-safe-area-top, 0px) - var(--zeroagent-visual-viewport-offset-top, 0px))
+    ) 4px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog {
+    padding-block: 8px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog [data-slot="dialog-header"] {
+    min-height: 0;
+    gap: 4px;
+    padding-bottom: 4px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog [data-slot="dialog-description"] {
+    line-height: 1.25;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog form {
+    gap: 4px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog form label {
+    display: block;
+    line-height: 1.25;
+    margin-block-end: 4px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog input {
+    height: 44px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog [data-slot="dialog-footer"] {
+    padding-block: 0;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-project-create-dialog [data-slot="dialog-footer"] button {
+    min-height: 44px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-conversation-rename-dialog [data-slot="dialog-body"] {
+    padding-block: 4px;
+  }
+  html[data-zeroagent-keyboard="open"] .cloud-conversation-rename-dialog [data-slot="dialog-footer"] {
+    flex-direction: row;
+    align-items: center;
+    padding-block: 4px;
+  }
+}
+
 html[data-zeroagent-platform="android"]
   .gateway-editor-host
   > .chat-history-sidebar
@@ -1262,6 +1307,21 @@ html[data-zeroagent-platform="android"]
 .cloud-context-picker-sheet .cloud-context-picker-search input {
   height: 40px;
   font-size: 16px;
+}
+html[data-zeroagent-keyboard="open"] .cloud-context-picker-sheet .cloud-context-picker-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-block-start: 0;
+}
+html[data-zeroagent-keyboard="open"] .cloud-context-picker-sheet .cloud-context-picker-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: hsl(var(--background));
+}
+html[data-zeroagent-keyboard="open"] .cloud-context-picker-sheet .cloud-context-picker-results {
+  flex: 0 0 auto;
+  overflow: visible;
 }
 @media (prefers-reduced-motion: reduce) {
   .cloud-mode-indicator,

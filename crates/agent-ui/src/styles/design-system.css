@@ -343,6 +343,26 @@
   inset: auto 0 max(0px, calc(100dvh - var(--zeroagent-visual-viewport-height, 100dvh))) !important;
   transform: none !important;
 }
+html[data-zeroagent-keyboard="open"] {
+  --za-mobile-sheet-bottom: max(
+    0px,
+    calc(100dvh - var(--zeroagent-visual-viewport-height, 100dvh) - var(--zeroagent-visual-viewport-offset-top, 0px))
+  );
+  --za-mobile-sheet-height: max(
+    0px,
+    calc(var(--zeroagent-visual-viewport-height, 100dvh) - max(0px, var(--zeroagent-safe-area-top, 0px) - var(--zeroagent-visual-viewport-offset-top, 0px)))
+  );
+}
+html[data-zeroagent-keyboard="open"] [data-slot="sheet-popup"][data-side="bottom"] {
+  bottom: var(--za-mobile-sheet-bottom);
+  max-height: var(--za-mobile-sheet-height);
+}
+html[data-zeroagent-keyboard="open"] .za-mobile-popover-positioner {
+  bottom: var(--za-mobile-sheet-bottom) !important;
+}
+html[data-zeroagent-keyboard="open"] .za-mobile-choice-sheet.za-mobile-popover-sheet {
+  max-height: var(--za-mobile-sheet-height);
+}
 .za-mobile-choice-sheet.za-mobile-popover-sheet {
   width: 100%;
   max-width: none;

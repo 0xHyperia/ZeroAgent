@@ -17,6 +17,14 @@
   flex-shrink: 0;
 }
 
+/* These fixed sheets are portalled outside the resized workbench. */
+html[data-zeroagent-keyboard="open"]
+  :is([data-workspace-tools-sheet], [data-right-workspace-tree][data-slot="sheet-popup"]) {
+  top: var(--zeroagent-visual-viewport-offset-top, 0px);
+  bottom: auto;
+  height: var(--zeroagent-visual-viewport-height, 100dvh);
+}
+
 .za-workspace-tree-row {
   --za-workspace-tree-indent: 9px;
   --za-workspace-tree-inset: 3px;

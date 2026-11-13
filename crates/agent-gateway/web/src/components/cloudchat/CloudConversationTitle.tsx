@@ -139,7 +139,11 @@ export function CloudConversationTitle({
   if (compact) {
     return (
       <Dialog open={editing} onOpenChange={(open) => { if (!open && !pending.current) cancel(); }}>
-        <DialogContent initialFocus={inputRef} finalFocus={onReturnFocus}>
+        <DialogContent
+          className="cloud-conversation-rename-dialog"
+          initialFocus={inputRef}
+          finalFocus={onReturnFocus}
+        >
           <DialogHeader><DialogTitle>重命名对话</DialogTitle></DialogHeader>
           <DialogBody>{editor}</DialogBody>
           <DialogFooter>

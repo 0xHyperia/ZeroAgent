@@ -404,6 +404,12 @@ Android 15 开发模拟器验收云端、实际远程设备、底部模型弹层
 
 设备项目工具在手机上每次显示一个工作面。文件树覆盖当前阅读器、终端或审查面板，底层内容继续保留状态。点选文件或审查项后收起文件树，返回也可逐层关闭。文件树保留筛选和展开路径，默认由用户点按搜索框再打开软键盘。宽屏文件树沿用可拖动的并排布局。
 
+软键盘打开时，手机项目工具与文件树抽屉沿用同一可视视口的高度和顶部偏移。阅读器的批注输入和文件筛选继续在原抽屉内编辑，操作按钮及文件列表保持在键盘上方。系统返回收起键盘后恢复抽屉的全高，保留当前文件、批注和筛选。
+
+项目、资料和技能选择器在键盘打开时贴住可视视口的下沿。短横屏中，搜索框留在列表顶部，结果和次要操作在同一弹层内滚动。收起键盘后弹层回到底部并保留搜索，关闭后返回原输入区。
+
+短横屏打开软键盘时，居中表单保留系统栏避让，减少垂直留白，并允许在弹窗内滚动。创建项目及重命名云端会话时，名称输入和提交同时可见，错误或较长内容可滚动，系统返回先收起键盘。
+
 手机终端保留常用的 80 列显示宽度。横向拖动仅平移终端视口，纵向拖动仍由终端处理滚动记录。点按终端进入输入，拖动不唤起键盘。转动设备或改变窗格大小时复用当前终端会话并重新测量网格。
 
 手机公开检索确认保持原对话草稿，主题和确认内容在弹层内滚动。取消或返回回到原输入区。窄屏操作允许换行并保留 44 px 触控高度。
@@ -424,9 +430,19 @@ Android 15 开发模拟器验收云端、实际远程设备、底部模型弹层
 
 同一工作树的两套 Windows Debug 客户端和 Gateway 在 1100×800 CSS px 完成桌面本机、桌面远程和浏览器远程对照。三个入口使用同一在线设备、历史会话、Markdown 和 PNG，文件树统一为 200 CSS px。复验了调整窗格时的键盘焦点、固定标签切换、各入口独立草稿、桌面远程的失效租约原位重连，以及被控设备断线和重连后的文件读取。撤销设备授权后，两处远程编辑区关闭，浏览器返回原云端会话并恢复草稿，被控电脑继续显示本机草稿。480×620 CSS px 用更新后的同源构建复验上述标签和连接操作，见[标签验收](workbench-project-tool-panes.md)。宽屏证据和复验命令见 `.codex-artifacts/mobile-webui-goal/README.md`。
 
-Android 15 模拟器的 Chrome 使用隔离 Gateway、实际 Windows 被控设备和可停靠的测试输入法，在 412 CSS px 宽度复验云端对话、云端工作和浏览器远程的输入。系统键盘将可视高度从约 783 缩到 511 CSS px，三处输入区的发送按钮都可点击。按 Android 返回键收起键盘后，草稿与会话保留。证据见 `.codex-artifacts/reader-touch/image-actions/android-docked-ime-*-results.json`。Gboard 的实体键盘辅助栏与浮动键盘没有为网页预留同等高度。Android 应用 WebView、手机真机的输入法、iOS Safari 和实际网络中的首次设备配对仍待复验。
+Android 15 模拟器的 Chrome 使用隔离 Gateway、实际 Windows 被控设备和可停靠的测试输入法，在 412 CSS px 宽度复验云端对话、云端工作和浏览器远程的输入。系统键盘将可视高度从约 783 缩到 511 CSS px，三处输入区的发送按钮都可点击。按 Android 返回键收起键盘后，草稿与会话保留。证据见 `.codex-artifacts/reader-touch/image-actions/android-docked-ime-*-results.json`。Gboard 的实体键盘辅助栏与浮动键盘没有为网页预留同等高度。手机真机的输入法、iOS Safari 和实际网络中的首次设备配对仍待复验。
 
-现有 Android Debug 包的原生 WebView 在 412 CSS px 实测系统键盘、IME inset 和 Android 返回。完整窗口高 915 CSS px，系统报告键盘底部 inset 为 296 CSS px，旧布局按 643 CSS px 排版，发送按钮下缘与键盘重叠。修复后的内嵌构建在 390px Chromium 中使用相同桥接事件与隔离 Gateway 验证，844px 窗口收到 340px IME inset 后布局高 504px，发送按钮底边为 493px。证据见 `.codex-artifacts/reader-touch/image-actions/android-native-login-ime-results.json` 与 `.codex-artifacts/mobile-webui-goal/android-inset-fix-bridge-results.json`。含修复的 APK 仍待构建并复验。
+含 `dae121f9` 修复的 Android x64 Debug APK 覆盖安装后，使用桌面端同一 Gateway 和停靠测试输入法复验 Android 15 WebView。412×915 CSS px 竖屏收到 296px IME inset 后，可用高度从 915px 缩至 619px。云端对话和工作模式的发送按钮底边为 608px，应用内 Windows 远程会话为 578px。远程工作台在 915×412 CSS px 横屏收到 193px IME inset 后，可用高度为 219px，发送按钮底边为 201px。四处按钮均在键盘上方且可命中，系统返回键收起键盘并保留原页面及草稿。模拟器冷启动后 WebSocket 恢复，竖屏复验读取了实际 Windows 设备的会话历史。验证使用未发送的临时文本，完成后恢复系统输入法。记录与截图见 `.codex-artifacts/reader-touch/image-actions/android-packaged-ime-*`。
+
+在 `dae121f9` 上构建含抽屉修复的 Android x64 Debug APK，使用同一 Windows 设备打开 Word。键盘弹出后，可视高度为 619 CSS px，「添加批注」和「保存」按钮底边分别为 582px 和 578px，可用 Android 触摸事件直接操作。系统返回保留未提交草稿，重新打开可读到保存后的编辑。文件树筛选时两层抽屉底边均为 619px，结果可以点按，收起键盘保留筛选。复验没有发送批注。Gateway 生产构建另在 320×660、390×844 和 915×412 CSS px 核对两层固定抽屉在浏览器可视高度和顶部偏移变化时的布局，收起键盘后恢复原尺寸。记录见 `.codex-artifacts/reader-touch/image-actions/android-packaged-annotation-word-results.json`、`android-packaged-file-filter-ime-results.json` 和 `reader-sheet-built-css-geometry.json`。
+
+同一工作树的两套 Windows Debug 客户端和 Gateway 在 480×620 CSS px 用同一隔离设备会话从文件树打开同一 PNG。桌面本机、桌面远程和浏览器远程均显示完整阅读区，关闭后保留原会话草稿。复验了断线重连后的文件读取和撤销设备授权后恢复原云端草稿。记录见 `.codex-artifacts/reader-touch/image-actions/reader-sheet-desktop-parity-results.json`。
+
+Gateway 生产前端在 Edge Chromium 和 Playwright WebKit 以 390×844、915×412、932×430 CSS px 复验项目、资料库和技能选择器。模拟键盘缩小可视视口，含 8px 顶部偏移，搜索框仍保持焦点，筛选结果滚动后可命中，关闭弹层保留对话草稿。Android 15 x64 开发包在 915×412 CSS px 实测停靠输入法，三种选择器均贴在 219px 可视区底部，系统返回先收起键盘并保留搜索词。证据见 `.codex-artifacts/mobile-webui-goal/context-ime-*-after.json`、`context-ime-android-results.json` 和 `context-ime-android-library-results.json`。
+
+同样的三个尺寸在 Edge Chromium 和 Playwright WebKit 使用隔离 Gateway 复验创建项目、取消和保存云端会话名称。932×430 CSS px 模拟键盘只留 174px 高和 8px 顶部偏移时，创建和保存按钮的底边分别为 182px 和 165px，可以直接点按。取消重命名后焦点回到对话选项，原名称及草稿保留。记录见 `.codex-artifacts/mobile-webui-goal/dialog-ime-*-after.json`。
+
+最终 Android x64 Debug APK 在 Android 15 模拟器使用停靠测试输入法复验同一布局。915×412 CSS px 横屏键盘打开后可视高度为 219px，创建和保存按钮底边分别为 202px 和 191px，均可命中。系统返回先收起键盘并保留表单，创建项目保留已输入的名称。两项均在模拟器内取消，实际提交由隔离 Gateway 的浏览器检查覆盖。原输入法和自动旋转状态已恢复。记录见 `.codex-artifacts/mobile-webui-goal/dialog-ime-android*-results.json`。
 
 ## 维护和验收
 
