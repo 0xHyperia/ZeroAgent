@@ -14,6 +14,7 @@ test("conversation search preserves ordering, navigation, draft opening and stal
   const { React, act, createRoot } = env;
   HTMLElement.prototype.scrollIntoView = () => {};
   const { ConversationSearchDialog } = env.loadModule("@liveagent/ui/components/chat/ConversationSearchDialog.tsx");
+  const { getSearchJumpTargetSnapshot } = env.loadModule("@liveagent/ui/lib/chat/searchJumpTarget.ts");
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   const events = [];
@@ -49,10 +50,15 @@ test("conversation search preserves ordering, navigation, draft opening and stal
     assert.deepEqual(pending.map(p => p.args), [{ query: "first", currentWorkdir: "/project" }, { query: "second", currentWorkdir: "/project" }]);
     await act(async () => pending[0].resolve([{ id: "stale", title: "Stale" }]));
     assert.equal(options().length, 0);
-    await act(async () => pending[1].resolve([{ id: "z", title: "Z" }, { id: "a", title: "A" }]));
+    await act(async () => pending[1].resolve([{ id: "z", title: "Z", messageId: "matched-message" }, { id: "a", title: "A" }]));
     assert.deepEqual(options().map(el => el.textContent), ["Z", "A"]);
     await key("Enter");
-    assert.deepEqual(events, [["open", false], ["select", "z", { source: "search" }]]);
+    assert.deepEqual(events[0], ["open", false]);
+    assert.deepEqual(events[1].slice(0, 2), ["select", "z"]);
+    assert.equal(events[1][2].source, "search");
+    assert.equal(getSearchJumpTargetSnapshot(), null);
+    events[1][2].afterCommit();
+    assert.equal(getSearchJumpTargetSnapshot()?.messageId, "matched-message");
     await type("failure"); await debounce();
     await act(async () => pending[2].reject(new Error("offline")));
     const retry = [...document.querySelectorAll("button")].find(el => el.textContent === "chat.retryConversationSearch");

@@ -3183,7 +3183,7 @@ function useGatewayAppController() {
     getSearchJumpTargetSnapshot,
   );
   useEffect(() => {
-    if (transcriptHistoryLoading || loadingOlderHistory) return;
+    if (historyDetailLoading || loadingOlderHistory || !transcriptViewport) return;
     const target =
       pendingSearchJump?.conversationId === displayedConversationId ? pendingSearchJump : null;
     if (!target) {
@@ -3192,9 +3192,17 @@ function useGatewayAppController() {
     }
     const rowKey = resolveSearchJumpRowKey(transcriptRowsToJumpCandidates(transcriptRows), target);
     if (rowKey) {
-      clearSearchJumpTarget(target);
-      searchJumpPagesRef.current = 0;
-      const frame = requestAnimationFrame(() => handleFloorJump(rowKey));
+      const frame = requestAnimationFrame(() => {
+        if (getSearchJumpTargetSnapshot() !== target) return;
+        // A history open may still have a pending initial scroll to the latest turn.
+        // Consume it before clearing the explicit target so the next layout cannot pin again.
+        if (pendingDisplayedConversationAutoBottomRef.current === target.conversationId) {
+          pendingDisplayedConversationAutoBottomRef.current = null;
+        }
+        clearSearchJumpTarget(target);
+        searchJumpPagesRef.current = 0;
+        handleFloorJump(rowKey);
+      });
       return () => cancelAnimationFrame(frame);
     }
     if (!selectedHistoryHasMore || searchJumpPagesRef.current >= SEARCH_JUMP_MAX_PAGES) {
@@ -3207,12 +3215,13 @@ function useGatewayAppController() {
   }, [
     displayedConversationId,
     handleFloorJump,
+    historyDetailLoading,
     pendingSearchJump,
     handleLoadEarlierHistory,
     loadingOlderHistory,
     selectedHistoryHasMore,
-    transcriptHistoryLoading,
     transcriptRows,
+    transcriptViewport,
   ]);
 
   useEffect(() => {
@@ -3228,7 +3237,9 @@ function useGatewayAppController() {
     }
     // Switching away folds the settled turns so revisits start clean.
     transcriptStoreRegistry.peek(previousDisplayedConversationId)?.foldSettledTurns();
-    pendingDisplayedConversationAutoBottomRef.current = nextDisplayedConversationId;
+    if (getSearchJumpTargetSnapshot()?.conversationId !== nextDisplayedConversationId) {
+      pendingDisplayedConversationAutoBottomRef.current = nextDisplayedConversationId;
+    }
   }, [displayedConversationId, transcriptStoreRegistry]);
 
   useLayoutEffect(() => {
@@ -3242,8 +3253,10 @@ function useGatewayAppController() {
       return;
     }
 
-    transcriptFollow.stickToBottom();
     pendingDisplayedConversationAutoBottomRef.current = null;
+    if (getSearchJumpTargetSnapshot()?.conversationId !== targetConversationId) {
+      transcriptFollow.stickToBottom();
+    }
   }, [
     displayedConversationId,
     displayedTranscriptRowCount,

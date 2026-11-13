@@ -305,14 +305,26 @@ export function ConversationSearchDialog({
       searchAdapter.onSelectResult(item);
       return;
     }
-    setSearchJumpTarget(
-      normalizedQuery
-        ? { conversationId: id, messageId: item.messageId, messageIndex: item.messageIndex }
-        : null,
-    );
+    setSearchJumpTarget(null);
     const isLocalDraft =
       !normalizedQuery && conversations.some((item) => item.id === id && item.isPending);
-    onSelectConversation(id, isLocalDraft ? undefined : { source: "search" });
+    const hasMessageTarget = normalizedQuery && (item.messageId || item.messageIndex !== undefined);
+    onSelectConversation(
+      id,
+      isLocalDraft
+        ? undefined
+        : {
+            source: "search",
+            ...(hasMessageTarget && {
+              afterCommit: () =>
+                setSearchJumpTarget({
+                  conversationId: id,
+                  messageId: item.messageId,
+                  messageIndex: item.messageIndex,
+                }),
+            }),
+          },
+    );
   };
 
   return (
@@ -402,6 +414,7 @@ export function ConversationSearchDialog({
             {status === "error" ? (
               <div
                 role="alert"
+                data-conversation-search-status=""
                 className="flex shrink flex-col items-center justify-center gap-3 overflow-y-auto px-6 py-8 text-center text-sm min-820:min-h-200px max-820:py-4"
               >
                 <span className="text-destructive">{t("chat.conversationSearchFailed")}</span>
@@ -420,6 +433,7 @@ export function ConversationSearchDialog({
             ) : status === "loading" ? (
               <div
                 role="status"
+                data-conversation-search-status=""
                 className="flex shrink items-center justify-center px-4 py-8 text-sm text-muted-foreground min-820:min-h-200px max-820:py-4"
               >
                 {t("chat.conversationSearchLoading")}
@@ -427,6 +441,7 @@ export function ConversationSearchDialog({
             ) : selectableItems.length === 0 ? (
               <div
                 role="status"
+                data-conversation-search-status=""
                 className="flex shrink flex-col items-center justify-center gap-2 overflow-y-auto px-6 py-8 text-center text-sm text-muted-foreground min-820:min-h-200px max-820:py-4"
               >
                 <MessageSquareText className="size-8 opacity-40" />
@@ -514,7 +529,7 @@ export function ConversationSearchDialog({
                 })}
             </CommandList>
             {nextCursor && status === "ready" ? (
-              <div className="shrink-0 px-3 pb-3 text-center max-820:pb-1.5">
+              <div data-conversation-search-pagination="" className="shrink-0 px-3 pb-3 text-center max-820:pb-1.5">
                 {moreStatus === "error" ? (
                   <p role="alert" className="mb-2 text-xs text-destructive">
                     {t("chat.conversationSearchFailed")}

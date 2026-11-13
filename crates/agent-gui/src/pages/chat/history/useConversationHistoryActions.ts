@@ -353,7 +353,7 @@ export function useConversationHistoryActions(params: UseConversationHistoryActi
           });
       if (fromSearch) {
         request?.beforeCommit?.(record.conversation);
-        resetVisibleTransientState();
+        if (currentConversationIdRef.current !== id) resetVisibleTransientState();
       }
       activateConversation({
         conversationId: record.conversation.id,

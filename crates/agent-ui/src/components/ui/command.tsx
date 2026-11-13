@@ -21,6 +21,8 @@ export function CommandDialogPopup({
     <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop className="za-modal-backdrop layer-modal fixed inset-0 transition-opacity duration-200 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-none" />
       <DialogPrimitive.Viewport
+        data-slot="command-dialog-viewport"
+        data-layout={layout}
         className={cn(
           "layer-modal fixed inset-0 flex flex-col items-center justify-center px-4 py-[4vh] sm:py-[6vh]",
           layout === "visual-viewport" &&
@@ -60,7 +62,7 @@ export function CommandInput({
   inputRef?: Ref<HTMLInputElement>;
 }) {
   return (
-    <div className="relative flex h-14 shrink-0 items-center gap-3 px-4">
+    <div data-slot="command-input-row" className="relative flex h-14 shrink-0 items-center gap-3 px-4">
       {startAddon ?? <Search className="size-4 shrink-0 text-muted-foreground" />}
       <Autocomplete.Input
         ref={inputRef}
@@ -102,6 +104,7 @@ export const CommandGroup = Autocomplete.Group;
 export function CommandGroupLabel({ className, ...props }: Autocomplete.GroupLabel.Props) {
   return (
     <Autocomplete.GroupLabel
+      data-slot="command-group-label"
       className={cn(
         "flex items-center gap-2 px-2 py-2 text-xs font-medium text-muted-foreground",
         className,

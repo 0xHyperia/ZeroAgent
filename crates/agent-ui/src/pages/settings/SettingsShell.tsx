@@ -4,6 +4,7 @@ import { SidebarResizeHandle } from "../../components/ui/sidebar-resize";
 import { TooltipButton } from "../../components/ui/tooltip-button";
 import { ZoneFontScaleContext } from "../../components/ui/zone-font-scale";
 import type { SettingsSaveState, UiExtensionRegistry } from "../../contracts/registry";
+import { GATEWAY_COMPACT_VIEWPORT_QUERY } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
 import { PLATFORM_BACK_EVENT } from "../../lib/platformBack";
 import { useSettingsEscapeToClose } from "../../lib/settings/useSettingsEscapeToClose";
@@ -146,7 +147,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
       if (event.defaultPrevented || !shell || shell.closest('[inert], [aria-hidden="true"]'))
         return;
       event.preventDefault();
-      if (mobileDetail && window.matchMedia("(max-width: 820px)").matches) {
+      if (mobileDetail && window.matchMedia(GATEWAY_COMPACT_VIEWPORT_QUERY).matches) {
         if (canLeaveSection && !canLeaveSection()) return;
         setMobileDetail(false);
       } else {

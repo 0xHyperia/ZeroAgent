@@ -45,6 +45,12 @@ test("remote history shares the desktop K-brain projection and preserves message
   );
   const loader = createTsModuleLoader({
     mocks: {
+      "@liveagent/ui/lib/chat/historySearch": {
+        searchChatHistory: async (args) => {
+          calls.push(["search", args]);
+          return { matches: [{ conversationId: summary.id, messageId: message.id }] };
+        },
+      },
       [fileURLToPath(new URL("../../src/lib/kbrain/mapping.ts", import.meta.url))]: {
         getKBrainSessionId: (id) => (id === "conversation" ? "session" : undefined),
         getKBrainConversationId: (id) => (id === "session" ? "conversation" : undefined),
@@ -108,6 +114,9 @@ test("remote history shares the desktop K-brain projection and preserves message
   assert.equal(messages[0].liveAgentHistoryRef.messageId, "user-1");
   assert.equal(messages[0].liveAgentHistoryRef.messageIndex, 7);
   assert.equal(messages[0].liveAgentHistoryRef.segmentId, "kbrain:session");
+  const matches = await run(event("search", { query: "hello", limit: 30 }));
+  assert.deepEqual(calls.at(-1), ["search", { query: "hello", limit: 30 }]);
+  assert.deepEqual(matches, { matches: [{ conversationId: "conversation", messageId: "user-1" }] });
   assert.equal((await run(event("rename", { title: "renamed" }))).conversation.title, "renamed");
   assert.equal((await run(event("pin", { isPinned: true }))).conversation.isPinned, true);
   assert.equal((await run(event("cwd", { cwd: "/tmp/project" }))).conversation.cwd, "/tmp/project");

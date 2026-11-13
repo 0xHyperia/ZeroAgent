@@ -1769,13 +1769,6 @@ fn handle_history_manage_sync(
             let page = chat_history::list_shared_chat_history_page_sync(args.page, args.page_size)?;
             serde_json::to_value(history_list_json(page))
         }
-        "chat_history_search" => {
-            let args = parse_memory_args::<chat_history::ChatHistorySearchArgs>(
-                &request.args_json,
-                command,
-            )?;
-            serde_json::to_value(chat_history::search_chat_history_sync(args)?)
-        }
         _ => return Err(format!("unsupported memory command: {command}")),
     }
     .map_err(|e| format!("serialize {command} result failed: {e}"))?;

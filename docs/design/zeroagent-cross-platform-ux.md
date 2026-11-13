@@ -345,7 +345,7 @@ Shift 加速，Home/End 到边界。Escape、指针取消、窗口失焦或卸�
 会话行常显至少44px的“更多”按钮；点按直接打开原管理菜单，长按仍可使用。运行标记与按钮并存，
 进入多选后隐藏普通管理入口；运行中、忙碌或无权限时继续遵守原有操作限制。
 安全区与键盘高度沿用Native桥/visualViewport，不增加第二份高度状态。系统返回先关闭内层、再返回页面。
-内层浮层沿用 Escape 的关闭守卫和焦点归还；禁止关闭时不能穿透到背景页面。手机设置先从详情返回分类，
+内层浮层沿用 Escape 的关闭守卫和焦点归还；禁止关闭时不能穿透到背景页面。手机设置在竖屏和短横屏均先从详情返回分类，
 未保存的项目仍须确认放弃，返回操作不得取消运行中的任务或清除草稿。
 手机和平板的软键盘回车换行，发送使用明确按钮或 Ctrl/Command+Enter；窄桌面窗口继续遵循原本机发送快捷键偏好。
 
@@ -443,6 +443,14 @@ Gateway 生产前端在 Edge Chromium 和 Playwright WebKit 以 390×844、915×
 同样的三个尺寸在 Edge Chromium 和 Playwright WebKit 使用隔离 Gateway 复验创建项目、取消和保存云端会话名称。932×430 CSS px 模拟键盘只留 174px 高和 8px 顶部偏移时，创建和保存按钮的底边分别为 182px 和 165px，可以直接点按。取消重命名后焦点回到对话选项，原名称及草稿保留。记录见 `.codex-artifacts/mobile-webui-goal/dialog-ime-*-after.json`。
 
 最终 Android x64 Debug APK 在 Android 15 模拟器使用停靠测试输入法复验同一布局。915×412 CSS px 横屏键盘打开后可视高度为 219px，创建和保存按钮底边分别为 202px 和 191px，均可命中。系统返回先收起键盘并保留表单，创建项目保留已输入的名称。两项均在模拟器内取消，实际提交由隔离 Gateway 的浏览器检查覆盖。原输入法和自动旋转状态已恢复。记录见 `.codex-artifacts/mobile-webui-goal/dialog-ime-android*-results.json`。
+
+会话搜索使用同一工作树构建的 Gateway 生产前端，在 Edge Chromium 和 Playwright WebKit 测试 390×844、915×412、932×430 和 1100×800 CSS px。932×430 横屏模拟键盘只留 174px 高和 8px 顶部偏移时，首条搜索结果底边从 188px 移至 156px，可直接点按。实际分页接口首屏与续页各注入一次失败，点按重试保留原搜索词和游标，滚动可到达后续结果。恢复视口后保留搜索结果，关闭弹窗保留原会话草稿。记录见 `.codex-artifacts/mobile-webui-goal/search-ime-*-after.json`。
+
+Android 15 x64 开发包在 915×412 CSS px 使用停靠测试输入法，键盘打开后可视高度为 219px，搜索栏高 44px，首条匹配结果的底边约为 172px。系统返回先收起键盘，保留搜索词和弹窗，点按结果后关闭弹窗并打开会话。验收后恢复原输入法和自动旋转。记录见 `.codex-artifacts/mobile-webui-goal/search-ime-android-results.json`。
+
+隔离 Gateway 的 Edge Chromium 在 390×844 与 915×412 CSS px 验证同一设置流程。从设备管理进入设置，选择系统设置后触发宿主返回事件，两种布局均回到 `/settings` 分类页。Android 15 开发包在 915×412 CSS px 验证系统返回先回分类页，再回原对话。短横屏此前会直接退出设置。记录见 `.codex-artifacts/mobile-webui-goal/settings-back-viewport-evidence.json` 和 `search-ime-android-results.json`。
+
+Windows 被控端使用包含引擎搜索桥接的 Debug 构建，桌面远程工作台使用同一工作树构建的内嵌 WebUI，浏览器远程使用 Gateway 生产前端。三个入口在 480×620 CSS px 搜索同一设备会话中的首条消息，Esc 关闭后保留草稿，重新搜索并点按结果后，滚动稳定时仍可看到目标消息和原草稿。三处还用同一 PNG 复验文件标签、断线重连后的文件读取及撤销授权。Edge 另在 390×844 CSS px 模拟触屏并点按同一结果，目标消息保持在视口内。该会话的首条消息已在初次加载的历史窗口中，更早分页窗口的运行时跳转仍待复验。记录见 `.codex-artifacts/mobile-webui-goal/search-ime-desktop-parity.json` 和 `desktop-parity/older-phone-scroll-probe.json`。
 
 ## 维护和验收
 

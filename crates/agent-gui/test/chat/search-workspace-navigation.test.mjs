@@ -249,6 +249,15 @@ test("desktop same-workspace search performs no settings write", async (t) => {
   assert.equal(h.id, "other-a");
 });
 
+test("desktop searching the current conversation reloads history without resetting its composer", async (t) => {
+  const h = await harness(t);
+  await h.select("a");
+  await h.complete("a", "/repo/a");
+  assert.equal(h.id, "a");
+  assert.equal(h.draftsSaved, 1);
+  assert.equal(h.resets, 0);
+});
+
 test("desktop slow B cannot override C and failure leaves the previous navigation intact", async (t) => {
   const h = await harness(t);
   await h.select("b");

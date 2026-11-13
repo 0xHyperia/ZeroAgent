@@ -1,4 +1,5 @@
 import type { HistoryMessageRef } from "@liveagent/ui/lib/chat/historyMessageRef";
+import { searchChatHistory } from "@liveagent/ui/lib/chat/historySearch";
 import { getUserMessageAttachments } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { getHistoryMessageContentHash } from "../../../lib/chat/conversation/conversationState";
 import {
@@ -38,6 +39,11 @@ export async function runGatewayHistoryAction(event: GatewayComposerActionEvent)
       return findGatewayConversationAttachment(id, String(data.path ?? ""));
     case "image_read":
       return readGatewayConversationImage(id, data);
+    case "search":
+      return searchChatHistory({
+        query: typeof data.query === "string" ? data.query : "",
+        limit: typeof data.limit === "number" ? data.limit : undefined,
+      });
     case "list": {
       if (kBrainSidebarSync.isHealthy()) {
         return kBrainSidebarSync.list(

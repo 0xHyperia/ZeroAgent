@@ -1216,10 +1216,10 @@ impl GatewayController {
                 let controller = Arc::clone(self);
                 tauri::async_runtime::spawn(async move {
                     let outcome =
-                        match super::kbrain_history::history_archive_action(&request.command) {
+                        match super::kbrain_history::history_memory_action(&request.command) {
                             Some(action) => {
                                 controller
-                                    .handle_history_archive_command(
+                                    .handle_history_memory_command(
                                         request_id.clone(),
                                         action,
                                         &request,

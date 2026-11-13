@@ -99,10 +99,10 @@ fn summary_cwd(value: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// WebUI archive commands (memory_manage passthrough) and the desktop frontend's
-/// history action that answers each one.
-pub(crate) fn history_archive_action(command: &str) -> Option<&'static str> {
+/// History commands carried by memory.manage and handled by the desktop frontend.
+pub(crate) fn history_memory_action(command: &str) -> Option<&'static str> {
     match command.trim() {
+        "chat_history_search" => Some("search"),
         "history_archive_supported" => Some("archive_supported"),
         "history_archived_list" => Some("archived_list"),
         "history_archive_set" => Some("archive"),
@@ -110,8 +110,9 @@ pub(crate) fn history_archive_action(command: &str) -> Option<&'static str> {
     }
 }
 
-fn history_archive_data(action: &str, args: &Value) -> Value {
+fn history_memory_data(action: &str, args: Value) -> Value {
     match action {
+        "search" => args,
         "archived_list" => json!({"page": args["page"], "pageSize": args["page_size"]}),
         "archive" => json!({"archived": args["archived"].as_bool() == Some(true)}),
         _ => json!({}),
@@ -250,9 +251,8 @@ impl GatewayController {
         summary_cwd(&value)
     }
 
-    /// Archive commands from the WebUI. Only the frontend holds the local-to-backend id
-    /// mapping, so they run as history actions there, like the other history requests.
-    pub(crate) async fn handle_history_archive_command(
+    /// Use the frontend's history projection and its local-to-backend id mapping.
+    pub(crate) async fn handle_history_memory_command(
         self: &std::sync::Arc<Self>,
         request_id: String,
         action: &'static str,
@@ -284,10 +284,11 @@ impl GatewayController {
                 prompt: String::new(),
                 reasoning: String::new(),
                 loop_id: String::new(),
-                data: Some(history_archive_data(action, &args)),
+                data: Some(history_memory_data(action, args)),
             })
             .await?;
         let result = match action {
+            "search" => value,
             "archived_list" => archived_list_json(&value),
             "archive_supported" => json!({"supported": value["supported"].as_bool() == Some(true)}),
             _ => json!({}),
@@ -536,33 +537,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn archive_commands_map_to_frontend_history_actions() {
+    fn memory_commands_map_to_frontend_history_actions() {
+        assert_eq!(history_memory_action("chat_history_search"), Some("search"));
         assert_eq!(
-            history_archive_action(" history_archive_supported "),
+            history_memory_action(" history_archive_supported "),
             Some("archive_supported")
         );
         assert_eq!(
-            history_archive_action("history_archived_list"),
+            history_memory_action("history_archived_list"),
             Some("archived_list")
         );
         assert_eq!(
-            history_archive_action("history_archive_set"),
+            history_memory_action("history_archive_set"),
             Some("archive")
         );
-        assert_eq!(history_archive_action("history_shared_list"), None);
-        assert_eq!(history_archive_action("memory_list"), None);
+        assert_eq!(history_memory_action("history_shared_list"), None);
+        assert_eq!(history_memory_action("memory_list"), None);
+        let search_args = json!({"query": "workbench", "limit": 80});
+        assert_eq!(
+            history_memory_data("search", search_args.clone()),
+            search_args
+        );
 
         let args = json!({"page": 2, "page_size": 30, "archived": true, "conversation_id": "c"});
         assert_eq!(
-            history_archive_data("archived_list", &args),
+            history_memory_data("archived_list", args.clone()),
             json!({"page": 2, "pageSize": 30})
         );
         assert_eq!(
-            history_archive_data("archive", &args),
+            history_memory_data("archive", args),
             json!({"archived": true})
         );
         assert_eq!(
-            history_archive_data("archive", &json!({})),
+            history_memory_data("archive", json!({})),
             json!({"archived": false})
         );
     }

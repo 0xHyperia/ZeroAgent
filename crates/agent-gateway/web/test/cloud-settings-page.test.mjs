@@ -43,8 +43,8 @@ test('native Back goes from mobile settings detail to categories, honors leave g
   '../../i18n':{useLocale:()=>({t:key=>key})},
  }});
  const {React,act,createRoot}=env;
- // An 800px viewport still uses the shared compact settings layout.
- window.matchMedia=query=>({matches:Number(query.match(/max-width:\s*(\d+)px/)?.[1])>=800,addEventListener(){},removeEventListener(){}});
+ // A 915 × 412 touch viewport only matches the landscape branch.
+ window.matchMedia=query=>({matches:query.split(",").some(part=>part.includes("pointer: coarse")&&part.includes("max-width: 1000px")&&part.includes("max-height: 550px")),addEventListener(){},removeEventListener(){}});
  const {SettingsShell}=env.loadModule('@liveagent/ui/pages/settings/SettingsShell.tsx');
  const host=document.body.appendChild(document.createElement('div')),root=createRoot(host);
  let backs=0,allowLeave=false;
