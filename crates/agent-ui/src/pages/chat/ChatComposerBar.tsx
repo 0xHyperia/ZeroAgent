@@ -2202,6 +2202,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                   <CommandSafetyModeSelector
                     value={commandSafetyMode}
                     disabled={controlsDisabled || !isAgentMode}
+                    mobileBlock={compactDeviceControls}
                     onChange={onCommandSafetyModeChange}
                   />
                 ) : null}
@@ -2215,8 +2216,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 (gitControls || contextRing) && (
                   <Sheet key={conversationId}>
                     <SheetTrigger render={
-                      <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-full"
-                        data-composer-option-block=""
+                      <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-xl text-muted-foreground hover:text-foreground data-popup-open:bg-muted"
                         aria-label={t("chat.mobileComposerOptions")} title={t("chat.mobileComposerOptions")} />
                     }>
                       <MoreHorizontal className="size-5" />

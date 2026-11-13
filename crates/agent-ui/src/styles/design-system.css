@@ -321,6 +321,13 @@
 [data-mobile-composer] .composer-control-deck .composer-inline-model-trigger {
   min-width: 44px;
 }
+[data-composer-compact-device] .composer-control-deck .composer-model-capsule {
+  min-width: 0;
+  flex-shrink: 1;
+}
+[data-composer-compact-device] .composer-safety-block {
+  max-inline-size: min(112px, 32vw);
+}
 [data-mobile-composer] .composer-input-surface {
   border: 1px solid hsl(var(--foreground) / 0.12);
   border-radius: 22px;

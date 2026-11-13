@@ -83,9 +83,10 @@ function triggerIconClass(mode: CommandSafetyMode) {
 export function CommandSafetyModeSelector(props: {
   value: CommandSafetyMode;
   disabled?: boolean;
+  mobileBlock?: boolean;
   onChange: (mode: CommandSafetyMode) => void;
 }) {
-  const { value, disabled, onChange } = props;
+  const { value, disabled, mobileBlock, onChange } = props;
   const { t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const capability = useSandboxCapability();
@@ -132,17 +133,23 @@ export function CommandSafetyModeSelector(props: {
             <Button
               variant="ghost"
               disabled={disabled}
-              className={cn(
-                COMPOSER_CONTROL_TRIGGER_CLASS,
-                "w-8 justify-center gap-0 px-0",
-                "data-popup-open:bg-muted/60 web:max-480:flex-none web:max-480:w-8 web:max-480:min-w-8 web:max-480:justify-center web:max-480:gap-0 web:max-480:px-0",
-              )}
+              data-composer-option-block={mobileBlock ? "" : undefined}
+              className={
+                mobileBlock
+                  ? "composer-safety-block min-w-11 shrink-0 justify-start gap-1.5 px-2 text-xs"
+                  : cn(
+                      COMPOSER_CONTROL_TRIGGER_CLASS,
+                      "w-8 justify-center gap-0 px-0",
+                      "data-popup-open:bg-muted/60 web:max-480:flex-none web:max-480:w-8 web:max-480:min-w-8 web:max-480:justify-center web:max-480:gap-0 web:max-480:px-0",
+                    )
+              }
             />
           }
           title={selectedLabel}
           aria-label={`${t("chat.safety.label")}: ${selectedLabel}`}
         >
           {modeIcon(selected, triggerIconClass(selected))}
+          {mobileBlock && <span className="truncate">{selectedLabel}</span>}
         </DropdownMenuTrigger>
         <DropdownMenuContent
           variant="soft"
@@ -168,6 +175,7 @@ export function CommandSafetyModeSelector(props: {
                 }}
                 className={cn(
                   "h-auto shrink-0 items-start gap-2.5 py-2 text-xs whitespace-normal",
+                  mobileBlock && "min-h-11",
                   isSelected && "bg-accent text-accent-foreground",
                 )}
               >

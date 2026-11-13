@@ -1848,25 +1848,21 @@ export function GatewayAppView({
         </>
       }
       trailingActions={
-        !accountDestination && !compactDeviceHeader && (
+        !accountDestination && (
           <>
             <ProjectToolsPanelToggle
               isOpen={rightDockOpen}
               sessionCount={projectTerminalSessions.length}
               disabledMessage={terminalClient ? undefined : projectToolsDisabledMessage}
-              className="mr-6px max-520:mr-8px"
+              className={compactDeviceHeader ? "min-h-11 min-w-11" : "mr-6px max-520:mr-8px"}
               onToggle={() => setRightDockOpen((open) => !open)}
             />
-            {executionSwitcher}
+            {!compactDeviceHeader && executionSwitcher}
           </>
         )
       }
       compactActions={compactDeviceHeader ? (
         <>
-          <DropdownMenuItem className="min-h-11" disabled={!terminalClient && !rightDockOpen}
-            onClick={() => setRightDockOpen((open) => !open)}>
-            {translate(rightDockOpen ? "projectTools.collapsePanel" : "projectTools.expandPanel", settings.locale)}
-          </DropdownMenuItem>
           {showConversationViews && (
             <DropdownMenuItem className="min-h-11" onClick={() =>
               setActiveConversationView(renderedConversationView === "trajectory" ? "conversation" : "trajectory")}>

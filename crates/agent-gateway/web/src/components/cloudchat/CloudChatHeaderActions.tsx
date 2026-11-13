@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
-import { useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useRef, useState } from "react";
 import type {
   CloudAccountGuard,
   CloudChatProjectsClient,
@@ -44,6 +44,7 @@ export function CloudChatHeaderActions(props: {
   projectId?: string;
   projectsClient: CloudChatProjectsClient;
   captureGuard: CloudAccountGuard;
+  triggerRef?: Ref<HTMLElement>;
   onRename: () => void;
   onTogglePinned: () => void;
   onToggleArchived: () => void;
@@ -195,11 +196,11 @@ export function CloudChatHeaderActions(props: {
         }}
       >
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" />}
+          render={<Button ref={props.triggerRef} variant="ghost" size="icon-sm" />}
           aria-label="对话选项"
           disabled={deleting}
           title="对话选项"
-          className="rounded-lg text-muted-foreground hover:text-foreground"
+          className="rounded-lg text-muted-foreground hover:text-foreground max-820:size-11"
         >
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>

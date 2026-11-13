@@ -564,6 +564,7 @@ export function CloudChatPage({
   const [conversationsError, setConversationsError] = useState("");
   const [conversationSearchRequest, setConversationSearchRequest] = useState(0);
   const [headerRenameRequest, setHeaderRenameRequest] = useState(0);
+  const headerActionsRef = useRef<HTMLElement>(null);
   const [recentSection, setRecentSection] = useState({ owner: user.id, collapsed: false });
   const navigateConversationRef = useRef(navigateConversation);
   navigateConversationRef.current = navigateConversation;
@@ -6313,7 +6314,7 @@ export function CloudChatPage({
                               title="新对话"
                               aria-label="新对话"
                               onClick={() => navigateConversation()}
-                              className="cloud-header-new-chat size-11 shrink-0 rounded-lg max-[360px]:hidden"
+                              className="cloud-header-new-chat size-11 shrink-0 rounded-lg"
                             >
                               <SquarePen className="size-4.5" />
                             </Button>
@@ -6323,9 +6324,11 @@ export function CloudChatPage({
                               key={`${user.id}:${conversationId}`}
                               title={currentConversation?.title || "新对话"}
                               renameRequest={headerRenameRequest}
+                              compact={sidebar.isMobile}
+                              onReturnFocus={() => headerActionsRef.current}
                               onRename={(title) => saveConversationTitle(conversationId, title)}
                             />
-                          ) : (
+                          ) : !sidebar.isMobile || workspaceView !== "chat" ? (
                             <span
                               className={`min-w-0 truncate text-sm font-medium ${landing && workspaceView === "chat" ? "cloud-header-title-landing" : ""}`}
                             >
@@ -6333,7 +6336,7 @@ export function CloudChatPage({
                                 ? "资料空间"
                                 : currentConversation?.title || "新对话"}
                             </span>
-                          )}
+                          ) : null}
                           {workspaceView === "chat" && canSwitchPresentation ? (
                             <CloudChatModeSwitch
                               value={presentation}
@@ -6348,7 +6351,7 @@ export function CloudChatPage({
                       trailingActions={
                         workspaceView === "chat" ? (
                           <>
-                            {conversationId ? (
+                            {conversationId && !sidebar.isMobile ? (
                               <CloudConversationBranches
                                 key={`branches:${user.id}:${conversationId}`}
                                 conversationId={conversationId}
@@ -6359,6 +6362,7 @@ export function CloudChatPage({
                             {conversationId ? (
                               <CloudChatHeaderActions
                                 key={`actions:${user.id}:${conversationId}`}
+                                triggerRef={headerActionsRef}
                                 title={currentConversation?.title || "新对话"}
                                 pinned={!!currentConversation?.pinned}
                                 archived={!!currentConversation?.archived}
