@@ -305,6 +305,27 @@
   box-shadow: var(--za-shadow-floating);
 }
 
+@media (pointer: coarse) and (max-width: 820px),
+  (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
+  .transcript-message-action {
+    width: 32px;
+    height: 36px;
+    min-height: 36px;
+  }
+  .transcript-user-actions,
+  .chat-assistant-actions {
+    margin-top: 0;
+  }
+  .transcript-message-action-group,
+  .transcript-message-action-buttons {
+    column-gap: 0;
+  }
+  .transcript-message-action-time {
+    margin-inline-start: 4px;
+    white-space: nowrap;
+  }
+}
+
 .za-mobile-choice-sheet {
   padding-bottom: max(8px, var(--zeroagent-safe-area-bottom, 0px));
   border-radius: 24px 24px 0 0;

@@ -69,7 +69,7 @@ function TranscriptTimestampLabel(props: { timestamp?: number; className?: strin
   return (
     <span
       className={cn(
-        "select-none text-xs tabular-nums text-[hsl(var(--muted-foreground)/0.7)]",
+        "transcript-message-action-time select-none text-xs tabular-nums text-[hsl(var(--muted-foreground)/0.7)]",
         props.className,
       )}
     >
@@ -87,7 +87,7 @@ type SharedActionProps = {
 
 const messageActionClass = cn(
   buttonVariants({ variant: "ghost", size: "icon-xs" }),
-  "shrink-0 rounded-md text-muted-foreground max-sm:size-11 pointer-coarse:size-11",
+  "transcript-message-action shrink-0 rounded-md text-muted-foreground max-sm:size-11 pointer-coarse:size-11",
 );
 
 export function TranscriptUserMessageActions(
@@ -121,15 +121,15 @@ export function TranscriptUserMessageActions(
     (rewind?.available ? t("chat.rewindCode") : t("chat.rewindUnavailable"));
 
   return (
-    <div className="mt-1 flex items-center justify-end gap-1.5 web:min-h-24px web:no-hover:opacity-100 web:max-640:opacity-100">
+    <div className="transcript-user-actions mt-1 flex items-center justify-end gap-1.5 web:min-h-24px web:no-hover:opacity-100 web:max-640:opacity-100">
       <div
         className={cn(
-          "flex min-w-0 flex-wrap items-center justify-end gap-x-1.5 opacity-100 transition-opacity duration-150",
+          "transcript-message-action-group flex min-w-0 flex-wrap items-center justify-end gap-x-1.5 opacity-100 transition-opacity duration-150",
           "motion-reduce:transition-none has-hover:opacity-0 has-hover:[[data-user-bubble-wrap]:hover_&]:opacity-100 has-hover:[[data-user-bubble-wrap]:focus-within_&]:opacity-100",
         )}
       >
         {!readOnly ? (
-          <div className="flex gap-0.5">
+          <div className="transcript-message-action-buttons flex gap-0.5">
             <LabelTooltip
               label={copyTitle ?? t("chat.copy")}
               render={
@@ -228,7 +228,7 @@ export function TranscriptAssistantMessageActions(
     <div className="flex min-w-0 flex-1 items-center justify-start gap-0.5">
       <div
         className={cn(
-          "flex min-w-0 flex-wrap items-center gap-x-0.5 opacity-100 transition-opacity duration-150",
+          "transcript-message-action-group flex min-w-0 flex-wrap items-center gap-x-0.5 opacity-100 transition-opacity duration-150",
           "motion-reduce:transition-none has-hover:pointer-events-none has-hover:opacity-0 has-hover:[[data-assistant-row]:hover_&]:pointer-events-auto has-hover:[[data-assistant-row]:hover_&]:opacity-100 has-hover:[[data-assistant-row]:focus-within_&]:pointer-events-auto has-hover:[[data-assistant-row]:focus-within_&]:opacity-100 has-hover:[[data-assistant-row][data-actions-visible=true]_&]:pointer-events-auto has-hover:[[data-assistant-row][data-actions-visible=true]_&]:opacity-100",
           "data-[force-visible=true]:pointer-events-auto data-[force-visible=true]:opacity-100",
         )}
