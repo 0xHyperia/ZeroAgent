@@ -205,16 +205,28 @@ fn handoff_selection(
 
 fn selection_credential(selection: &Value) -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    // Match the field order in the WebUI's encodeSelectionCredential. The
+    // native bridge checks the renderer's bearer against this exact encoding.
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SelectionCredential<'a> {
+        lease: &'a Value,
+        runtime_kind: &'static str,
+        device_id: &'a Value,
+        agent_id: &'a Value,
+        workspace_id: &'a Value,
+    }
+
     format!(
         "selection.{}",
         URL_SAFE_NO_PAD.encode(
-            serde_json::to_vec(&json!({
-                "lease": selection["selection_lease"],
-                "runtimeKind": "device_agent",
-                "deviceId": selection["device_id"],
-                "agentId": selection["agent_id"],
-                "workspaceId": selection["workspace_id"]
-            }))
+            serde_json::to_vec(&SelectionCredential {
+                lease: &selection["selection_lease"],
+                runtime_kind: "device_agent",
+                device_id: &selection["device_id"],
+                agent_id: &selection["agent_id"],
+                workspace_id: &selection["workspace_id"],
+            })
             .expect("serialize a Gateway selection")
         )
     )

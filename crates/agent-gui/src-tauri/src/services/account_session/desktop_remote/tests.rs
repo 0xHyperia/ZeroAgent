@@ -298,6 +298,22 @@ async fn complete_workbench_uploads_use_native_cookie_and_preserve_multipart_byt
         &opened,
         "/api/files/import?agent_id=foreign-device",
     );
+    // Use the renderer's JSON.stringify field order, independently of the
+    // native credential encoder exercised by the request.
+    let renderer_credential = format!(
+        r#"{{"lease":{},"runtimeKind":"device_agent","deviceId":{},"agentId":{},"workspaceId":{}}}"#,
+        opened.selection["selection_lease"],
+        opened.selection["device_id"],
+        opened.selection["agent_id"],
+        opened.selection["workspace_id"]
+    );
+    request.headers.insert(
+        "Authorization".into(),
+        format!(
+            "Bearer selection.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(renderer_credential)
+        ),
+    );
     request.headers.insert(
         "Content-Type".into(),
         "multipart/form-data; boundary=probe".into(),
