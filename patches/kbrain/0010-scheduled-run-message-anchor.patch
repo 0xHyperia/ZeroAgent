@@ -1,5 +1,5 @@
 diff --git a/internal/backend/cron_canonical_test.go b/internal/backend/cron_canonical_test.go
-index 1fb327b62aa234bbd3ef66023936cbdbf60a30c2..35e7720034ff4db6f349e072200562d03c41bb77 100644
+index 1fb327b..35e7720 100644
 --- a/internal/backend/cron_canonical_test.go
 +++ b/internal/backend/cron_canonical_test.go
 @@ -68,6 +68,24 @@ func TestCronCanonicalHistoryEventsRestart(t *testing.T) {
@@ -28,7 +28,7 @@ index 1fb327b62aa234bbd3ef66023936cbdbf60a30c2..35e7720034ff4db6f349e072200562d0
  		if err != nil {
  			t.Fatal(err)
 diff --git a/internal/backend/cron_handler.go b/internal/backend/cron_handler.go
-index 8930ad947228bce462844b3ed33b78bdacf2e923..5c27686a447f31878ee9d817ff7c49648c110f67 100644
+index 8930ad9..5c27686 100644
 --- a/internal/backend/cron_handler.go
 +++ b/internal/backend/cron_handler.go
 @@ -64,6 +64,13 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {

@@ -453,6 +453,9 @@
       ],
       "entrypoints": [
         "crates/agent-gui/src/lib/kbrain/history.ts",
+        "crates/agent-gui/src/lib/kbrain/historySync.ts",
+        "crates/agent-gui/src/lib/kbrain/watchHistory.ts",
+        "crates/agent-gateway/web/src/lib/chat/transcript/historyAlignment.ts",
         "crates/agent-gateway/web/src/lib/chat/chatHistory.ts",
         "crates/agent-gui/src-tauri/src/services/backend_profile.rs",
         "crates/agent-gui/src-tauri/src/lib.rs",
@@ -473,6 +476,9 @@
         "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration_tests.rs",
         "crates/agent-gui/test/chat/kbrain-session-sync-backend.test.mjs",
         "crates/agent-gui/test/chat/kbrain-session-sync-review.test.mjs",
+        "crates/agent-gui/test/chat/kbrain-interrupted-history.test.mjs",
+        "crates/agent-gui/test/chat/kbrain-history-sync-review.test.mjs",
+        "crates/agent-gateway/web/test/background-notice-snapshot.test.mjs",
         "crates/agent-gateway/test/websocket/account_history_sync_test.go",
         "crates/agent-gateway/internal/session/history_observer_sync_test.go"
       ],

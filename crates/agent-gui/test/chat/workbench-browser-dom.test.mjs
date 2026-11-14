@@ -122,6 +122,19 @@ test("browser tab preserves its native session when hidden and yields to a DOM o
   };
   await act(async () => open.events.onmessage({ kind: "state", state: pageState }));
   assert.deepEqual(navigated, [["https://example.com/a", "Fixture"]]);
+  await act(async () => open.events.onmessage({
+    kind: "state",
+    state: { ...pageState, loadFailed: true, loadError: "certificate" },
+  }));
+  assert.match(rootNode.querySelector('[role="status"]').textContent, /security certificate/);
+  await settleLayout();
+  assert.equal(calls.findLast((call) => call.request?.action === "layout").request.bounds, null);
+  const retry = Array.from(rootNode.querySelectorAll("button")).find((button) => button.textContent === "Try again");
+  await act(async () => retry.click());
+  assert.equal(calls.findLast((call) => call.request?.action === "reload").id, open.id);
+  await act(async () => open.events.onmessage({ kind: "state", state: pageState }));
+  assert.doesNotMatch(rootNode.textContent, /security certificate/);
+
   const faviconDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP1sAAAAASUVORK5CYII=";
   await act(async () => open.events.onmessage({ kind: "state", state: { ...pageState, faviconDataUrl } }));
   assert.deepEqual(navigated.at(-1), [pageState.url, pageState.title, faviconDataUrl]);

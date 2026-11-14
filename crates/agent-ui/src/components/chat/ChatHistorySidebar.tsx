@@ -1273,10 +1273,10 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         forkSource={forkSourceFor(conversationsBySessionId, item)}
         isActive={currentConversationId === item.id}
         isBusy={busyConversationIds.has(item.id)}
-        isRunning={runningConversationIds.has(item.id)}
+        isRunning={runningConversationIds.has(item.id) || Boolean(item.externalRun)}
         needsApproval={approvalConversationIds.has(item.id)}
         hasPendingQuestion={questionConversationIds.has(item.id)}
-        isDeleteDisabled={runningConversationIds.has(item.id)}
+        isDeleteDisabled={runningConversationIds.has(item.id) || Boolean(item.externalRun)}
         canShareConversation={canShareConversations}
         isRenaming={renamingId === item.id}
         isPendingDelete={pendingDeleteId === item.id}

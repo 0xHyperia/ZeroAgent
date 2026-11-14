@@ -266,6 +266,8 @@ export type KBrainTurnParams = {
   /** Every `subagent.*` and `trajectory.child.*` event, from any run of the session. */
   onSubagentEvent?: (event: KBrainEvent) => void;
   onStatus?: (status: string | null) => void;
+  /** Called only after the backend returns a valid accepted run identity. */
+  onAccepted?: () => void;
   content?: KBrainContentBlock[];
   onQuestionRequest?: (
     request: KBrainQuestionRequest,
@@ -720,7 +722,7 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         if (!isSessionBusyError(error)) throw error;
         if (Date.now() >= deadline) {
           throw new Error(
-            "The session is still busy (a background task may still be running). Send again after it finishes.",
+            "该会话上一轮仍在运行，已等待 3 分钟仍未结束。请点击停止按钮结束当前任务后重新发送，或稍后再试。",
           );
         }
         reportProgress({ stage: "waiting_session" });
@@ -738,6 +740,11 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     kbrainSessionId = await createSession();
     accepted = await startRunWhenIdle();
   }
+  if (accepted.conversation_id !== kbrainSessionId || !accepted.run_id) {
+    await settleWorkspaceTurnReview(workspaceReviewId, params.conversationId, false);
+    throw new Error("ZeroAgent engine returned an invalid run identity");
+  }
+  params.onAccepted?.();
   if (params.signal.aborted) {
     await client.cancelRun(kbrainSessionId, accepted.run_id).catch(() => undefined);
     const cancelled = await waitForCancelledRun(
@@ -748,10 +755,6 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     );
     await settleWorkspaceTurnReview(workspaceReviewId, params.conversationId, cancelled);
     throw abortError();
-  }
-  if (accepted.conversation_id !== kbrainSessionId || !accepted.run_id) {
-    await settleWorkspaceTurnReview(workspaceReviewId, params.conversationId, false);
-    throw new Error("ZeroAgent engine returned an invalid run identity");
   }
   reportProgress({ stage: "preparing" });
 

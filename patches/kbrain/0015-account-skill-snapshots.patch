@@ -1,5 +1,5 @@
 diff --git a/cmd/kn/backend.go b/cmd/kn/backend.go
-index 408578504a12bd36393dff6c772dc01fccb1e80c..3a4d31c89b24b0d605e20aefc3bd96c4573d5c8b 100644
+index 4085785..3a4d31c 100644
 --- a/cmd/kn/backend.go
 +++ b/cmd/kn/backend.go
 @@ -66,6 +66,10 @@ func backendCLI(args []string) error {
@@ -23,7 +23,7 @@ index 408578504a12bd36393dff6c772dc01fccb1e80c..3a4d31c89b24b0d605e20aefc3bd96c4
  		FilesystemRoots:         filesystemRoots,
 diff --git a/internal/backend/device_skills.go b/internal/backend/device_skills.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..7b8e4ca06e27b0ee85445ea587d818e7788d1f39
+index 0000000..7b8e4ca
 --- /dev/null
 +++ b/internal/backend/device_skills.go
 @@ -0,0 +1,188 @@
@@ -217,7 +217,7 @@ index 0000000000000000000000000000000000000000..7b8e4ca06e27b0ee85445ea587d818e7
 +}
 diff --git a/internal/backend/device_skills_test.go b/internal/backend/device_skills_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..bb9c9c8d071925cf96966d5e8e38bb6dfdb3c211
+index 0000000..bb9c9c8
 --- /dev/null
 +++ b/internal/backend/device_skills_test.go
 @@ -0,0 +1,117 @@
@@ -339,10 +339,10 @@ index 0000000000000000000000000000000000000000..bb9c9c8d071925cf96966d5e8e38bb6d
 +	}
 +}
 diff --git a/internal/backend/run_start.go b/internal/backend/run_start.go
-index 12856bb50c86fa90c7dfcbc88cd488767626077b..b58cb0394fa3a25bf585b06650f04797e875ca26 100644
+index f001c3e..9080a2a 100644
 --- a/internal/backend/run_start.go
 +++ b/internal/backend/run_start.go
-@@ -87,35 +87,60 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+@@ -87,34 +87,58 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
  			return fail(400, "user content must be text or image")
  		}
  	}
@@ -422,11 +422,17 @@ index 12856bb50c86fa90c7dfcbc88cd488767626077b..b58cb0394fa3a25bf585b06650f04797
 +	if err := ctx.Err(); err != nil {
 +		return protocol.RunAccepted{}, http.StatusConflict, err
  	}
+ 	lease, status, err := s.acquireRunLeaseLocked(rt)
+ 	if err != nil {
+@@ -126,6 +150,7 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+ 			_ = lease.Release()
+ 		}
+ 	}()
 +	requestHash := hashPrompt(in)
  	// Expand after the idempotency check so a retried request replays even if its
  	// template changed or disappeared in between.
  	if in.PromptCommand {
-@@ -125,6 +150,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+@@ -135,6 +160,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
  		}
  		in.Snapshot = expanded
  	}
@@ -437,7 +443,7 @@ index 12856bb50c86fa90c7dfcbc88cd488767626077b..b58cb0394fa3a25bf585b06650f04797
  		if err := s.switchModelLocked(rt, *in.Model); err != nil {
  			return fail(rebuildErrorStatus(err), "model switch failed: "+err.Error())
 diff --git a/internal/backend/server.go b/internal/backend/server.go
-index 7691933dc2145c59f251f9916eb3fda27d83e6e1..c65e0c72e4b02643190239c825f846a7cb7b8886 100644
+index 594e957..3d1f68e 100644
 --- a/internal/backend/server.go
 +++ b/internal/backend/server.go
 @@ -46,6 +46,7 @@ type Factory func(context.Context, string, protocol.ModelRef) (*agent.Agent, err
@@ -456,7 +462,7 @@ index 7691933dc2145c59f251f9916eb3fda27d83e6e1..c65e0c72e4b02643190239c825f846a7
  	image                *ImageModule
  	store                *session.Store
  	factory              Factory
-@@ -293,9 +295,10 @@ func New(opts Options) (*Server, error) {
+@@ -297,9 +299,10 @@ func New(opts Options) (*Server, error) {
  		return nil, err
  	}
  	server := &Server{

@@ -1,5 +1,5 @@
 diff --git a/internal/backend/health.go b/internal/backend/health.go
-index 2d8d2f0d362420731c71e54bb035ca89fb20c190..a46092249ffed756d38367e90113c0d55fe78d4b 100644
+index 93f1b04..eaa07e1 100644
 --- a/internal/backend/health.go
 +++ b/internal/backend/health.go
 @@ -36,7 +36,8 @@ type healthCapabilities struct {
@@ -12,7 +12,7 @@ index 2d8d2f0d362420731c71e54bb035ca89fb20c190..a46092249ffed756d38367e90113c0d5
  	// SSHManager is 1 where the native SSHManager tool runs SSH/SFTP for the
  	// hosts stored with GET/PUT /v1/settings/ssh.
  	SSHManager int `json:"ssh_manager"`
-@@ -142,29 +143,30 @@ func (s *Server) health() healthResponse {
+@@ -155,31 +156,32 @@ func (s *Server) health() healthResponse {
  		InstanceID:         s.instance.get(),
  		CapabilityRevision: capabilityRevision(),
  		Capabilities: healthCapabilities{
@@ -39,6 +39,8 @@ index 2d8d2f0d362420731c71e54bb035ca89fb20c190..a46092249ffed756d38367e90113c0d5
 -			BackgroundTool:          1,
 -			SessionArchive:          1,
 -			MemoryOrganizerSettings: 1,
+-			SessionExternalRuns:     1,
+-			WebSearchFallback:       1,
 +			SessionChanges:             2,
 +			SessionQueue:               1,
 +			ComputerSessionApproval:    1,
@@ -63,11 +65,13 @@ index 2d8d2f0d362420731c71e54bb035ca89fb20c190..a46092249ffed756d38367e90113c0d5
 +			BackgroundTool:             1,
 +			SessionArchive:             1,
 +			MemoryOrganizerSettings:    1,
++			SessionExternalRuns:        1,
++			WebSearchFallback:          1,
  		},
  		HostBridge: s.hostBridge.status(),
  	}
 diff --git a/internal/backend/host_bridge_test.go b/internal/backend/host_bridge_test.go
-index 34983570236903a4ed16e74f65feda32656ac86b..03887bc4048c618d6447ed3ce916a2c27e65d7fe 100644
+index 3498357..03887bc 100644
 --- a/internal/backend/host_bridge_test.go
 +++ b/internal/backend/host_bridge_test.go
 @@ -98,7 +98,7 @@ func (f *fakeHostBridge) answer(command string, body map[string]any) (any, error
@@ -344,7 +348,7 @@ index 34983570236903a4ed16e74f65feda32656ac86b..03887bc4048c618d6447ed3ce916a2c2
  	if len(results) != 3 {
  		t.Fatalf("results = %+v", results)
 diff --git a/internal/backend/host_bridge_tools.go b/internal/backend/host_bridge_tools.go
-index 8db0c67f8342ca2c758d0ceeaa57d597dc58890d..3d78285380d7518d963dc8fda3b515b815b5fe39 100644
+index 8db0c67..3d78285 100644
 --- a/internal/backend/host_bridge_tools.go
 +++ b/internal/backend/host_bridge_tools.go
 @@ -6,13 +6,13 @@ import (
@@ -516,7 +520,7 @@ index 8db0c67f8342ca2c758d0ceeaa57d597dc58890d..3d78285380d7518d963dc8fda3b515b8
  			return "", err
  		}
 diff --git a/internal/backend/permission_rules_http_test.go b/internal/backend/permission_rules_http_test.go
-index dfdf92e81505bf88b95114e66887411133b28691..291d9162bb10f4ee5ff53b31704179a144b53023 100644
+index dfdf92e..291d916 100644
 --- a/internal/backend/permission_rules_http_test.go
 +++ b/internal/backend/permission_rules_http_test.go
 @@ -84,9 +84,9 @@ func newRulesServer(t *testing.T, client ai.Client) (string, string) {
@@ -532,23 +536,23 @@ index dfdf92e81505bf88b95114e66887411133b28691..291d9162bb10f4ee5ff53b31704179a1
  	resp := postJSON(t, http.DefaultClient, base+"/v1/sessions/"+sessionID+"/runs", protocol.PromptRequest{ConversationID: sessionID, ClientRequestID: fmt.Sprintf("rules-%d", rulesRequestSeq.Add(1)), Prompt: "go", Options: &options}, &accepted)
  	if resp.StatusCode != http.StatusAccepted {
 diff --git a/internal/backend/run_options.go b/internal/backend/run_options.go
-index a579234bd0cf2bead2c59d34ddeaa4ced40213fe..cca9151955f775294e7dd0097a433ab3ba8f18e5 100644
+index 01db509..9be95cc 100644
 --- a/internal/backend/run_options.go
 +++ b/internal/backend/run_options.go
 @@ -120,7 +120,7 @@ func normalizeRunOptions(in *protocol.RunOptions, cwd string, available []tools.
  				return fmt.Errorf("options.tools contains duplicate or empty tool")
  			}
  			seen[name] = true
--			if name != "ExitPlanMode" && name != tools.SSHManagerTool && !slices.ContainsFunc(available, func(t tools.Tool) bool { return t.Def.Function.Name == name }) {
-+			if name != "ExitPlanMode" && name != tools.SSHManagerTool && name != hostToolTunnelManager && !slices.ContainsFunc(available, func(t tools.Tool) bool { return t.Def.Function.Name == name }) {
+-			if name != "ExitPlanMode" && name != tools.SSHManagerTool && name != tools.WebSearchToolName && !slices.ContainsFunc(available, func(t tools.Tool) bool { return t.Def.Function.Name == name }) {
++			if name != "ExitPlanMode" && name != tools.SSHManagerTool && name != tools.WebSearchToolName && name != hostToolTunnelManager && !slices.ContainsFunc(available, func(t tools.Tool) bool { return t.Def.Function.Name == name }) {
  				return fmt.Errorf("options.tools references unavailable tool %q", name)
  			}
  			return nil
 diff --git a/internal/backend/run_start.go b/internal/backend/run_start.go
-index b58cb0394fa3a25bf585b06650f04797e875ca26..f3d2ec5d902792caa9100fc1824d555a3cb326f4 100644
+index 9080a2a..d40d547 100644
 --- a/internal/backend/run_start.go
 +++ b/internal/backend/run_start.go
-@@ -161,8 +161,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
+@@ -171,8 +171,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
  	if err := s.refreshSettingsLocked(rt); err != nil {
  		return fail(400, err.Error())
  	}
@@ -560,28 +564,8 @@ index b58cb0394fa3a25bf585b06650f04797e875ca26..f3d2ec5d902792caa9100fc1824d555a
  	// Normalize after model selection so model-specific tools and MCP filters are current.
  	options, err := normalizeRunOptions(in.Options, rt.agent.WorkingDir, rt.agent.KnownTools())
  	if err != nil {
-diff --git a/internal/backend/server.go b/internal/backend/server.go
-index ac354559a1263b4a7ecec31ae1deeedd4560c593..7d0bfa9c1758d6b8fbfa8fdfc5a69cc035cc1e9e 100644
---- a/internal/backend/server.go
-+++ b/internal/backend/server.go
-@@ -1077,7 +1077,6 @@ func (s *Server) rebuildAgentLocked(rt *runtimeSession, selected protocol.ModelR
- 		s.cron.attachTool(ag, selected)
- 	}
- 	s.attachPlanningTools(ag)
--	s.syncHostTools(ag)
- 	ag.ModelName, ag.Provider = selected.Model, selected.Provider
- 	if s.mcp != nil {
- 		mcpTools, filter := s.mcp.ToolsForTurn(context.Background(), cwd, nil, rt.mcpActivation)
-@@ -1160,7 +1159,6 @@ func (s *Server) loadRuntime(id string, model protocol.ModelRef, cwd string) (*r
- 		s.cron.attachTool(ag, model)
- 	}
- 	s.attachPlanningTools(ag)
--	s.syncHostTools(ag)
- 	ag.ModelName, ag.Provider = model.Model, model.Provider
- 	if s.mcp != nil {
- 		mcpTools, filter := s.mcp.ToolsForTurn(context.Background(), cwd, nil, activation)
 diff --git a/internal/protocol/capabilities.json b/internal/protocol/capabilities.json
-index bb83a35a904306e11d800f186712b8a749fa9796..d4fbbe574dc9eabf68861f10570da23c70c6dc35 100644
+index 723b52b..37d404f 100644
 --- a/internal/protocol/capabilities.json
 +++ b/internal/protocol/capabilities.json
 @@ -49,6 +49,14 @@
@@ -600,10 +584,10 @@ index bb83a35a904306e11d800f186712b8a749fa9796..d4fbbe574dc9eabf68861f10570da23c
        "name": "session_exists",
        "type": "integer",
 diff --git a/internal/protocol/protocol.go b/internal/protocol/protocol.go
-index a37bb25bf05227faa2bc3fd3b77a30b29289b342..a3bce3990e200101e3d145f9ec9c6e08c9bf3bac 100644
+index dd62f97..84b7617 100644
 --- a/internal/protocol/protocol.go
 +++ b/internal/protocol/protocol.go
-@@ -615,12 +615,13 @@ type CreateSessionRequest struct {
+@@ -634,12 +634,13 @@ type CreateSessionRequest struct {
  }
  
  type RunOptions struct {

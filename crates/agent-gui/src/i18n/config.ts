@@ -27,6 +27,8 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "legacyConfig.failed": "部分配置未能导入，可重试。",
     "settings.navAccount": "账号",
     "chat.refreshModelsFailed": "刷新模型列表失败。",
+    "app.loadingStalled": "本地服务长时间没有响应，设置还没有加载完成。",
+    "app.retryLoading": "重试",
     "historyImport.title": "旧版对话迁移",
     "historyImport.action": "导入旧版对话",
     "historyImport.description":
@@ -389,6 +391,9 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "legacyConfig.failed": "Some settings could not be imported. You can retry. ",
     "settings.navAccount": "Account",
     "chat.refreshModelsFailed": "Failed to refresh model list.",
+    "app.loadingStalled":
+      "The local service has not answered for a while, so settings are still loading.",
+    "app.retryLoading": "Retry",
     "historyImport.title": "Legacy conversation migration",
     "historyImport.action": "Import old conversations",
     "historyImport.description":

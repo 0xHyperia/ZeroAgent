@@ -232,6 +232,7 @@ import { tauriSftpClient } from "../lib/sftp/tauriSftpClient";
 import { createGuiSidebarBackend } from "../lib/sidebar/guiSidebarBackend";
 import { desktopSttTransport } from "../lib/stt/desktopSttTransport";
 import { createSubagentStoreManager } from "../lib/subagents";
+import { loadKBrainSubagents } from "../lib/subagents/kbrainSubagentStore";
 import { tauriTerminalClient } from "../lib/terminal/tauriTerminalClient";
 import { cancelPendingAskUserQuestionsForConversation } from "../lib/tools/askUserQuestionTools";
 import {
@@ -584,7 +585,6 @@ function ChatPageContent(props: ChatPageProps) {
     remote: settings.remote,
   });
   const tauriTunnelClient = useMemo<LocalTunnelClient>(() => createTauriTunnelClient(), []);
-
   // The only page-level subscription to the sidebar list: ChatPage's own
   // render needs (draft detection, pending-item effect, workspace root).
   const historyItems = useSidebarSelector(sidebarStore, selectConversations);
@@ -1836,6 +1836,8 @@ function ChatPageContent(props: ChatPageProps) {
     previousHistoryIdsRef.current = nextIds;
   }, [currentConversationId, historyItems, historyScopeKey, isSending]);
 
+  const externalRunConversationIdsRef = useRef(new Set<string>());
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: Composer content is sampled through its ref; the effect is driven by persisted snapshot changes and run state.
   useEffect(() => {
     const currentItem = historyItems.find((item) => item.id === currentConversationId);
@@ -1864,6 +1866,24 @@ function ChatPageContent(props: ChatPageProps) {
     }
 
     currentConversationHistoryUpdatedAtRef.current = currentItem.updatedAt;
+    // A turn running in another process (kn) moved the snapshot. The warm
+    // persistence cursor would make the open a cache hit on the stale
+    // transcript, so drop it and re-read; keep refreshing through the final
+    // snapshot that clears the run.
+    if (
+      currentItem.externalRun ||
+      externalRunConversationIdsRef.current.has(currentConversationId)
+    ) {
+      conversationPersistenceCursorRef.current.delete(currentConversationId);
+      // Subagents that turn starts are saved as it goes; re-list them so their
+      // cards fill in (those still running are then polled until they end).
+      void loadKBrainSubagents(currentConversationId);
+    }
+    if (currentItem.externalRun) {
+      externalRunConversationIdsRef.current.add(currentConversationId);
+    } else {
+      externalRunConversationIdsRef.current.delete(currentConversationId);
+    }
     openController.open(currentConversationId);
   }, [
     currentConversationId,
@@ -2385,12 +2405,33 @@ function ChatPageContent(props: ChatPageProps) {
     : undefined;
   useEffect(() => {
     if (!kBrainClient || !watchedKBrainSessionId) return;
-    return watchKBrainHistory(
-      kBrainClient,
-      watchedKBrainSessionId,
-      () => void sidebarStore.refresh(),
-    );
-  }, [watchedKBrainSessionId, kBrainClient, sidebarStore]);
+    const conversationId = currentConversationId;
+    return watchKBrainHistory(kBrainClient, watchedKBrainSessionId, () => {
+      void sidebarStore.refresh();
+      // Return the promise so failed reconciliation is retried on reconnect even
+      // if the backend revision stays unchanged during the outage.
+      return reloadConversationLatestRef.current(conversationId, { onlyIfIdle: true });
+    });
+  }, [watchedKBrainSessionId, currentConversationId, kBrainClient, sidebarStore]);
+  useEffect(() => {
+    if (!kBrainClient || !watchedKBrainSessionId || isSending) return;
+    // History notifications received during streaming are deliberately deferred.
+    // Reconcile again as soon as the local turn has released the runtime.
+    let disposed = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const reconcile = () => {
+      void reloadConversationLatestRef
+        .current(currentConversationId, { onlyIfIdle: true })
+        .catch(() => {
+          if (!disposed) retry = setTimeout(reconcile, 2_000);
+        });
+    };
+    reconcile();
+    return () => {
+      disposed = true;
+      clearTimeout(retry);
+    };
+  }, [currentConversationId, isSending, kBrainClient, watchedKBrainSessionId]);
   const composerCommandHost = useMemo<ComposerCommandHost>(
     () =>
       createGuiComposerCommandHost({
@@ -2717,6 +2758,10 @@ function ChatPageContent(props: ChatPageProps) {
   const handleSend = useCallback(() => {
     const conversationId = currentConversationIdRef.current.trim();
     const runtimeEntry = conversationRuntimeCacheRef.current.get(conversationId);
+    // kn holds this session's run lease; K-brain would refuse the run with 409.
+    if (conversationId && sidebarStore.peek(conversationId)?.externalRun) {
+      return;
+    }
     if (queuedChatTurnEditSlotRef.current?.conversationId === conversationId) {
       if (enqueueCurrentComposerTurn("edit")) {
         requestQueuedChatTurnProcessing(conversationId);
@@ -2756,6 +2801,7 @@ function ChatPageContent(props: ChatPageProps) {
     enqueueCurrentComposerTurn,
     isConversationRunning,
     requestQueuedChatTurnProcessing,
+    sidebarStore,
   ]);
 
   const handleComposerBusyChange = useCallback((isBusy: boolean) => {
@@ -2771,16 +2817,22 @@ function ChatPageContent(props: ChatPageProps) {
   const isCompactionRunning = compactionStatus.phase === "running";
   const isConversationHydrating = currentConversationHydrationPhase === "hydrating";
   const isConversationHydrationFailed = currentConversationHydrationPhase === "failed";
-  const composerPlaceholder = isCompactionRunning
-    ? t("chat.compactingContextWait")
-    : isConversationHydrating
-      ? "正在加载会话，请稍候..."
-      : isConversationHydrationFailed
-        ? "当前会话加载失败，请重新打开会话..."
-        : enabledComposerSkills.length > 0
-          ? t("chat.inputHintWithSkills")
-          : t("chat.inputHint");
+  const currentExternalRun = historyItems.find(
+    (item) => item.id === currentConversationId,
+  )?.externalRun;
+  const composerPlaceholder = currentExternalRun
+    ? t("chat.externalRunPlaceholder").replace("{client}", currentExternalRun.client)
+    : isCompactionRunning
+      ? t("chat.compactingContextWait")
+      : isConversationHydrating
+        ? "正在加载会话，请稍候..."
+        : isConversationHydrationFailed
+          ? "当前会话加载失败，请重新打开会话..."
+          : enabledComposerSkills.length > 0
+            ? t("chat.inputHintWithSkills")
+            : t("chat.inputHint");
   const isComposerInputDisabled =
+    Boolean(currentExternalRun) ||
     isCompactionRunning ||
     isConversationHydrating ||
     isConversationHydrationFailed ||
@@ -4539,7 +4591,7 @@ function ChatPageContent(props: ChatPageProps) {
                 ? {
                     version: `${latestRun.id}:${latestRun.state}:${scheduledRun?.preview?.done ?? false}`,
                     reload: () =>
-                      reloadConversationLatestRef.current(conversationId, { idleOnly: true }),
+                      reloadConversationLatestRef.current(conversationId, { onlyIfIdle: true }),
                   }
                 : undefined
             }

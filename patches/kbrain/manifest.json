@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Stack-Cairn/K-brain",
-  "sourceRevision": "a30254ed660b549606740805c239e4f73acd4c73",
+  "sourceRevision": "2fe44051fd30c91e9ae1abd6317f043239ec05f9",
   "protocol": "kbrain.agent.v1",
   "capabilities": [
     "zeroagent.mcp-credentials.v1",
@@ -32,59 +32,63 @@
     },
     {
       "file": "0007-concurrent-trajectory-section-publication.patch",
-      "sha256": "416beb092b0a543c4cadfc204977a07c14daca4fc0d5b548c72de95f8911d0ef"
+      "sha256": "3800da21528ba20d3e376d53cf28e59c203faae0a7953ea442be2d86c1682bed"
     },
     {
       "file": "0008-clawhub-store-integration.patch",
-      "sha256": "59de7904e59db9dd7c4f9471bb47a9bb332105871c6b18ba174321e393376a3f"
+      "sha256": "ac9e95dc9ec7d920b943f0497b07d96b7bbfbd573e5629f5ccac52dcfb613f7c"
     },
     {
       "file": "0009-prompt-cache-hint-inheritance.patch",
-      "sha256": "ffacd63bd55e5e90dead554548e5b00dc944c9328d74210e635cc582deb2eb97"
+      "sha256": "72cc3c5c456398742f1626c87fc9d924e5115435571e0f3adb3cc1da98832b44"
     },
     {
       "file": "0010-scheduled-run-message-anchor.patch",
-      "sha256": "705dc1e9bba532553909669056a098b6b486b9a3959e8a8774ba69a3e10a9c2a"
+      "sha256": "f872bfedc7b1db6f077b840fcf13a558772786a1ca85216120a15be0d2a3e513"
     },
     {
       "file": "0011-scheduled-session-queue-readiness.patch",
-      "sha256": "c422da4ae55fb73e5a801a14b3bdb661b11f7c33df7c3926a55809e5032857ea"
+      "sha256": "c63dbfbcbb59bc895be59fc917d5267fefb9d52096ab68d70de9f8c670ed66fa"
     },
     {
       "file": "0012-scheduled-run-progress.patch",
-      "sha256": "f003c17313024f4c7ef055317dde32c826a6156dedb2a8b9a1acf01c2048e979"
+      "sha256": "d0201bb90e27145b3e52e41d9ba0dc5593651b2fb9b90860bb9f7f272ef8b27c"
     },
     {
       "file": "0013-scheduled-run-prompt.patch",
-      "sha256": "abfcc1392e31ac49acff9b0e757d4b2f822ca360585db7f80a1619e16cbe6df1"
+      "sha256": "5eed5bc9e103fc6e358c5acb9de7471770398a7033e32483a6f8741d8f00d8b9"
     },
     {
       "file": "0014-device-cron-draft-preview.patch",
-      "sha256": "479239c82c2f825c44b235683744c480767d4da08f50a6cb46b2e34ed3b8dc7c"
+      "sha256": "87c0ac86a73250cdf1e1c8d8615332bfb85d883ef6db47329a7bf80dfb5719e6"
     },
     {
       "file": "0015-account-skill-snapshots.patch",
-      "sha256": "451dc905e5bf697620ace89d462093a482419f41d70adfdacfd171c068c02a0a"
+      "sha256": "9ed023b6b5d3e1ac333e1d919284c5a2734f370d8bba98db77ee26f9854d2327"
     },
     {
       "file": "0016-device-manual-run-receipts.patch",
-      "sha256": "0f63eb759de3916bb2417cff9c56e3a91e448dab989b1ed5ca4247030816631e"
+      "sha256": "bcba2db0d54bb8b0c8e07888996ed26dfd9a3790450d803eb9f8df2e98bed342"
     },
     {
       "file": "0017-conversation-images.patch",
-      "sha256": "2a90ab3e8ab56151f9f6a70925b3b5a4f9211e08cb5ece66e889f9b72ab0dde9"
+      "sha256": "f353c679ac34bd1ae0219b8db968358162de7be4edeaae05542b9a1ba8ca0d1d"
     },
     {
       "file": "0018-block-plan-tools-in-chat.patch",
-      "sha256": "05cbd54ea2f0bc6a0a0b9a608a338bebfa96a5923dbc1e1c2449a9f0541daeae"
+      "sha256": "a0dfcb100ae0508a109ff0e54f59482fd4de7515b9eade274bc5e200a6707a60"
     },
     {
       "file": "0019-scope-desktop-host-tools.patch",
-      "sha256": "e731244123eb0087527c34f606abdacede7106a6d0075e2185ccc3b0ba289038"
+      "sha256": "297fbe98f632a07e8162287a2ca44c68b7b6d526b30bd8f3481e35e6a8023fb3"
     },
     {
       "file": "0020-file-skill-selection.patch",
-      "sha256": "73bb5ee7dd0f8fd3e7df58f607168f9b606378048e04ba82b6c4939e0e1db520"
+      "sha256": "8cdfb0be0a0555a3adcbdc695be2361b8ef064acbda147a47175e8230b8a8315"
+    },
+    {
+      "file": "0021-managed-search-boundary.patch",
+      "sha256": "bdea471f363c88106e22c18701496b4582f29c11fbdec57f05defa65fd24f9ef"
     }
   ],
   "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, device manual run receipts, native conversation images, and account-scoped desktop host tools; plain Chat excludes plan tools"

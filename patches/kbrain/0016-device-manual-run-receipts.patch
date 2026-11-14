@@ -1,5 +1,5 @@
 diff --git a/internal/backend/cron_handler.go b/internal/backend/cron_handler.go
-index 62433de34d139a1d4682350025ea9e7260a7b2ea..135d21005798bb2537526a8927aa6e29244088f7 100644
+index 62433de..135d210 100644
 --- a/internal/backend/cron_handler.go
 +++ b/internal/backend/cron_handler.go
 @@ -90,6 +90,8 @@ func (s *Server) handleCron(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +46,7 @@ index 62433de34d139a1d4682350025ea9e7260a7b2ea..135d21005798bb2537526a8927aa6e29
  	w.Header().Set("Cache-Control", "no-store")
  	runs, err := s.cron.store.runs(taskID, cronRunLimit)
 diff --git a/internal/backend/cron_manager.go b/internal/backend/cron_manager.go
-index b00d3904cdc1278240cce8a1a895b580cc29c897..e7ef4899e75764ad6a74eeae22e71f4d569504f9 100644
+index b00d390..e7ef489 100644
 --- a/internal/backend/cron_manager.go
 +++ b/internal/backend/cron_manager.go
 @@ -106,15 +106,24 @@ func (m *cronManager) tick(now time.Time) {
@@ -77,7 +77,7 @@ index b00d3904cdc1278240cce8a1a895b580cc29c897..e7ef4899e75764ad6a74eeae22e71f4d
  	}
 diff --git a/internal/backend/cron_manual_receipt_test.go b/internal/backend/cron_manual_receipt_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f51ea198df4d4282b9d520161e4ee4539cbfe04
+index 0000000..2f51ea1
 --- /dev/null
 +++ b/internal/backend/cron_manual_receipt_test.go
 @@ -0,0 +1,110 @@
@@ -192,7 +192,7 @@ index 0000000000000000000000000000000000000000..2f51ea198df4d4282b9d520161e4ee45
 +	}
 +}
 diff --git a/internal/backend/cron_store.go b/internal/backend/cron_store.go
-index 82f61e72e33afb579e1cda84dce6bac2dbf17353..7a1b6bf7e3571daab8419e73c0e8b7a5a6072a27 100644
+index 82f61e7..7a1b6bf 100644
 --- a/internal/backend/cron_store.go
 +++ b/internal/backend/cron_store.go
 @@ -347,6 +347,23 @@ func (c *cronStore) bindSession(expected *CronTask, sessionID string) error {

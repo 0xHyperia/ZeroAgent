@@ -1,0 +1,1089 @@
+{
+  "release": "v2.0.21",
+  "previous_upstream": "dab301d1e95f1d28858e9e2054deee35fddd9961",
+  "upstream_commit": "d874b4360761d1534f15dd920ab5e912b68dc9b0",
+  "zeroagent_baseline": "c5092f5d3ff64626d84de70e301ca4101ec06994",
+  "merge_base": "dab301d1e95f1d28858e9e2054deee35fddd9961",
+  "text_conflicts": 29,
+  "counts": {
+    "adapt": 8,
+    "adopt": 47,
+    "defer": 38,
+    "partial": 8,
+    "reject": 17,
+    "replace": 35
+  },
+  "entries": [
+    {
+      "path": ".github/pr-assets/pr1291-background-notice-after.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "PR 对照截图保留在上游历史，ZeroAgent 使用本地验收证据。"
+    },
+    {
+      "path": ".github/pr-assets/pr1291-background-notice-before.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "PR 对照截图保留在上游历史，ZeroAgent 使用本地验收证据。"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "保留 ZeroAgent 产品契约、部署检查和发布 CI。上游长期分支缓存设置需按本仓库分支和缓存测量重新核对。"
+    },
+    {
+      "path": "Cargo.lock",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/client.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/history_messages_test.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/settings.go",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/web_search_settings_test.go",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/webSearchFallback.ts",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/gatewayChatCommandActions.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewayChatConfiguration.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/types.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/workbench/GatewayConversationPaneHost.tsx",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/components/GatewayTranscript.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/clarifyPromptTurn.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/transcript/historyAlignment.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/chat/transcript/turnReducer.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/background-notice-snapshot.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/web-search-fallback-settings.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/index.html",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "保留账户验证、现有启动超时和配置界面重试。启动迁移跳过和重启后端的上游路径未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/Cargo.toml",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/data_dir.rs",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": true,
+      "notes": "保留显式 ZeroAgent 会话导入和新配置空间。跳过其他产品的数据目录迁移与自动历史载入。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/history/chat_history/pi_migration.rs",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": true,
+      "notes": "保留显式 ZeroAgent 会话导入和新配置空间。跳过其他产品的数据目录迁移与自动历史载入。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/browser.rs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/browser_cookie_import.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/integration/mod.rs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/mod.rs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/lib.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "保留账户验证、现有启动超时和配置界面重试。启动迁移跳过和重启后端的上游路径未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cdp.rs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cookie_import/apply.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cookie_import/crypto.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cookie_import/discovery.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cookie_import/keys.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cookie_import/mod.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cookie_import/reader.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/cookie_import/tests.rs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/embedded.rs",
+      "upstream_change": "A",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/embedded_picker.js",
+      "upstream_change": "A",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/launcher.rs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/browser/mod.rs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_web_search.rs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/mod.rs",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "保留账户验证、现有启动超时和配置界面重试。启动迁移跳过和重启后端的上游路径未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src/App.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "启动界面在当前账户设置加载停滞时原位重试。"
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/webSearchFallback.ts",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/components/app/AppBootShell.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "启动界面在当前账户设置加载停滞时原位重试。"
+    },
+    {
+      "path": "crates/agent-gui/src/i18n/config.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "启动界面在当前账户设置加载停滞时原位重试。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/browser/tauriEmbeddedBrowserClient.ts",
+      "upstream_change": "A",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/chat/history/chatHistory.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/bootstrap.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "保留账户验证、现有启动超时和配置界面重试。启动迁移跳过和重启后端的上游路径未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/deadline.ts",
+      "upstream_change": "A",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "保留账户验证、现有启动超时和配置界面重试。启动迁移跳过和重启后端的上游路径未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/history.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": true,
+      "notes": "保留显式 ZeroAgent 会话导入和新配置空间。跳过其他产品的数据目录迁移与自动历史载入。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/historySync.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/sidebarSync.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/turn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "将上游会话对账和运行状态恢复合入现有设备宿主，保留配置版本与授权。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/types.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "合入同文件的会话或通知修复。第三方搜索的执行路由和设置入口暂未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/watchHistory.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/providerRuntimeConfig.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/startup/render.ts",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": false,
+      "notes": "保留账户验证、现有启动超时和配置界面重试。启动迁移跳过和重启后端的上游路径未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/kbrainSubagentStore.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/subagents/kbrainSubagentView.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/main.tsx",
+      "upstream_change": "M",
+      "decision": "partial",
+      "text_conflict": true,
+      "notes": "保留账户验证、现有启动超时和配置界面重试。启动迁移跳过和重启后端的上游路径未接入。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/ChatPage.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "合入会话相关变化。浏览器使用现有 WebView2 和工作区授权，加载错误映射到原生标签的可诊断状态。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/components/ConversationStatsBarHost.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/gateway/chatRuntimeSnapshot.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/history/useConversationHistoryActions.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "将上游会话对账和运行状态恢复合入现有设备宿主，保留配置版本与授权。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useChatModelSelection.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/rowModel.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/turns/runKBrainConversationTurn.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/activity-disclosure-state.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用 web_search 历史工具行和搜索词显示。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/embedded-browser-pane.test.mjs",
+      "upstream_change": "A",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/gateway-runtime-snapshot.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/history-revision-conflict-reload.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-history-sync-review.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-interrupted-history.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-sidebar-external-run.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-subagent-card.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-watch-history.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/transcript-row-model.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/workbench-project-tool-surfaces.test.mjs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history-migration-failures.test.mjs",
+      "upstream_change": "M",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "保留显式 ZeroAgent 会话导入和新配置空间。跳过其他产品的数据目录迁移与自动历史载入。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-history.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-mcp-elicitation.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-notice-origin-regression.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-question-answer.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-subagents.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-tool-owned-question.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-turn.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/web-search-fallback.test.mjs",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-gui/test/startup/startup-hang-escapes.test.mjs",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "保留显式 ZeroAgent 会话导入和新配置空间。跳过其他产品的数据目录迁移与自动历史载入。"
+    },
+    {
+      "path": "crates/agent-gui/test/trajectory/conversation-stats-hook.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/IconSet.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/Markdown.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/BackgroundNoticeMessage.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebar.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "notes": "将上游会话对账和运行状态恢复合入现有设备宿主，保留配置版本与授权。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ChatHistorySidebarRows.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/assistantBubbleUtils.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用 web_search 历史工具行和搜索词显示。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/assistant-bubble/conciseToolTarget.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用 web_search 历史工具行和搜索词显示。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/EmbeddedBrowserImportDialog.tsx",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/EmbeddedBrowserPanel.tsx",
+      "upstream_change": "A",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/RightDockContext.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/RightDockLauncher.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/RightDockPanel.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/rightDockModel.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/rightDockRegistry.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/project-tools/useRightDockProjectTabs.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/subagents/SubagentPane.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workbench/ProjectToolPaneHost.tsx",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/contracts/subagentPane.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSCommon.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNCommon.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/browser/browserCookieImport.ts",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "notes": "不读取外部浏览器登录会话或导入其凭据。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/browser/embeddedBrowser.ts",
+      "upstream_change": "A",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/browser/inAppLinkRouter.ts",
+      "upstream_change": "A",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/commandPaletteActions.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/uiMessages.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/catalog.generated.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/modelOptions.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/projectTools/releaseProjectToolFromDock.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/providers/useWebSearchFallbackState.ts",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/providers/webSearchFallback.ts",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/rightDockNormalization.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/sync.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/reconcile.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/types.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/trajectory/useConversationStats.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "notes": "采用上游会话事件、历史对账、统计、目录快照或对应回归验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/workbench/geometry.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/workbench/projectToolSurfaces.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/workbench/reducer.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/workbench/types.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": false,
+      "notes": "由 ZeroAgent 原生页面、标签与浏览器入口实现。保留独立 WebView2 和设备租约。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/chat/ChatComposerBar.tsx",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": true,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/WebSearchSection.tsx",
+      "upstream_change": "A",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts",
+      "upstream_change": "M",
+      "decision": "defer",
+      "text_conflict": false,
+      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+    },
+    {
+      "path": "scripts/release/kbrain.lock.json",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "notes": "固定 v0.107.33 源码并重放 ZeroAgent 补丁和来源校验。"
+    }
+  ]
+}

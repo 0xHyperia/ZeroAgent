@@ -69,7 +69,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { SidebarConversation } from "../../lib/sidebar/types";
+import { type SidebarConversation, sameExternalRun } from "../../lib/sidebar/types";
 import type { SidebarReorderPointer } from "../../lib/sidebar/useSidebarReorderDrag";
 import type { WorkspaceProjectGroup } from "../../lib/workspaceProjectTypes";
 import { SidebarMenuAction, SidebarMenuButton } from "../ui/sidebar";
@@ -191,6 +191,7 @@ function areRenderedHistoryItemsEqual(previous: SidebarConversation, next: Sideb
     previous.isArchived === next.isArchived &&
     previous.isShared === next.isShared &&
     previous.forkedFromSessionId === next.forkedFromSessionId &&
+    sameExternalRun(previous.externalRun, next.externalRun) &&
     previous.isPending === next.isPending
   );
 }

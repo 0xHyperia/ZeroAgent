@@ -30,7 +30,14 @@ use webview2_com::{
         ICoreWebView2_15, ICoreWebView2_16, ICoreWebView2_18, ICoreWebView2_22, ICoreWebView2_28,
         ICoreWebView2_4, ICoreWebView2_9, COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
         COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_PRINT_DIALOG_KIND_BROWSER,
-        COREWEBVIEW2_WEB_ERROR_STATUS, COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED,
+        COREWEBVIEW2_WEB_ERROR_STATUS, COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED, COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL, COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
     },
     NavigationCompletedEventHandler, NavigationStartingEventHandler,
@@ -178,6 +185,32 @@ pub enum BrowserAction {
     Close,
 }
 
+#[derive(Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum BrowserLoadError {
+    Address,
+    Certificate,
+    Connection,
+    Timeout,
+    Unknown,
+}
+
+impl From<COREWEBVIEW2_WEB_ERROR_STATUS> for BrowserLoadError {
+    fn from(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> Self {
+        match status {
+            COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED => Self::Address,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED => Self::Certificate,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT
+            | COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED => Self::Connection,
+            COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT => Self::Timeout,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 #[derive(Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserState {
@@ -186,6 +219,7 @@ pub struct BrowserState {
     favicon_data_url: Option<String>,
     loading: bool,
     load_failed: bool,
+    load_error: Option<BrowserLoadError>,
     can_go_back: bool,
     can_go_forward: bool,
     has_downloads: bool,
@@ -621,6 +655,7 @@ fn register_browser_events(tab: &Rc<Tab>) -> windows_core::Result<()> {
                     publish_state(&view, &state, &events, &loopback, |state| {
                         state.loading = true;
                         state.load_failed = false;
+                        state.load_error = None;
                     })?;
                 }
                 Ok(())
@@ -648,11 +683,13 @@ fn register_browser_events(tab: &Rc<Tab>) -> windows_core::Result<()> {
                     let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
                     args.IsSuccess(&mut success)?;
                     args.WebErrorStatus(&mut status)?;
-                    if status != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED {
-                        publish_state(&view, &state, &events, &loopback, |state| {
-                            state.loading = false;
-                            state.load_failed = !success.as_bool();
-                        })?;
+                    let cancelled = status == COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED;
+                    publish_state(&view, &state, &events, &loopback, |state| {
+                        state.loading = false;
+                        state.load_failed = !cancelled && !success.as_bool();
+                        state.load_error = state.load_failed.then(|| BrowserLoadError::from(status));
+                    })?;
+                    if !cancelled {
                         history::publish(&tab, &state.borrow().url, success.as_bool());
                     }
                 }

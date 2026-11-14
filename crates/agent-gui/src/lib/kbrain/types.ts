@@ -45,6 +45,8 @@ export type KBrainSettingsDocument = {
   defaultProvider?: string;
   providers: KBrainSettingsProvider[];
   models?: KBrainSettingsModel[];
+  /** Web search fallback service (capability web_search_fallback); never carries the key. */
+  webSearch?: unknown;
 };
 
 export type KBrainProviderUpdate = Omit<CustomProvider, "apiKey" | "models"> & {
@@ -87,6 +89,8 @@ export type KBrainMessage = {
   created_at?: string;
   /** "background" on a user-role notice K-brain delivered on its own (a wait result, a process exit). */
   origin?: string;
+  /** Persisted user authorship, exposed by newer backends for history display. */
+  authored?: boolean;
 };
 
 /** 调用如何运行（仅展示用，均可缺省）：命令类工具的退出码、是否超时，工具自身耗时。 */
@@ -209,6 +213,12 @@ export type KBrainSession = {
   /** Source session ID of a branch; older K-brain builds omit it. */
   forked_from?: string;
   fork_seq?: number;
+  /**
+   * Set while another process sharing the data root (the kn terminal UI, kn run)
+   * runs a turn in this session (capability `session_external_runs`). The backend
+   * refuses runs and history edits for the session until it is cleared.
+   */
+  external_run?: KBrainExternalRun;
   messages?: KBrainMessage[];
   active_messages?: KBrainMessage[];
   tasks?: KBrainSubagent[];
@@ -219,6 +229,12 @@ export type KBrainSession = {
   total_message_count?: number;
   sync_epoch?: string;
   sync_revision?: string;
+};
+
+export type KBrainExternalRun = {
+  client: string;
+  pid?: number;
+  started_at: string;
 };
 
 export type KBrainSessionPage = {
@@ -323,6 +339,11 @@ export type KBrainSubagent = {
   usage?: KBrainUsage;
   tool_count?: number;
   duration_ms?: number;
+  /**
+   * Runs in another process sharing the session store (a kn terminal). Its events
+   * are not streamed; the list and transcript are polled while it runs.
+   */
+  external?: boolean;
 };
 
 export type KBrainSubagentEvent = {

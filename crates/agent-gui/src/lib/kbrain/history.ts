@@ -14,6 +14,7 @@ import { taskResultDetails } from "@liveagent/ui/lib/chat/taskProgress";
 import { withToolRunInfo } from "@liveagent/ui/lib/chat/toolRunInfo";
 import { parseUserMessageContentWithUploads } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { capabilityAtLeast } from "@liveagent/ui/lib/kbrain/health";
+import type { SidebarExternalRun } from "@liveagent/ui/lib/sidebar/types";
 import {
   type ConversationViewState,
   getHistoryMessageContentHash,
@@ -135,9 +136,9 @@ function toHostedSearch(value: KBrainMessage["hosted_search"]): HostedSearchBloc
 
 export const KBRAIN_ORIGIN_BACKGROUND = "background";
 
-// K-brain 0.107.17 及更早版本把这些通知存成没有 origin 的普通用户消息；跨升级
-// 的长对话里它们还在，会继续显示成用户气泡（#1211）。只认后端生成的固定开头：
-// 任务 ID 与状态都来自后端，用户手打的文字不会恰好长这样。
+// Legacy backends returned runtime notices without origin or identity. This
+// fallback applies only to those unidentified, unauthored records. Identified
+// history requires explicit provenance; users may quote any of these strings.
 const LEGACY_BACKGROUND_NOTICE_PATTERNS = [
   /^\[process (?:mp|bash)-\d+ (?:completed|failed|cancelled|timed_out)(?: exit_code=-?\d+)?\][^\n]*\n\$ /,
   /^\[subagent [a-z0-9]+(?:-[a-z0-9]+)* (?:done|error|cancelled)\] /,
@@ -158,7 +159,11 @@ function isLegacyBackgroundNotice(text: string): boolean {
 
 function isBackgroundNotice(message: KBrainMessage, text: string): boolean {
   if (message.origin === KBRAIN_ORIGIN_BACKGROUND) return true;
-  return !message.origin && isLegacyBackgroundNotice(text);
+  // Legacy runtime notices had neither origin nor a message ID. An identified
+  // user message may quote the same text and must retain its user semantics.
+  return (
+    !message.origin && !message.authored && !message.id?.trim() && isLegacyBackgroundNotice(text)
+  );
 }
 
 function toMessage(
@@ -388,7 +393,20 @@ export function summaryForSession(
     isShared: session.shared === true,
     ...(session.archived === true ? { isArchived: true } : {}),
     ...(session.forked_from?.trim() ? { forkedFromSessionId: session.forked_from.trim() } : {}),
+    // Always present so a cleared run replaces the previous summary's value.
+    externalRun: externalRunOf(session),
   };
+}
+
+/** Another process's running turn; only K-brain with `session_external_runs` reports one. */
+export function externalRunOf(
+  session: Pick<KBrainSession, "external_run">,
+): SidebarExternalRun | undefined {
+  const run = session.external_run;
+  const client = run?.client?.trim();
+  if (!run || !client) return undefined;
+  const startedAt = Date.parse(run.started_at);
+  return { client, startedAt: Number.isFinite(startedAt) ? startedAt : 0 };
 }
 
 type ProjectionSnapshot = {

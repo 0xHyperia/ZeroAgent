@@ -1,6 +1,6 @@
 diff --git a/internal/backend/clawhub_http_test.go b/internal/backend/clawhub_http_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..faef68b21fd25212e146221b001e051bbf10fecf
+index 0000000..faef68b
 --- /dev/null
 +++ b/internal/backend/clawhub_http_test.go
 @@ -0,0 +1,60 @@
@@ -65,7 +65,7 @@ index 0000000000000000000000000000000000000000..faef68b21fd25212e146221b001e051b
 +	}
 +}
 diff --git a/internal/backend/skills_http.go b/internal/backend/skills_http.go
-index ef42f1ca08453a5251e96935ff3a276aa43bdd52..e74eee38fd0439d20a1d1ba5d0cfcb7d7d21ec7f 100644
+index ef42f1c..e74eee3 100644
 --- a/internal/backend/skills_http.go
 +++ b/internal/backend/skills_http.go
 @@ -5,6 +5,7 @@ import (
@@ -95,7 +95,7 @@ index ef42f1ca08453a5251e96935ff3a276aa43bdd52..e74eee38fd0439d20a1d1ba5d0cfcb7d
  			writeJSONError(w, http.StatusBadGateway, "ClawHub search failed: "+e.Error())
 diff --git a/internal/skills/clawhub_download.go b/internal/skills/clawhub_download.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..7db2e7b17256280c96dc873dd060276368e01464
+index 0000000..7db2e7b
 --- /dev/null
 +++ b/internal/skills/clawhub_download.go
 @@ -0,0 +1,65 @@
@@ -166,7 +166,7 @@ index 0000000000000000000000000000000000000000..7db2e7b17256280c96dc873dd0602763
 +}
 diff --git a/internal/skills/clawhub_store_test.go b/internal/skills/clawhub_store_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..bf96e4e8aee779346815c72b75019b48fa7c8e7a
+index 0000000..bf96e4e
 --- /dev/null
 +++ b/internal/skills/clawhub_store_test.go
 @@ -0,0 +1,311 @@
@@ -482,7 +482,7 @@ index 0000000000000000000000000000000000000000..bf96e4e8aee779346815c72b75019b48
 +	}
 +}
 diff --git a/internal/skills/managed.go b/internal/skills/managed.go
-index ba06900415296c0f8645c8cfd2f70448a4ddf3d5..8df6c1b1c686e87d4d5d06e4cda6798b7d4e6c80 100644
+index 783a7a6..2fa39af 100644
 --- a/internal/skills/managed.go
 +++ b/internal/skills/managed.go
 @@ -135,15 +135,18 @@ type ExternalScan struct {
@@ -677,7 +677,7 @@ index ba06900415296c0f8645c8cfd2f70448a4ddf3d5..8df6c1b1c686e87d4d5d06e4cda6798b
  func scanMCPFile(path string) (map[string]any, error) {
  	p, err := filepath.Abs(path)
 diff --git a/internal/skills/store.go b/internal/skills/store.go
-index e3c1369a1c9cb1f0dcaae19fa11cede96d9ee402..bbb41ffc34f4aea235f5d48edc922fa5b2313d80 100644
+index e3c1369..bbb41ff 100644
 --- a/internal/skills/store.go
 +++ b/internal/skills/store.go
 @@ -1,8 +1,14 @@

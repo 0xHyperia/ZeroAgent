@@ -151,6 +151,8 @@ function interpolateMessage(template: string, values: Record<string, string>) {
 }
 
 const GATEWAY_SETTINGS_SYNC_EVENT = "gateway:settings-sync";
+/** How long the boot screen waits before offering to retry loading settings. */
+const SETTINGS_LOAD_STALL_MS = 20_000;
 
 type RemoteSelectionLease = {
   lease: string;
@@ -324,6 +326,9 @@ export default function App() {
   const [remoteSelectionLeases, setRemoteSelectionLeases] = useState<
     Map<string, RemoteSelectionLease>
   >(() => new Map());
+  // Each attempt re-runs the settings load; a stalled one can be replaced from the boot screen.
+  const [settingsAttempt, setSettingsAttempt] = useState(0);
+  const [settingsStalled, setSettingsStalled] = useState(false);
   const [backgroundHostsReady, setBackgroundHostsReady] = useState(false);
   const [settings, setSettingsState] = useState<AppSettings>(() => getBootAlignedDefaultSettings());
   const handoffEnvironments = useMemo(() => {
@@ -668,6 +673,7 @@ export default function App() {
     };
   }, [relayReady, relayUserId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A manual retry reloads the current account settings.
   useEffect(() => {
     let cancelled = false;
 
@@ -715,7 +721,20 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [settingsAttempt]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new attempt restarts the stall timer.
+  useEffect(() => {
+    if (settingsReady) return;
+    setSettingsStalled(false);
+    const timer = window.setTimeout(() => setSettingsStalled(true), SETTINGS_LOAD_STALL_MS);
+    return () => window.clearTimeout(timer);
+  }, [settingsReady, settingsAttempt]);
+
+  const retrySettingsLoad = () => {
+    setSettingsStalled(false);
+    setSettingsAttempt((attempt) => attempt + 1);
+  };
 
   useEffect(() => {
     if (!settingsReady) return;
@@ -1122,7 +1141,18 @@ export default function App() {
       <LocaleContext.Provider value={localeContextValue}>
         <Toaster />
         <AppChrome>
-          <AppBootShell loadingLabel={translate("app.loading", settings.locale)} />
+          <AppBootShell
+            loadingLabel={translate("app.loading", settings.locale)}
+            stall={
+              settingsStalled
+                ? {
+                    message: translate("app.loadingStalled", settings.locale),
+                    actionLabel: translate("app.retryLoading", settings.locale),
+                    onAction: retrySettingsLoad,
+                  }
+                : undefined
+            }
+          />
         </AppChrome>
       </LocaleContext.Provider>
     );

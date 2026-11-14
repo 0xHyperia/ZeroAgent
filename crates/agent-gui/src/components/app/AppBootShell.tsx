@@ -2,7 +2,15 @@ const iconSimpleUrl = "/zeroagent-logo.png";
 
 import { WindowsTitleBar } from "../WindowsTitleBar";
 
-export function AppBootShell(props: { loadingLabel: string }) {
+/** Shown once loading has waited too long, so a stuck backend never leaves a silent screen. */
+export type AppBootStall = {
+  message: string;
+  actionLabel: string;
+  onAction: () => void;
+};
+
+export function AppBootShell(props: { loadingLabel: string; stall?: AppBootStall }) {
+  const { stall } = props;
   return (
     <div className="flex size-full min-h-0 flex-col">
       <WindowsTitleBar />
@@ -12,13 +20,27 @@ export function AppBootShell(props: { loadingLabel: string }) {
         role="status"
         aria-live="polite"
         aria-label={props.loadingLabel}
-        aria-busy="true"
+        aria-busy={!stall}
       >
-        <div className="app-boot-content" aria-hidden="true">
-          <img className="app-boot-icon" src={iconSimpleUrl} alt="" />
-          <div className="app-boot-progress">
+        <div className="app-boot-content">
+          <img className="app-boot-icon" src={iconSimpleUrl} alt="" aria-hidden="true" />
+          <div className="app-boot-progress" aria-hidden="true">
             <span />
           </div>
+          {stall ? (
+            <>
+              <p className="app-boot-waiting" data-app-boot-stalled="">
+                {stall.message}
+              </p>
+              <button
+                className="app-boot-retry"
+                type="button"
+                onClick={stall.onAction}
+              >
+                {stall.actionLabel}
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
     </div>

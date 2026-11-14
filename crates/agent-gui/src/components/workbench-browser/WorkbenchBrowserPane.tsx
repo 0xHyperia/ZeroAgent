@@ -145,6 +145,7 @@ type BrowserState = {
   faviconDataUrl?: string | null;
   loading: boolean;
   loadFailed: boolean;
+  loadError?: "address" | "certificate" | "connection" | "timeout" | "unknown" | null;
   canGoBack: boolean;
   canGoForward: boolean;
   hasDownloads: boolean;
@@ -301,6 +302,13 @@ const labels = {
     hint: "Enter a URL to open a page",
     invalid: "Enter an HTTP or HTTPS address, or a search term.",
     failed: "This page could not be loaded.",
+    loadErrors: {
+      address: "The site address could not be resolved. Check the address and try again.",
+      certificate: "The site's security certificate could not be verified.",
+      connection: "The site could not be reached. Check the connection and try again.",
+      timeout: "The site took too long to respond.",
+      unknown: "This page could not be loaded.",
+    },
     slow: "This page is taking longer than expected.",
     unavailable: "The embedded browser could not start.",
     unsupported: "The embedded browser is available in the ZeroAgent Windows app.",
@@ -378,6 +386,13 @@ const labels = {
     hint: "输入网址以打开网页",
     invalid: "请输入 HTTP 或 HTTPS 网址，或输入搜索词。",
     failed: "无法加载此页面。",
+    loadErrors: {
+      address: "无法解析网站地址。请检查地址后重试。",
+      certificate: "无法验证此网站的安全证书。",
+      connection: "无法连接网站。请检查网络后重试。",
+      timeout: "网站响应超时。",
+      unknown: "无法加载此网页。",
+    },
     slow: "此页面加载时间较长。",
     unavailable: "内置浏览器无法启动。",
     unsupported: "内置浏览器可在 ZeroAgent Windows 桌面版中使用。",
@@ -518,7 +533,7 @@ export function WorkbenchBrowserPane(props: BrowserPaneProps) {
   const [deviceViewport, setDeviceViewport] = useState(DEFAULT_DEVICE_VIEWPORT);
   const [deviceStage, setDeviceStage] = useState({ width: 0, height: 0 });
   const [slow, setSlow] = useState(false);
-  const [feedback, setFeedback] = useState<keyof typeof l | null>(null);
+  const [feedback, setFeedback] = useState<Exclude<keyof typeof l, "loadErrors"> | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [annotation, setAnnotation] = useState<{
@@ -2002,7 +2017,15 @@ export function WorkbenchBrowserPane(props: BrowserPaneProps) {
             <div className="za-workspace-browser-empty">
               <Globe />
               <strong>{l.blank}</strong>
-              <span>{!supported ? l.unsupported : startFailed ? l.unavailable : l.failed}</span>
+              <span role="status">
+                {!supported
+                  ? l.unsupported
+                  : startFailed
+                    ? l.unavailable
+                    : state.loadError
+                      ? l.loadErrors[state.loadError]
+                      : l.failed}
+              </span>
               {(startFailed || state.loadFailed) && (
                 <button
                   type="button"

@@ -1,0 +1,35 @@
+diff --git a/internal/config/websearch.go b/internal/config/websearch.go
+index f26c8a0..c0e4e1d 100644
+--- a/internal/config/websearch.go
++++ b/internal/config/websearch.go
+@@ -139,6 +139,10 @@ func (w WebSearchConfig) Effective() WebSearchEffective {
+ }
+ 
+ func (w WebSearchConfig) effective(getenv func(string) string) WebSearchEffective {
++	// A managed ZeroAgent host keeps search inside its authorized model transport.
++	if getenv("ZEROAGENT_MANAGED_SEARCH_ONLY") == "1" {
++		return WebSearchEffective{Problem: "third-party search is disabled by the managed host"}
++	}
+ 	e := WebSearchEffective{
+ 		Provider:   strings.ToLower(strings.TrimSpace(w.Provider)),
+ 		BaseURL:    strings.TrimSpace(w.BaseURL),
+diff --git a/internal/config/websearch_test.go b/internal/config/websearch_test.go
+index 07742ef..af3240d 100644
+--- a/internal/config/websearch_test.go
++++ b/internal/config/websearch_test.go
+@@ -160,3 +160,15 @@ func TestParseConfigWebSearchSection(t *testing.T) {
+ 		t.Fatal("unknown webSearch field accepted")
+ 	}
+ }
++
++func TestWebSearchEffectiveManagedHost(t *testing.T) {
++	cfg := WebSearchConfig{Provider: WebSearchTavily, APIKey: "configured"}
++	effect := cfg.effective(envMap(map[string]string{
++		"ZEROAGENT_MANAGED_SEARCH_ONLY": "1",
++		EnvWebSearchProvider:            WebSearchJina,
++		EnvWebSearchAPIKey:              "inherited",
++	}))
++	if effect.Available() || effect.KeyConfigured() {
++		t.Fatal("managed host must suppress third-party search and inherited credentials")
++	}
++}
