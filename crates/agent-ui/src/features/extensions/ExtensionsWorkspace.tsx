@@ -262,6 +262,12 @@ function ExtensionsSidebarOpener() {
   );
 }
 
+function ExtensionsMobileSidebarTrigger() {
+  const { isMobile } = useSidebar();
+  if (!isMobile) return null;
+  return <SidebarTrigger className="size-11 shrink-0" showShortcut={false} />;
+}
+
 type ExtensionsWorkspaceProps = {
   adapter: ExtensionsAdapter;
   catalog: ExtensionCatalog | null;
@@ -1329,6 +1335,9 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
           >
             <ArrowLeft className="size-4" />
           </Button>
+          {props.sharedSidebar && props.sidebarTarget === undefined && route.page !== "editor" ? (
+            <ExtensionsMobileSidebarTrigger />
+          ) : null}
           <Button
             variant={route.page === "plugins" ? "secondary" : "ghost"}
             onClick={() => navigate({ page: "plugins" })}

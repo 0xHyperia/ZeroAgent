@@ -7548,11 +7548,10 @@ export function CloudChatPage({
                   }}
                   sharedSidebar
                   sidebarTarget={
-                    desktopAccountLayout
-                      ? workbenchActive && customizeOpen
-                        ? desktopAccountLayout.sidebarTarget
-                        : null
-                      : undefined
+                    // The mobile Sidebar uses a portal outside the hidden workspace canvas.
+                    workbenchActive && (customizeOpen || previewCustomize)
+                      ? desktopAccountLayout?.sidebarTarget
+                      : null
                   }
                   sidebarOnly={!customizeOpen}
                   previewOpen={desktopAccountLayout?.sidebarPreview ?? previewCustomize}

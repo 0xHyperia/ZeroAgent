@@ -186,6 +186,145 @@
   opacity: 0.5;
   cursor: default;
 }
+@media (max-width: 767px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
+  [data-skill-details-sheet] {
+    --skill-details-safe-top: max(
+      0px,
+      calc(var(--zeroagent-safe-area-top, 0px) - var(--zeroagent-visual-viewport-offset-top, 0px))
+    );
+    inset: var(--zeroagent-visual-viewport-offset-top, 0px) 0 auto;
+    width: 100%;
+    max-width: none;
+    height: var(--zeroagent-visual-viewport-height, 100dvh);
+    padding: var(--skill-details-safe-top) var(--zeroagent-safe-area-right, 0px)
+      var(--zeroagent-safe-area-bottom, 0px) var(--zeroagent-safe-area-left, 0px);
+    border: 0;
+    border-radius: 0;
+  }
+
+  [data-skill-details-sheet] [data-slot="sheet-header"] {
+    padding: 8px 60px 8px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  [data-skill-details-sheet] [data-slot="sheet-title"] {
+    white-space: normal;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  [data-skill-details-sheet] [data-slot="sheet-panel"] {
+    padding: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  [data-skill-details-sheet] [data-slot="sheet-close"] {
+    top: calc(8px + var(--skill-details-safe-top));
+    right: calc(8px + var(--zeroagent-safe-area-right, 0px));
+    width: 44px;
+    height: 44px;
+  }
+
+  [data-skill-details-sheet] [data-slot="sheet-footer"] {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 8px 16px;
+  }
+
+  [data-skill-details-sheet] [data-slot="sheet-footer"] :is(button, a) {
+    min-height: 44px;
+  }
+}
+
+@media (pointer: coarse) and (max-height: 550px) {
+  html[data-zeroagent-keyboard="open"] [data-slot="dialog-viewport"]:has(> [data-schedule-editor]) {
+    top: var(--zeroagent-visual-viewport-offset-top, 0px);
+    bottom: auto;
+    height: var(--zeroagent-visual-viewport-height, 100dvh);
+    padding: max(0px, calc(var(--zeroagent-safe-area-top, 0px) - var(--zeroagent-visual-viewport-offset-top, 0px)))
+      max(4px, var(--zeroagent-safe-area-right, 0px)) 0 max(4px, var(--zeroagent-safe-area-left, 0px));
+    container: schedule-editor / size;
+  }
+
+  html[data-zeroagent-keyboard="open"] [data-schedule-editor] {
+    display: grid;
+    grid-template: auto minmax(0, 1fr) / minmax(0, 1fr) auto;
+    height: 100%;
+    max-height: none;
+    margin-block: 0;
+    overflow: hidden;
+
+    > [data-slot="dialog-header"] {
+      grid-column: 1 / -1;
+      min-height: 44px;
+      padding: 4px 56px 4px 12px;
+    }
+
+    > form {
+      display: contents;
+    }
+
+    [data-slot="dialog-body"] {
+      padding: 4px 8px;
+      scroll-padding-block: 4px;
+    }
+
+    [data-schedule-instructions] {
+      min-height: 48px;
+      padding-block: 6px;
+      font-size: 16px;
+    }
+
+    [data-slot="dialog-footer"] {
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      min-height: 0;
+      max-width: min(42vw, 16rem);
+      padding: 4px 8px;
+      overflow-y: auto;
+    }
+
+    [data-slot="dialog-actions"] {
+      display: flex;
+      width: auto;
+      flex-wrap: wrap;
+
+      > button {
+        width: auto;
+        min-height: 44px;
+        white-space: normal;
+      }
+    }
+
+    [data-slot="dialog-close-button"] {
+      inset: 0 4px auto auto;
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  @container schedule-editor (max-height: 100px) {
+    [data-schedule-editor] {
+      grid-template-rows: minmax(0, 1fr);
+
+      > [data-slot="dialog-header"] {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        min-height: 0;
+        overflow: hidden;
+        padding: 0;
+        clip-path: inset(50%);
+      }
+
+      > [data-slot="dialog-close-button"] {
+        display: none;
+      }
+    }
+  }
+}
+
 @media (hover: none) and (pointer: coarse), (max-width: 720px) {
   .composer-model-toolbar {
     --composer-model-control-height: 44px;
@@ -1402,6 +1541,10 @@ html[data-zeroagent-keyboard="open"] .za-confirmation-viewport {
 }
 
 /* Shared mobile rail and navigation sheet, independent of host transport. */
+[data-sidebar="sidebar"][data-mobile="true"]:not([data-mobile-rail]) {
+  padding: var(--zeroagent-safe-area-top, 0px) var(--zeroagent-safe-area-right, 0px)
+    var(--zeroagent-safe-area-bottom, 0px) var(--zeroagent-safe-area-left, 0px);
+}
 .sidebar-mobile-rail-layout {
   --mobile-rail-width: calc(52px + var(--zeroagent-safe-area-left, 0px));
   --cloud-control-hover: hsl(var(--foreground) / 0.055);

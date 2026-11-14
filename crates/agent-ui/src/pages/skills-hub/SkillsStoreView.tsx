@@ -463,6 +463,8 @@ function SkillsStorePreviewPopup(props: {
     <SheetPopup
       side="right"
       variant="inset"
+      data-skill-details-sheet=""
+      data-browser-back-surface=""
       closeLabel={t("settings.cronViewClose")}
       className="w-full sm:max-w-136"
     >

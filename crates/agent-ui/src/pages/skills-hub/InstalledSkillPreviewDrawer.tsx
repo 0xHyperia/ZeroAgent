@@ -294,6 +294,8 @@ function InstalledSkillPreviewPopup(props: {
     <SheetPopup
       side="right"
       variant="inset"
+      data-skill-details-sheet=""
+      data-browser-back-surface=""
       closeLabel={t("settings.cronViewClose")}
       className="w-full sm:max-w-xl"
     >
@@ -336,7 +338,7 @@ function InstalledSkillPreviewPopup(props: {
                 copiedLabel={t("settings.skillsInstalledPreviewCopied")}
               />
             </div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <p className="mt-2 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
               {description || t("settings.skillsInstalledPreviewNoDescription")}
             </p>
           </section>
@@ -393,7 +395,7 @@ function InstalledSkillPreviewPopup(props: {
                 >
                   {t("settings.skillsInstalledPreviewFilePreview")}
                 </h3>
-                <div className="mt-1 truncate text-xs text-muted-foreground">
+                <div className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
                   {atEntry ? preview.skillFile || skill.skillFile : selectedPath}
                 </div>
               </div>
@@ -405,7 +407,7 @@ function InstalledSkillPreviewPopup(props: {
             </div>
 
             {!atEntry ? (
-              <Button variant="ghost" size="sm" className="mb-3" onClick={() => navigateToFile("SKILL.md")}>
+              <Button variant="ghost" size="sm" className="mb-3 pointer-coarse:min-h-11" onClick={() => navigateToFile("SKILL.md")}>
                 <ArrowLeft className="size-4" aria-hidden="true" />
                 {displayName}
               </Button>
@@ -436,7 +438,7 @@ function InstalledSkillPreviewPopup(props: {
                   ) : (
                     <pre
                       className={cn(
-                        "max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3",
+                        "whitespace-pre-wrap rounded-lg bg-muted p-3 [overflow-wrap:anywhere]",
                         "font-mono text-xs leading-5 text-foreground",
                       )}
                     >
@@ -474,9 +476,9 @@ function InstalledSkillPreviewPopup(props: {
 function InstalledPreviewField(props: { label: string; value?: string | null }) {
   if (!props.value) return null;
   return (
-    <div className="grid grid-cols-form-label gap-3 py-2 text-xs">
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3 py-2 text-xs">
       <div className="text-muted-foreground">{props.label}</div>
-      <div className="min-w-0 break-words text-foreground">{props.value}</div>
+      <div className="min-w-0 text-foreground [overflow-wrap:anywhere]">{props.value}</div>
     </div>
   );
 }

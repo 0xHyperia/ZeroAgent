@@ -183,11 +183,6 @@ html[data-zeroagent-platform="android"] [contenteditable="true"] {
     padding-top: var(--zeroagent-safe-area-top);
   }
 
-  html:not([data-zeroagent-platform]) [data-sidebar="sidebar"][data-mobile="true"] {
-    padding: var(--zeroagent-safe-area-top) var(--zeroagent-safe-area-right)
-      var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
-  }
-
   .gateway-main-shell {
     padding-right: var(--zeroagent-safe-area-right);
     padding-left: var(--zeroagent-safe-area-left);
@@ -260,11 +255,17 @@ html[data-zeroagent-platform="android"] .workspace-code-editor-overlay,
 html[data-zeroagent-platform="android"] .workspace-file-preview-overlay,
 html[data-zeroagent-platform="android"] .workspace-image-preview-overlay,
 html[data-zeroagent-platform="android"] .workspace-ssh-terminal-overlay,
-html[data-zeroagent-platform="android"] .cloud-settings-page,
 html[data-zeroagent-platform="android"] .gateway-settings-overlay {
   box-sizing: border-box;
   padding: var(--zeroagent-safe-area-top) var(--zeroagent-safe-area-right)
     var(--zeroagent-safe-area-bottom) var(--zeroagent-safe-area-left);
+}
+
+/* The CloudChat shell already reserves the status bar above settings. */
+html[data-zeroagent-platform="android"] .cloud-settings-page {
+  padding-inline: var(--zeroagent-safe-area-left) var(--zeroagent-safe-area-right);
+  padding-bottom: var(--zeroagent-safe-area-bottom);
+  background: hsl(var(--background));
 }
 
 html[data-zeroagent-platform="android"] .gateway-shell [data-workspace-main-has-chrome] [data-app-workbench-chrome] {
@@ -432,6 +433,7 @@ html[data-zeroagent-platform="android"]
   --app-header-height: var(--desktop-cloud-header-height);
 }
 .desktop-cloud-header > header {
+  container: desktop-cloud-header / inline-size;
   gap: 8px;
 }
 .cloud-chat-shell .desktop-cloud-header > header:has([data-windows-window-controls]) {
@@ -465,12 +467,20 @@ html[data-zeroagent-platform="android"]
   padding-inline-start: 84px;
 }
 .cloud-chat-shell[data-desktop-cloud-window] .desktop-cloud-header .cloud-mode-switch {
-  position: static;
+  position: relative;
+  left: auto;
   width: 184px;
   max-width: 100%;
   min-width: 0;
   flex: 0 1 184px;
   transform: none;
+}
+@container desktop-cloud-header (min-width: 720px) {
+  .cloud-chat-shell[data-desktop-cloud-window] .desktop-cloud-header .cloud-mode-switch {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
 }
 .desktop-cloud-header [data-conversation-header] > .cloud-header-title-landing {
   display: none;
@@ -1454,9 +1464,6 @@ html[data-zeroagent-keyboard="open"] .cloud-context-picker-sheet .cloud-context-
   .cloud-chat-shell .cloud-header-title-landing {
     display: none;
   }
-  .cloud-chat-shell [data-conversation-header]:has(.cloud-mode-switch) > span {
-    display: none;
-  }
 }
 @media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   .application-rail {
@@ -1481,9 +1488,6 @@ html[data-zeroagent-keyboard="open"] .cloud-context-picker-sheet .cloud-context-
   }
   .cloud-chat-shell [data-app-workbench-actions] {
     gap: 0;
-  }
-  .cloud-chat-shell [data-conversation-header]:has(.cloud-mode-switch) > span {
-    display: none;
   }
   .cloud-chat-shell .app-workbench-chrome header {
     gap: 8px;

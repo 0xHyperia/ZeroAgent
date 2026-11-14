@@ -550,6 +550,7 @@ export function CronTaskModal({
     >
       <DialogContent
         layout={workbench ? "fullscreen-mobile" : undefined}
+        data-schedule-editor={workbench ? "device" : undefined}
         className={cn(
           "flex max-w-xl flex-col p-0",
           workbench
@@ -666,6 +667,7 @@ export function CronTaskModal({
                   {type === "prompt" ? (
                     <Textarea
                       ref={instructions}
+                      data-schedule-instructions=""
                       aria-label={text("任务说明", "Task instructions")}
                       value={prompt}
                       placeholder={text("说明…", "Instructions…")}

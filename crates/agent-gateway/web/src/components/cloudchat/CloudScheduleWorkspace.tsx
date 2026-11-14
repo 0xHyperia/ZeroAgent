@@ -202,12 +202,16 @@ function taskInput(task: Schedule): ScheduleInput {
   };
 }
 
-function localStart() {
+function defaultScheduleClock() {
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Android can report a numeric UTC offset instead of a zone in the scheduler's database.
+  const time_zone = /^[+-]/.test(browserZone) ? "UTC" : browserZone || "UTC";
   const now = new Date();
   const next = new Date(now);
   next.setHours(9, 0, 0, 0);
   if (next <= now) next.setDate(next.getDate() + 1);
-  return new Date(next.getTime() - next.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  const wallTime = time_zone === "UTC" ? next : new Date(next.getTime() - next.getTimezoneOffset() * 60_000);
+  return { start: wallTime.toISOString().slice(0, 16), time_zone };
 }
 
 const workdays = [1, 2, 3, 4, 5] as const;
@@ -1360,8 +1364,7 @@ export function CloudScheduleWorkspace({
         name: fromDevice?.name ?? "",
         rule: {
           frequency: "daily",
-          start: localStart(),
-          time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          ...defaultScheduleClock(),
         },
         run: {
           model: currentModel.model,
@@ -4618,6 +4621,7 @@ function ScheduleEditor({
     >
       <DialogContent
         layout="fullscreen-mobile"
+        data-schedule-editor="cloud"
         initialFocus={() =>
           editSources
             ? (sourceEditor.current?.querySelector("button") ?? taskName.current)
@@ -4674,6 +4678,7 @@ function ScheduleEditor({
               <span className="sr-only">{text("任务说明", "Task instructions")}</span>
               <Textarea
                 id={`${labelId}-prompt`}
+                data-schedule-instructions=""
                 ref={instructions}
                 required={!hasSavedSources}
                 aria-describedby={sourcesOnly ? `${labelId}-saved-sources` : undefined}
