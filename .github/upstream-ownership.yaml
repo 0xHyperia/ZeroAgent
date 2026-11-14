@@ -750,6 +750,16 @@
       ]
     },
     {
+      "glob": "{crates/agent-gui/src/lib/kbrain/{historySync,watchHistory,sidebarSync}.ts,crates/agent-gateway/web/src/lib/chat/transcript/historyAlignment.ts}",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "后台通知保留来源，不成为伪造的用户输入",
+        "接续只读取原会话并受当前运行与版本保护，保留未接受的输入和附件",
+        "桌面外部运行、停止前接受回执、设备 WebUI 历史窗口专项"
+      ]
+    },
+    {
       "glob": "patches/kbrain/**",
       "ownership": "adapted",
       "risk": "critical",

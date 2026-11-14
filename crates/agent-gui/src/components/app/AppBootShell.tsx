@@ -32,11 +32,7 @@ export function AppBootShell(props: { loadingLabel: string; stall?: AppBootStall
               <p className="app-boot-waiting" data-app-boot-stalled="">
                 {stall.message}
               </p>
-              <button
-                className="app-boot-retry"
-                type="button"
-                onClick={stall.onAction}
-              >
+              <button className="app-boot-retry" type="button" onClick={stall.onAction}>
                 {stall.actionLabel}
               </button>
             </>

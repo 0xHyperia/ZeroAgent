@@ -139,7 +139,7 @@ test("blocks checksum mismatches and failed downloads without leaving a runtime 
 });
 
 test("retries transient 5xx download failures but not 4xx answers", async () => {
-  const body = Buffer.from("fixture k-brain after a gateway timeout\n");
+  const body = Buffer.from(`fixture k-brain after a gateway timeout ${randomUUID()}\n`);
   const hash = sha256(body);
   const url = await startServer(body, 200, 2);
   const flaky = await fixtureLock({ downloads: {

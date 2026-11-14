@@ -687,7 +687,8 @@ fn register_browser_events(tab: &Rc<Tab>) -> windows_core::Result<()> {
                     publish_state(&view, &state, &events, &loopback, |state| {
                         state.loading = false;
                         state.load_failed = !cancelled && !success.as_bool();
-                        state.load_error = state.load_failed.then(|| BrowserLoadError::from(status));
+                        state.load_error =
+                            state.load_failed.then(|| BrowserLoadError::from(status));
                     })?;
                     if !cancelled {
                         history::publish(&tab, &state.borrow().url, success.as_bool());
