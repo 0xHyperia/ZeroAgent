@@ -1,3 +1,4 @@
+import { webSearchFallbackStateFrom } from "@liveagent/ui/lib/providers/webSearchFallback";
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import {
   buildGatewaySettingsSyncPayload,
@@ -490,6 +491,7 @@ export async function loadPersistedSettingsWithDefaults(
     }
     const browserSettings = normalizeSettings({
       ...local,
+      kbrainWebSearch: webSearchFallbackStateFrom(kbrainSettings.document) ?? undefined,
       customProviders,
       selectedModel,
       agents: promptSettings.agents,
@@ -509,6 +511,7 @@ export async function loadPersistedSettingsWithDefaults(
   const defaultWorkdir = normalizeDefaultWorkdir(persisted?.defaultWorkdir);
 
   let settings = normalizeSettings({
+    kbrainWebSearch: webSearchFallbackStateFrom(kbrainSettings.document) ?? undefined,
     uiPreferencesRevision: persisted.uiRevision,
     configurationRevision: persisted.configurationRevision,
     nativeConfigurationRevision: persisted.nativeRevision,
@@ -877,6 +880,7 @@ function browserSettingsFromConfiguration(
   return normalizeSettings({
     ...local,
     backendConfigurationVersion: snapshot.configurationVersion,
+    kbrainWebSearch: webSearchFallbackStateFrom(document) ?? undefined,
     skills: snapshot.skills?.settings ?? local.skills,
     customProviders: appProvidersFromKBrain(document),
     selectedModel:

@@ -449,6 +449,7 @@ struct CanonicalBackendRollback {
     documents: CanonicalBackendDocuments,
     providers: Option<Vec<Value>>,
     mcp: Value,
+    web_search: Option<Value>,
 }
 
 #[derive(Default)]
@@ -465,6 +466,7 @@ impl ProfileBackupBackend {
         &self,
         documents: CanonicalBackendDocuments,
         settings_changed: bool,
+        search_changed: bool,
     ) -> Result<CanonicalBackendRollback, String> {
         let providers = if settings_changed {
             let mut providers = Vec::new();
@@ -499,11 +501,30 @@ impl ProfileBackupBackend {
         } else {
             None
         };
+        let web_search = if search_changed {
+            let private = self.private_backend_json("config.json")?.unwrap_or_else(|| json!({}));
+            let config = &private["webSearch"];
+            let key = config["apiKey"].as_str().filter(|key| !key.is_empty());
+            let mut restore = json!({
+                "provider": config["provider"].as_str().unwrap_or(""),
+                "baseUrl": config["baseUrl"].as_str().unwrap_or(""),
+                "maxResults": config["maxResults"].as_u64().unwrap_or(0),
+            });
+            if let Some(key) = key {
+                restore["apiKey"] = json!(key);
+            } else {
+                restore["clearApiKey"] = json!(true);
+            }
+            Some(restore)
+        } else {
+            None
+        };
         let mcp = self.private_mcp_locked(&documents.mcp)?;
         Ok(CanonicalBackendRollback {
             documents,
             providers,
             mcp,
+            web_search,
         })
     }
 
@@ -515,7 +536,7 @@ impl ProfileBackupBackend {
         fs::create_dir_all(&directory).map_err(|_| "无法创建私有恢复目录")?;
         let path = directory.join(format!("before-{}-{}.json", now_ms(), Uuid::new_v4()));
         let value = json!({"format":"zeroagent-private-configuration-v1","storageId":self.connection.storage_id,
-            "settings":before.documents.settings,"providers":before.providers,"mcp":before.mcp,"prompts":before.documents.prompts,"skills":before.documents.skills});
+            "settings":before.documents.settings,"providers":before.providers,"webSearch":before.web_search,"mcp":before.mcp,"prompts":before.documents.prompts,"skills":before.documents.skills});
         let bytes = serde_json::to_vec(&value).map_err(|_| "无法保存私有恢复副本")?;
         write_private_backup(&path, &bytes)?;
         retain_canonical_recovery(&directory, &path)?;
@@ -588,10 +609,14 @@ impl ProfileBackupBackend {
                 .filter_map(|p| p.get("id").and_then(Value::as_str))
                 .filter(|id| !ids.contains(id))
                 .collect::<Vec<_>>();
-            self.request(reqwest::Method::PUT,"/v1/settings",Some(&json!({"providers":providers,"deleteProviders":deleted,
+            let mut restore = json!({"providers":providers,"deleteProviders":deleted,
                 "defaultProvider":before.documents.settings["defaultProvider"],"defaultModel":before.documents.settings["defaultModel"],
                 "aiApproval":before.documents.settings.get("aiApproval"),"computer":before.documents.settings.get("computer"),
-                "memory":before.documents.settings.get("memory"),"memoryOrganizer":before.documents.settings.get("memoryOrganizer")})))?;
+                "memory":before.documents.settings.get("memory"),"memoryOrganizer":before.documents.settings.get("memoryOrganizer")});
+            if let Some(search) = &before.web_search {
+                restore["webSearch"] = search.clone();
+            }
+            self.request(reqwest::Method::PUT, "/v1/settings", Some(&restore))?;
         }
         Ok(())
     }
@@ -652,7 +677,11 @@ impl ProfileBackupBackend {
             || update.templates.is_some()
             || !update.projects.is_empty();
         let before =
-            self.capture_canonical_rollback(before_docs.clone(), update.settings.is_some())?;
+            self.capture_canonical_rollback(
+                before_docs.clone(),
+                update.settings.is_some(),
+                update.settings.as_ref().is_some_and(|settings| settings.get("webSearch").is_some()),
+            )?;
         if let Some(mcp) = update.mcp.take() {
             update.mcp = Some(merge_mcp_private_fields(&before.mcp, mcp)?);
         }

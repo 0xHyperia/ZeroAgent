@@ -307,7 +307,7 @@ impl KBrainBackendManager {
             .arg(&backend_dir)
             .arg("-parent-stdio")
             .env(TOKEN_ENV, &token)
-            .env("ZEROAGENT_MANAGED_SEARCH_ONLY", "1")
+            .env("ZEROAGENT_WEB_SEARCH_PROFILE_ONLY", "1")
             .env("LIVEAGENT_HOME", &backend_dir)
             .env(PROXY_ENV, system_proxy::kbrain_proxy_value())
             .env_remove("ZEROAGENT_MCP_CREDENTIAL_ENDPOINT")
@@ -609,11 +609,6 @@ impl KBrainBackendState {
             return Err("USA_ZERO_PROFILE_AUTH_REQUIRED".into());
         }
         let mut update = input.as_object().cloned().ok_or("服务商更新必须是对象")?;
-        if update.remove("webSearch").is_some_and(|value| {
-            value["apiKey"].is_string() || value["clearApiKey"].as_bool() == Some(true)
-        }) {
-            return Err("当前托管环境不支持配置第三方搜索凭据".into());
-        }
         let mut checked = update.clone();
         if let Some(providers) = update.get_mut("providers") {
             let providers = providers.as_array_mut().ok_or("服务商更新必须是数组")?;

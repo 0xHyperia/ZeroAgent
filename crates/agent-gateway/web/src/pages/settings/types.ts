@@ -7,6 +7,7 @@ import type { WebSettingsSaveState } from "../../lib/webSettings";
 export type SetSettingsFn = (updater: (prev: AppSettings) => AppSettings) => void;
 
 export type SectionId =
+  | "webSearch"
   | "account"
   | "system"
   | "shortcuts"

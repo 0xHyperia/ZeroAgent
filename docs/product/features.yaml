@@ -317,6 +317,26 @@
       "upstream_relation": "adapt"
     },
     {
+      "id": "device-web-search",
+      "name": "设备第三方联网搜索",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": ["desktop", "webui", "gateway"],
+      "entrypoints": [
+        "crates/agent-ui/src/pages/settings/WebSearchSection.tsx",
+        "crates/agent-ui/src/components/chat/ComposerInlineModelControls.tsx",
+        "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration.rs",
+        "patches/kbrain/0021-managed-search-boundary.patch"
+      ],
+      "tests": [
+        "crates/agent-gui/src-tauri/src/commands/config/settings/device_configuration_tests.rs",
+        "crates/agent-gui/test/providers/provider-runtime-config.test.mjs",
+        "crates/agent-gateway/web/test/kbrain-settings-sync.test.mjs"
+      ],
+      "security": "设备执行账户单独保存搜索密钥，使用当前配置版本和执行租约。只返回配置状态。搜索请求继承当前工具权限，CloudChat 使用独立路由。",
+      "upstream_relation": "adapt"
+    },
+    {
       "id": "device-agent",
       "name": "设备 Agent 执行",
       "status": "active",

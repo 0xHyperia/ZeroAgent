@@ -48,6 +48,7 @@ export type KBrainSettingsDocument = {
   computer?: KBrainComputerConfig;
   memory?: KBrainMemoryConfig;
   memoryOrganizer?: KBrainMemoryOrganizerConfig;
+  webSearch?: unknown;
   mode: "kbrain";
   defaultModel: string;
   defaultProvider: string;
@@ -111,6 +112,7 @@ export type KBrainSettingsAdapter = {
   runtimeConnection: () => KBrainRuntimeConnection | null;
   getConnection: () => KBrainRuntimeConnection | null;
   getSettings: () => Promise<KBrainSettingsDocument>;
+  webSearchScope?: () => unknown;
   updateSettings: (
     update: unknown,
     baseline?: KBrainSettingsDocument,

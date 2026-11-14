@@ -1,3 +1,4 @@
+import { WEB_SEARCH_SETTINGS_CHANGED_EVENT } from "@liveagent/ui/lib/providers/webSearchFallback";
 import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import type { Context } from "@liveagent/app/lib/agentTypes";
 import { invoke } from "@liveagent/app/shims/tauriCore";
@@ -494,6 +495,11 @@ export default function App() {
     },
     [],
   );
+  useEffect(() => {
+    const reload = () => refreshCommittedConfiguration(() => true, true);
+    window.addEventListener(WEB_SEARCH_SETTINGS_CHANGED_EVENT, reload);
+    return () => window.removeEventListener(WEB_SEARCH_SETTINGS_CHANGED_EVENT, reload);
+  }, [refreshCommittedConfiguration]);
   const catalogVersion = useCatalogLiveVersion();
   useEffect(() => {
     if (!settingsReady || catalogVersion === 0) return;

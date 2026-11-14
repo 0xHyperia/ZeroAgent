@@ -1,35 +1,173 @@
+diff --git a/internal/backend/websearch_settings.go b/internal/backend/websearch_settings.go
+index 22c2381..e448f54 100644
+--- a/internal/backend/websearch_settings.go
++++ b/internal/backend/websearch_settings.go
+@@ -2,6 +2,7 @@ package backend
+ 
+ import (
+ 	"fmt"
++	"os"
+ 	"slices"
+ 	"strings"
+ 
+@@ -62,6 +63,7 @@ func projectWebSearch(w config.WebSearchConfig) settingsWebSearch {
+ 
+ func applyWebSearchUpdate(cfg *config.Config, in settingsWebSearchUpdate) error {
+ 	next := cfg.WebSearch
++	profileOnly := os.Getenv("ZEROAGENT_WEB_SEARCH_PROFILE_ONLY") == "1"
+ 	if in.Provider != nil {
+ 		next.Provider = strings.ToLower(strings.TrimSpace(*in.Provider))
+ 	}
+@@ -84,7 +86,13 @@ func applyWebSearchUpdate(cfg *config.Config, in settingsWebSearchUpdate) error
+ 	if in.ClearAPIKey && key != "" {
+ 		return fmt.Errorf("cannot replace and clear the web search API key together")
+ 	}
+-	if in.ClearAPIKey {
++	if profileOnly && (strings.HasPrefix(key, "$") || strings.HasPrefix(key, "!")) {
++		return fmt.Errorf("the search key must be a literal value")
++	}
++	if profileOnly && next.BaseURL != "" && !config.ValidProfileWebSearchURL(next.BaseURL) {
++		return fmt.Errorf("invalid search address")
++	}
++	if in.ClearAPIKey || profileOnly && (next.Provider != cfg.WebSearch.Provider || next.BaseURL != cfg.WebSearch.BaseURL) {
+ 		next.APIKey = ""
+ 	}
+ 	if key != "" {
+diff --git a/internal/backend/websearch_settings_test.go b/internal/backend/websearch_settings_test.go
+index ccf228c..5a2740a 100644
+--- a/internal/backend/websearch_settings_test.go
++++ b/internal/backend/websearch_settings_test.go
+@@ -295,3 +295,48 @@ func TestAttachWebSearchFollowsLiveSettings(t *testing.T) {
+ 		t.Fatal("saved settings did not apply to the session agent")
+ 	}
+ }
++
++func TestManagedWebSearchUsesSavedService(t *testing.T) {
++	clearWebSearchEnvBackend(t)
++	t.Setenv("ZEROAGENT_WEB_SEARCH_PROFILE_ONLY", "1")
++	t.Setenv(config.EnvWebSearchProvider, "tavily")
++	t.Setenv(config.EnvWebSearchAPIKey, "unused-environment-key")
++	fx := newWebSearchSettingsServer(t, &config.Config{})
++	a := agent.New(nil, "model", 100, "system")
++	a.NativeWebSearch = true
++	fx.server.attachWebSearch(a)
++	if _, ok := a.WebSearchFallbackTool(); ok {
++		t.Fatal("inherited search settings must not enable the tool")
++	}
++	requests := make(chan *http.Request, 1)
++	search := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		requests <- r.Clone(r.Context())
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = w.Write([]byte(`{"results":[{"title":"Fixture search result","url":"https://example.org/result"}]}`))
++	}))
++	defer search.Close()
++	code, body, view := fx.do(t, http.MethodPut, `{"webSearch":{"provider":"searxng","baseUrl":"`+search.URL+`","apiKey":"`+fixtureWebSearchKey+`"}}`)
++	if code != http.StatusOK || view.Provider != "searxng" || !view.Available || view.APIKeySource != "config" || strings.Contains(body, fixtureWebSearchKey) {
++		t.Fatalf("search settings did not round-trip through the public projection: %d %s", code, body)
++	}
++	tool, ok := a.WebSearchFallbackTool()
++	if !ok {
++		t.Fatal("saved service did not enable the tool")
++	}
++	result, err := tool.Run(context.Background(), json.RawMessage(`{"query":"offline fixture"}`))
++	if err != nil || !strings.Contains(result, "Fixture search result") || strings.Contains(result, fixtureWebSearchKey) {
++		t.Fatalf("unexpected search result: %q, %v", result, err)
++	}
++	select {
++	case req := <-requests:
++		if req.URL.Path != "/search" || req.URL.Query().Get("q") != "offline fixture" || req.Header.Get("Authorization") != "Bearer "+fixtureWebSearchKey {
++			t.Fatal("search did not use the saved endpoint and key")
++		}
++	default:
++		t.Fatal("configured service received no request")
++	}
++	code, body, view = fx.do(t, http.MethodPut, `{"webSearch":{"provider":"brave","baseUrl":""}}`)
++	if code != http.StatusOK || view.Available || view.APIKeyConfigured || fx.saved.WebSearch.APIKey != "" {
++		t.Fatalf("changing services did not clear the previous key: %d %s", code, body)
++	}
++}
 diff --git a/internal/config/websearch.go b/internal/config/websearch.go
-index f26c8a0..c0e4e1d 100644
+index f26c8a0..dec784b 100644
 --- a/internal/config/websearch.go
 +++ b/internal/config/websearch.go
 @@ -139,6 +139,10 @@ func (w WebSearchConfig) Effective() WebSearchEffective {
  }
  
  func (w WebSearchConfig) effective(getenv func(string) string) WebSearchEffective {
-+	// A managed ZeroAgent host keeps search inside its authorized model transport.
-+	if getenv("ZEROAGENT_MANAGED_SEARCH_ONLY") == "1" {
-+		return WebSearchEffective{Problem: "third-party search is disabled by the managed host"}
++	profileOnly := getenv("ZEROAGENT_WEB_SEARCH_PROFILE_ONLY") == "1"
++	if profileOnly {
++		getenv = func(string) string { return "" }
 +	}
  	e := WebSearchEffective{
  		Provider:   strings.ToLower(strings.TrimSpace(w.Provider)),
  		BaseURL:    strings.TrimSpace(w.BaseURL),
+@@ -162,6 +166,10 @@ func (w WebSearchConfig) effective(getenv func(string) string) WebSearchEffectiv
+ 		e.key, e.KeySource = v, WebSearchKeyFromConfig
+ 	}
+ 	switch {
++	case profileOnly && (strings.HasPrefix(e.key, "$") || strings.HasPrefix(e.key, "!")):
++		e.Problem = "the search key must be a literal value"
++	case profileOnly && e.BaseURL != "" && !ValidProfileWebSearchURL(e.BaseURL):
++		e.Problem = "the search address must be an HTTP or HTTPS URL without credentials, query or fragment"
+ 	case e.Provider == "":
+ 		e.Problem = "no web search provider is configured (set webSearch.provider to one of " + strings.Join(WebSearchProviders, ", ") + ")"
+ 	case !slices.Contains(WebSearchProviders, e.Provider):
+@@ -175,3 +183,9 @@ func (w WebSearchConfig) effective(getenv func(string) string) WebSearchEffectiv
+ 	}
+ 	return e
+ }
++
++// ValidProfileWebSearchURL keeps private credentials out of the public settings projection.
++func ValidProfileWebSearchURL(raw string) bool {
++	u, err := url.Parse(raw)
++	return err == nil && validWebSearchURL(raw) && u.User == nil && u.RawQuery == "" && !u.ForceQuery && u.Fragment == ""
++}
 diff --git a/internal/config/websearch_test.go b/internal/config/websearch_test.go
-index 07742ef..af3240d 100644
+index 07742ef..6527923 100644
 --- a/internal/config/websearch_test.go
 +++ b/internal/config/websearch_test.go
-@@ -160,3 +160,15 @@ func TestParseConfigWebSearchSection(t *testing.T) {
+@@ -160,3 +160,19 @@ func TestParseConfigWebSearchSection(t *testing.T) {
  		t.Fatal("unknown webSearch field accepted")
  	}
  }
 +
-+func TestWebSearchEffectiveManagedHost(t *testing.T) {
++func TestWebSearchUsesOnlyProfileSettings(t *testing.T) {
++	env := envMap(map[string]string{
++		"ZEROAGENT_WEB_SEARCH_PROFILE_ONLY": "1",
++		EnvWebSearchProvider:                WebSearchJina,
++		EnvWebSearchAPIKey:                  "inherited",
++	})
 +	cfg := WebSearchConfig{Provider: WebSearchTavily, APIKey: "configured"}
-+	effect := cfg.effective(envMap(map[string]string{
-+		"ZEROAGENT_MANAGED_SEARCH_ONLY": "1",
-+		EnvWebSearchProvider:            WebSearchJina,
-+		EnvWebSearchAPIKey:              "inherited",
-+	}))
-+	if effect.Available() || effect.KeyConfigured() {
-+		t.Fatal("managed host must suppress third-party search and inherited credentials")
++	if effect := cfg.effective(env); !effect.Available() || effect.Provider != WebSearchTavily || effect.key != "configured" {
++		t.Fatal("expected the configured search provider and key")
++	}
++	cfg.APIKey = "$INHERITED_KEY"
++	if cfg.effective(env).Available() {
++		t.Fatal("search key references must be rejected in the managed profile")
 +	}
 +}
+diff --git a/internal/tools/websearch.go b/internal/tools/websearch.go
+index 2a37142..8bb20dc 100644
+--- a/internal/tools/websearch.go
++++ b/internal/tools/websearch.go
+@@ -10,6 +10,7 @@ import (
+ 	"net"
+ 	"net/http"
+ 	"net/url"
++	"os"
+ 	"regexp"
+ 	"slices"
+ 	"strconv"
+@@ -44,7 +45,11 @@ var webSearchRecencies = []string{"day", "week", "month", "year"}
+ var webSearchHTTP = func() *http.Client {
+ 	// The proxied transport honours the app proxy, or HTTPS_PROXY/NO_PROXY when
+ 	// run standalone; loopback hosts (a local SearXNG) are never proxied.
+-	return &http.Client{Transport: netproxy.Transport(true), Timeout: webSearchTimeout}
++	client := &http.Client{Transport: netproxy.Transport(true), Timeout: webSearchTimeout}
++	if os.Getenv("ZEROAGENT_WEB_SEARCH_PROFILE_ONLY") == "1" {
++		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
++	}
++	return client
+ }
+ 
+ // WebSearchFallback returns a function that offers the web_search tool while

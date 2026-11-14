@@ -7,7 +7,7 @@
   "previous_tag": "v2.0.15",
   "previous_upstream_commit": "dab301d1e95f1d28858e9e2054deee35fddd9961",
   "prerelease": false,
-  "validation_status": "Windows native check and patched K-brain build, Gateway tests/vet, Linux race and Docker readiness, Proto compatibility, frontend production builds and focused suites; full frontend and cross-platform release acceptance pending",
+  "validation_status": "Windows native check and patched K-brain build, Gateway tests/vet, Linux race and Docker readiness, Proto compatibility, frontend production builds and focused suites; third-party search verified with the Windows K-brain binary and controlled fixtures; full frontend and cross-platform release acceptance pending",
   "channel": "stable",
   "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.21",
   "published_at": "2026-11-14T16:02:45Z"

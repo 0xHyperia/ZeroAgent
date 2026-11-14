@@ -541,6 +541,8 @@ export function normalizeChatRuntimeControlsForProvider(
     providerId?: ProviderId;
     requestFormat?: CodexRequestFormat;
     modelId?: string;
+    nativeWebSearchSupported?: boolean;
+    webSearchFallbackAvailable?: boolean;
   },
 ): ChatRuntimeControls {
   const controls = normalizeChatRuntimeControls(input);
@@ -555,11 +557,13 @@ export function normalizeChatRuntimeControlsForProvider(
     reasoning,
     nativeWebSearchEnabled:
       controls.nativeWebSearchEnabled &&
-      (!params.providerId ||
-        providerSupportsNativeWebSearch(
-          params.providerId,
-          resolveProviderApi(params.providerId, params.requestFormat),
-        )),
+      (params.webSearchFallbackAvailable ||
+        (params.nativeWebSearchSupported ??
+          (!params.providerId ||
+            providerSupportsNativeWebSearch(
+              params.providerId,
+              resolveProviderApi(params.providerId, params.requestFormat),
+            )))),
   };
 }
 
@@ -1343,6 +1347,9 @@ export function normalizeCustomProvider(input: unknown): CustomProvider {
       ? { promptCacheRetention: "long" as const }
       : {}),
     nativeWebSearchEnabled: obj.nativeWebSearchEnabled !== false,
+    ...(typeof obj.nativeWebSearchSupported === "boolean"
+      ? { nativeWebSearchSupported: obj.nativeWebSearchSupported }
+      : {}),
     useSystemProxy: obj.useSystemProxy === true,
     ...((): { retryPolicy?: ProviderRetryPolicy } => {
       const retryPolicy = normalizeProviderRetryPolicy(obj.retryPolicy);
@@ -2018,6 +2025,9 @@ export function normalizeSettings(input?: Partial<AppSettings> | null): AppSetti
   const locale = Object.hasOwn(obj, "locale") ? obj.locale : defaults.locale;
 
   return {
+    ...(typeof obj.kbrainWebSearch?.available === "boolean"
+      ? { kbrainWebSearch: obj.kbrainWebSearch }
+      : {}),
     ...(typeof obj.backendConfigurationVersion === "string"
       ? { backendConfigurationVersion: obj.backendConfigurationVersion }
       : {}),

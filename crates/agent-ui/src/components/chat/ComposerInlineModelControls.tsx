@@ -1,3 +1,4 @@
+import { resolveWebSearchToggle, webSearchServiceLabel } from "../../lib/providers/webSearchFallback";
 import {
   DEFAULT_CHAT_RUNTIME_CONTROLS,
   isAgentDevMode,
@@ -105,7 +106,11 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
     : ["off", ...props.reasoningOptions.filter((level) => level !== "off")];
   const canAdjust = props.hasModels && supported && choices.length > 1;
   const nativeSearchSupported = option?.nativeWebSearchSupported === true;
-  const nativeSearchOn = nativeSearchSupported && props.chatRuntimeControls.nativeWebSearchEnabled;
+  const search = resolveWebSearchToggle({
+    nativeSupported: nativeSearchSupported,
+    fallback: props.webSearchFallback,
+  });
+  const searchOn = search.usable && props.chatRuntimeControls.nativeWebSearchEnabled;
   const [preview, setPreview] = useState<ReasoningLevel | null>(null);
   const previewRef = useRef<{ level: ReasoningLevel; model?: string } | null>(null);
   const displayed =
@@ -417,13 +422,13 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
                       role="switch"
                       className="composer-model-web"
                       aria-label={t("chat.runtime.webSearch")}
-                      aria-checked={nativeSearchOn}
+                      aria-checked={searchOn}
                       title={
-                        !nativeSearchSupported
+                        !search.usable
                           ? zh
                             ? "当前模型不支持联网"
                             : "Web search is unavailable for this model"
-                          : nativeSearchOn
+                          : searchOn
                             ? zh
                               ? "联网已开启"
                               : "Web search on"
@@ -431,17 +436,31 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
                               ? "联网已关闭"
                               : "Web search off"
                       }
-                      disabled={props.disabled || !nativeSearchSupported}
+                      disabled={props.disabled || !search.usable}
                       onClick={() => {
-                        if (!props.disabled && nativeSearchSupported)
+                        if (!props.disabled && search.usable)
                           props.onChatRuntimeControlsChange({
-                            nativeWebSearchEnabled: !nativeSearchOn,
+                            nativeWebSearchEnabled: !searchOn,
                           });
                       }}
                     >
                       <span>{zh ? "联网" : "Web"}</span>
-                      <SwitchIndicator checked={nativeSearchOn} size="sm" />
+                      <SwitchIndicator checked={searchOn} size="sm" />
                     </TooltipButton>
+                    {search.via === "fallback" && (
+                      <span className="text-xs text-muted-foreground">
+                        {zh ? "经由 " : "Via "}{webSearchServiceLabel(search.fallbackProvider)}
+                      </span>
+                    )}
+                    {search.blocked === "configure" && (
+                      <button
+                        type="button"
+                        className="text-xs underline"
+                        onClick={() => props.onOpenSettings("webSearch")}
+                      >
+                        {t("settings.navWebSearch")}
+                      </button>
+                    )}
                   </>
                 ) : null}
               </div>

@@ -1,14 +1,19 @@
 import { MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
+import type { KBrainWebSearchUpdate } from "@liveagent/ui/lib/providers/webSearchFallback";
 import {
   configureResourceHostCapabilities,
   kbrainResourceHostCapabilities,
 } from "@liveagent/ui/lib/resourceHost";
-import type { GatewaySettingsSyncUpdatePayload } from "@liveagent/ui/lib/settings/sync";
+import type {
+  GatewaySettingsSyncPayload,
+  GatewaySettingsSyncUpdatePayload,
+} from "@liveagent/ui/lib/settings/sync";
 import type {
   KBrainMemoryConfig,
   KBrainMemoryOrganizerConfig,
   KBrainSettingsAdapter,
+  KBrainSettingsDocument,
   PermissionRule,
 } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
 import type { ReactNode } from "react";
@@ -79,46 +84,69 @@ configureResourceHostCapabilities({
   skillsAdapter: gatewaySkillsAdapter,
 });
 
+let searchClient: ReturnType<typeof getGatewayWebSocketClient> | undefined;
+let searchTarget: string | undefined;
+let searchScope: object | undefined;
+
+function toKBrainSettingsDocument(document: GatewaySettingsSyncPayload): KBrainSettingsDocument {
+  return {
+    ...(document.settingsSyncProtocol
+      ? {
+          settingsSyncProtocol: document.settingsSyncProtocol,
+          configurationRevision: document.configurationRevision,
+          uiPreferencesRevision: document.uiPreferencesRevision,
+        }
+      : {}),
+    mode: "kbrain",
+    defaultModel: "",
+    defaultProvider: "",
+    providers: [],
+    models: document.customProviders.flatMap((p) =>
+      p.models
+        .filter((m) => !p.activeModels || p.activeModels.includes(m.id))
+        .map((m) => ({ provider: p.id, id: m.id, name: m.displayName || m.id })),
+    ),
+    aiApproval: document.aiApproval,
+    computer: document.computer,
+    memory: document.kbrainMemory,
+    memoryOrganizer: document.kbrainMemoryOrganizer,
+    webSearch: document.settingsSyncProtocol ? document.kbrainWebSearch : undefined,
+  };
+}
+
 const computerSettingsAdapter: KBrainSettingsAdapter = {
   isKbrain: true,
   runtimeConnection: () => null,
   getConnection: () => null,
+  webSearchScope: () => {
+    const client = getGatewayWebSocketClient(loadToken().trim());
+    const target = client.getActiveAgent();
+    if (client !== searchClient || target !== searchTarget) {
+      searchClient = client;
+      searchTarget = target;
+      searchScope = {};
+    }
+    return searchScope;
+  },
   async getSettings() {
     const document = await getGatewayWebSocketClient(loadToken().trim()).getSettings();
-    return {
-      ...(document.settingsSyncProtocol
-        ? {
-            settingsSyncProtocol: document.settingsSyncProtocol,
-            configurationRevision: document.configurationRevision,
-            uiPreferencesRevision: document.uiPreferencesRevision,
-          }
-        : {}),
-      mode: "kbrain",
-      defaultModel: "",
-      defaultProvider: "",
-      providers: [],
-      models: document.customProviders.flatMap((p) =>
-        p.models
-          .filter((m) => !p.activeModels || p.activeModels.includes(m.id))
-          .map((m) => ({ provider: p.id, id: m.id, name: m.displayName || m.id })),
-      ),
-      aiApproval: document.aiApproval,
-      computer: document.computer,
-      memory: document.kbrainMemory,
-      memoryOrganizer: document.kbrainMemoryOrganizer,
-    };
+    return toKBrainSettingsDocument(document);
   },
   async updateSettings(update, baseline) {
     // Gateway carries the K-brain memory switch as `kbrainMemory` and the organizer
     // schedule as `kbrainMemoryOrganizer`: its `memory` key is ZeroAgent's own settings.
-    const { memory, memoryOrganizer, ...rest } = update as Omit<
+    const { memory, memoryOrganizer, webSearch, ...rest } = update as Omit<
       GatewaySettingsSyncUpdatePayload,
       "kbrainMemoryOrganizer"
     > & {
+      webSearch?: KBrainWebSearchUpdate;
       memory?: KBrainMemoryConfig;
       memoryOrganizer?: Partial<KBrainMemoryOrganizerConfig>;
     };
-    await getGatewayWebSocketClient(loadToken().trim()).updateSettings({
+    if (webSearch && (!baseline?.settingsSyncProtocol || !baseline.configurationRevision))
+      throw new Error("ZEROAGENT_CONFIGURATION_VERSION_REQUIRED");
+    const receipt = await getGatewayWebSocketClient(loadToken().trim()).updateSettings({
+      ...(webSearch ? { kbrainWebSearch: webSearch } : {}),
       ...rest,
       ...(memory ? { kbrainMemory: memory } : {}),
       ...(baseline?.settingsSyncProtocol
@@ -133,6 +161,7 @@ const computerSettingsAdapter: KBrainSettingsAdapter = {
         ? { kbrainMemoryOrganizer: memoryOrganizer as KBrainMemoryOrganizerConfig }
         : {}),
     });
+    if (webSearch && receipt?.snapshot) return toKBrainSettingsDocument(receipt.snapshot);
     return this.getSettings();
   },
 };

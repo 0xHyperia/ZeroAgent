@@ -1,4 +1,48 @@
 #[test]
+fn device_web_search_commits_only_against_the_loaded_revision_and_masks_keys() {
+    let root = tempfile::tempdir().unwrap();
+    let manager = start(&root.path().join("backend"));
+    let backend = snapshot_backend(&manager, &root.path().join("settings"));
+    let _guard = backend.configuration.blocking_lock();
+    let mut conn = native_db();
+    let before = backend.device_snapshot_locked(&mut conn).unwrap();
+    let update = json!({
+        "settingsSyncProtocol": DEVICE_SETTINGS_PROTOCOL,
+        "configurationRevision": before["configurationRevision"],
+        "kbrainWebSearch": {"provider":"brave","apiKey":"fixture-search-secret","maxResults":3},
+    });
+    let saved = backend.save_device_locked(&mut conn, update.clone()).unwrap();
+    let current = saved.snapshot.unwrap();
+    assert_eq!(current["kbrainWebSearch"]["available"], true);
+    assert_eq!(current["kbrainWebSearch"]["apiKeyConfigured"], true);
+    assert!(!current.to_string().contains("fixture-search-secret"));
+    let stale_error = backend.save_device_locked(&mut conn, update).err().unwrap();
+    assert!(stale_error.contains("CONFIGURATION_CHANGED"));
+    conn.execute_batch("CREATE TRIGGER fail_search_ui BEFORE INSERT ON native_ui_preferences BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
+    let rejected = json!({
+        "settingsSyncProtocol": DEVICE_SETTINGS_PROTOCOL,
+        "configurationRevision": current["configurationRevision"],
+        "uiPreferencesRevision": current["uiPreferencesRevision"],
+        "kbrainWebSearch": {"apiKey":"rejected-fixture-key"},
+        "theme": "dark",
+    });
+    assert!(backend.save_device_locked(&mut conn, rejected).is_err());
+    conn.execute_batch("DROP TRIGGER fail_search_ui").unwrap();
+    let private = backend.private_backend_json("config.json").unwrap().unwrap();
+    assert_eq!(private["webSearch"]["apiKey"], "fixture-search-secret");
+    let restored = backend.device_snapshot_locked(&mut conn).unwrap();
+    assert_eq!(restored["kbrainWebSearch"], current["kbrainWebSearch"]);
+    let clear = json!({
+        "settingsSyncProtocol": DEVICE_SETTINGS_PROTOCOL,
+        "configurationRevision": restored["configurationRevision"],
+        "kbrainWebSearch": {"clearApiKey":true},
+    });
+    let saved = backend.save_device_locked(&mut conn, clear).unwrap();
+    assert_eq!(saved.snapshot.unwrap()["kbrainWebSearch"]["apiKeyConfigured"], false);
+    manager.shutdown();
+}
+
+#[test]
 fn device_configuration_persists_complete_batch_before_returning_a_public_receipt() {
     let root = tempfile::tempdir().unwrap();
     let workdir = root.path().join("workspace");

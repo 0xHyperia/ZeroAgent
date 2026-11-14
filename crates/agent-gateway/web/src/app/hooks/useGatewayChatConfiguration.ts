@@ -105,6 +105,8 @@ export function useGatewayChatConfiguration({
           providerId: currentChatProvider?.type,
           requestFormat: currentChatProvider?.requestFormat,
           modelId: activeSelectedModel?.model,
+          nativeWebSearchSupported: currentChatProvider?.nativeWebSearchSupported,
+          webSearchFallbackAvailable: settings.kbrainWebSearch?.available,
         },
       ),
     [
@@ -112,6 +114,8 @@ export function useGatewayChatConfiguration({
       currentChatProvider?.requestFormat,
       currentChatProvider?.type,
       settings.chatRuntimeControls,
+      settings.kbrainWebSearch?.available,
+      currentChatProvider?.nativeWebSearchSupported,
       thinkingLiveVersion,
     ],
   );

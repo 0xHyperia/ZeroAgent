@@ -1,8 +1,4 @@
 import {
-  providerSupportsNativeWebSearch,
-  resolveProviderApi,
-} from "@liveagent/ui/lib/providers/providerCapabilities";
-import {
   type ChatRuntimeControls,
   type CustomProvider,
   findProviderModelConfig,
@@ -23,11 +19,14 @@ export function createProviderRuntimeConfig(
   provider: CustomProvider,
   model: string,
   controlsInput?: ChatRuntimeControls,
+  webSearchFallbackAvailable?: boolean,
 ): ProviderRuntimeConfig {
   const reasoningParams = {
     providerId: provider.type,
     requestFormat: provider.requestFormat,
     modelId: model,
+    nativeWebSearchSupported: provider.nativeWebSearchSupported,
+    webSearchFallbackAvailable,
   };
   const controls = normalizeChatRuntimeControlsForProvider(controlsInput, reasoningParams);
   const reasoningSupported = getChatRuntimeReasoningLevelsForProvider(reasoningParams).length > 0;
@@ -49,12 +48,7 @@ export function createProviderRuntimeConfig(
     promptCachingEnabled: provider.promptCachingEnabled,
     promptCacheHintMode: provider.promptCacheHintMode,
     promptCacheRetention: provider.promptCacheRetention,
-    nativeWebSearchEnabled:
-      controls.nativeWebSearchEnabled &&
-      providerSupportsNativeWebSearch(
-        provider.type,
-        resolveProviderApi(provider.type, provider.requestFormat),
-      ),
+    nativeWebSearchEnabled: controls.nativeWebSearchEnabled,
     useSystemProxy: provider.useSystemProxy,
     ...(provider.retryPolicy ? { retryPolicy: provider.retryPolicy } : {}),
     modelConfig: findProviderModelConfig(provider, model),

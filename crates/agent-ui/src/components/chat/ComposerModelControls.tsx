@@ -1,3 +1,4 @@
+import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
 import type {
   ChatRuntimeControls,
   ExecutionMode,
@@ -22,6 +23,7 @@ export type ComposerModelControlsProps = {
   modelOptions: SharedModelOption<ProviderId>[];
   selectedValue?: string;
   chatRuntimeControls: ChatRuntimeControls;
+  webSearchFallback?: WebSearchFallbackState;
   reasoningOptions: ReasoningLevel[];
   thinkingAlwaysOn: boolean;
   disabled?: boolean;
@@ -29,7 +31,7 @@ export type ComposerModelControlsProps = {
   onRefreshModels?: () => void | Promise<void>;
   onSelectModel: (selection: SelectedModel) => void;
   onSelectExecutionMode: (mode: "text" | "tools") => void;
-  onOpenSettings: (section?: "providers" | "model-preferences", providerId?: string) => void;
+  onOpenSettings: (section?: "providers" | "model-preferences" | "webSearch", providerId?: string) => void;
   onChatRuntimeControlsChange: (patch: Partial<ChatRuntimeControls>) => void;
   /** 受控开关（/model 指令从外部打开）；缺省时弹层自管开关。 */
   open?: boolean;

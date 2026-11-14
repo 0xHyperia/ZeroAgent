@@ -71,6 +71,9 @@ impl ProfileBackupBackend {
         if let Some(organizer) = crate::services::gateway::kbrain_memory::organizer_from_settings(&documents.settings) {
             snapshot["kbrainMemoryOrganizer"] = organizer;
         }
+        if let Some(search) = documents.settings.get("webSearch").filter(|value| value.is_object()) {
+            snapshot["kbrainWebSearch"] = search.clone();
+        }
         if let Some(projects) = documents.prompts["projectPrompts"].as_object() {
             let system = snapshot["system"].as_object_mut().ok_or("系统设置无效")?;
             let resources = system
@@ -227,6 +230,7 @@ impl ProfileBackupBackend {
                 "computer",
                 "kbrainMemory",
                 "kbrainMemoryOrganizer",
+                "kbrainWebSearch",
                 "remote",
                 "automationCron",
                 "automationHooks",
@@ -457,6 +461,12 @@ fn device_backend_settings(
         if let Some(organizer) = crate::services::gateway::kbrain_memory::take_organizer_update(&mut update)? {
             settings.insert("memoryOrganizer".into(), organizer);
         }
+    }
+    if let Some(search) = input.get("kbrainWebSearch") {
+        if !search.is_object() || !previous["webSearch"].is_object() {
+            return Err("当前设备无法更新联网搜索设置".into());
+        }
+        settings.insert("webSearch".into(), search.clone());
     }
     for field in ["aiApproval", "computer"] {
         if let Some(value) = input.get(field) {

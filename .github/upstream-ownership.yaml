@@ -633,6 +633,16 @@
       ]
     },
     {
+      "glob": "{crates/agent-ui/src/lib/providers/webSearchFallback.ts,crates/agent-ui/src/pages/settings/WebSearchSection.tsx,patches/kbrain/0021-managed-search-boundary.patch}",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "仅使用执行设备的账户设置，版本校验，密钥只写，切换服务时解除原密钥绑定",
+        "原生联网优先，后备搜索遵循本轮工具权限，CloudChat 路由独立",
+        "用实际 Windows K-brain 和受控搜索服务验证配置、授权和结果"
+      ]
+    },
+    {
       "glob": "crates/agent-ui/src/pages/settings/memory/MemorySwitch.tsx",
       "ownership": "adapted",
       "risk": "high",

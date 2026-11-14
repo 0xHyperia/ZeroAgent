@@ -9,6 +9,7 @@ import type { SettingsSaveState } from "../../lib/settings/storage";
 export type SetSettingsFn = (updater: (prev: AppSettings) => AppSettings) => void;
 
 export type SectionId =
+  | "webSearch"
   | "account"
   | "system"
   | "shortcuts"

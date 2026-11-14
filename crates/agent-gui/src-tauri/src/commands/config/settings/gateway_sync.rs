@@ -84,6 +84,18 @@ pub(crate) fn redact_gateway_settings_sync_payload(payload: Value) -> Result<Val
     snapshot.remove(SYSTEM_PROXY_PASSWORD_UPDATE_FIELD);
     snapshot.remove(STT_SECRET_SYNC_FIELD);
     snapshot.remove(STT_SECRET_UPDATE_FIELD);
+    if let Some(mut search) = snapshot.remove("kbrainWebSearch") {
+        if let Some(fields) = search.as_object_mut() {
+            fields.retain(|key, _| {
+                matches!(
+                    key.as_str(),
+                    "available" | "provider" | "baseUrl" | "apiKeyConfigured"
+                        | "apiKeySource" | "maxResults" | "providers" | "reason"
+                )
+            });
+            snapshot.insert("kbrainWebSearch".to_string(), search);
+        }
+    }
     if let Some(providers) = snapshot.remove("customProviders") {
         snapshot.insert(
             "customProviders".to_string(),

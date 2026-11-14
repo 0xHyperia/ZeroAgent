@@ -668,6 +668,7 @@ export type CustomProvider = {
   /** 仅 Anthropic：ephemeral 缓存保留档位；long 在官方 API 上映射为 1h TTL。 */
   promptCacheRetention?: "short" | "long";
   nativeWebSearchEnabled: boolean;
+  nativeWebSearchSupported?: boolean;
   useSystemProxy: boolean;
   /** 流内重试策略；缺省 = 全局默认行为（等价于 mode:"default"）。 */
   retryPolicy?: ProviderRetryPolicy;
@@ -768,6 +769,8 @@ export type SttSettings = {
 };
 
 export type AppSettings = {
+  /** Read-only capability of the selected execution device. */
+  kbrainWebSearch?: import("../providers/webSearchFallback").WebSearchFallbackState;
   settingsSyncProtocol?: "zeroagent.settings-sync.v1";
   /** Read version of the independently persisted Native presentation preferences. */
   uiPreferencesRevision?: string;

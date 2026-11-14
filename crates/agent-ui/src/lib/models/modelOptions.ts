@@ -33,6 +33,7 @@ export type ModelOptionsSettings<TProviderType extends string = string> = {
     name: string;
     type: TProviderType;
     requestFormat?: string;
+    nativeWebSearchSupported?: boolean;
     activeModels: readonly string[];
     models?: readonly {
       id: string;
@@ -132,7 +133,7 @@ export function buildModelOptions<TProviderType extends string>(
         modelTypes,
         value: toModelValue(provider.id, model),
         label: configured?.displayName?.trim() || model,
-        nativeWebSearchSupported: providerSupportsNativeWebSearch(
+        nativeWebSearchSupported: provider.nativeWebSearchSupported ?? providerSupportsNativeWebSearch(
           provider.type,
           resolveProviderApi(provider.type, provider.requestFormat),
         ),

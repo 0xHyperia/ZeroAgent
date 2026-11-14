@@ -3140,6 +3140,7 @@ function ChatPageContent(props: ChatPageProps) {
         onRefreshModels: handleRefreshModels,
         selectedValue,
         chatRuntimeControls: chatRuntimeControlsForCurrentProvider,
+        webSearchFallback: settings.kbrainWebSearch,
         commandSafetyMode: settings.system.commandSafetyMode,
         onCommandSafetyModeChange: (mode) =>
           setSettings((prev) =>
@@ -4264,6 +4265,8 @@ function ChatPageContent(props: ChatPageProps) {
       applyConversationThinking(settings.chatRuntimeControls, paneSelectedModel),
       {
         providerId: paneProvider?.type,
+        nativeWebSearchSupported: paneProvider?.nativeWebSearchSupported,
+        webSearchFallbackAvailable: settings.kbrainWebSearch?.available,
         requestFormat: paneProvider?.requestFormat,
         modelId: paneSelectedModel?.model,
       },
@@ -4432,6 +4435,7 @@ function ChatPageContent(props: ChatPageProps) {
         onRefreshModels: handleRefreshModels,
         selectedValue: paneSelectedValue,
         chatRuntimeControls: paneRuntimeControls,
+        webSearchFallback: settings.kbrainWebSearch,
         commandSafetyMode: settings.system.commandSafetyMode,
         onCommandSafetyModeChange: (mode) =>
           setSettings((prev) =>

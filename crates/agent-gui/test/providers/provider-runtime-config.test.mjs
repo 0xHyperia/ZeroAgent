@@ -101,3 +101,18 @@ for (const [type, requestFormat, supported] of [
     }
   });
 }
+
+test("configured device search enables non-native providers only when the turn requests it", () => {
+  const provider = createProvider({ nativeWebSearchSupported: false });
+  for (const available of [true, false]) {
+    for (const enabled of [true, false]) {
+      const runtime = createProviderRuntimeConfig(
+        provider,
+        "model",
+        { ...settings.DEFAULT_CHAT_RUNTIME_CONTROLS, nativeWebSearchEnabled: enabled },
+        available,
+      );
+      assert.equal(runtime.nativeWebSearchEnabled, available && enabled);
+    }
+  }
+});

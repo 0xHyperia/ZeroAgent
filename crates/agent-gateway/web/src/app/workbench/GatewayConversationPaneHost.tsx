@@ -686,12 +686,16 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         applyConversationThinking(context.settings.chatRuntimeControls, selection),
         {
           providerId: selectedProvider?.type,
+          nativeWebSearchSupported: selectedProvider?.nativeWebSearchSupported,
+          webSearchFallbackAvailable: context.settings.kbrainWebSearch?.available,
           requestFormat: selectedProvider?.requestFormat,
           modelId: selection?.model,
         },
       ),
     [
       context.settings.chatRuntimeControls,
+      context.settings.kbrainWebSearch?.available,
+      selectedProvider?.nativeWebSearchSupported,
       selectedProvider?.requestFormat,
       selectedProvider?.type,
       selection?.model,
@@ -1397,6 +1401,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             modelOptions={context.modelOptions}
             selectedValue={selectedValue}
             chatRuntimeControls={paneRuntimeControls}
+            webSearchFallback={context.settings.kbrainWebSearch}
             commandSafetyMode={context.commandSafetyMode}
             onCommandSafetyModeChange={context.onCommandSafetyModeChange}
             reasoningOptions={paneReasoningOptions}

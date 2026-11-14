@@ -264,6 +264,8 @@ export function useGatewaySettingsSync(params: {
     const next = redactSettingsForWebStorage(rawNext);
     if (
       !hasSettingsSyncChanged(prev, next) &&
+      prev.kbrainWebSearch?.available === next.kbrainWebSearch?.available &&
+      prev.kbrainWebSearch?.provider === next.kbrainWebSearch?.provider &&
       prev.configurationRevision === next.configurationRevision &&
       prev.uiPreferencesRevision === next.uiPreferencesRevision &&
       prev.settingsSyncProtocol === next.settingsSyncProtocol
@@ -302,6 +304,11 @@ export function useGatewaySettingsSync(params: {
   // biome-ignore lint/correctness/useExhaustiveDependencies: switching the active agent intentionally starts a fresh settings synchronization
   useEffect(() => {
     backendPromptResourcesRef.current = false;
+    if (settingsRef.current.kbrainWebSearch) {
+      const next = { ...settingsRef.current, kbrainWebSearch: undefined };
+      settingsRef.current = next;
+      setSettingsState(next);
+    }
     if (!api) {
       setSettingsSyncReady(token.trim() === "");
       setSettledSettingsTarget(null);

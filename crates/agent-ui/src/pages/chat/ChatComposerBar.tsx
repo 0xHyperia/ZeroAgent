@@ -1,3 +1,4 @@
+import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
 import {
   type ChatRuntimeControls,
   type CommandSafetyMode,
@@ -360,9 +361,10 @@ export type ChatComposerBarProps = {
   onRefreshModels?: () => void | Promise<void>;
   onSelectExecutionMode: (mode: "text" | "tools") => void;
   onOpenSettings: (
-    section?: "providers" | "stt" | "model-preferences",
+    section?: "providers" | "stt" | "model-preferences" | "webSearch",
     providerId?: string,
   ) => void;
+  webSearchFallback?: WebSearchFallbackState;
   onChatRuntimeControlsChange: (patch: Partial<ChatRuntimeControls>) => void;
   onPickReadableFiles: () => void;
   /** Select a folder to mount as a read-only project root. */
@@ -1369,6 +1371,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       modelsRefreshing={modelsRefreshing}
       onRefreshModels={onRefreshModels}
       chatRuntimeControls={chatRuntimeControls}
+      webSearchFallback={props.webSearchFallback}
       reasoningOptions={reasoningOptions}
       thinkingAlwaysOn={thinkingAlwaysOn}
       disabled={controlsDisabled}

@@ -14,6 +14,11 @@ const pb = loader.loadModule("@bufbuild/protobuf");
 const v2 = loader.loadModule("src/lib/proto/gen/proto/v2/gateway_ws_pb.ts");
 const { buildGatewaySystemSettings } = loader.loadModule("src/app/chatEventUtils.ts");
 const { getDefaultSettings } = loader.loadModule("src/lib/settings/index.ts");
+const {
+  applyGatewaySettingsSyncPayload,
+  buildGatewaySettingsSyncPayload,
+  redactSettingsForWebStorage,
+} = loader.loadModule("@liveagent/ui/lib/settings/sync");
 
 function chatRequest(systemSettings) {
   const command = socketShared.buildChatCommandPayload({
@@ -119,4 +124,54 @@ test("a desktop or backend without the schedule shows none in the WebUI", async 
     updateSettings: async () => {},
   });
   assert.equal((await kbrain.getSettings()).memoryOrganizer, undefined);
+});
+
+test("web search writes are versioned, and the public receipt updates the composer", async () => {
+  const protocol = "zeroagent.settings-sync.v1";
+  const before = {
+    settingsSyncProtocol: protocol,
+    configurationRevision: "before",
+    uiPreferencesRevision: "ui",
+    customProviders: [],
+    kbrainWebSearch: { provider: "brave", available: false, apiKeyConfigured: false },
+  };
+  const committed = {
+    ...before,
+    configurationRevision: "after",
+    kbrainWebSearch: { ...before.kbrainWebSearch, available: true, apiKeyConfigured: true },
+  };
+  const updates = [];
+  let reads = 0;
+  const kbrain = loadSettingsAdapter({
+    getSettings: async () => {
+      reads += 1;
+      return before;
+    },
+    updateSettings: async (update) => {
+      updates.push(update);
+      return { protocol, snapshot: committed };
+    },
+  });
+
+  const update = { webSearch: { apiKey: "write-only-key" } };
+  await assert.rejects(kbrain.updateSettings(update), /VERSION_REQUIRED/);
+  const baseline = await kbrain.getSettings();
+  const next = await kbrain.updateSettings(update, baseline);
+  assert.equal(reads, 1, "the committed receipt is authoritative");
+  assert.deepEqual(updates, [{
+    kbrainWebSearch: { apiKey: "write-only-key" },
+    settingsSyncProtocol: protocol,
+    configurationRevision: "before",
+    uiPreferencesRevision: "ui",
+  }]);
+  assert.deepEqual(next.webSearch, committed.kbrainWebSearch);
+  const hydrated = redactSettingsForWebStorage(
+    applyGatewaySettingsSyncPayload(getDefaultSettings(), committed),
+  );
+  assert.deepEqual(hydrated.kbrainWebSearch, { provider: "brave", available: true });
+  assert.equal(buildGatewaySettingsSyncPayload(hydrated).kbrainWebSearch, undefined);
+  assert.equal(
+    applyGatewaySettingsSyncPayload(hydrated, { customProviders: [] }).kbrainWebSearch,
+    undefined,
+  );
 });

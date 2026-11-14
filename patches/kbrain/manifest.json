@@ -88,7 +88,7 @@
     },
     {
       "file": "0021-managed-search-boundary.patch",
-      "sha256": "bdea471f363c88106e22c18701496b4582f29c11fbdec57f05defa65fd24f9ef"
+      "sha256": "689a324b8e7383562ac527fdc20d0aa1c022bba1821c9e1cb455c1a9becc5777"
     }
   ],
   "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, device manual run receipts, native conversation images, and account-scoped desktop host tools; plain Chat excludes plan tools"

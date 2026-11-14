@@ -1,4 +1,58 @@
 export const EN_US_SETTINGS_TRANSLATIONS = {
+  "settings.navWebSearch": "Web Search",
+  "settings.webSearch.title": "Web search",
+  "settings.webSearch.description":
+    "When web search is on, models without native search use the service configured here.",
+  "settings.webSearch.upgrade":
+    "Update ZeroAgent on the execution device to configure third-party web search.",
+  "settings.webSearch.provider": "Search service",
+  "settings.webSearch.providerHint":
+    "Used when web search is on and the model's API cannot search natively.",
+  "settings.webSearch.providerNone": "None",
+  "settings.webSearch.service.bocha": "Bocha",
+  "settings.webSearch.apiKey": "API key",
+  "settings.webSearch.apiKeyHint":
+    "The key is stored in the current account on the execution device. Leave it blank to keep the saved key when the service and URL are unchanged.",
+  "settings.webSearch.apiKeyPlaceholder": "Enter API key",
+  "settings.webSearch.apiKeyConfiguredConfig": "Configured (from config)",
+  "settings.webSearch.apiKeyConfiguredEnv": "Configured (from environment variable)",
+  "settings.webSearch.apiKeyEnvNote":
+    "A key in the environment takes precedence over the key saved here.",
+  "settings.webSearch.apiKeyClear": "Clear",
+  "settings.webSearch.apiKeyWillClear": "The saved key will be removed when you save",
+  "settings.webSearch.apiKeyUndoClear": "Undo",
+  "settings.webSearch.baseUrl": "Base URL",
+  "settings.webSearch.baseUrlHint": "Optional; leave empty for the service's official endpoint.",
+  "settings.webSearch.baseUrlHintSearxng":
+    "Required: your SearXNG instance. Enable json under search.formats in its settings.yml.",
+  "settings.webSearch.baseUrlInvalid":
+    "Enter an HTTP or HTTPS URL without credentials, a query, or a fragment.",
+  "settings.webSearch.baseUrlRequired": "SearXNG needs a base URL.",
+  "settings.webSearch.maxResults": "Results per search",
+  "settings.webSearch.maxResultsHint": "How many results each search returns (1–10, default 5).",
+  "settings.webSearch.maxResultsInvalid": "Results per search must be a whole number from 1 to 10.",
+  "settings.webSearch.statusAvailable":
+    "Available: with web search on, models without native search search through {provider}.",
+  "settings.webSearch.statusAvailableEnv":
+    "Available: the search service is set by environment variables.",
+  "settings.webSearch.statusNoProvider": "Off: choose a search service.",
+  "settings.webSearch.statusBaseUrlRequired": "Off: SearXNG needs a base URL.",
+  "settings.webSearch.statusApiKeyRequired": "Off: enter an API key for {provider}.",
+  "settings.webSearch.statusOther": "Unavailable: {reason}",
+  "settings.webSearch.help": "Get an API key:",
+  "settings.webSearch.helpSearxng": "SearXNG (self-hosted, no key)",
+  "settings.webSearch.privacy":
+    "When searching, K-brain sends the model's search queries to the selected service.",
+  "settings.webSearch.webNotice": "Settings are saved to the K-brain of the connected desktop.",
+  "settings.webSearch.save": "Save",
+  "settings.webSearch.reload": "Reload",
+  "settings.webSearch.loading": "Loading…",
+  "settings.webSearch.saving": "Saving…",
+  "settings.webSearch.saved": "Saved",
+  "settings.webSearch.unsaved": "Unsaved changes",
+  "settings.webSearch.discard": "Discard unsaved changes and reload?",
+  "settings.webSearch.conflict": "The device settings changed. Reload them before saving.",
+  "settings.webSearch.connectionChanged": "The K-brain connection changed. Reload before saving.",
   "settings.navImageCreation": "Image creation",
   "settings.navAccount": "Account",
   "settings.aiApproval.title": "AI approval",

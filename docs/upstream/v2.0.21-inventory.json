@@ -6,12 +6,11 @@
   "merge_base": "dab301d1e95f1d28858e9e2054deee35fddd9961",
   "text_conflicts": 29,
   "counts": {
-    "adapt": 8,
+    "adapt": 30,
     "adopt": 47,
-    "defer": 38,
     "partial": 8,
-    "reject": 17,
-    "replace": 35
+    "reject": 18,
+    "replace": 50
   },
   "entries": [
     {
@@ -31,9 +30,9 @@
     {
       "path": ".github/workflows/ci.yml",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "reject",
       "text_conflict": true,
-      "notes": "保留 ZeroAgent 产品契约、部署检查和发布 CI。上游长期分支缓存设置需按本仓库分支和缓存测量重新核对。"
+      "notes": "上游在 Windows 测试过滤器加入旧数据目录迁移测试。ZeroAgent 沿用显式会话导入。"
     },
     {
       "path": "Cargo.lock",
@@ -66,30 +65,30 @@
     {
       "path": "crates/agent-gateway/internal/kbrain/settings.go",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gateway/internal/kbrain/web_search_settings_test.go",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gateway/web/src/agent-ui-adapters/webSearchFallback.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
@@ -101,37 +100,37 @@
     {
       "path": "crates/agent-gateway/web/src/app/gatewayChatCommandActions.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/hooks/useGatewayChatConfiguration.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/types.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/workbench/GatewayConversationPaneHost.tsx",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gateway/web/src/components/GatewayTranscript.tsx",
@@ -143,9 +142,9 @@
     {
       "path": "crates/agent-gateway/web/src/lib/chat/clarifyPromptTurn.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gateway/web/src/lib/chat/transcript/historyAlignment.ts",
@@ -164,9 +163,9 @@
     {
       "path": "crates/agent-gateway/web/src/pages/settings/types.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gateway/web/test/background-notice-snapshot.test.mjs",
@@ -178,9 +177,9 @@
     {
       "path": "crates/agent-gateway/web/test/web-search-fallback-settings.test.mjs",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/index.html",
@@ -332,30 +331,30 @@
     {
       "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_web_search.rs",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/src-tauri/src/services/gateway/mod.rs",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/src-tauri/src/services/gateway/settings_sync.rs",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
@@ -374,16 +373,16 @@
     {
       "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/src/agent-ui-adapters/webSearchFallback.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/src/components/app/AppBootShell.tsx",
@@ -451,9 +450,9 @@
     {
       "path": "crates/agent-gui/src/lib/kbrain/providerSettings.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/src/lib/kbrain/sidebarSync.ts",
@@ -486,9 +485,9 @@
     {
       "path": "crates/agent-gui/src/lib/providers/runtime/providerRuntimeConfig.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gui/src/lib/startup/render.ts",
@@ -549,16 +548,16 @@
     {
       "path": "crates/agent-gui/src/pages/chat/runtime/useChatModelSelection.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/runtime/useSendChatTurn.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/rowModel.ts",
@@ -577,9 +576,9 @@
     {
       "path": "crates/agent-gui/src/pages/settings/types.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-gui/test/chat/activity-disclosure-state.test.mjs",
@@ -724,9 +723,9 @@
     {
       "path": "crates/agent-gui/test/providers/web-search-fallback.test.mjs",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-gui/test/startup/startup-hang-escapes.test.mjs",
@@ -780,9 +779,9 @@
     {
       "path": "crates/agent-ui/src/components/chat/ComposerModelControls.tsx",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/assistant-bubble/assistantBubbleUtils.ts",
@@ -885,9 +884,9 @@
     {
       "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/i18n/translations/zhCNCommon.ts",
@@ -899,9 +898,9 @@
     {
       "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/lib/browser/browserCookieImport.ts",
@@ -927,9 +926,9 @@
     {
       "path": "crates/agent-ui/src/lib/chat/commandPaletteActions.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/uiMessages.ts",
@@ -948,9 +947,9 @@
     {
       "path": "crates/agent-ui/src/lib/models/modelOptions.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/lib/projectTools/releaseProjectToolFromDock.ts",
@@ -962,23 +961,23 @@
     {
       "path": "crates/agent-ui/src/lib/providers/useWebSearchFallbackState.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "replace",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续通过现有设备配置和共享搜索状态接入，未引入此上游实现。"
     },
     {
       "path": "crates/agent-ui/src/lib/providers/webSearchFallback.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/lib/settings/index.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/lib/settings/rightDockNormalization.ts",
@@ -990,9 +989,9 @@
     {
       "path": "crates/agent-ui/src/lib/settings/sync.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/lib/settings/types.ts",
@@ -1053,30 +1052,30 @@
     {
       "path": "crates/agent-ui/src/pages/chat/ChatComposerBar.tsx",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": true,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/pages/settings/WebSearchSection.tsx",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
-      "notes": "第三方搜索服务设置和请求路由待具备账户级凭据存储、权限、并发写入和撤销验证。"
+      "notes": "后续接入联网搜索，复用 ZeroAgent 有版本的设备配置、共享设置和对话执行入口。"
     },
     {
       "path": "scripts/release/kbrain.lock.json",

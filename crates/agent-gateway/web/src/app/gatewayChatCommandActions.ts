@@ -101,6 +101,7 @@ export function resolveConversationRuntimeControls(input: {
   activeProviders: ModelProviderSource[];
   selectedModel: SelectedModel | undefined;
   runtimeControls: AppSettings["chatRuntimeControls"];
+  webSearchFallbackAvailable?: boolean;
 }) {
   const provider = input.activeProviders.find(
     (entry) => entry.id === input.selectedModel?.customProviderId,
@@ -109,6 +110,8 @@ export function resolveConversationRuntimeControls(input: {
     applyConversationThinking(input.runtimeControls, input.selectedModel),
     {
       providerId: provider?.type,
+      nativeWebSearchSupported: provider?.nativeWebSearchSupported,
+      webSearchFallbackAvailable: input.webSearchFallbackAvailable,
       requestFormat: provider?.requestFormat,
       modelId: input.selectedModel?.model,
     },
@@ -234,6 +237,7 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
     const runtimeControls = resolveConversationRuntimeControls({
       activeProviders,
       selectedModel: turnSelectedModel,
+      webSearchFallbackAvailable: settings.kbrainWebSearch?.available,
       runtimeControls: sendOptions?.runtimeControls ?? settings.chatRuntimeControls,
     });
     const submit = async () => {

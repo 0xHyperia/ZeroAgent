@@ -39,6 +39,7 @@ export function loadWebSettings(token: string): AppSettings {
       normalizeSettings({
         ...fallback,
         ...(parsed ?? {}),
+        kbrainWebSearch: undefined,
         remote: {
           ...fallback.remote,
           ...(parsed?.remote ?? {}),
@@ -56,7 +57,7 @@ export function loadWebSettings(token: string): AppSettings {
 }
 
 export function persistWebSettings(settings: AppSettings): void {
-  const redacted = redactSettingsForWebStorage(settings);
+  const redacted = redactSettingsForWebStorage({ ...settings, kbrainWebSearch: undefined });
   window.localStorage.setItem(
     desktopStorageKey(WEB_SETTINGS_STORAGE_KEY),
     JSON.stringify({
