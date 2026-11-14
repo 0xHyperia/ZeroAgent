@@ -46,12 +46,12 @@ import {
   useConversationPaneRegistration,
 } from "./ConversationPaneHostEnvironment";
 import { ConversationSurface } from "./ConversationSurface";
-import { useDesktopConversationImages } from "./useDesktopConversationImages";
 import {
   beginPaneComposerDraftSession,
   restoreClearedPaneComposerDraft,
 } from "./paneComposerDraftSession";
 import { createPaneComposerSendHandler } from "./paneComposerSend";
+import { useDesktopConversationImages } from "./useDesktopConversationImages";
 
 export type ConversationPaneHostProps = {
   paneId: string;

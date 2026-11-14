@@ -553,6 +553,7 @@ mod tests {
                     CONVERSATION_REFERENCES_V1_CAPABILITY,
                     "planning_v1",
                     COMPOSER_COMMANDS_V1_CAPABILITY,
+                    CONVERSATION_IMAGE_EDITS_V1_CAPABILITY,
                     PROXY_DETECT_V1_CAPABILITY,
                     "WORKSPACE_HANDOFF_PATH_V1",
                 ]

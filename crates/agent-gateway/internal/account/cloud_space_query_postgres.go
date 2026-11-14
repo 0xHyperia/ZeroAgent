@@ -128,7 +128,7 @@ func querySpaceItems(ctx context.Context, tx *sql.Tx, userID int64, q CloudSpace
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudSpaceItem{}
 	for rows.Next() {
 		item, err := scanSpaceItem(rows)
@@ -164,7 +164,7 @@ func (s *PersistentStore) QueryCloudSpace(ctx context.Context, userID int64, que
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var generation int64
 	if err = tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT generation FROM zeroagent_cloud_space_revisions WHERE user_id=$1),0)`, userID).Scan(&generation); err != nil {
 		return nil, err
@@ -198,13 +198,13 @@ func (s *PersistentStore) QueryCloudSpace(ctx context.Context, userID int64, que
 	for rows.Next() {
 		item, e := scanSpaceItem(rows)
 		if e != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, e
 		}
 		p.Folders = append(p.Folders, item)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}

@@ -54,7 +54,7 @@ func execute(args []string) error {
 			return err
 		}
 	}
-	fmt.Fprintln(os.Stdout, "cloud_space_storage_ready")
+	_, _ = fmt.Fprintln(os.Stdout, "cloud_space_storage_ready")
 	return nil
 }
 

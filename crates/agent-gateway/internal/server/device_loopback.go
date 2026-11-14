@@ -74,7 +74,7 @@ func privateDeviceLoopback(w http.ResponseWriter, r *http.Request, sm *session.M
 	if err != nil {
 		return
 	}
-	defer ws.Close()
+	defer func() { _ = ws.Close() }()
 	ws.SetReadLimit(privateLoopbackChunk)
 	data := make(chan []byte, 8)
 	go func() {

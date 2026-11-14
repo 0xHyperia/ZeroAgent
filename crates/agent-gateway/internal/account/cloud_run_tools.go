@@ -650,7 +650,8 @@ func (e *cloudRunToolExecution) normalizeResult(invocation cloudToolInvocation, 
 		clean["error"] = "The isolated tool did not complete successfully. Earlier effects may remain."
 		return cloudJSON(clean), nil
 	}
-	if invocation.action == "file.read" {
+	switch invocation.action {
+	case "file.read":
 		encoded, ok := result["data_base64"].(string)
 		if !ok {
 			return nil, &cloudToolRunError{code: "cloud_tool_invalid_result"}
@@ -671,10 +672,10 @@ func (e *cloudRunToolExecution) normalizeResult(invocation cloudToolInvocation, 
 			clean["binary"] = true
 			clean["message"] = "Binary file retained only in the temporary VM; use code to inspect it or publish_artifact for a durable copy."
 		}
-	} else if invocation.action == "file.write" {
+	case "file.write":
 		clean["path"] = invocation.input["path"]
 		clean["bytes"] = result["bytes"]
-	} else {
+	default:
 		for _, key := range []string{"stdout", "stderr", "exit_code", "error", "logs", "results", "output_bytes"} {
 			if value, ok := result[key]; ok {
 				clean[key] = value

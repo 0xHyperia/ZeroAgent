@@ -192,10 +192,10 @@ test("site workspace isolates messages, retains nested entry paths and submits o
  await send({event:"ready"},"https://attacker.invalid");assert.equal([...document.querySelectorAll("button")].find(e=>e.textContent.includes("请求修改")).disabled,true);
  await send({event:"ready"});await app.click("请求修改");
  const selection={event:"selection",id:"site:abc:1234567890",quote:"原始标题",selector:"h1:nth-of-type(1)",x:12,y:80,width:300,height:50,visible:true};
- await send({...selection,channel:"wrong"});assert.equal(document.querySelector('input[aria-label="修改建议"]'),null);
- await send(selection,new URL(grant.url).origin,window);assert.equal(document.querySelector('input[aria-label="修改建议"]'),null);
- await send(selection);const input=document.querySelector('input[aria-label="修改建议"]');assert.ok(input);
- await app.env.act(async()=>{const setter=Object.getOwnPropertyDescriptor(app.env.dom.window.HTMLInputElement.prototype,"value").set;setter.call(input,"将标题改为验收结果");input.dispatchEvent(new Event("input",{bubbles:true}));});
+ await send({...selection,channel:"wrong"});assert.equal(document.querySelector('textarea[aria-label="修改建议"]'),null);
+ await send(selection,new URL(grant.url).origin,window);assert.equal(document.querySelector('textarea[aria-label="修改建议"]'),null);
+ await send(selection);const input=document.querySelector('textarea[aria-label="修改建议"]');assert.ok(input);
+ await app.env.act(async()=>{const setter=Object.getOwnPropertyDescriptor(app.env.dom.window.HTMLTextAreaElement.prototype,"value").set;setter.call(input,"将标题改为验收结果");input.dispatchEvent(new Event("input",{bubbles:true}));});
  await app.click("添加批注");assert.equal(submitted.length,0);await app.click("发送");
  assert.equal(submitted.length,1);assert.match(submitted[0].quote,/页面：pages\/index.html/);assert.match(submitted[0].comment,/验收结果/);assert.ok(!JSON.stringify(submitted).includes("/v/"));assert.equal(app.calls.share.length,0);
 });

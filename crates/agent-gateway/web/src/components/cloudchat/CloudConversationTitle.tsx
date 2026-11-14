@@ -1,7 +1,12 @@
 import { SquarePen } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
-  Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@liveagent/ui/components/ui/dialog";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -58,7 +63,8 @@ export function CloudConversationTitle({
   }, [editing]);
   const finishEditing = () => {
     const input = inputRef.current;
-    restoreTriggerFocus.current = !compact && Boolean(input && input.ownerDocument.activeElement === input);
+    restoreTriggerFocus.current =
+      !compact && Boolean(input && input.ownerDocument.activeElement === input);
     setEditing(false);
   };
   const cancel = () => {
@@ -130,7 +136,11 @@ export function CloudConversationTitle({
         </span>
       ) : null}
       {error ? (
-        <p id="cloud-title-error" role="alert" className={compact ? "mt-2 text-sm text-destructive" : "cloud-title-error"}>
+        <p
+          id="cloud-title-error"
+          role="alert"
+          className={compact ? "mt-2 text-sm text-destructive" : "cloud-title-error"}
+        >
           {error}
         </p>
       ) : null}
@@ -138,17 +148,39 @@ export function CloudConversationTitle({
   ) : null;
   if (compact) {
     return (
-      <Dialog open={editing} onOpenChange={(open) => { if (!open && !pending.current) cancel(); }}>
+      <Dialog
+        open={editing}
+        onOpenChange={(open) => {
+          if (!open && !pending.current) cancel();
+        }}
+      >
         <DialogContent
           className="cloud-conversation-rename-dialog"
           initialFocus={inputRef}
           finalFocus={onReturnFocus}
         >
-          <DialogHeader><DialogTitle>重命名对话</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>重命名对话</DialogTitle>
+          </DialogHeader>
           <DialogBody>{editor}</DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" className="min-h-11" disabled={saving} onClick={cancel}>取消</Button>
-            <Button type="button" className="min-h-11" disabled={saving || !draft.trim()} onClick={() => void commit()}>保存</Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              disabled={saving}
+              onClick={cancel}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              className="min-h-11"
+              disabled={saving || !draft.trim()}
+              onClick={() => void commit()}
+            >
+              保存
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

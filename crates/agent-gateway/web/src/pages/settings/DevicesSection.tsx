@@ -101,15 +101,18 @@ export function DevicesSection({
 
   async function revoke(device: ExecutionEnvironment, trigger: HTMLElement) {
     if (!device.device_id || busyId) return;
-    if (!(await confirm({
-      title: "撤销设备授权？",
-      description: `“${device.name}”会立即断开。`,
-      confirmLabel: "撤销授权",
-      cancelLabel: "取消",
-      preferCancel: true,
-      touchActions: true,
-      returnFocusOnCancel: () => trigger,
-    }))) return;
+    if (
+      !(await confirm({
+        title: "撤销设备授权？",
+        description: `“${device.name}”会立即断开。`,
+        confirmLabel: "撤销授权",
+        cancelLabel: "取消",
+        preferCancel: true,
+        touchActions: true,
+        returnFocusOnCancel: () => trigger,
+      }))
+    )
+      return;
     setBusyId(device.device_id);
     setError("");
     try {
@@ -144,7 +147,11 @@ export function DevicesSection({
         </Button>
       </div>
 
-      {error ? <p role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">
+          {error}
+        </p>
+      ) : null}
       {!loading && !error && devices.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           尚未注册设备。登录 ZeroAgent 桌面客户端后，设备会自动出现在这里。
@@ -185,7 +192,12 @@ export function DevicesSection({
                         aria-label="设备名称"
                         className="h-8 min-w-0 pointer-coarse:h-11 pointer-coarse:basis-full pointer-coarse:text-base"
                       />
-                      <Button type="submit" size="sm" className="pointer-coarse:min-h-11" disabled={!draftName.trim() || Boolean(busyId)}>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        className="pointer-coarse:min-h-11"
+                        disabled={!draftName.trim() || Boolean(busyId)}
+                      >
                         保存
                       </Button>
                       <Button
@@ -200,7 +212,10 @@ export function DevicesSection({
                       </Button>
                     </form>
                   ) : (
-                    <span className="truncate text-sm font-medium pointer-coarse:whitespace-normal pointer-coarse:[overflow-wrap:anywhere]" title={device.name}>
+                    <span
+                      className="truncate text-sm font-medium pointer-coarse:whitespace-normal pointer-coarse:[overflow-wrap:anywhere]"
+                      title={device.name}
+                    >
                       {device.name}
                     </span>
                   )}

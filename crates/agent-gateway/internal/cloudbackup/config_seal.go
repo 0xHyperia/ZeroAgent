@@ -101,7 +101,7 @@ func (e *Engine) sealConfiguration(root string, manifest *Manifest) (File, error
 	}
 	_, err = file.Write(sealed)
 	syncErr := file.Sync()
-	file.Close()
+	_ = file.Close()
 	if err != nil {
 		return File{}, err
 	}
@@ -124,7 +124,7 @@ func (e *Engine) unsealConfiguration(root string, manifest *Manifest) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	sealed, err := io.ReadAll(io.LimitReader(file, (1<<20)+29))
 	if err != nil {
 		return nil, ErrIntegrity

@@ -82,7 +82,7 @@ func startJournalGuard(ctx context.Context, cfg Config, target string) (*journal
 	}
 	var summary Journal
 	if err = json.NewDecoder(io.LimitReader(output, 1<<20)).Decode(&summary); err != nil {
-		input.Close()
+		_ = input.Close()
 		_ = process.Wait()
 		return nil, ErrIntegrity
 	}

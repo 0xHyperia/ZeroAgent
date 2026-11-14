@@ -45,7 +45,7 @@ func ConfigureCloudSpaceLimits(ctx context.Context, db *sql.DB, userID int64, p 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func ReadCloudSpaceLimits(ctx context.Context, db *sql.DB, userID int64) (CloudS
 	if err != nil {
 		return CloudSpaceLimits{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	p, err := readSpaceLimitsTx(ctx, tx, userID)
 	if err != nil {
 		return p, err

@@ -105,7 +105,7 @@ test("WebUI manual compaction converges from the transcript store and a bounded 
 test("standard context usage ring lives in the stacked runtime control deck", () => {
   assert.match(chatComposerBarSource, /composer-control-deck/);
   const standardDeck = chatComposerBarSource.slice(chatComposerBarSource.indexOf('"composer-control-deck'), chatComposerBarSource.indexOf('{fileDropOverlay}'));
-  assert.ok(standardDeck.includes("<ComposerContextUsageRing"));
+  assert.ok(standardDeck.includes("{contextRing}"));
   assert.doesNotMatch(chatComposerBarSource, /absolute right-3 top-1\/2/);
 });
 
@@ -949,7 +949,7 @@ test("composer renders ring and stats bar per three-state contextDisplayMode", (
   // statsBar 插槽只在 ring 模式下不挂载——statsBar/both 两档都渲染。
   assert.match(
     chatComposerBarSource,
-    /inlineLayout &&\s*!imageFocus &&\s*\(contextDisplayMode === "ring" \|\| contextDisplayMode === "both"\) \? \(/,
+    /const contextRing = \(contextDisplayMode === "ring" \|\| contextDisplayMode === "both"\) && \(\s*<ComposerContextUsageRing/,
   );
   assert.match(
     chatComposerBarSource,

@@ -42,7 +42,7 @@ func Cover(archive []byte, manifest Manifest) (string, error) {
 		}
 		name := path.Clean(path.Join(path.Dir(base), u.Path))
 		entry, ok := entries[name]
-		if !ok || !ValidPath(name) || !(strings.HasPrefix(entry.MIME, "image/") || strings.HasPrefix(entry.MIME, "font/")) {
+		if !ok || !ValidPath(name) || (!strings.HasPrefix(entry.MIME, "image/") && !strings.HasPrefix(entry.MIME, "font/")) {
 			return ""
 		}
 		data, err := read(name)

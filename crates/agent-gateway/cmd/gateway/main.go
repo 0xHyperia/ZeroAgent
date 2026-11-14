@@ -282,7 +282,7 @@ func main() {
 		if err != nil {
 			fatal("isolated site listener startup failed")
 		}
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 		go func() {
 			if err := siteServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- errors.New("isolated site listener stopped")

@@ -143,7 +143,7 @@ func (s *MemoryStore) ListCloudFiles(ctx context.Context, userID int64, conversa
 		if conversationID == "" && s.cloudSpace[userID]["file:"+file.ID].Trashed {
 			continue
 		}
-		if beforeID != "" && (!file.CreatedAt.Before(before.CreatedAt) && !(file.CreatedAt.Equal(before.CreatedAt) && file.ID < before.ID)) {
+		if beforeID != "" && (!file.CreatedAt.Before(before.CreatedAt) && (!file.CreatedAt.Equal(before.CreatedAt) || file.ID >= before.ID)) {
 			continue
 		}
 		metadata := file

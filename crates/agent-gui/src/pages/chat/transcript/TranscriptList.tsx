@@ -1,6 +1,6 @@
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
-import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import { ProcessViewportFollowingProvider } from "@liveagent/ui/components/chat/processDisclosure";
+import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";

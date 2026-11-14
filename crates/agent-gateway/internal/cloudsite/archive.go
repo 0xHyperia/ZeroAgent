@@ -229,7 +229,7 @@ func ReadEntry(reader io.ReaderAt, size int64, expected Entry) ([]byte, error) {
 			if err != nil {
 				return nil, ErrInvalid
 			}
-			defer stream.Close()
+			defer func() { _ = stream.Close() }()
 			data, err := io.ReadAll(io.LimitReader(stream, MaxEntryBytes+1))
 			digest := sha256.Sum256(data)
 			if err != nil || int64(len(data)) != expected.Size || hex.EncodeToString(digest[:]) != expected.SHA256 {

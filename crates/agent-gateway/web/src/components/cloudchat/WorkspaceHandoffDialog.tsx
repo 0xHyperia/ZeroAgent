@@ -122,7 +122,9 @@ export function WorkspaceHandoffDialog({
   const selected = devices.find((item) => item.device_id === deviceId);
   const workspace = selected?.workspaces.find((item) => item.id === workspaceId);
   const availableInDirectory = !!selected?.online && !!workspace;
-  const active = pending.find((item) => item.deviceId === deviceId && item.workspaceId === workspaceId);
+  const active = pending.find(
+    (item) => item.deviceId === deviceId && item.workspaceId === workspaceId,
+  );
   const otherPending = pending.filter((item) => item !== active);
 
   const deviceName = selected?.name ?? active?.deviceName ?? destination.deviceName;

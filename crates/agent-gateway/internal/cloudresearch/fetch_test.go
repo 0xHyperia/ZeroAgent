@@ -141,7 +141,10 @@ func TestFetchRejectsMixedAndReboundDNS(t *testing.T) {
 	for _, mixed := range []bool{true, false} {
 		t.Run(fmt.Sprint(mixed), func(t *testing.T) {
 			var requests atomic.Int64
-			fetcher, resolver, dials := fetchFixture(t, func(w http.ResponseWriter, r *http.Request) { requests.Add(1); http.Redirect(w, r, "/final", 302) }, FetchConfig{})
+			fetcher, resolver, dials := fetchFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				http.Redirect(w, r, "/final", http.StatusFound)
+			}, FetchConfig{})
 			if mixed {
 				resolver.answers = [][]netip.Addr{{netip.MustParseAddr("93.184.216.34"), netip.MustParseAddr("127.0.0.1")}}
 			} else {
@@ -170,7 +173,7 @@ func TestFetchRedirectsNeverForwardCredentialsAndAreBounded(t *testing.T) {
 		}
 		if r.URL.Path == "/start" {
 			w.Header().Set("Set-Cookie", "private=synthetic; Path=/")
-			http.Redirect(w, r, "/final", 302)
+			http.Redirect(w, r, "/final", http.StatusFound)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
@@ -180,11 +183,13 @@ func TestFetchRedirectsNeverForwardCredentialsAndAreBounded(t *testing.T) {
 	if err != nil || doc.FinalURL != "http://public.example.com/final" || requests.Load() != 2 {
 		t.Fatal("safe redirect did not complete")
 	}
-	loop, _, loopDials := fetchFixture(t, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/again", 302) }, FetchConfig{})
+	loop, _, loopDials := fetchFixture(t, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/again", http.StatusFound) }, FetchConfig{})
 	if _, err = loop.Fetch(context.Background(), "http://public.example.com/start"); !errors.Is(err, ErrRedirectLimit) || loopDials.Load() != 4 {
 		t.Fatal("redirect budget was not three hops")
 	}
-	unsafe, _, unsafeDials := fetchFixture(t, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "http://127.0.0.1/private", 302) }, FetchConfig{})
+	unsafe, _, unsafeDials := fetchFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.1/private", http.StatusFound)
+	}, FetchConfig{})
 	if _, err = unsafe.Fetch(context.Background(), "http://public.example.com/start"); !errors.Is(err, ErrUnsafeURL) || unsafeDials.Load() != 1 {
 		t.Fatal("private redirect was dialed")
 	}

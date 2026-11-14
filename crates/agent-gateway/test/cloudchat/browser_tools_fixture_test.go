@@ -69,7 +69,7 @@ func (f *browserToolFixture) snapshot() map[string]any {
 
 func (f *browserToolFixture) serveSDK(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("b", 48) || r.Header.Get("Origin") != "" {
-		http.Error(w, "internal authority required", 403)
+		http.Error(w, "internal authority required", http.StatusForbidden)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -95,13 +95,13 @@ func (f *browserToolFixture) serveSDK(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, secret := range []string{"fixture-model-key-only", "fixture-app-access-only", "fixture-s3-secret-only"} {
 		if strings.Contains(string(browserJSON(op)), secret) {
-			http.Error(w, "credential boundary failed", 403)
+			http.Error(w, "credential boundary failed", http.StatusForbidden)
 			return
 		}
 	}
 	if known, ok := f.ops[op.OperationID]; ok {
 		if string(browserJSON(known)) != string(browserJSON(op)) {
-			http.Error(w, "operation changed", 409)
+			http.Error(w, "operation changed", http.StatusConflict)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(f.receipts[op.OperationID])
@@ -167,13 +167,13 @@ func (f *browserToolFixture) serveSDK(w http.ResponseWriter, r *http.Request) {
 		transferKey := op.SandboxID + ":" + fmt.Sprint(op.Input["transfer_id"])
 		transfer := f.transfer[transferKey]
 		if transfer == nil {
-			http.Error(w, "missing transfer", 409)
+			http.Error(w, "missing transfer", http.StatusConflict)
 			return
 		}
 		if op.Action == "file.upload.chunk" {
 			data, err := base64.StdEncoding.Strict().DecodeString(fmt.Sprint(op.Input["data_base64"]))
 			if err != nil || int(op.Input["offset"].(float64)) != len(transfer.data) {
-				http.Error(w, "invalid transfer offset", 409)
+				http.Error(w, "invalid transfer offset", http.StatusConflict)
 				return
 			}
 			transfer.data = append(transfer.data, data...)
@@ -181,7 +181,7 @@ func (f *browserToolFixture) serveSDK(w http.ResponseWriter, r *http.Request) {
 		} else {
 			digest := sha256.Sum256(transfer.data)
 			if transfer.size != len(transfer.data) || transfer.sha != hex.EncodeToString(digest[:]) {
-				http.Error(w, "invalid transfer hash", 409)
+				http.Error(w, "invalid transfer hash", http.StatusConflict)
 				return
 			}
 			f.files[op.SandboxID+":"+transfer.path] = append([]byte(nil), transfer.data...)
@@ -272,7 +272,7 @@ func (f *browserToolFixture) respondModel(w http.ResponseWriter, body []byte) bo
 		artifact, _ := lastResult["artifact"].(map[string]any)
 		id, _ := artifact["id"].(string)
 		if id == "" {
-			http.Error(w, "synthetic publication did not succeed", 502)
+			http.Error(w, "synthetic publication did not succeed", http.StatusBadGateway)
 			return true
 		}
 		text := "合成协议验收成果已保存，可下载并继续修改。\n\n【成果:" + id + "】\n\n此回复由本地夹具生成，尚未验证真实模型内容质量。"

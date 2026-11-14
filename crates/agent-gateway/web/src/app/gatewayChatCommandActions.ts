@@ -246,7 +246,9 @@ export function createGatewayChatCommandActions(options: GatewayChatCommandActio
         {
           type: sendOptions?.imageEditInstruction
             ? "chat.image_edit"
-            : sendOptions?.editMessageRef ? "chat.edit_resend" : "chat.submit",
+            : sendOptions?.editMessageRef
+              ? "chat.edit_resend"
+              : "chat.submit",
           message,
           conversationId: startedAsDraftConversation ? undefined : activeConversationId,
           selectedModel: buildGatewaySelectedModel(turnSelectedModel, activeProviders),

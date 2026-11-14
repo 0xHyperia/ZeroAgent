@@ -204,7 +204,7 @@ func (s deletingCloudSourceStore) PersistCloudResearchSources(ctx context.Contex
 		return nil, err
 	}
 	for _, source := range sources {
-		if err = s.MemoryStore.DeleteCloudResearchSource(ctx, userID, source.ID, source.Version); err != nil {
+		if err = s.DeleteCloudResearchSource(ctx, userID, source.ID, source.Version); err != nil {
 			return nil, err
 		}
 	}

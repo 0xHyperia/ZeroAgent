@@ -464,7 +464,7 @@ func vetImagePreview(req *gatewayv2.UploadedImagePreviewRequest) error {
 			strings.TrimSpace(target.GetConversationId()) == "" || len(target.GetConversationId()) > 256 ||
 			!strings.HasPrefix(asset, "ia_") || len(asset) < 4 || len(asset) > 99 ||
 			strings.ContainsFunc(asset, func(r rune) bool {
-				return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-')
+				return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-'
 			}) || target.GetVariant() != "original" && target.GetVariant() != "thumbnail" {
 			return errors.New("invalid conversation image preview request")
 		}

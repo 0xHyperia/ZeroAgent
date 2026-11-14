@@ -119,12 +119,12 @@ func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, se
 	operationCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	limitedBody := r.Body
-	stopBodyClose := context.AfterFunc(operationCtx, func() { limitedBody.Close() })
+	stopBodyClose := context.AfterFunc(operationCtx, func() { _ = limitedBody.Close() })
 	defer stopBodyClose()
 	r = r.WithContext(operationCtx)
 	if err = r.ParseMultipartForm(1 << 20); err != nil {
 		if r.MultipartForm != nil {
-			defer r.MultipartForm.RemoveAll()
+			defer func() { _ = r.MultipartForm.RemoveAll() }()
 		}
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
@@ -135,7 +135,7 @@ func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, se
 		writeError(w, cloudFileAPIError(err))
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
 	if len(r.MultipartForm.File) != 1 || len(r.MultipartForm.File["file"]) != 1 {
 		writeError(w, cloudFileAPIError(ErrCloudFileInvalid))
 		return
@@ -181,7 +181,7 @@ func (h *HTTPHandler) uploadCloudFile(w http.ResponseWriter, r *http.Request, se
 		writeError(w, cloudFileAPIError(ErrCloudFileInvalid))
 		return
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	if !h.cloudViewerValid(r.Context(), session) {
 		writeError(w, &APIError{Status: http.StatusUnauthorized, Message: "account session expired"})
 		return
@@ -348,7 +348,7 @@ func (h *HTTPHandler) downloadCloudFile(w http.ResponseWriter, r *http.Request, 
 		writeError(w, cloudFileAPIError(err))
 		return
 	}
-	defer func() { staged.Close(); os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
 	valid := func() bool {
 		if !h.cloudViewerValid(r.Context(), session) {
 			return false

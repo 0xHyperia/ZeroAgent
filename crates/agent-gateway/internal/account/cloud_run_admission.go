@@ -78,7 +78,7 @@ func (s *PersistentStore) ConfigureCloudRunAdmission(ctx context.Context, limits
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var current CloudRunAdmissionLimits
 	var revision int64
 	err = tx.QueryRowContext(ctx, `SELECT max_executing,max_queued,revision FROM zeroagent_cloud_run_admission_policy WHERE singleton=TRUE FOR UPDATE`).Scan(&current.MaxExecutingPerAccount, &current.MaxQueuedPerAccount, &revision)

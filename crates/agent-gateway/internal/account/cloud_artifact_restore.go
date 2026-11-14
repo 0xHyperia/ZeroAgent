@@ -148,7 +148,7 @@ func (s *Service) RestoreCloudArtifact(ctx context.Context, userID int64, source
 	if err != nil {
 		return nil, objectstore.ErrUnavailable
 	}
-	defer func() { staged.Close(); os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
 	if err = verifyCloudArtifactObject(ctx, provider.objects, source, staged); err != nil {
 		return nil, err
 	}

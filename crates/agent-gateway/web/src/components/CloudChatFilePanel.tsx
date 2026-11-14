@@ -589,7 +589,8 @@ export function CloudChatFilePanel(props: Props) {
                 onRequestRevision={
                   props.onRequestRevision && cloudFileCanReference(selected)
                     ? (comments, evidence) =>
-                        currentProps.current.onRequestRevision?.(selected, comments, evidence) ?? false
+                        currentProps.current.onRequestRevision?.(selected, comments, evidence) ??
+                        false
                     : undefined
                 }
                 onDownload={() => void download(selected)}

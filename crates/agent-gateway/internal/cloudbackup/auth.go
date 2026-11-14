@@ -137,7 +137,7 @@ func (e *Engine) InvalidateAuthentication(ctx context.Context, scope, database s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SET LOCAL lock_timeout='5s'`); err != nil {
 		return err
 	}

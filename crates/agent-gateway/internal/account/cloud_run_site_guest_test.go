@@ -135,7 +135,8 @@ func TestCloudRunSiteActualGuestSeaweedFSDelivery(t *testing.T) {
 	if err = f.service.SetCloudSiteConfig(siteConfig); err != nil {
 		t.Fatal(err)
 	}
-	sdk := newCloudSDKFixture(t, f, true)
+	// The fixture runs Python synchronously in its HTTP handler, unlike the live SDK.
+	sdk := newCloudSDKFixtureWithTimeout(t, f, true, 7*time.Second)
 	sdk.testAction = func(op cloudexecutor.Operation) (json.RawMessage, bool) {
 		if op.Action != "command.run" && op.Action != "site.bundle" {
 			return nil, false

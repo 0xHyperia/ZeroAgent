@@ -203,7 +203,7 @@ func (s *Service) coordinatedSession(ctx context.Context, id string, force bool)
 		if state.Refresh != nil {
 			record.Candidate = copySession(source)
 		}
-		state, err = s.store.ApplySessionAuthority(ctx, id, sessionAuthorityCommand{Action: "begin", Owner: owner, ExpectedVersion: baseVersion, ExpectedRefreshID: previousID, Refresh: record})
+		_, err = s.store.ApplySessionAuthority(ctx, id, sessionAuthorityCommand{Action: "begin", Owner: owner, ExpectedVersion: baseVersion, ExpectedRefreshID: previousID, Refresh: record})
 		if err != nil {
 			return nil, s.sessionAuthorityError(err)
 		}
@@ -263,7 +263,7 @@ func (s *Service) coordinatedSession(ctx context.Context, id string, force bool)
 	verified := *state.Refresh
 	verified.Candidate = candidate
 	coordinator.remember(&verified)
-	state, err = s.store.ApplySessionAuthority(ctx, id, sessionAuthorityCommand{Action: "stage", Owner: owner, ExpectedVersion: baseVersion, ExpectedRefreshID: verified.ID, Candidate: candidate})
+	_, err = s.store.ApplySessionAuthority(ctx, id, sessionAuthorityCommand{Action: "stage", Owner: owner, ExpectedVersion: baseVersion, ExpectedRefreshID: verified.ID, Candidate: candidate})
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			s.revokeLateSessionCandidate(id, candidate)

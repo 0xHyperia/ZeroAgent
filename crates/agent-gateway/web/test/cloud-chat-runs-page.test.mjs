@@ -2590,7 +2590,7 @@ test("moving the current row locks sending until its project association is conf
 });
 
 
-test("explicit document revision sends the original draft and exact immutable resource through normal Run submission",async t=>{
+test("explicit document revision sends exact anchors and the immutable resource while retaining the unsent draft",async t=>{
  for(const kind of ["file","artifact"])await t.test(kind,async child=>{
   const resource=kind==="file"?fileRecord({name:"review.docx",workspace_loadable:true}):artifactRecord({name:"review.docx"});
   const app=await mount(child,{fileMode:true,revisionHarness:true,initialFiles:kind==="file"?[resource]:[],initialArtifacts:kind==="artifact"?[resource]:[],initialDraftText:"保留已有补充要求"});
@@ -2604,7 +2604,13 @@ test("explicit document revision sends the original draft and exact immutable re
   const posts=app.calls.filter(call=>call.path==="/api/web-chat/runs"&&call.method==="POST");assert.equal(posts.length,1);
   const input=JSON.parse(posts[0].body);
   assert.equal(input.model,"test-model");assert.equal(input.provider_key_id,1);
-  assert.match(input.content[0].text,/保留已有补充要求/);assert.match(input.content[0].text,/第 2 页 · za-reader-block-3 · 字符 4–8/);assert.match(input.content[0].text,/原文：原文片段/);assert.match(input.content[0].text,/修改要求：改为简洁表达/);
+  assert.equal(app.draft,"保留已有补充要求");
+  const message=input.content[0].text;
+  assert.doesNotMatch(message,/保留已有补充要求/);
+  const anchor=JSON.parse(message.split("\n").find(line=>line.startsWith("Anchor: ")).slice("Anchor: ".length));
+  assert.deepEqual(anchor,{id:"comment-1",page:2,block:"za-reader-block-3",start:4,end:8});
+  assert.match(message,/Selected text: "原文片段"/);
+  assert.match(message,/Comment: "改为简洁表达"/);
   assert.deepEqual(input.content[1],kind==="file"?{type:"file_reference",file_id:resource.id}:{type:"artifact_reference",version_id:resource.id});
  });
 });

@@ -387,7 +387,7 @@ func (c *Client) request(ctx context.Context, method, path string, input, output
 	if err != nil {
 		return &APIError{Code: "transport_failure", MayHaveExecuted: true}
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(response.Body, c.config.MaxResponseBytes+1))
 	if err != nil {
 		return &APIError{Code: "response_failure", MayHaveExecuted: true}

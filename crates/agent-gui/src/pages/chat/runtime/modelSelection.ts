@@ -1,5 +1,5 @@
-import { modelTypesFor } from "@liveagent/ui/lib/models/modelTypes";
 import type { ModelConfigErrorCode } from "@liveagent/ui/lib/chat/modelConfigRejection";
+import { modelTypesFor } from "@liveagent/ui/lib/models/modelTypes";
 import type { AppSettings, ProviderId, SelectedModel } from "../../../lib/settings";
 import {
   type GatewaySelectedModelEvent,
@@ -67,7 +67,12 @@ export function resolveEffectiveChatModelSelection(params: {
         "所选模型未启用，请重新选择模型。",
       );
     }
-    if (!modelTypesFor(model, provider.models.find((item) => item.id === model)).includes("text")) {
+    if (
+      !modelTypesFor(
+        model,
+        provider.models.find((item) => item.id === model),
+      ).includes("text")
+    ) {
       throw new Error("所选模型不支持文本对话，请重新选择模型。");
     }
 
@@ -112,7 +117,12 @@ export function resolveEffectiveChatModelSelection(params: {
       "远程请求所选模型未在桌面端启用，请同步桌面端设置后在 WebUI 重新选择模型。",
     );
   }
-  if (!modelTypesFor(model, provider.models.find((item) => item.id === model)).includes("text")) {
+  if (
+    !modelTypesFor(
+      model,
+      provider.models.find((item) => item.id === model),
+    ).includes("text")
+  ) {
     throw new Error("远程请求所选模型不支持文本对话，请在 WebUI 重新选择模型。");
   }
 

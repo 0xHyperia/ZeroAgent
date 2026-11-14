@@ -20,10 +20,12 @@ test("dialogs publish their font-scale zone and portaled popups pick it up", () 
   }
   for (const file of ["select.tsx", "dropdown-menu.tsx", "popover.tsx", "tooltip.tsx"]) {
     const source = read(UI + file);
-    const positioners = source.match(/className="layer-popover(?: [^"]*)?"/g) ?? [];
-    const zoned = source.match(/className="layer-popover(?: [^"]*)?"\s+style=\{zoneStyle\}/g) ?? [];
+    const positioners = source.match(/<\w+\.Positioner\b[^>]*>/g) ?? [];
     assert.ok(positioners.length > 0, `${file} has a popover positioner`);
-    assert.equal(zoned.length, positioners.length, `${file}: every positioner carries the zone`);
+    for (const positioner of positioners) {
+      assert.match(positioner, /"layer-popover(?: [^"]*)?"/, `${file} has a desktop popover layer`);
+      assert.match(positioner, /\bstyle=\{zoneStyle\}/, `${file} positioner carries the zone`);
+    }
   }
   const css = read("../../../agent-ui/src/styles/base.css");
   assert.match(css, /\.zone-font-scale,\n\s*\.layer-popover \{/);

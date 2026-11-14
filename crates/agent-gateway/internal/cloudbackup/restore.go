@@ -17,7 +17,7 @@ func updateRestoreReport(path string, report *RestoreReport) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if _, err = file.Write(encoded); err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (e *Engine) Restore(ctx context.Context, root, scope, database, reportPath 
 	if err != nil {
 		return report, err
 	}
-	defer connection.Close()
+	defer func() { _ = connection.Close() }()
 	if _, err = connection.ExecContext(ctx, `SELECT pg_advisory_lock(hashtextextended('zeroagent-cloudchat-isolated-restore',0))`); err != nil {
 		return report, err
 	}
@@ -169,19 +169,22 @@ func (e *Engine) Restore(ctx context.Context, root, scope, database, reportPath 
 	if err != nil {
 		return report, err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	target, err := os.OpenFile(filepath.Join(e.Config.JournalDirectory, "receipts.sqlite"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return report, err
 	}
 	_, err = copyBounded(ctx, target, source, manifest.JournalFile.Bytes)
 	syncErr := target.Sync()
-	target.Close()
+	closeErr := target.Close()
 	if err != nil {
 		return report, err
 	}
 	if syncErr != nil {
 		return report, syncErr
+	}
+	if closeErr != nil {
+		return report, closeErr
 	}
 	journal, err := verifyJournal(ctx, e.Config, filepath.Join(e.Config.JournalDirectory, "receipts.sqlite"))
 	if err != nil || journal != manifest.JournalSummary {
@@ -199,7 +202,7 @@ func (e *Engine) Restore(ctx context.Context, root, scope, database, reportPath 
 	}
 	_, err = configuration.Write(plaintext)
 	syncErr = configuration.Sync()
-	configuration.Close()
+	_ = configuration.Close()
 	if err != nil {
 		return report, err
 	}

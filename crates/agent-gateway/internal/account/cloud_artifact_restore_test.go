@@ -58,7 +58,7 @@ func runArtifactRestoreContract(t *testing.T, f cloudRunTestFixture, store Cloud
 	journal.PutStarted = true
 	journal.ObjectVerified = true
 	data, _ := json.Marshal(journal)
-	third, err = restores.UpdateCloudArtifactRestore(ctx, 11, third.ID, third.Version, CloudArtifactUpdate{State: CloudArtifactReady, Journal: data})
+	_, err = restores.UpdateCloudArtifactRestore(ctx, 11, third.ID, third.Version, CloudArtifactUpdate{State: CloudArtifactReady, Journal: data})
 	if err != nil {
 		t.Fatal(err)
 	}

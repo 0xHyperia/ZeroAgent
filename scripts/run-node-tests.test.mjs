@@ -86,6 +86,14 @@ test("parseArguments accepts a 1-based shard and rejects malformed ones", () => 
   assert.throws(() => parseArguments(["test", "--shard"]), /--shard requires a value/);
 });
 
+test("parseArguments accepts a bounded test concurrency and rejects malformed values", () => {
+  assert.equal(parseArguments(["--concurrency", "4", "test"]).concurrency, 4);
+  assert.equal(parseArguments(["test"]).concurrency, undefined);
+  for (const value of ["0", "-1", "2.5", "1e2", "many", "9007199254740992"]) {
+    assert.throws(() => parseArguments(["--concurrency", value, "test"]), /positive integer/);
+  }
+});
+
 test("selectShard splits files round-robin and the shards cover every file once", () => {
   const files = ["a", "b", "c", "d", "e"].map((name) => `${name}.test.mjs`);
 

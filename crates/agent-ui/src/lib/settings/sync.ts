@@ -1,4 +1,3 @@
-import { webSearchFallbackStateFrom } from "../providers/webSearchFallback";
 import {
   type AppSettings,
   DEFAULT_CHAT_TRANSCRIPT_WIDTH,
@@ -9,6 +8,7 @@ import {
   normalizeWorkspaceResourceSettings,
   workspaceProjectPathKey,
 } from "@liveagent/app/lib/settings/index";
+import { webSearchFallbackStateFrom } from "../providers/webSearchFallback";
 
 export type GatewayProviderApiKeyUpdates = Record<string, string>;
 export type GatewayProviderUsageQuerySecretUpdates = Record<
@@ -116,7 +116,9 @@ export function readGatewaySettingsSyncClient(payload: unknown): GatewaySettings
   }
   return { id: marker.id, seq: marker.seq };
 }
-export type GatewaySettingsSyncUpdatePayload = Partial<Omit<GatewaySettingsSyncPayload, "kbrainWebSearch">> & {
+export type GatewaySettingsSyncUpdatePayload = Partial<
+  Omit<GatewaySettingsSyncPayload, "kbrainWebSearch">
+> & {
   kbrainWebSearch?: import("../providers/webSearchFallback").KBrainWebSearchUpdate;
 };
 export type GatewaySettingsUpdateReceipt = {
@@ -1383,8 +1385,10 @@ export function applyGatewaySettingsSyncPayload(
   return normalizeSettings({
     ...current,
     kbrainWebSearch: source.kbrainWebSearch
-      ? webSearchFallbackStateFrom({ webSearch: source.kbrainWebSearch }) ?? undefined
-      : Array.isArray(source.customProviders) ? undefined : current.kbrainWebSearch,
+      ? (webSearchFallbackStateFrom({ webSearch: source.kbrainWebSearch }) ?? undefined)
+      : Array.isArray(source.customProviders)
+        ? undefined
+        : current.kbrainWebSearch,
     settingsSyncProtocol:
       source.settingsSyncProtocol === "zeroagent.settings-sync.v1"
         ? source.settingsSyncProtocol

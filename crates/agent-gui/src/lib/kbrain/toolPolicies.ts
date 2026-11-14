@@ -81,7 +81,8 @@ export function canonicalKBrainToolPolicies(
     if (isKBrainToolPolicy(policy)) policies.set(target, policy);
   }
   for (const [name, policy] of Object.entries(configured ?? {})) {
-    if (KBRAIN_POLICY_TOOL_NAMES.has(name) && isKBrainToolPolicy(policy)) policies.set(name, policy);
+    if (KBRAIN_POLICY_TOOL_NAMES.has(name) && isKBrainToolPolicy(policy))
+      policies.set(name, policy);
   }
   return Object.fromEntries(
     [...policies].sort(([left], [right]) => left.localeCompare(right)),

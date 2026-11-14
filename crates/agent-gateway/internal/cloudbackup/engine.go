@@ -58,17 +58,17 @@ func (e *Engine) tableFacts(ctx context.Context, tx *sql.Tx, lock bool) ([]Table
 	for rows.Next() {
 		var name string
 		if err = rows.Scan(&name); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		if !identifier.MatchString(name) || (name != "agents" && !strings.HasPrefix(name, "zeroagent_") && !strings.HasPrefix(name, "zerobox_")) {
-			rows.Close()
+			_ = rows.Close()
 			return nil, ErrInvalid
 		}
 		tables = append(tables, Table{Name: name})
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -114,12 +114,12 @@ func (e *Engine) Create(ctx context.Context, root string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer guard.close()
+	defer func() { _ = guard.close() }()
 	tx, err := e.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SET LOCAL lock_timeout='5s'`); err != nil {
 		return nil, err
 	}
@@ -156,12 +156,15 @@ func (e *Engine) Create(ctx context.Context, root string) (*Manifest, error) {
 		}
 		err = verifyObject(ctx, e.Objects, resource, output)
 		syncErr := output.Sync()
-		output.Close()
+		closeErr := output.Close()
 		if err != nil {
 			return nil, err
 		}
 		if syncErr != nil {
 			return nil, syncErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
 		}
 	}
 	dumpInfo, err := hashFileContext(ctx, dump, e.Config.MaxTotalBytes)
@@ -237,7 +240,7 @@ func (e *Engine) verifyLocal(ctx context.Context, root string) (*Manifest, error
 	}
 	var checksum manifestChecksum
 	checksumErr := json.NewDecoder(io.LimitReader(checksumFile, 4096)).Decode(&checksum)
-	checksumFile.Close()
+	_ = checksumFile.Close()
 	actualManifest, hashErr := hashFile(filepath.Join(root, "manifest.json"))
 	manifestBytes, readErr := os.ReadFile(filepath.Join(root, "manifest.json"))
 	if checksumErr != nil || hashErr != nil || readErr != nil || checksum.SHA256 != actualManifest.SHA256 || checksum.Bytes != actualManifest.Bytes || !digest.MatchString(checksum.Authentication) || !hmac.Equal([]byte(checksum.Authentication), []byte(authenticateManifest(e.Config.BackupEncryptionKey, manifestBytes))) {
@@ -303,7 +306,7 @@ func (e *Engine) Verify(ctx context.Context, root string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	current, err := e.resources(ctx, tx)
 	if err != nil {
 		return nil, err

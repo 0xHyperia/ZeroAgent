@@ -148,7 +148,7 @@ func (s *PersistentStore) SetCloudModelLimits(ctx context.Context, userID, keyID
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	// Serialize only this account's preferences; concurrent first saves cannot
 	// bypass the row bound, while another account remains independent.
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_model_limits:'||$1::text,0))`, userID); err != nil {

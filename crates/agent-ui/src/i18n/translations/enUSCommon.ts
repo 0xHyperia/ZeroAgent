@@ -413,6 +413,8 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.statusPinned": "Pinned",
   "chat.statusShared": "Shared",
   "chat.statusRunningReply": "Replying",
+  "chat.externalRunPlaceholder":
+    "Running in {client}. Replies appear here as the turn progresses. Send again when it finishes.",
   "chat.delete": "Delete",
   "chat.remove": "Remove",
   "chat.manageSharedConversations": "Manage shared conversations ({count})",
@@ -449,10 +451,12 @@ export const EN_US_COMMON_TRANSLATIONS = {
     "Read the README, project tree, and main entry points. Explain how to run the project, how the core modules fit together, and which files to read first.",
   "chat.suggestFixTitle": "Investigate a bug",
   "chat.suggestFixHint": "Reproduce the issue and find the cause",
-  "chat.suggestFixPrompt": "Ask me how to reproduce the bug and what I expected to happen. Use the relevant code or logs to verify the cause and suggest a fix.",
+  "chat.suggestFixPrompt":
+    "Ask me how to reproduce the bug and what I expected to happen. Use the relevant code or logs to verify the cause and suggest a fix.",
   "chat.suggestIdeateTitle": "Plan a change",
   "chat.suggestIdeateHint": "Scope, steps, and verification",
-  "chat.suggestIdeatePrompt": "Ask what I want to improve in this project. Then use the existing code to outline the scope, implementation steps, and acceptance criteria.",
+  "chat.suggestIdeatePrompt":
+    "Ask what I want to improve in this project. Then use the existing code to outline the scope, implementation steps, and acceptance criteria.",
   "chat.noModelSelected": "You haven't configured a model yet.",
   "chat.configureModel": "Click the button below to configure a provider and model.",
   "chat.goToSettings": "Configure Provider",
@@ -1139,6 +1143,7 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.subagent.pane.retry": "Retry",
   "chat.subagent.pane.noOutput": "No output yet.",
   "chat.subagent.pane.background": "Background",
+  "chat.subagent.pane.external": "Running in kn",
   "chat.tool.waiting": "Waiting",
   "chat.tool.unknown": "Outcome unconfirmed",
   "chat.tool.cancelled": "Cancelled",

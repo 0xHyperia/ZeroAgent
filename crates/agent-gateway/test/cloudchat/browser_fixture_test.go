@@ -63,7 +63,7 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 		case "/v1/chat/completions":
 			w.Header().Set("Content-Type", "text/event-stream")
 			if r.Header.Get("Authorization") != "Bearer fixture-model-key-only" {
-				http.Error(w, "fixture authorization rejected", 401)
+				http.Error(w, "fixture authorization rejected", http.StatusUnauthorized)
 				return
 			}
 			body, err := io.ReadAll(io.LimitReader(r.Body, (2<<20)+1))
@@ -179,7 +179,7 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 	})
 	mux.HandleFunc("POST /__fixture/finish", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Origin") != "" && !strings.Contains(r.Header.Get("Origin"), "127.0.0.1") {
-			http.Error(w, "local fixture only", 403)
+			http.Error(w, "local fixture only", http.StatusForbidden)
 			return
 		}
 		once.Do(func() { close(done) })

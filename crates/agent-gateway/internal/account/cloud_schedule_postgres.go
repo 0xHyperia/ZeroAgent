@@ -62,7 +62,7 @@ func (s *PersistentStore) listCloudSchedules(ctx context.Context, uid int64) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]CloudSchedule, 0)
 	for rows.Next() {
 		var task CloudSchedule
@@ -105,7 +105,7 @@ func (s *PersistentStore) cloudScheduleRuns(ctx context.Context, uid int64, task
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]CloudScheduleRun, 0)
 	for rows.Next() {
 		item, err := scanCloudScheduleRun(rows)
@@ -128,7 +128,7 @@ func (s *PersistentStore) deleteCloudSchedule(ctx context.Context, uid int64, id
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var alreadyDeleted bool
 	if err = tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM zeroagent_cloud_schedules
  WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, uid).Scan(&alreadyDeleted); err != nil {
@@ -217,7 +217,7 @@ func (s *PersistentStore) queueCloudSchedule(ctx context.Context, uid int64, tas
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var task CloudSchedule
 	err = scanCloudSchedule(tx.QueryRowContext(ctx, `SELECT `+cloudScheduleFields+` FROM zeroagent_cloud_schedules WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL FOR UPDATE`, taskID, uid), &task)
 	if err != nil {
@@ -258,7 +258,7 @@ func (s *PersistentStore) enqueueDueCloudSchedule(ctx context.Context, now time.
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var task CloudSchedule
 	var uid int64
 	var raw []byte
@@ -338,7 +338,7 @@ VALUES ($1,$2,$3,$4,$5,$5) ON CONFLICT (id) DO NOTHING`
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var found string
 	if err := tx.QueryRowContext(ctx, `SELECT id::text FROM zeroagent_cloud_projects WHERE id=$1 AND user_id=$2 FOR KEY SHARE`, project, item.uid).Scan(&found); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -397,7 +397,7 @@ func (s *PersistentStore) finishCloudSchedule(ctx context.Context, item *cloudSc
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var task CloudSchedule
 	if err = scanCloudSchedule(tx.QueryRowContext(ctx, `SELECT `+cloudScheduleFields+` FROM zeroagent_cloud_schedules WHERE id=$1 AND user_id=$2 FOR UPDATE`, item.task, item.uid), &task); err != nil {
 		return err

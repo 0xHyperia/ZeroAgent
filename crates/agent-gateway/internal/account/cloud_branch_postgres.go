@@ -51,7 +51,7 @@ func (s *PersistentStore) CreateCloudBranch(ctx context.Context, userID int64, s
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fmt.Sprintf("zeroagent-branch:%d:%s", userID, input.ClientRequestID)); err != nil {
 		return nil, false, err
 	}
@@ -107,14 +107,14 @@ func (s *PersistentStore) CreateCloudBranch(ctx context.Context, userID int64, s
 		var message CloudMessage
 		var usage, presentation []byte
 		if err = rows.Scan(&message.ID, &message.ConversationID, &message.UserID, &message.Role, &message.Content, &usage, &message.CreatedAt, &presentation); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, false, err
 		}
 		message.Usage = append(json.RawMessage(nil), usage...)
 		message.Presentation = append(json.RawMessage(nil), presentation...)
 		total += len(message.Content) + len(usage) + len(presentation)
 		if total > CloudRunMaxInputBytes || len(messages) >= 10000 {
-			rows.Close()
+			_ = rows.Close()
 			return nil, false, ErrCloudRunLimit
 		}
 		messages = append(messages, message)
@@ -123,7 +123,7 @@ func (s *PersistentStore) CreateCloudBranch(ctx context.Context, userID int64, s
 		}
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, false, err
 	}

@@ -1,6 +1,6 @@
-import { useWorkspaceFileOpening } from "@liveagent/ui/components/project-tools/useWorkspaceFileOpening";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { expandedPathsForFileTreePath } from "@liveagent/ui/components/project-tools/rightDockModel";
+import { useWorkspaceFileOpening } from "@liveagent/ui/components/project-tools/useWorkspaceFileOpening";
 import { useWorkspaceTabs } from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
 import type { ToastTone } from "@liveagent/ui/components/ui/toast-manager";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";

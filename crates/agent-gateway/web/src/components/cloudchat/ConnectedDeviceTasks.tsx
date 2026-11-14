@@ -1,5 +1,5 @@
-import type { AppSettings } from "@liveagent/ui/lib/settings/types";
 import type { CronRunRecord, ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
+import type { AppSettings } from "@liveagent/ui/lib/settings/types";
 import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { backend } from "../../lib/automation/backend";

@@ -54,6 +54,12 @@ export async function createDomTestEnv(options = {}) {
     pretendToBeVisual: true,
   });
   dom.window.scrollTo = () => {};
+  dom.window.matchMedia = (media) => ({
+    media,
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  });
 
   const previous = new Map();
   for (const key of GLOBAL_KEYS) {

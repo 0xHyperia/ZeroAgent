@@ -129,7 +129,7 @@ func readFixtureSample(root string, refs []fileReference, extension string) (fil
 			return ref, nil, errors.New("sample no longer matches receipt size/SHA256")
 		}
 		if _, err = zip.NewReader(bytes.NewReader(data), int64(len(data))); err != nil {
-			return ref, nil, errors.New("Office sample is not a valid ZIP package")
+			return ref, nil, errors.New("office sample is not a valid ZIP package")
 		}
 		return ref, data, nil
 	}
@@ -145,7 +145,7 @@ func fixtureSite(version int) ([]byte, *cloudsite.Manifest, error) {
 	z := zip.NewWriter(&data)
 	for _, entry := range []struct{ name, body string }{{"index.html", html}, {"style.css", css}, {"app.js", js}} {
 		h := &zip.FileHeader{Name: entry.name, Method: zip.Store}
-		h.SetModTime(time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC))
+		h.Modified = time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
 		w, err := z.CreateHeader(h)
 		if err != nil {
 			return nil, nil, err
@@ -350,7 +350,7 @@ func verifyFixtureObject(ctx context.Context, store fixtureObjectStore, a fixtur
 	if err != nil {
 		return err
 	}
-	defer o.Body.Close()
+	defer func() { _ = o.Body.Close() }()
 	if o.Size != a.Artifact.Size || o.SHA256 != a.Artifact.SHA256 {
 		return errors.New("stored fixture integrity metadata does not match")
 	}
@@ -559,7 +559,7 @@ func insertFixtureDraft(ctx context.Context, tx *sql.Tx, user int64, plan fixtur
 	if err := tx.QueryRowContext(ctx, `SELECT count(*),COALESCE(sum(size_bytes),0) FROM zeroagent_cloud_private_drafts WHERE user_id=$1 AND draft IS NOT NULL`, user).Scan(&count, &total); err != nil {
 		return err
 	}
-	if revision >= 9223372036854775807 || count >= account.CloudPrivateDraftMaxCount || total+int64(len(data)) > account.CloudPrivateDraftAccountBytes {
+	if revision == 9223372036854775807 || count >= account.CloudPrivateDraftMaxCount || total+int64(len(data)) > account.CloudPrivateDraftAccountBytes {
 		return errors.New("fixture draft exceeds account quota")
 	}
 	op := stableID(user, plan.Key+":draft")

@@ -36,11 +36,13 @@ const workStarters = [
     icon: Search,
     title: "制作对比报告",
     description: "比较方案，列出依据与建议",
-    prompt: "请根据我提供的资料制作一份方案对比报告。按成本、收益和风险比较，标注依据与待验证假设，并给出推荐方案。请先向我确认要比较的方案和决策目标。",
+    prompt:
+      "请根据我提供的资料制作一份方案对比报告。按成本、收益和风险比较，标注依据与待验证假设，并给出推荐方案。请先向我确认要比较的方案和决策目标。",
     en: {
       title: "Compare options",
       description: "A report with evidence and a recommendation",
-      prompt: "Create a comparison report from the material I provide. Compare costs, benefits, and risks, flag assumptions, and recommend an option. First, ask which options I’m considering and what I want to decide.",
+      prompt:
+        "Create a comparison report from the material I provide. Compare costs, benefits, and risks, flag assumptions, and recommend an option. First, ask which options I’m considering and what I want to decide.",
     },
   },
   {
@@ -48,11 +50,13 @@ const workStarters = [
     icon: ChartColumn,
     title: "分析一份表格",
     description: "找出趋势、异常和关键数字",
-    prompt: "请分析我提供的表格。找出主要趋势和异常，汇总关键数字并注明计算口径。如果我还没有提供表格或分析目标，请先问我。",
+    prompt:
+      "请分析我提供的表格。找出主要趋势和异常，汇总关键数字并注明计算口径。如果我还没有提供表格或分析目标，请先问我。",
     en: {
       title: "Analyze a spreadsheet",
       description: "Trends, anomalies, and key figures",
-      prompt: "Analyze the spreadsheet I provide. Identify trends and anomalies, summarize the key figures, and explain how they were calculated. If I haven’t provided the spreadsheet or a goal, ask me for them first.",
+      prompt:
+        "Analyze the spreadsheet I provide. Identify trends and anomalies, summarize the key figures, and explain how they were calculated. If I haven’t provided the spreadsheet or a goal, ask me for them first.",
     },
   },
   {
@@ -60,11 +64,13 @@ const workStarters = [
     icon: FileText,
     title: "整理项目周报",
     description: "汇总进展、风险和下一步",
-    prompt: "请把我提供的项目记录整理成一份周报，包含本周进展、风险与待决事项、下周计划。资料里有负责人和期限就列出来，缺失的标为待确认。请先问我周报的读者和时间范围。",
+    prompt:
+      "请把我提供的项目记录整理成一份周报，包含本周进展、风险与待决事项、下周计划。资料里有负责人和期限就列出来，缺失的标为待确认。请先问我周报的读者和时间范围。",
     en: {
       title: "Write a weekly update",
       description: "Progress, risks, and next steps",
-      prompt: "Turn my project notes into a weekly update covering progress, risks and open decisions, and next steps. Include owners and deadlines where supplied, and flag missing details. First, ask about the audience and reporting period.",
+      prompt:
+        "Turn my project notes into a weekly update covering progress, risks and open decisions, and next steps. Include owners and deadlines where supplied, and flag missing details. First, ask about the audience and reporting period.",
     },
   },
 ] as const;
@@ -113,12 +119,17 @@ export function CloudChatStarters({
   const english = locale === "en-US";
   const work = mode === "work";
   return (
-    <div
-      role="group"
-      className="cloud-chat-starters"
-      aria-label={work
-        ? (english ? "Work examples" : "工作示例")
-        : (english ? "Conversation starters" : "对话示例")}
+    <fieldset
+      className="cloud-chat-starters m-0 min-w-0 border-0 p-0"
+      aria-label={
+        work
+          ? english
+            ? "Work examples"
+            : "工作示例"
+          : english
+            ? "Conversation starters"
+            : "对话示例"
+      }
       data-mode={mode}
     >
       <div className="cloud-starter-items">
@@ -137,6 +148,6 @@ export function CloudChatStarters({
           );
         })}
       </div>
-    </div>
+    </fieldset>
   );
 }

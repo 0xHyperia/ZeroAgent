@@ -106,13 +106,13 @@ func readCloudSpaceTx(ctx context.Context, tx *sql.Tx, userID int64) (*CloudSpac
 	for siteRows.Next() {
 		var site CloudSiteRelease
 		if err = siteRows.Scan(&site.ID, &site.SiteID, &site.SHA256); err != nil {
-			siteRows.Close()
+			_ = siteRows.Close()
 			return nil, err
 		}
 		r.sites[site.ID] = site
 	}
 	err = siteRows.Err()
-	siteRows.Close()
+	_ = siteRows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -123,13 +123,13 @@ func readCloudSpaceTx(ctx context.Context, tx *sql.Tx, userID int64) (*CloudSpac
 	for rows.Next() {
 		f, e := scanCloudFile(rows)
 		if e != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, e
 		}
 		r.files = append(r.files, *f)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -140,13 +140,13 @@ func readCloudSpaceTx(ctx context.Context, tx *sql.Tx, userID int64) (*CloudSpac
 	for rows.Next() {
 		a, e := scanCloudArtifact(rows)
 		if e != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, e
 		}
 		r.artifacts = append(r.artifacts, *a)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -157,13 +157,13 @@ func readCloudSpaceTx(ctx context.Context, tx *sql.Tx, userID int64) (*CloudSpac
 	for rows.Next() {
 		var m CloudSpaceMetadata
 		if err = rows.Scan(&m.ID, &m.Kind, &m.Name, &m.FolderID, &m.Starred, &m.Trashed, &m.Version, &m.CreatedAt, &m.UpdatedAt); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		r.metadata = append(r.metadata, m)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (s *PersistentStore) ReadCloudSpace(ctx context.Context, userID int64) (*Cl
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	snapshot, err := readCloudSpaceTx(ctx, tx, userID)
 	if err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func (s *PersistentStore) PutCloudSpaceMetadata(ctx context.Context, userID int6
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
 		return nil, err
 	}

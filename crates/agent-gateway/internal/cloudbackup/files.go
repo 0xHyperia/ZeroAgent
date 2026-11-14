@@ -117,7 +117,7 @@ func hashFileContext(ctx context.Context, path string, limit int64) (File, error
 	if err != nil {
 		return File{}, err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	if info, err := source.Stat(); err != nil || info.Size() > limit {
 		return File{}, ErrIntegrity
 	}
@@ -130,7 +130,7 @@ func writeExclusiveJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if err = json.NewEncoder(file).Encode(value); err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func syncDirectory(path string) error {
 	if err != nil {
 		return err
 	}
-	defer directory.Close()
+	defer func() { _ = directory.Close() }()
 	return directory.Sync()
 }
 func loadManifest(root string) (*Manifest, error) {
@@ -156,7 +156,7 @@ func loadManifest(root string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	decoder := json.NewDecoder(io.LimitReader(file, 64<<20))
 	decoder.DisallowUnknownFields()
 	var manifest Manifest

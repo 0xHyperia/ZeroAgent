@@ -71,12 +71,12 @@ func (s *Service) cloudExecutionSession(ctx context.Context, store *PersistentSt
 	for rows.Next() {
 		var ref string
 		if err := rows.Scan(&ref); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		refs = append(refs, ref)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}

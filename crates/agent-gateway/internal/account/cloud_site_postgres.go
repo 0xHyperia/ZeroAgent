@@ -69,7 +69,7 @@ func (s *PersistentStore) putCloudSiteRelease(ctx context.Context, userID int64,
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *PersistentStore) CreateCloudSiteGrant(ctx context.Context, userID int64
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_site_grants:'||$1::text,0))`, userID); err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ func (s *PersistentStore) ListCloudSiteShares(ctx context.Context, userID int64,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudSiteGrant{}
 	for rows.Next() {
 		g, err := scanSiteGrant(rows)
@@ -190,7 +190,7 @@ func (s *PersistentStore) RevokeCloudSiteGrant(ctx context.Context, userID int64
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	g, err := scanSiteGrant(tx.QueryRowContext(ctx, "SELECT "+siteGrantColumns+" FROM zeroagent_cloud_site_grants WHERE id=$1 AND user_id=$2 FOR UPDATE", id, userID))
 	if err != nil {
 		return nil, err

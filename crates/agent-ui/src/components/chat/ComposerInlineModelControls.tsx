@@ -1,4 +1,3 @@
-import { resolveWebSearchToggle, webSearchServiceLabel } from "../../lib/providers/webSearchFallback";
 import {
   DEFAULT_CHAT_RUNTIME_CONTROLS,
   isAgentDevMode,
@@ -16,11 +15,20 @@ import {
 } from "@liveagent/ui/components/IconSet";
 import { ModelPickerContent } from "@liveagent/ui/components/models/ModelPickerContent";
 import { ProviderBrandIcon } from "@liveagent/ui/components/ProviderBrandIcon";
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@liveagent/ui/components/ui/popover";
+import {
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverTrigger,
+} from "@liveagent/ui/components/ui/popover";
 import { SwitchIndicator } from "@liveagent/ui/components/ui/switch";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { parseModelValue } from "../../lib/models/modelValue";
+import {
+  resolveWebSearchToggle,
+  webSearchServiceLabel,
+} from "../../lib/providers/webSearchFallback";
 import { TooltipButton } from "../ui/tooltip-button";
 import type { ComposerModelControlsProps } from "./ComposerModelControls";
 import { ReasoningSlider } from "./ReasoningSlider";
@@ -311,18 +319,33 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
                 ? searchRef.current
                 : sliderRef.current
           }
-          finalFocus={props.mobileSheet ? () => {
-            const anchor = anchorRef.current;
-            return anchor?.querySelector<HTMLElement>(`[id="${lastTriggerId.current}"]`) ??
-              anchor?.querySelector<HTMLElement>("[data-composer-model-trigger]");
-          } : undefined}
+          finalFocus={
+            props.mobileSheet
+              ? () => {
+                  const anchor = anchorRef.current;
+                  return (
+                    anchor?.querySelector<HTMLElement>(`[id="${lastTriggerId.current}"]`) ??
+                    anchor?.querySelector<HTMLElement>("[data-composer-model-trigger]")
+                  );
+                }
+              : undefined
+          }
           onKeyDown={(event) => {
             if (event.key === "Escape") cancelPreview();
             else event.stopPropagation();
           }}
         >
           {props.mobileSheet && (
-            <PopoverClose render={<TooltipButton variant="ghost" size="icon" className="za-mobile-sheet-close" aria-label={t("window.close")} />}>
+            <PopoverClose
+              render={
+                <TooltipButton
+                  variant="ghost"
+                  size="icon"
+                  className="za-mobile-sheet-close"
+                  aria-label={t("window.close")}
+                />
+              }
+            >
               <X className="size-4" />
             </PopoverClose>
           )}
@@ -449,7 +472,8 @@ export function ComposerInlineModelControls(props: ComposerModelControlsProps) {
                     </TooltipButton>
                     {search.via === "fallback" && (
                       <span className="text-xs text-muted-foreground">
-                        {zh ? "经由 " : "Via "}{webSearchServiceLabel(search.fallbackProvider)}
+                        {zh ? "经由 " : "Via "}
+                        {webSearchServiceLabel(search.fallbackProvider)}
                       </span>
                     )}
                     {search.blocked === "configure" && (

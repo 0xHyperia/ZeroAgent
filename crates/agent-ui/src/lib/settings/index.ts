@@ -2711,7 +2711,9 @@ export function getRightDockFileTreeState(
   return readRightDockFileTreeState(getRightDockProjectState(customSettings, projectPathKey));
 }
 
-export function readRightDockFileTreeState(projectState: RightDockProjectState): RightDockFileTreeState {
+export function readRightDockFileTreeState(
+  projectState: RightDockProjectState,
+): RightDockFileTreeState {
   const state = projectState.tools.fileTree?.uiState;
   return state ? normalizeRightDockFileTreeState(state) : DEFAULT_RIGHT_DOCK_FILE_TREE_STATE;
 }

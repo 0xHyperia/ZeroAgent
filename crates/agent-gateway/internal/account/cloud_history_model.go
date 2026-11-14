@@ -27,7 +27,6 @@ func (s *Service) cloudModelHistory(ctx context.Context, run *CloudRun, paramete
 		return nil, selection, &cloudToolRunError{code: "model_context_window_exceeded"}
 	}
 	mandatoryBytes := mandatory[0].ContentBytes + int64(len(mandatory[0].Usage))
-	mandatory = nil
 	heads, err := store.ListCloudMessageHeads(ctx, run.UserID, run.ConversationID, run.UserMessageID, 63)
 	if err != nil {
 		return nil, selection, err

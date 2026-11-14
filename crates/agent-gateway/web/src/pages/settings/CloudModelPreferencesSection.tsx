@@ -1,7 +1,10 @@
 import { RefreshCw } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Switch } from "@liveagent/ui/components/ui/switch";
-import { type ModelPickerOption, modelPickerTypes } from "@liveagent/ui/lib/models/modelPickerOptions";
+import {
+  type ModelPickerOption,
+  modelPickerTypes,
+} from "@liveagent/ui/lib/models/modelPickerOptions";
 import { modelListEntries } from "@liveagent/ui/lib/models/modelTypes";
 import { toModelValue } from "@liveagent/ui/lib/models/modelValue";
 import {

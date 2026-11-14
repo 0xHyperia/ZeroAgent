@@ -46,7 +46,7 @@ test("model pickers use popover semantics instead of menu semantics", () => {
   for (const source of pickerSources) {
     assert.match(
       source,
-      /import \{ Popover, (?:PopoverClose, )?PopoverContent, PopoverTrigger \} from "@liveagent\/ui\/components\/ui\/popover"/,
+      /import \{\s*Popover,\s*(?:PopoverClose,\s*)?PopoverContent,\s*PopoverTrigger,?\s*\} from "@liveagent\/ui\/components\/ui\/popover"/,
     );
     assert.match(source, /<Popover[\s\S]*?open=\{open\}/);
     assert.match(source, /<PopoverContent/);
@@ -156,7 +156,7 @@ test("DeepSeek provider icon uses the logo-only mark", () => {
 
 
 test("Chat mode keeps the safety control slot stable when its host offers execution controls", () => {
-  assert.match(composerSource, /const commandSafetyControl = executionControls && commandSafetyMode && onCommandSafetyModeChange \? \(/);
+  assert.match(composerSource, /const commandSafetyControl\s*=\s*executionControls && commandSafetyMode && onCommandSafetyModeChange \? \(/);
   assert.match(composerSource, /disabled=\{controlsDisabled \|\| !isAgentMode\}/);
   assert.doesNotMatch(composerSource, /\{isAgentMode && commandSafetyMode &&/);
 });

@@ -53,7 +53,7 @@ func (s *PersistentStore) ListCloudMessageHeads(ctx context.Context, uid int64, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	page := &CloudHistoryHeadsPage{Items: []CloudMessageHead{}}
 	for rows.Next() {
 		head, err := scanCloudMessageHead(rows)
@@ -93,7 +93,7 @@ func (s *PersistentStore) GetCloudHistoryMessages(ctx context.Context, uid int64
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	rows, err := tx.QueryContext(ctx, `SELECT `+cloudHistoryHeadColumns+` FROM zerobox_cloud_messages m JOIN zerobox_cloud_conversations c ON c.id=m.conversation_id AND c.user_id=m.user_id WHERE m.user_id=$1 AND m.conversation_id=$2 AND m.id=ANY($3::uuid[]) ORDER BY array_position($3::uuid[],m.id)`, uid, conversationID, pq.Array(ids))
 	if err != nil {
 		return nil, err
@@ -102,13 +102,13 @@ func (s *PersistentStore) GetCloudHistoryMessages(ctx context.Context, uid int64
 	for rows.Next() {
 		head, scanErr := scanCloudMessageHead(rows)
 		if scanErr != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, scanErr
 		}
 		heads = append(heads, head)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}

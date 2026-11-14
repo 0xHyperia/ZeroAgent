@@ -1,4 +1,3 @@
-import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
 import {
   type ChatRuntimeControls,
   type CommandSafetyMode,
@@ -58,7 +57,6 @@ import {
   getResourceFileIcon,
   getUploadedResourceFileIcon,
 } from "@liveagent/ui/components/resource-preview/ResourceFileIcon";
-import { Sheet, SheetHeader, SheetPanel, SheetPopup, SheetTitle, SheetTrigger } from "@liveagent/ui/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +65,14 @@ import {
   DropdownMenuTrigger,
 } from "@liveagent/ui/components/ui/dropdown-menu";
 import { LabelTooltip as RuntimeControlTooltip } from "@liveagent/ui/components/ui/label-tooltip";
+import {
+  Sheet,
+  SheetHeader,
+  SheetPanel,
+  SheetPopup,
+  SheetTitle,
+  SheetTrigger,
+} from "@liveagent/ui/components/ui/sheet";
 import { SwitchIndicator } from "@liveagent/ui/components/ui/switch";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
@@ -131,6 +137,7 @@ import {
   useUploadedImagePreview,
 } from "../../lib/chat/uploadedImagePreview";
 import type { PendingUploadedFile } from "../../lib/chat/uploadTypes";
+import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
 import { useComposerStt } from "./useComposerStt";
 
 function PendingComposerAttachment(props: {
@@ -580,9 +587,11 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const isComposerExpandedRef = useRef(false);
   const glassCardRef = useRef<HTMLDivElement | null>(null);
   const inlineLayout = props.layout === "inline" && !panePresentation && executionMode === "text";
-  const mobileComposer = useIsMobile() && props.mobileControls !== false && !imageFocus && !panePresentation;
+  const mobileComposer =
+    useIsMobile() && props.mobileControls !== false && !imageFocus && !panePresentation;
   const compactDeviceControls = mobileComposer && executionControls && !inlineLayout;
-  const desktopDeviceComposer = executionControls && !inlineLayout && !imageFocus && !mobileComposer;
+  const desktopDeviceComposer =
+    executionControls && !inlineLayout && !imageFocus && !mobileComposer;
   const singleLineInput = useInlineComposerLayout({
     enabled: inlineLayout && !imageFocus && !mobileComposer,
     expanded: Boolean(props.expandedInput) || isComposerExpanded,
@@ -1404,14 +1413,15 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
       onConfirm={onManualCompactConfirm}
     />
   );
-  const commandSafetyControl = executionControls && commandSafetyMode && onCommandSafetyModeChange ? (
-    <CommandSafetyModeSelector
-      value={commandSafetyMode}
-      disabled={controlsDisabled || !isAgentMode}
-      mobileBlock={compactDeviceControls}
-      onChange={onCommandSafetyModeChange}
-    />
-  ) : null;
+  const commandSafetyControl =
+    executionControls && commandSafetyMode && onCommandSafetyModeChange ? (
+      <CommandSafetyModeSelector
+        value={commandSafetyMode}
+        disabled={controlsDisabled || !isAgentMode}
+        mobileBlock={compactDeviceControls}
+        onChange={onCommandSafetyModeChange}
+      />
+    ) : null;
   const contextTray = props.contextBar ? (
     <div
       key="context-tray"
@@ -1423,8 +1433,14 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     </div>
   ) : null;
   const separateContextTray = mobileComposer ? null : contextTray;
-  const mobileComposerIdle = mobileComposer && composerIsEmpty && !isComposerExpanded &&
-    !isSending && !stt.active && !clarifyOpen && !pendingUploadedFiles.length &&
+  const mobileComposerIdle =
+    mobileComposer &&
+    composerIsEmpty &&
+    !isComposerExpanded &&
+    !isSending &&
+    !stt.active &&
+    !clarifyOpen &&
+    !pendingUploadedFiles.length &&
     !props.uploadingAttachments?.length &&
     !(isAgentMode && chatRuntimeControls.planModeEnabled) &&
     !(inlineLayout && chatRuntimeControls.nativeWebSearchEnabled && props.leadingControls);
@@ -1835,18 +1851,34 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     <ComposerAttachmentCard
                       key={file.id}
                       fileName={file.fileName}
-                      pathTitle={mobileComposer ? `${t("chat.upload.uploading")} ${file.fileName}` : file.fileName}
-                      fallbackIcon={mobileComposer ? (
-                        <span role="status" aria-label={`${t("chat.upload.uploading")} ${file.fileName}`}>
-                          <Loader2 className="size-4 motion-safe:animate-spin" />
-                        </span>
-                      ) : <FileIcon />}
+                      pathTitle={
+                        mobileComposer
+                          ? `${t("chat.upload.uploading")} ${file.fileName}`
+                          : file.fileName
+                      }
+                      fallbackIcon={
+                        mobileComposer ? (
+                          <span
+                            role="status"
+                            aria-label={`${t("chat.upload.uploading")} ${file.fileName}`}
+                          >
+                            <Loader2 className="size-4 motion-safe:animate-spin" />
+                          </span>
+                        ) : (
+                          <FileIcon />
+                        )
+                      }
                       disabled
                       removeLabel=""
                       onRemove={() => {}}
-                      previewContent={mobileComposer ? undefined : (
-                        <PreviewLoading variant="thumbnail" message={`正在上传 ${file.fileName}`} />
-                      )}
+                      previewContent={
+                        mobileComposer ? undefined : (
+                          <PreviewLoading
+                            variant="thumbnail"
+                            message={`正在上传 ${file.fileName}`}
+                          />
+                        )
+                      }
                     />
                   );
                 })}
@@ -1900,7 +1932,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 onBusyChange={onComposerBusyChange}
                 onPasteFiles={draftOnly ? undefined : onPasteFiles}
                 loadHistoryPrompts={draftOnly ? undefined : loadHistoryPrompts}
-                placeholder={compactDeviceControls ? t("chat.mobileInputPlaceholder") : inputPlaceholder}
+                placeholder={
+                  compactDeviceControls ? t("chat.mobileInputPlaceholder") : inputPlaceholder
+                }
                 disabled={(isInputDisabled && !draftOnly) || stt.active}
                 draftOnly={draftOnly}
                 workdir={workdir}
@@ -2136,7 +2170,9 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 <Button
                   data-composer-primary-action={
                     imageEdit
-                      ? imageEdit.stoppingRun ? "stop" : "send"
+                      ? imageEdit.stoppingRun
+                        ? "stop"
+                        : "send"
                       : canQueueDraftWhileSending
                         ? "queue"
                         : isSending
@@ -2168,13 +2204,21 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     handleComposerSend();
                   }}
                   size="sm"
-                  title={imageEdit?.stoppingRun ? t("chat.stopGeneration") : imageEdit?.sendLabel ?? primaryActionTitle}
+                  title={
+                    imageEdit?.stoppingRun
+                      ? t("chat.stopGeneration")
+                      : (imageEdit?.sendLabel ?? primaryActionTitle)
+                  }
                   tooltipShortcut={
                     !imageEdit && (!isSending || canQueueDraftWhileSending)
                       ? sendShortcutHint
                       : undefined
                   }
-                  aria-label={imageEdit?.stoppingRun ? t("chat.stopGeneration") : imageEdit?.sendLabel ?? primaryActionTitle}
+                  aria-label={
+                    imageEdit?.stoppingRun
+                      ? t("chat.stopGeneration")
+                      : (imageEdit?.sendLabel ?? primaryActionTitle)
+                  }
                   aria-keyshortcuts={
                     !imageEdit && !imageFocus && isSending && !canQueueDraftWhileSending
                       ? "Escape"
@@ -2216,30 +2260,50 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                 {!compactDeviceControls && gitControls}
               </div>
 
-              {compactDeviceControls ? (
-                (gitControls || contextRing) && (
-                  <Sheet key={conversationId}>
-                    <SheetTrigger render={
-                      <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-xl text-muted-foreground hover:text-foreground data-popup-open:bg-muted"
-                        aria-label={t("chat.mobileComposerOptions")} title={t("chat.mobileComposerOptions")} />
-                    }>
-                      <MoreHorizontal className="size-5" />
-                    </SheetTrigger>
-                    <SheetPopup side="bottom" data-browser-back-surface="" className="za-mobile-choice-sheet" closeLabel={t("window.close")}>
-                      <SheetHeader className="px-5 pb-2 pt-6 pr-16">
-                        <SheetTitle>{t("chat.mobileComposerOptions")}</SheetTitle>
-                      </SheetHeader>
-                      <SheetPanel className="mobile-composer-options flex min-w-0 flex-col gap-3 px-5 py-3">
-                        {gitControls && <div className="flex min-w-0 flex-wrap items-center gap-1">{gitControls}</div>}
-                        {contextRing && <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm text-muted-foreground">{t("chat.contextWindow")}</span>
-                          {contextRing}
-                        </div>}
-                      </SheetPanel>
-                    </SheetPopup>
-                  </Sheet>
-                )
-              ) : !inlineLayout && contextRing}
+              {compactDeviceControls
+                ? (gitControls || contextRing) && (
+                    <Sheet key={conversationId}>
+                      <SheetTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 shrink-0 rounded-xl text-muted-foreground hover:text-foreground data-popup-open:bg-muted"
+                            aria-label={t("chat.mobileComposerOptions")}
+                            title={t("chat.mobileComposerOptions")}
+                          />
+                        }
+                      >
+                        <MoreHorizontal className="size-5" />
+                      </SheetTrigger>
+                      <SheetPopup
+                        side="bottom"
+                        data-browser-back-surface=""
+                        className="za-mobile-choice-sheet"
+                        closeLabel={t("window.close")}
+                      >
+                        <SheetHeader className="px-5 pb-2 pt-6 pr-16">
+                          <SheetTitle>{t("chat.mobileComposerOptions")}</SheetTitle>
+                        </SheetHeader>
+                        <SheetPanel className="mobile-composer-options flex min-w-0 flex-col gap-3 px-5 py-3">
+                          {gitControls && (
+                            <div className="flex min-w-0 flex-wrap items-center gap-1">
+                              {gitControls}
+                            </div>
+                          )}
+                          {contextRing && (
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm text-muted-foreground">
+                                {t("chat.contextWindow")}
+                              </span>
+                              {contextRing}
+                            </div>
+                          )}
+                        </SheetPanel>
+                      </SheetPopup>
+                    </Sheet>
+                  )
+                : !inlineLayout && contextRing}
             </div>
           ) : null}
           {fileDropOverlay}

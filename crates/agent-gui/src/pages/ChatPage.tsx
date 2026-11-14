@@ -1,4 +1,3 @@
-import { useWorkspaceFileOpening } from "@liveagent/ui/components/project-tools/useWorkspaceFileOpening";
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import { listen } from "@liveagent/app/shims/tauriEvent";
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
@@ -43,12 +42,11 @@ import {
   expandedPathsForFileTreePath,
   MIN_DOCKED_WORKSPACE_WITH_CAPTIONS,
 } from "@liveagent/ui/components/project-tools/rightDockModel";
-import {
-  DeviceWorkbenchLayout,
-} from "@liveagent/ui/components/project-tools/WorkspacePanels";
+import { useWorkspaceFileOpening } from "@liveagent/ui/components/project-tools/useWorkspaceFileOpening";
+import { useWorkspaceTabs } from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
+import { DeviceWorkbenchLayout } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
 import type { ConversationImageEditReceipt } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
-import { requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
@@ -65,6 +63,7 @@ import {
   WorkbenchCanvas,
 } from "@liveagent/ui/components/workbench/WorkbenchCanvas";
 import { WorkbenchEmptyState } from "@liveagent/ui/components/workbench/WorkbenchEmptyState";
+import { requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
 import { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
 import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import {
@@ -333,9 +332,6 @@ import {
   terminalPaneBindings,
   terminalPaneLease,
 } from "./chat/workbench/terminalPaneRuntime";
-import {
-  useWorkspaceTabs,
-} from "@liveagent/ui/components/project-tools/useWorkspaceTabs";
 import { useWindowWorkbench } from "./chat/workbench/useWindowWorkbench";
 import {
   canSplitRectAtEdge,
@@ -1991,36 +1987,50 @@ function ChatPageContent(props: ChatPageProps) {
         canSend,
         locale: settings.locale,
         checkFileRuntime: () => invoke<boolean>("kbrain_file_runtime_ready"),
-        importSources: (sources) => importReadableFiles(
-          sources,
-          { conversationId, workdir: displayedConversationWorkdir },
-          undefined,
-          false,
-        ),
-        send: (text, uploadedFiles) => new Promise<boolean>((resolve, reject) => {
-          let started = false;
-          const isCurrentView = () => revisionViewRef.current === view &&
-            currentConversationIdRef.current === conversationId;
-          const finish = () => {
-            if (started) revision.observeRun?.finish(isCurrentView());
-          };
-          void sendActionRef.current({
-            conversationIdOverride: conversationId,
-            textOverride: text,
-            uploadedFilesOverride: uploadedFiles,
-            preserveComposerOnStart: true,
-            onRunStarted: (_turnId, isActive) => {
-              started = true;
-              revision.observeRun?.registerStop(() =>
-                isCurrentView() && isActive() && requestActiveConversationStop(conversationId, { force: false }),
+        importSources: (sources) =>
+          importReadableFiles(
+            sources,
+            { conversationId, workdir: displayedConversationWorkdir },
+            undefined,
+            false,
+          ),
+        send: (text, uploadedFiles) =>
+          new Promise<boolean>((resolve, reject) => {
+            let started = false;
+            const isCurrentView = () =>
+              revisionViewRef.current === view &&
+              currentConversationIdRef.current === conversationId;
+            const finish = () => {
+              if (started) revision.observeRun?.finish(isCurrentView());
+            };
+            void sendActionRef
+              .current({
+                conversationIdOverride: conversationId,
+                textOverride: text,
+                uploadedFilesOverride: uploadedFiles,
+                preserveComposerOnStart: true,
+                onRunStarted: (_turnId, isActive) => {
+                  started = true;
+                  revision.observeRun?.registerStop(
+                    () =>
+                      isCurrentView() &&
+                      isActive() &&
+                      requestActiveConversationStop(conversationId, { force: false }),
+                  );
+                  resolve(true);
+                },
+              })
+              .then(
+                (accepted) => {
+                  finish();
+                  resolve(accepted);
+                },
+                (error) => {
+                  finish();
+                  reject(error);
+                },
               );
-              resolve(true);
-            },
-          }).then(
-            (accepted) => { finish(); resolve(accepted); },
-            (error) => { finish(); reject(error); },
-          );
-        }),
+          }),
       });
     },
     [
@@ -2029,15 +2039,18 @@ function ChatPageContent(props: ChatPageProps) {
       displayedConversationWorkdir,
       importReadableFiles,
       isConversationRunning,
+      requestActiveConversationStop,
       settings.locale,
       workspaceOverlays.workspaceViewScope,
     ],
   );
   const workspaceVisible = chatVisible && rightDockOpen;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Read the mounted composer at invocation, after pane focus may have changed.
   const insertWorkspaceMarkdownSelection = useCallback(
     (text: string, path: string, comment?: string) => {
       if (!workspaceVisible) return false;
-      const accepted = composerRef.current?.insertWorkspaceExcerpt(text, path, comment);
+      const composer = composerRef.current;
+      const accepted = composer?.insertWorkspaceExcerpt(text, path, comment);
       if (!accepted) {
         notifyChatFileLinkError(
           settings.locale === "zh-CN" ? "当前输入框不可用" : "The composer is unavailable",
@@ -2136,7 +2149,19 @@ function ChatPageContent(props: ChatPageProps) {
         const percent = (value: number) => `${Math.round(value * 100)}%`;
         const notes = annotations.map(
           (
-            { url, x, y, width, height, target, text, siteLabel, siteMetadata, selectedText, siteControlChanges },
+            {
+              url,
+              x,
+              y,
+              width,
+              height,
+              target,
+              text,
+              siteLabel,
+              siteMetadata,
+              selectedText,
+              siteControlChanges,
+            },
             index,
           ) => {
             const page = new URL(url);
@@ -2201,11 +2226,12 @@ function ChatPageContent(props: ChatPageProps) {
     comparisonConversationId: currentConversationId ?? undefined,
     projectPathKey: terminalProjectPathKey,
     browserSshTargets: terminalSessions
-      .filter((session) =>
-        session.projectPathKey === terminalProjectPathKey &&
-        session.kind === "ssh" &&
-        session.running &&
-        session.ssh?.status === "connected",
+      .filter(
+        (session) =>
+          session.projectPathKey === terminalProjectPathKey &&
+          session.kind === "ssh" &&
+          session.running &&
+          session.ssh?.status === "connected",
       )
       .map((session) => ({ id: session.id, label: session.ssh?.hostName || session.title })),
     theme: effectiveTheme,
@@ -3214,12 +3240,10 @@ function ChatPageContent(props: ChatPageProps) {
       hasModels,
       importReadableFiles,
       isAgentDevExecutionMode,
-      isAgentMode,
       isComposerInputDisabled,
       isConversationHydrating,
       isConversationHydrationFailed,
       isFileDropActive,
-      isDraftConversation,
       isSending,
       isUploadingFiles,
       liveTranscriptStore,
@@ -3243,6 +3267,7 @@ function ChatPageContent(props: ChatPageProps) {
       settings.customSettings.chatTranscript.width,
       settings.customSettings.composerContextDisplay,
       settings.customSettings.promptClarifyEnabled,
+      settings.kbrainWebSearch,
       settings.stt.enabled,
       settings.stt.provider,
       settings.stt.providers,
@@ -5275,7 +5300,9 @@ function ChatPageContent(props: ChatPageProps) {
             <ProjectToolsPanelToggle
               isOpen={rightDockOpen}
               sessionCount={projectTerminalSessions.length}
-              disabledMessage={canOpenWorkspaceBrowser ? undefined : projectToolsUserDisabledMessage}
+              disabledMessage={
+                canOpenWorkspaceBrowser ? undefined : projectToolsUserDisabledMessage
+              }
               onToggle={() => setRightDockOpen((open) => !open)}
             />
           )

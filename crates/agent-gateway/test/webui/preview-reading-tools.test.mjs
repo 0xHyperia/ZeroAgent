@@ -97,7 +97,8 @@ test("unsent region comments retain their anchors when cancelling discard and cl
  await app.env.act(async()=>app.host.querySelector('[aria-label="查看 1 条批注"]').click());
  await app.env.act(async()=>document.querySelector('[aria-label="编辑第 1 条批注"]').click());
  assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'精简选中区域');
- await clickText('取消');await clickText('放弃');assert.equal(app.host.querySelector('fieldset'),null);
+ await app.env.act(async()=>[...app.host.querySelectorAll('button')].findLast(button=>button.textContent==='取消').click());
+ await clickText('放弃');assert.equal(app.host.querySelector('fieldset'),null);
 });
 
 test("floating comment position clamps to the reader when the pane narrows or a drag leaves its boundaries",async t=>{
@@ -116,7 +117,7 @@ async function setup(t, mocks={}) {
     const deadline=Date.now()+3000;
     while(!predicate()&&Date.now()<deadline)await env.act(async()=>new Promise(resolve=>setTimeout(resolve,10)));
     assert.ok(predicate(),host.textContent);
-  },async zoom(label,percent){await env.act(async()=>{host.querySelector(`button[aria-label="${label}"]`).click();await flush();});const item=[...document.querySelectorAll('[role="menuitemradio"]')].find(el=>el.textContent===`${percent}%`);assert.ok(item,document.body.textContent);await env.act(async()=>{item.click();await flush();});},async input(label,value){const el=host.querySelector(`input[aria-label="${label}"]`);assert.ok(el,label);await env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set.call(el,value);el.dispatchEvent(new Event("input",{bubbles:true}));});return el;},async key(el,key){await env.act(async()=>{el.dispatchEvent(new KeyboardEvent("keydown",{key,bubbles:true,cancelable:true}));await flush();});}};
+  },async zoom(label,percent){await env.act(async()=>{host.querySelector(`button[aria-label="${label}"]`).click();await flush();});const item=[...document.querySelectorAll('[role="menuitemradio"]')].find(el=>el.textContent===`${percent}%`);assert.ok(item,document.body.textContent);await env.act(async()=>{item.click();await flush();});},async input(label,value){const el=host.querySelector(`[aria-label="${label}"]:is(input, textarea)`);assert.ok(el,label);await env.act(async()=>{Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),"value").set.call(el,value);el.dispatchEvent(new Event("input",{bubbles:true}));});return el;},async key(el,key){await env.act(async()=>{el.dispatchEvent(new KeyboardEvent("keydown",{key,bubbles:true,cancelable:true}));await flush();});}};
 }
 
 test("reading geometry distinguishes true percent, width and whole-page fit and retains pixel budgets",async t=>{
@@ -251,7 +252,8 @@ test("comment list locates and edits individual anchors, deletes one, and retain
  assert.match(document.querySelector('[aria-label="批注列表"]').textContent,/原文1.*建议1.*原文2.*建议2/);
  await click('定位第 1 条批注，第 1 页');assert.equal(visited.at(-1),'pdf-page-1');
  await click('查看 2 条批注');await click('编辑第 2 条批注');assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'建议2');
- await app.input('修改建议','保留第二条的新要求');await click('添加批注');
+ await app.input('修改建议','保留第二条的新要求');
+ await app.env.act(async()=>app.host.querySelector('form[aria-label="编辑批注"] button[type="submit"]').click());
  await click('查看 2 条批注');await click('移除第 1 条批注');
  assert.match(document.querySelector('[aria-label="批注列表"]').textContent,/保留第二条的新要求/);
  assert.doesNotMatch(document.querySelector('[aria-label="批注列表"]').textContent,/原文1/);
@@ -271,69 +273,83 @@ test("page entry validates Enter, restores an unfinished edit on blur and keeps 
   await app.input("页码","7");await app.env.act(async()=>{input.focus();input.blur();});assert.equal(input.value,"2");
 });
 
-test("workspace PDF uses a compact pager and changes only the visible paper", async (t) => {
+test("workspace PDF directory jumps without replacing the continuous reading surface", async (t) => {
   const paper = {
     getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }),
+    getAnnotations: async () => [],
     render: () => ({ promise: Promise.resolve(), cancel() {} }),
   };
   const pdf = { numPages: 4, getPage: async () => paper };
   const app = await setup(t, {
-    "pdfjs-dist": {
+    "pdfjs-dist/legacy/build/pdf.mjs": {
+      AnnotationMode: { DISABLE: 0 },
       GlobalWorkerOptions: {},
       version: "test",
       getDocument: () => ({ promise: Promise.resolve(pdf), destroy: async () => {} }),
     },
-    "pdfjs-dist/build/pdf.worker.min.mjs?url": "worker",
+    "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url": "worker",
     "./pdfPreviewAssets": { pdfPreviewAssetsURL: () => "http://localhost/resource-preview/pdf/test/" },
   });
   const { PreviewToolbarMount } = app.env.loadModule("@liveagent/ui/components/resource-preview/PreviewChrome.tsx");
   const Reader = app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
   const h = app.env.React.createElement;
-  await app.render(h(
-    PreviewToolbarMount.Provider,
-    { value: { workspaceTab: true, target: app.host } },
+  await app.render(h(PreviewToolbarMount.Provider, { value: { workspaceTab: true, target: app.host } },
     h(Reader, { bytes: new Uint8Array([1]), assertCurrent() {} }),
   ));
-  const paperSelector = ".za-preview-pdf .za-preview-pdf-page";
-  await app.wait(() => app.host.querySelector(paperSelector));
-  const pager = app.host.querySelector(".za-pdf-floating-pages nav[data-compact]");
-  assert.ok(pager);
-  assert.equal(pager.querySelector("input").value, "1");
-  assert.equal(pager.querySelector("input").style.width, "1ch");
-  await app.env.act(async () => pager.querySelector('[aria-label="下一页"]').click());
-  assert.equal(pager.querySelector("input").value, "2");
-  await app.key(await app.input("页码", "4"), "Enter");
-  assert.equal(pager.querySelector('[aria-label="下一页"]').disabled, true);
-  assert.equal(app.host.querySelectorAll(paperSelector).length, 1);
-  assert.equal(app.host.querySelector(paperSelector).getAttribute("aria-label"), "第 4 页");
+  await app.wait(() => app.host.querySelector('[aria-label="PDF 第 1 页"]')?.style.visibility === "visible");
+  const viewport = app.host.querySelector(".za-preview-pdf");
+  const scrolls = [];
+  viewport.scrollTo = (options) => scrolls.push(options);
+  const firstPage = viewport.querySelector('[data-pdf-page="1"]');
+  await app.env.act(async () => app.host.querySelector('[aria-label="展开PDF 目录"]').click());
+  const fourth = app.host.querySelector('[aria-label="跳到第 4 页"]');
+  await app.env.act(async () => fourth.click());
+  assert.equal(fourth.getAttribute("aria-current"), "page");
+  assert.ok(scrolls.length);
+  assert.equal(viewport.querySelectorAll("[data-pdf-page]").length, 4);
+  assert.equal(viewport.querySelector('[data-pdf-page="1"]'), firstPage);
 });
 
-test("PDF page rendering ignores an older page resolution after a newer jump and uses actual percent",async t=>{
-  const pending=new Map(),renders=[],cancelled=[];
-  let firstPaint;
-  const pdfPage=number=>({getViewport:({scale})=>({width:600*scale,height:800*scale}),render:({viewport})=>{renders.push({number,width:viewport.width});return {promise:number===1&&!firstPaint?new Promise(resolve=>{firstPaint=resolve;}):Promise.resolve(),cancel(){cancelled.push(number);}};}});
-  const document={numPages:3,getPage:number=>number===1?Promise.resolve(pdfPage(1)):new Promise(resolve=>pending.set(number,()=>resolve(pdfPage(number))))};
-  const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(document),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
-  Object.defineProperty(window.HTMLElement.prototype,"clientWidth",{configurable:true,get(){return this.classList.contains("za-preview-pdf")?640:0;}});
-  Object.defineProperty(window.HTMLElement.prototype,"clientHeight",{configurable:true,get(){return this.classList.contains("za-preview-pdf")?300:0;}});
-  const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
-  await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));await app.wait(()=>renders.length===1);
-  assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready,"false");
-  assert.equal(app.host.querySelectorAll(".za-preview-loading").length,1,"one canvas loader remains until first pixels, rather than loaders on empty sheets");
-  await app.env.act(async()=>{firstPaint();await flush();});
-  assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready,"true");
-  assert.equal(app.host.querySelector(".za-preview-frame-pending"),null);
-  await app.zoom("PDF 缩放",200);
-  assert.equal(app.host.querySelector('[aria-label="PDF 第 1 页"]').style.visibility,"visible");
-  await app.wait(()=>renders.at(-1).width===1600);
-  await app.key(await app.input("页码","1"),"Enter");assert.equal(app.host.querySelector(".za-preview-pdf").getAttribute("aria-busy"),"false");
-  await app.key(await app.input("页码","3"),"Enter");await app.key(await app.input("页码","2"),"Enter");
-  await app.env.act(async()=>{pending.get(2)();await flush();});assert.equal(app.host.querySelector('[aria-label="PDF 第 2 页"]').style.visibility,"visible");
-  await app.env.act(async()=>{pending.get(3)();await flush();});assert.equal(renders.at(-1).number,2);assert.ok(!renders.some(item=>item.number===3));assert.ok(cancelled.includes(1));
+test("PDF zoom paints the current page at the requested scale and keeps existing pixels until ready", async (t) => {
+  const renders = [];
+  let finishFirstPaint;
+  const paper = {
+    getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }),
+    getAnnotations: async () => [],
+    render: ({ viewport }) => {
+      renders.push(viewport.width);
+      return {
+        promise: renders.length === 1 ? new Promise(resolve => { finishFirstPaint = resolve; }) : Promise.resolve(),
+        cancel() {},
+      };
+    },
+  };
+  const pdf = { numPages: 1, getPage: async () => paper };
+  const app = await setup(t, {
+    "pdfjs-dist/legacy/build/pdf.mjs": {
+      GlobalWorkerOptions: {}, version: "test",
+      getDocument: () => ({ promise: Promise.resolve(pdf), destroy: async () => {} }),
+    },
+    "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url": "worker",
+    "./pdfPreviewAssets": { pdfPreviewAssetsURL: () => "http://localhost/resource-preview/pdf/test/" },
+  });
+  window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
+  const Reader = app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
+  await app.render(app.env.React.createElement(Reader, { bytes: new Uint8Array([1]), assertCurrent() {} }));
+  await app.wait(() => renders.length === 1);
+  assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready, "false");
+  assert.equal(app.host.querySelectorAll(".za-preview-loading").length, 1);
+  await app.env.act(async () => { finishFirstPaint(); await flush(); });
+  const canvas = app.host.querySelector('[aria-label="PDF 第 1 页"]');
+  assert.equal(app.host.querySelector(".za-preview-pdf").dataset.ready, "true");
+  await app.zoom("PDF 缩放", 200);
+  assert.equal(canvas.style.visibility, "visible");
+  await app.wait(() => renders.at(-1) === 1600);
+  assert.equal(app.host.querySelector('[aria-label="PDF 第 1 页"]'), canvas);
 });
 
 test("PDF document failure leaves the loading canvas and exposes recovery instead of a hidden error",async t=>{
-  const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.reject(new Error("broken document")),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
+  const app=await setup(t,{"pdfjs-dist/legacy/build/pdf.mjs":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.reject(new Error("broken document")),destroy:async()=>{}})},"pdfjs-dist/legacy/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
   const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
   await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){},onRetry(){},onDownload(){}}));
   await app.wait(()=>app.host.querySelector(".za-preview-unavailable"));
@@ -343,13 +359,13 @@ test("PDF document failure leaves the loading canvas and exposes recovery instea
 });
 
 test("PDF continuous pages isolate a failed page so another page can recover without reopening",async t=>{
-  const page={getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
+  const page={getAnnotations:async()=>[],getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
   const document={numPages:3,getPage:number=>number===2?Promise.reject(new Error("bad page")):Promise.resolve(page)};
-  const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(document),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
+  const app=await setup(t,{"pdfjs-dist/legacy/build/pdf.mjs":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(document),destroy:async()=>{}})},"pdfjs-dist/legacy/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
   const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
-  await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));await app.wait(()=>app.host.querySelector(".za-preview-pdf").getAttribute("aria-busy")==="false");
-  const canvas=app.host.querySelector("canvas");await app.key(await app.input("页码","2"),"Enter");await app.wait(()=>/此页未能渲染/.test(app.host.textContent));
-  await app.key(await app.input("页码","3"),"Enter");await app.wait(()=>app.host.querySelector('[aria-label="PDF 第 3 页"]').style.visibility==="visible");
+  await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));await app.wait(()=>app.host.querySelector(".za-preview-pdf")?.getAttribute("aria-busy")==="false");
+  const canvas=app.host.querySelector("canvas");await app.key(app.host.querySelector(".za-preview-pdf"),"ArrowRight");await app.wait(()=>/此页未能渲染/.test(app.host.textContent));
+  await app.key(app.host.querySelector(".za-preview-pdf"),"ArrowRight");await app.wait(()=>app.host.querySelector('[aria-label="PDF 第 3 页"]')?.style.visibility==="visible");
   assert.equal(app.host.querySelector("canvas"),canvas);
   assert.equal(app.host.querySelectorAll("[data-pdf-page]").length,3);
   assert.equal(app.host.querySelector('[data-pdf-page="3"] .za-preview-unavailable'),null);
@@ -357,9 +373,12 @@ test("PDF continuous pages isolate a failed page so another page can recover wit
 
 test("continuous PDF pages decode only nearby sheets, release offscreen pixels and disconnect on close",async t=>{
   const requests=[], observers=[];
-  const page={getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
-  const doc={numPages:100,getPage:async number=>{requests.push(number);return page;}};
-  const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(doc),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
+  const doc={numPages:100,getPage:async number=>({
+    getAnnotations:async()=>[],
+    getViewport:({scale})=>({width:600*scale,height:800*scale}),
+    render:()=>{requests.push(number);return {promise:Promise.resolve(),cancel(){}};},
+  })};
+  const app=await setup(t,{"pdfjs-dist/legacy/build/pdf.mjs":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(doc),destroy:async()=>{}})},"pdfjs-dist/legacy/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
   const original=globalThis.IntersectionObserver;
   globalThis.IntersectionObserver=class {
     constructor(callback,options){this.callback=callback;this.options=options;observers.push(this);}
@@ -369,14 +388,16 @@ test("continuous PDF pages decode only nearby sheets, release offscreen pixels a
   t.after(()=>{globalThis.IntersectionObserver=original;});
   const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
   await app.render(app.env.React.createElement(Reader,{bytes:new Uint8Array([1]),assertCurrent(){}}));
-  await app.wait(()=>app.host.querySelector('[aria-label="PDF 第 1 页"]').style.visibility==="visible");
-  assert.deepEqual(requests,[1]);assert.equal(app.host.querySelectorAll('[data-pdf-page]').length,100);
+  await app.wait(()=>requests.includes(1));
+  assert.equal(app.host.querySelector('.za-preview-pdf [data-pdf-page="1"]').getAttribute("aria-busy"), "false");
+  await app.wait(()=>[1,2,3].every(number=>requests.includes(number)));assert.equal(app.host.querySelectorAll('[data-pdf-page]').length,100);
+  assert.ok(!requests.includes(80), "page metadata may load ahead while an offscreen canvas stays unpainted");
   assert.equal(app.host.querySelector('[aria-label="PDF 第 80 页"]').width,0);
-  const near=observers.find(item=>item.options.rootMargin&&item.element.dataset.pdfPage==="2");
+  const near=observers.find(item=>item.options.rootMargin&&item.element.dataset.pdfPage==="80");
   await app.env.act(async()=>{near.callback([{isIntersecting:true}]);await flush();});
-  assert.deepEqual(requests,[1,2]);assert.ok(app.host.querySelector('[aria-label="PDF 第 2 页"]').width>0);
+  await app.wait(()=>app.host.querySelector('[aria-label="PDF 第 80 页"]').width>0);
   await app.env.act(async()=>{near.callback([{isIntersecting:false}]);await flush();});
-  assert.equal(app.host.querySelector('[aria-label="PDF 第 2 页"]').width,0);
+  assert.equal(app.host.querySelector('[aria-label="PDF 第 80 页"]').width,0);
   await app.render(null);assert.ok(observers.every(item=>item.closed));
 });
 
@@ -630,7 +651,7 @@ test("annotation input follows geometry changes without losing its draft and hid
  const view=selection=>h(ResourceDocumentComments,{enabled:true,onEnabled(){},selection,onSelection(){},onNavigate(){},onMarks(){}});
  await app.render(view(anchor));await app.input('修改建议','把这一段写得更简洁');
  await app.render(view({...anchor,y:260}));assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'把这一段写得更简洁');
- await app.render(view({...anchor,y:-80,visible:false}));assert.equal(app.host.querySelector('[aria-label="修改建议"]'),null);
+ await app.render(view({...anchor,y:-80,visible:false}));assert.equal(app.host.querySelector('form[aria-label="新建批注"]').dataset.anchorHidden,"true");
  await app.render(view({...anchor,y:140,visible:true}));assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'把这一段写得更简洁');
  await app.render(view({...anchor,id:'za-reader-block-2'}));assert.equal(app.host.querySelector('[aria-label="修改建议"]').value,'');
 });
@@ -663,11 +684,11 @@ test("sent file cards use the host preview capability without removing the origi
 
 
 test("PDF covers never scroll a parent library while full readers retain page restoration",async t=>{
- const pdfPage={getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
+ const pdfPage={getAnnotations:async()=>[],getViewport:({scale})=>({width:600*scale,height:800*scale}),render:()=>({promise:Promise.resolve(),cancel(){}})};
  const doc={numPages:1,getPage:async()=>pdfPage};
- const app=await setup(t,{"pdfjs-dist":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(doc),destroy:async()=>{}})},"pdfjs-dist/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
- const proto=window.HTMLElement.prototype,original=proto.scrollIntoView;let scrolled=0;
- proto.scrollIntoView=function(){scrolled++;};t.after(()=>{proto.scrollIntoView=original;});
+ const app=await setup(t,{"pdfjs-dist/legacy/build/pdf.mjs":{GlobalWorkerOptions:{},version:"test",getDocument:()=>({promise:Promise.resolve(doc),destroy:async()=>{}})},"pdfjs-dist/legacy/build/pdf.worker.min.mjs?url":"worker","./pdfPreviewAssets":{pdfPreviewAssetsURL:()=>"http://localhost/resource-preview/pdf/test/"}});
+ const proto=window.HTMLElement.prototype,original=proto.scrollTo;let scrolled=0;
+ proto.scrollTo=function(){scrolled++;};t.after(()=>{proto.scrollTo=original;});
  const Reader=app.env.loadModule("@liveagent/ui/components/resource-preview/ResourcePDFPreview.tsx").default;
  const h=app.env.React.createElement,assertCurrent=()=>{};
  await app.render(h(Reader,{bytes:new Uint8Array([1]),assertCurrent,thumbnail:true}));

@@ -234,7 +234,8 @@ func (e *cloudRunToolExecution) executeResearch(ctx context.Context, round int, 
 		return nil, err
 	}
 	inputs := []CloudResearchSourceInput{}
-	if call.Name == "web_search" {
+	switch call.Name {
+	case "web_search":
 		created, reserveErr := e.runtime.service.ReserveCloudResearchSearch(ctx, e.run.UserID, e.run.ID, e.owner, e.run.Attempt, op.ID, cloudResearchDailySearches)
 		if reserveErr != nil {
 			_ = e.commit(ctx, op, CloudToolFailed, nil, cloudResearchToolCode(reserveErr))
@@ -255,7 +256,7 @@ func (e *cloudRunToolExecution) executeResearch(ctx context.Context, round int, 
 		for _, item := range result.Sources {
 			inputs = append(inputs, CloudResearchSourceInput{Kind: CloudResearchSearchSnippet, URL: item.URL, Title: item.Title, Snippet: item.Snippet, ObservedAt: result.SearchedAt, Truncated: item.Truncated})
 		}
-	} else if call.Name == "fetch_page" {
+	case "fetch_page":
 		page, fetchErr := e.runtime.service.fetchCloudPublicResearch(ctx, e, url)
 		if fetchErr != nil {
 			code := cloudResearchToolCode(fetchErr)
@@ -263,7 +264,7 @@ func (e *cloudRunToolExecution) executeResearch(ctx context.Context, round int, 
 			return nil, &cloudToolRunError{code: code}
 		}
 		inputs = append(inputs, CloudResearchSourceInput{Kind: CloudResearchPage, URL: page.RequestedURL, FinalURL: page.FinalURL, Title: page.Title, Text: page.Text, SHA256: page.SHA256, BodySHA256: page.BodySHA256, ObservedAt: page.FetchedAt, Truncated: page.Truncated})
-	} else {
+	default:
 		source, getErr := store.GetCloudResearchSource(ctx, e.run.UserID, sourceID)
 		if getErr != nil || source.RunID != e.run.ID && !e.historySourceAllowed(ctx, sourceID) {
 			_ = e.commit(ctx, op, CloudToolFailed, nil, "cloud_research_source_unavailable")

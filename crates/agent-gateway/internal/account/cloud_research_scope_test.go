@@ -90,7 +90,8 @@ func TestCloudPublicResearchScopeIsBoundToExecutionLeaseAndRevocable(t *testing.
 	if _, err := e.authorizedResearchScope(public); err != nil {
 		t.Fatal("genuine internal capability rejected")
 	}
-	for _, fake := range []context.Context{ctx, context.WithValue(ctx, "research_scope", e.researchScope), context.WithValue(ctx, cloudResearchScopeContextKey{}, &cloudRunResearchScope{execution: e, userID: e.run.UserID, runID: e.run.ID, owner: e.owner, attempt: e.run.Attempt, topic: e.run.PublicResearch.Topic})} {
+	type untrustedScopeKey string
+	for _, fake := range []context.Context{ctx, context.WithValue(ctx, untrustedScopeKey("research_scope"), e.researchScope), context.WithValue(ctx, cloudResearchScopeContextKey{}, &cloudRunResearchScope{execution: e, userID: e.run.UserID, runID: e.run.ID, owner: e.owner, attempt: e.run.Attempt, topic: e.run.PublicResearch.Topic})} {
 		if _, err := e.authorizedResearchScope(fake); err == nil {
 			t.Fatal("forged/serialized capability accepted")
 		}

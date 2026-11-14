@@ -24,19 +24,20 @@ func canonicalResource(r Resource) bool {
 	}
 	ownerHash := sha256.Sum256([]byte(strconv.FormatInt(r.UserID, 10)))
 	owner := hex.EncodeToString(ownerHash[:16])
-	metadata := map[string]string{}
+	var metadata map[string]string
 	key := "accounts/" + owner
-	if r.Kind == "file" {
+	switch r.Kind {
+	case "file":
 		key += "/files/" + r.ID + "/original"
 		metadata = map[string]string{"file-id": r.ID, "owner-scope": owner}
-	} else if r.Kind == "artifact" {
+	case "artifact":
 		family, err := uuid.Parse(r.FamilyID)
 		if err != nil || family.String() != r.FamilyID {
 			return false
 		}
 		key += "/artifacts/" + r.FamilyID + "/" + r.ID + "/content"
 		metadata = map[string]string{"artifact-version": r.ID, "artifact-family": r.FamilyID, "owner-scope": "account-" + owner}
-	} else {
+	default:
 		return false
 	}
 	return r.Key == key && string(mustJSON(r.Metadata)) == string(mustJSON(metadata)) && r.Archive == "objects/"+r.SHA256+".bin"
@@ -49,7 +50,7 @@ func (e *Engine) resources(ctx context.Context, tx *sql.Tx) ([]Resource, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := []Resource{}
 	var total int64
 	for rows.Next() {
@@ -78,7 +79,7 @@ func verifyObject(ctx context.Context, store objectstore.Store, r Resource, outp
 	if err != nil {
 		return err
 	}
-	defer object.Body.Close()
+	defer func() { _ = object.Body.Close() }()
 	if object.Size != r.Size || object.SHA256 != r.SHA256 || object.ContentType != r.MIME {
 		return ErrIntegrity
 	}
@@ -127,7 +128,7 @@ func restoreObject(ctx context.Context, store ConditionalObjects, root string, r
 	if err != nil {
 		return err
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 	if err = store.PutIfAbsent(ctx, r.Key, input, r.Size, objectstore.PutOptions{ContentType: r.MIME, SHA256: r.SHA256, Metadata: r.Metadata}); err != nil {
 		return err
 	}

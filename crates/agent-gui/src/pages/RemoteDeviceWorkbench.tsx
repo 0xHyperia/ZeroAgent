@@ -79,8 +79,7 @@ export function RemoteDeviceWorkbench(props: Props) {
   );
   const mountedTarget = useRef<typeof target | undefined>(undefined);
   // A listed device can reconnect on its current lease without discarding its workbench.
-  const canStartOrKeep =
-    !selectedDeviceMissing && (online || mountedTarget.current === target);
+  const canStartOrKeep = !selectedDeviceMissing && (online || mountedTarget.current === target);
   const currentProps = useRef(props);
   currentProps.current = props;
 

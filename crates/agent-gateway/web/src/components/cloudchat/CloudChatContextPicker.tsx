@@ -88,40 +88,52 @@ export function CloudChatWorkToolbar(props: {
             icon: FolderOpen,
           },
           { id: "files", label: en ? "Files" : "文件", icon: BookOpen },
-          { id: "tools", label: props.compact ? (en ? "Skills" : "技能") : (en ? "Plugins" : "插件"), icon: Blend },
+          {
+            id: "tools",
+            label: props.compact ? (en ? "Skills" : "技能") : en ? "Plugins" : "插件",
+            icon: Blend,
+          },
         ] as const
-      ).filter(({ id }) => !props.compact || id !== "files").map(({ id, label, icon: Icon }) => (
-        <Button
-          key={id}
-          data-cloud-work-tool={id}
-          data-composer-option-block={props.compact ? "" : undefined}
-          variant="ghost"
-          size="sm"
-          disabled={props.disabled || (id === "projects" && props.projectDisabled)}
-          aria-label={
-            id === "projects" && project && !props.busy
-              ? en
-                ? `Current project ${project.name}`
-                : `当前项目：${project.name}`
-              : label
-          }
-          aria-haspopup="dialog"
-          aria-expanded={props.open === id}
-          data-open={props.open === id || undefined}
-          onClick={(event) => props.onOpen(id, event.currentTarget)}
-        >
-          {id === "projects" && project ? (
-            <CloudProjectIcon
-              icon={project.icon}
-              color={project.color}
-              className="size-4 shrink-0"
-            />
-          ) : (
-            <Icon className="size-4 shrink-0" aria-hidden="true" />
-          )}
-          <span className="truncate">{props.compact && id === "projects" && !project && !props.busy ? (en ? "Project" : "项目") : label}</span>
-        </Button>
-      ))}
+      )
+        .filter(({ id }) => !props.compact || id !== "files")
+        .map(({ id, label, icon: Icon }) => (
+          <Button
+            key={id}
+            data-cloud-work-tool={id}
+            data-composer-option-block={props.compact ? "" : undefined}
+            variant="ghost"
+            size="sm"
+            disabled={props.disabled || (id === "projects" && props.projectDisabled)}
+            aria-label={
+              id === "projects" && project && !props.busy
+                ? en
+                  ? `Current project ${project.name}`
+                  : `当前项目：${project.name}`
+                : label
+            }
+            aria-haspopup="dialog"
+            aria-expanded={props.open === id}
+            data-open={props.open === id || undefined}
+            onClick={(event) => props.onOpen(id, event.currentTarget)}
+          >
+            {id === "projects" && project ? (
+              <CloudProjectIcon
+                icon={project.icon}
+                color={project.color}
+                className="size-4 shrink-0"
+              />
+            ) : (
+              <Icon className="size-4 shrink-0" aria-hidden="true" />
+            )}
+            <span className="truncate">
+              {props.compact && id === "projects" && !project && !props.busy
+                ? en
+                  ? "Project"
+                  : "项目"
+                : label}
+            </span>
+          </Button>
+        ))}
     </div>
   );
 }

@@ -381,6 +381,8 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.statusPinned": "已置顶",
   "chat.statusShared": "已分享",
   "chat.statusRunningReply": "正在回复",
+  "chat.externalRunPlaceholder":
+    "正在 {client} 中运行，回复会随回合进展显示在这里。结束后可继续发送。",
   "chat.delete": "删除",
   "chat.remove": "移除",
   "chat.manageSharedConversations": "管理已分享会话（{count}）",
@@ -410,13 +412,16 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.greetingSubtitle": "今天想从哪里开始？",
   "chat.suggestExploreTitle": "了解当前项目",
   "chat.suggestExploreHint": "入口、模块与运行方式",
-  "chat.suggestExplorePrompt": "请阅读当前项目的 README、目录和主要入口，说明如何运行、核心模块如何协作，以及我可以从哪些文件开始阅读。",
+  "chat.suggestExplorePrompt":
+    "请阅读当前项目的 README、目录和主要入口，说明如何运行、核心模块如何协作，以及我可以从哪些文件开始阅读。",
   "chat.suggestFixTitle": "排查一个故障",
   "chat.suggestFixHint": "复现问题并定位原因",
-  "chat.suggestFixPrompt": "请帮我排查一个故障。先问我复现步骤、预期结果和实际表现，再用相关代码或日志验证原因，给出修复建议。",
+  "chat.suggestFixPrompt":
+    "请帮我排查一个故障。先问我复现步骤、预期结果和实际表现，再用相关代码或日志验证原因，给出修复建议。",
   "chat.suggestIdeateTitle": "规划一个改动",
   "chat.suggestIdeateHint": "影响范围、步骤与验证",
-  "chat.suggestIdeatePrompt": "我想改进当前项目。请先问我具体目标，再结合现有代码说明影响范围、可分步实施的方案和验收条件。",
+  "chat.suggestIdeatePrompt":
+    "我想改进当前项目。请先问我具体目标，再结合现有代码说明影响范围、可分步实施的方案和验收条件。",
   "chat.noModelSelected": "你还没有配置模型。",
   "chat.configureModel": "点击下方按钮，配置供应商和模型。",
   "chat.goToSettings": "配置供应商",
@@ -651,7 +656,8 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.safety.setupOffline": "设置离线沙箱…",
   "chat.safety.setupOfflineDesc": "需要 Windows 管理员授权",
   "chat.safety.setup.title": "设置离线沙箱？",
-  "chat.safety.setup.intro": "为了让沙箱中的命令在断网状态下运行，ZeroAgent 引擎 会对这台电脑做以下改动：",
+  "chat.safety.setup.intro":
+    "为了让沙箱中的命令在断网状态下运行，ZeroAgent 引擎 会对这台电脑做以下改动：",
   "chat.safety.setup.accounts":
     "创建两个隐藏的本地 Windows 账户，沙箱命令以它们的身份运行：一个可以联网，一个不能。",
   "chat.safety.setup.firewall":
@@ -1068,7 +1074,8 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.subagent.pane.ended": "已结束 · {count}",
   "chat.subagent.pane.showMore": "显示更多",
   "chat.subagent.pane.empty": "此对话还没有子代理。",
-  "chat.subagent.pane.unsupported": "当前 ZeroAgent 引擎 版本无法列出子代理，升级 ZeroAgent 引擎 后可在此浏览。",
+  "chat.subagent.pane.unsupported":
+    "当前 ZeroAgent 引擎 版本无法列出子代理，升级 ZeroAgent 引擎 后可在此浏览。",
   "chat.subagent.pane.stop": "停止",
   "chat.subagent.pane.stopping": "正在停止",
   "chat.subagent.pane.stopFailed": "无法停止子代理。",
@@ -1077,6 +1084,7 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "chat.subagent.pane.retry": "重试",
   "chat.subagent.pane.noOutput": "暂无输出。",
   "chat.subagent.pane.background": "后台",
+  "chat.subagent.pane.external": "在 kn 中运行",
   "chat.tool.waiting": "等待",
   "chat.tool.unknown": "结果待确认",
   "chat.tool.cancelled": "已取消",

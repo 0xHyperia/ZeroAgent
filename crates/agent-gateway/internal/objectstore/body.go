@@ -27,7 +27,7 @@ func (r contextReader) Read(p []byte) (int, error) {
 func prepareUpload(ctx context.Context, body io.Reader, size int64, tempDir string) (io.ReadSeeker, string, func(), error) {
 	cleanup := func() {}
 	var source io.ReadSeeker
-	var target io.Writer = io.Discard
+	var target = io.Discard
 	var initial int64
 	if seeker, ok := body.(io.ReadSeeker); ok {
 		var err error

@@ -76,7 +76,11 @@ func TestTransfer32MiBUsesBoundedFramesAndStableOperationIDs(t *testing.T) {
 		default:
 			t.Error("unexpected transfer action")
 		}
-	}, func(config *Config) { config.RequestTimeout = 2 * time.Second })
+	}, func(config *Config) {
+		// The race detector instruments JSON and base64 work on each 1 MiB frame.
+		config.RequestTimeout = 10 * time.Second
+		config.MaxWait = 15 * time.Second
+	})
 	if _, err := client.Upload(context.Background(), spec, bytes.NewReader(data)); err != nil {
 		t.Fatal(err)
 	}

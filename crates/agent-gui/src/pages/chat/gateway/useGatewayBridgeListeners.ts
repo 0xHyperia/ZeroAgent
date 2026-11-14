@@ -529,9 +529,9 @@ export function useGatewayBridgeListeners(params: UseGatewayBridgeListenersParam
         const resolvedRunning = Boolean(
           runningRequest ||
             latestParamsRef.current.isConversationRunning(resolvedConversationId) ||
-          latestParamsRef.current.getConversationAbortController(resolvedConversationId) ||
-          (targetConversationId !== resolvedConversationId &&
-            (await latestParamsRef.current.isBackendSessionBusy?.(resolvedConversationId))),
+            latestParamsRef.current.getConversationAbortController(resolvedConversationId) ||
+            (targetConversationId !== resolvedConversationId &&
+              (await latestParamsRef.current.isBackendSessionBusy?.(resolvedConversationId))),
         );
         if (
           composerCommand &&

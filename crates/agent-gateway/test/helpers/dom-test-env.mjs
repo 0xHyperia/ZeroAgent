@@ -31,6 +31,7 @@ export async function createWebDomTestEnv(options = {}) {
     SVGElement: window.SVGElement,
     DocumentFragment: window.DocumentFragment,
     MutationObserver: window.MutationObserver,
+    DOMRect: window.DOMRect,
     ResizeObserver: class {
       observe() {}
       unobserve() {}

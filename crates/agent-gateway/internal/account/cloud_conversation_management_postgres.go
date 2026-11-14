@@ -70,7 +70,7 @@ func (s *PersistentStore) CloudConversationCatalog(ctx context.Context, uid int6
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	page := &CloudConversationCatalog{Conversations: []CloudConversation{}}
 	for rows.Next() {
 		c, err := scanCloudConversation(rows)
@@ -129,7 +129,7 @@ SELECT ` + cloudConversationColumns + `,COALESCE(h.message_id::text,''),h.role,h
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	page := &CloudConversationSearchPage{Items: []CloudConversationSearchItem{}}
 	for rows.Next() {
 		var item CloudConversationSearchItem
@@ -162,7 +162,7 @@ func (s *PersistentStore) CloudConversationWindowHeads(ctx context.Context, uid 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	anchor, err := scanCloudMessageHead(tx.QueryRowContext(ctx, `SELECT `+cloudHistoryHeadColumns+` FROM zerobox_cloud_messages m JOIN zerobox_cloud_conversations c ON c.id=m.conversation_id AND c.user_id=m.user_id WHERE m.user_id=$1 AND m.conversation_id=$2 AND m.id=$3`, uid, cid, mid))
 	if err != nil {
 		return nil, err
@@ -181,7 +181,7 @@ func (s *PersistentStore) CloudConversationWindowHeads(ctx context.Context, uid 
 		for rows.Next() {
 			head, err := scanCloudMessageHead(rows)
 			if err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			seen++
@@ -190,7 +190,7 @@ func (s *PersistentStore) CloudConversationWindowHeads(ctx context.Context, uid 
 			}
 		}
 		err = rows.Err()
-		rows.Close()
+		_ = rows.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +242,7 @@ func (s *PersistentStore) CloudConversationBranches(ctx context.Context, uid int
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var item CloudConversationBranchChild
 		c := &item.Conversation

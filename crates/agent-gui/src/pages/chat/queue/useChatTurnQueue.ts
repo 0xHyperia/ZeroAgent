@@ -971,22 +971,25 @@ export function useChatTurnQueue(params: UseChatTurnQueueParams) {
 
     const admissions = gatewayQueueAdmissionsRef.current;
     const previous = admissions.get(targetConversationId) ?? Promise.resolve();
-    const admission = previous.catch(() => undefined).then(async () => {
-      // Confirm the queue lease before an idle processor can start this request.
-      await markQueued();
-      setQueuedChatTurnsState((current) => appendQueuedChatTurn(current, queuedTurn));
-      if (payload.queuePolicy === "interrupt") {
-        runQueuedTurnNow(queuedTurn.id);
-      } else if (!isConversationStopRequested(targetConversationId)) {
-        requestQueuedChatTurnProcessing(targetConversationId);
-      }
-    });
+    const admission = previous
+      .catch(() => undefined)
+      .then(async () => {
+        // Confirm the queue lease before an idle processor can start this request.
+        await markQueued();
+        setQueuedChatTurnsState((current) => appendQueuedChatTurn(current, queuedTurn));
+        if (payload.queuePolicy === "interrupt") {
+          runQueuedTurnNow(queuedTurn.id);
+        } else if (!isConversationStopRequested(targetConversationId)) {
+          requestQueuedChatTurnProcessing(targetConversationId);
+        }
+      });
     admissions.set(targetConversationId, admission);
     try {
       await admission;
       return true;
     } finally {
-      if (admissions.get(targetConversationId) === admission) admissions.delete(targetConversationId);
+      if (admissions.get(targetConversationId) === admission)
+        admissions.delete(targetConversationId);
     }
   }
 

@@ -282,7 +282,7 @@ func loadReferences(path string, user int64) ([]fileReference, error) {
 	if err != nil {
 		return nil, errors.New("cannot read resource receipt")
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(file, 2<<20+1))
 	if err != nil || len(raw) > 2<<20 {
 		return nil, errors.New("resource receipt exceeds limit")
@@ -383,12 +383,12 @@ func applyPlans(ctx context.Context, dsn string, user int64, plans []fixturePlan
 	}
 	connector.Dialer(localDialer{})
 	db := sql.OpenDB(connector)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return nil, errors.New("cannot open local database transaction")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	// Same ordering as canonical artifact reservations; no user content is updated.
 	if objects != nil {
 		if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_space_write:'||$1::text,0))`, user); err != nil {
@@ -535,7 +535,7 @@ func execute(args []string, output io.Writer) error {
 	}
 	host := u.Hostname()
 	if host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback()) {
-		return errors.New("Web receipt URLs must use loopback")
+		return errors.New("web receipt URLs must use loopback")
 	}
 	refs, err := loadReferences(*resourceReceipt, *user)
 	if err != nil {

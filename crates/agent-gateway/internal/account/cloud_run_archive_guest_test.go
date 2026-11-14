@@ -111,7 +111,8 @@ func TestCloudRunArchiveActualGuestCodePatchAndDurableZIP(t *testing.T) {
 	if err = f.service.SetCloudObjectStore(storage.objects); err != nil {
 		t.Fatal(err)
 	}
-	sdk := newCloudSDKFixture(t, f, true)
+	// The fixture runs Python synchronously in its HTTP handler, unlike the live SDK.
+	sdk := newCloudSDKFixtureWithTimeout(t, f, true, 7*time.Second)
 	var extracts atomic.Int32
 	sdk.testAction = func(op cloudexecutor.Operation) (json.RawMessage, bool) {
 		if op.Action != "archive.extract" && op.Action != "code.run" && op.Action != "command.run" {
@@ -120,7 +121,8 @@ func TestCloudRunArchiveActualGuestCodePatchAndDurableZIP(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		var cmd *exec.Cmd
-		if op.Action == "archive.extract" {
+		switch op.Action {
+		case "archive.extract":
 			extracts.Add(1)
 			path := fmt.Sprint(op.Input["path"])
 			data := sdk.files[op.SandboxID+":"+path]
@@ -132,10 +134,10 @@ func TestCloudRunArchiveActualGuestCodePatchAndDurableZIP(t *testing.T) {
 			}
 			cmd = exec.CommandContext(ctx, python, "-I", guest)
 			cmd.Stdin = bytes.NewReader(cloudJSON(map[string]any{"root": workspace, "path": path, "destination": op.Input["destination"], "source_sha256": op.Input["source_sha256"]}))
-		} else if op.Action == "code.run" {
+		case "code.run":
 			cmd = exec.CommandContext(ctx, python, "-c", fmt.Sprint(op.Input["code"]))
 			cmd.Dir = workspace
-		} else {
+		default:
 			cmd = exec.CommandContext(ctx, "sh", "-c", fmt.Sprint(op.Input["command"]))
 			cmd.Dir = filepath.Join(workspace, fmt.Sprint(op.Input["cwd"]))
 		}
@@ -184,6 +186,12 @@ func TestCloudRunArchiveActualGuestCodePatchAndDurableZIP(t *testing.T) {
 	run := createCloudArchiveRun(t, f, file, "actual-guest-code-zip")
 	finished := f.wait(t, run.ID, func(r *CloudRun) bool { return r.Terminal() })
 	if finished.State != CloudRunCompleted || rounds.Load() != 7 || extracts.Load() != 1 || sdk.command.Load() != 2 || sdk.code.Load() != 1 {
+		operations, err := f.store.ListCloudToolOperations(context.Background(), run.UserID, run.ID, 128)
+		if err == nil {
+			for _, operation := range operations {
+				t.Logf("fixture operation %s: %s (%s)", operation.Name, operation.State, operation.ErrorCode)
+			}
+		}
 		t.Fatalf("actual code loop state=%s code=%s rounds=%d", finished.State, finished.ErrorCode, rounds.Load())
 	}
 	if len(urls) != 2 {

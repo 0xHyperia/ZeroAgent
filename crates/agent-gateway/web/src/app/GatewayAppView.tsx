@@ -18,7 +18,6 @@ import {
 } from "@liveagent/ui/application/workbenchNavigation";
 import { useWorkbenchNavigationTarget } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
-import { SquarePen } from "@liveagent/ui/components/IconSet";
 import { ChangedFilesActionsProvider } from "@liveagent/ui/components/chat/ChangedFilesCard";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type {
@@ -33,18 +32,13 @@ import { TranscriptLatestButton } from "@liveagent/ui/components/chat/Transcript
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceCloneTaskOverlay } from "@liveagent/ui/components/chat/WorkspaceCloneTaskOverlay";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
+import { SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
-import { MIN_DOCKED_WORKSPACE_WITH_CAPTIONS } from "@liveagent/ui/components/project-tools/rightDockModel";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
+import { MIN_DOCKED_WORKSPACE_WITH_CAPTIONS } from "@liveagent/ui/components/project-tools/rightDockModel";
+import { DeviceWorkbenchLayout } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { useWorkspaceTabPresentation } from "@liveagent/ui/components/project-tools/WorkspaceTabPresentation";
 import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
-import { requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
-import type { ProjectToolTextGenerationClient } from "@liveagent/ui/lib/ai/projectToolTextGeneration";
-import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
-import { useGatewayDeviceImages } from "@/components/GatewayDeviceImages";
-import {
-  DeviceWorkbenchLayout,
-} from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { DropdownMenuItem } from "@liveagent/ui/components/ui/dropdown-menu";
@@ -60,11 +54,14 @@ import {
 import { UnsupportedPaneSurface } from "@liveagent/ui/components/workbench/surfaces/UnsupportedPaneSurface";
 import { WorkbenchCanvas } from "@liveagent/ui/components/workbench/WorkbenchCanvas";
 import { WorkbenchEmptyState } from "@liveagent/ui/components/workbench/WorkbenchEmptyState";
+import { requestWorkspaceRevision } from "@liveagent/ui/components/workspace-editor/requestWorkspaceRevision";
+import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import { WorkspaceOverlayHost } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { LocaleContext, t as translate } from "@liveagent/ui/i18n/index";
+import type { ProjectToolTextGenerationClient } from "@liveagent/ui/lib/ai/projectToolTextGeneration";
 import {
   type CheckpointRewindClient,
   CheckpointRewindProvider,
@@ -124,6 +121,7 @@ import { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory";
 import { ConnectedDeviceTasks } from "@/components/cloudchat/ConnectedDeviceTasks";
 import { DesktopHostSlot } from "@/components/DesktopHostSlot";
 import { ExecutionEnvironmentSwitcher } from "@/components/ExecutionEnvironmentSwitcher";
+import { useGatewayDeviceImages } from "@/components/GatewayDeviceImages";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { MobileSidebarUpdate } from "@/components/mobile/MobileAppExperience";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
@@ -149,10 +147,10 @@ import {
 } from "@/lib/trajectory/liveTrajectory";
 import {
   GATEWAY_CHAT_FRAME_CLASS,
+  GATEWAY_EMBEDDED_SHELL_CLASS,
   GATEWAY_MAIN_BACKDROP_CLASS,
   GATEWAY_MAIN_SHELL_CLASS,
   GATEWAY_SETTINGS_OVERLAY_CLASS,
-  GATEWAY_EMBEDDED_SHELL_CLASS,
   GATEWAY_SHELL_CLASS,
   GATEWAY_TRANSCRIPT_LATEST_BOTTOM,
   GATEWAY_TRANSCRIPT_SCROLL_CLASS,
@@ -546,7 +544,8 @@ export function GatewayAppView({
     else navigate();
   };
   const accountDestination = useWorkbenchAccountDestination(accountNavigation);
-  const compactDeviceHeader = compactViewport && !desktopHost && !historyShareToken && !accountDestination;
+  const compactDeviceHeader =
+    compactViewport && !desktopHost && !historyShareToken && !accountDestination;
   const committedDestination = accountDestination ?? activeView;
   const navigationPreview = useNavigationPreview(
     !sidebar.isMobile && !settingsOpen,
@@ -871,20 +870,29 @@ export function GatewayAppView({
   // 背景会话 Pane 的共享上下文(复刻桌面端 buildBackgroundPaneBinding):所有
   // 会话级动作按 Pane 自己的 conversationId 显式路由;页面级机制(选模型、
   // 编辑队列项等)由宿主内部先聚焦本 Pane(focusGuard 口径)。
-  const fileReaderOpen = workspaceFilePreviewOpen || (
-    rightDockOpen && workspaceTabs.view.tabs.some(
-      (tab) => tab.id === workspaceTabs.view.activeId && tab.kind === "file" && tab.mode === "preview",
-    )
-  );
+  const fileReaderOpen =
+    workspaceFilePreviewOpen ||
+    (rightDockOpen &&
+      workspaceTabs.view.tabs.some(
+        (tab) =>
+          tab.id === workspaceTabs.view.activeId && tab.kind === "file" && tab.mode === "preview",
+      ));
   const closeFileReader = useCallback(() => {
     if (workspaceFilePreviewOpen) requestWorkspaceFilePreviewClose();
     if (fileReaderOpen && rightDockOpen) handleRightDockClose();
-  }, [workspaceFilePreviewOpen, requestWorkspaceFilePreviewClose, fileReaderOpen, rightDockOpen, handleRightDockClose]);
+  }, [
+    workspaceFilePreviewOpen,
+    requestWorkspaceFilePreviewClose,
+    fileReaderOpen,
+    rightDockOpen,
+    handleRightDockClose,
+  ]);
   const fallbackImages = useGatewayDeviceImages({
     api,
     conversationId: displayedConversationId,
     workdir: terminalProjectPath,
-    enabled: !sessionWorkbench.enabled && renderedConversationView === "conversation" && isAgentMode,
+    enabled:
+      !sessionWorkbench.enabled && renderedConversationView === "conversation" && isAgentMode,
     offline: transportInputDisabled,
     zh: settings.locale === "zh-CN",
     store: transcriptStoreRegistry.get(displayedConversationId),
@@ -1206,8 +1214,13 @@ export function GatewayAppView({
   // conversationId 做 key(会在焦点切换时拆掉宿主)。终端 / unsupported 走
   // 各自的自包含表面。
   const canReviseDocument = Boolean(
-    api && isAgentMode && displayedConversationId && terminalProjectPath &&
-    !accountDestination && activeView === "chat" && !transportInputDisabled,
+    api &&
+      isAgentMode &&
+      displayedConversationId &&
+      terminalProjectPath &&
+      !accountDestination &&
+      activeView === "chat" &&
+      !transportInputDisabled,
   );
   const revisionScope = canReviseDocument
     ? JSON.stringify([workspaceOwner, workspaceViewScope, displayedConversationId])
@@ -1217,10 +1230,10 @@ export function GatewayAppView({
   const requestDocumentRevision = (revision: WorkspaceDocumentRevision) => {
     if (!api || !revisionScope) return Promise.resolve(false);
     const isCurrentAgent = api.captureActiveAgentScope();
-    const canSend = () => (
+    const canSend = () =>
       revisionScopeRef.current === revisionScope &&
-      isCurrentAgent() && !isConversationBusy(displayedConversationId)
-    );
+      isCurrentAgent() &&
+      !isConversationBusy(displayedConversationId);
     return requestWorkspaceRevision(revision, {
       workspaceRoot: terminalProjectPath,
       canSend,
@@ -1230,9 +1243,8 @@ export function GatewayAppView({
         if (typeof status?.ready !== "boolean") throw new Error("Missing file runtime status");
         return status.ready;
       },
-      importSources: (sources) => importDeviceConversationFiles(
-        terminalProjectPath, sources, AbortSignal.timeout(60_000),
-      ),
+      importSources: (sources) =>
+        importDeviceConversationFiles(terminalProjectPath, sources, AbortSignal.timeout(60_000)),
       send: async (text, uploadedFiles) => {
         const outcome = await sendChat(text, {
           conversationId: displayedConversationId,
@@ -1244,16 +1256,19 @@ export function GatewayAppView({
         const observer = revision.observeRun;
         if (observer && !observer.signal.aborted && outcome && outcome.kind !== "failed") {
           const canRead = () => isCurrentAgent() && revisionScopeRef.current === revisionScope;
-          const runId = outcome.kind === "accepted"
-            ? outcome.accepted.runId
-            : outcome.kind === "bound" || outcome.kind === "queued_in_gui"
-              ? outcome.update.runId
-              : undefined;
+          const runId =
+            outcome.kind === "accepted"
+              ? outcome.accepted.runId
+              : outcome.kind === "bound" || outcome.kind === "queued_in_gui"
+                ? outcome.update.runId
+                : undefined;
           if (runId) {
             const store = transcriptStoreRegistry.get(displayedConversationId);
-            observer.registerStop(() =>
-              canRead() && store.getTurn(runId)?.phase !== "settled" &&
-              api.cancelChat(displayedConversationId, runId),
+            observer.registerStop(
+              () =>
+                canRead() &&
+                store.getTurn(runId)?.phase !== "settled" &&
+                api.cancelChat(displayedConversationId, runId),
             );
             const stop = () => {
               unsubscribe();
@@ -1285,34 +1300,39 @@ export function GatewayAppView({
     }
     return Boolean(accepted);
   };
-  const markdownTextGeneration: ProjectToolTextGenerationClient | undefined = api && !transportInputDisabled ? {
-    status: () => currentChatProvider && activeSelectedModel?.model ? "ready" : "unconfigured",
-    generate: async ({ systemPrompt, userPrompt, signal }) => {
-      const isCurrentAgent = api.captureActiveAgentScope();
-      signal?.throwIfAborted();
-      const model = activeSelectedModel?.model;
-      if (!currentChatProvider || !model || !isCurrentAgent()) throw new Error("No active model selected.");
-      const result = await api.clarifyPromptTurn({
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        providerId: currentChatProvider.id,
-        model,
-        runtimeControls: {
-          ...chatRuntimeControlsForCurrentProvider,
-          reasoning: "off",
-          thinkingEnabled: false,
-          nativeWebSearchEnabled: false,
-          planModeEnabled: false,
-        },
-      });
-      signal?.throwIfAborted();
-      if (!isCurrentAgent()) throw new DOMException("Device changed", "AbortError");
-      if (result.error_code) throw new Error(result.error_message || result.error_code);
-      return result.final_text;
-    },
-  } : undefined;
+  const markdownTextGeneration: ProjectToolTextGenerationClient | undefined =
+    api && !transportInputDisabled
+      ? {
+          status: () =>
+            currentChatProvider && activeSelectedModel?.model ? "ready" : "unconfigured",
+          generate: async ({ systemPrompt, userPrompt, signal }) => {
+            const isCurrentAgent = api.captureActiveAgentScope();
+            signal?.throwIfAborted();
+            const model = activeSelectedModel?.model;
+            if (!currentChatProvider || !model || !isCurrentAgent())
+              throw new Error("No active model selected.");
+            const result = await api.clarifyPromptTurn({
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              providerId: currentChatProvider.id,
+              model,
+              runtimeControls: {
+                ...chatRuntimeControlsForCurrentProvider,
+                reasoning: "off",
+                thinkingEnabled: false,
+                nativeWebSearchEnabled: false,
+                planModeEnabled: false,
+              },
+            });
+            signal?.throwIfAborted();
+            if (!isCurrentAgent()) throw new DOMException("Device changed", "AbortError");
+            if (result.error_code) throw new Error(result.error_message || result.error_code);
+            return result.final_text;
+          },
+        }
+      : undefined;
   const workspacePresentation = useWorkspaceTabPresentation({
     resources: workspaceTabs,
     open: tabbedWorkspace && !accountDestination && activeView === "chat" && rightDockOpen,
@@ -1321,7 +1341,7 @@ export function GatewayAppView({
     projectPathKey: terminalProjectPathKey,
     comparisonConversationId: displayedConversationId || undefined,
     theme: effectiveTheme,
-    gitClient: gitDisabledMessage ? undefined : gitClient ?? undefined,
+    gitClient: gitDisabledMessage ? undefined : (gitClient ?? undefined),
     activityClient: workspaceActivityClient,
     nativeFileActions: false,
     onInsertCodeMention: handleInsertCodeMention,
@@ -1801,8 +1821,11 @@ export function GatewayAppView({
       }
     />
   );
-  const showConversationViews = !accountDestination && activeView === "chat" &&
-    hasConversationReply && !workbenchHasMultiplePanes;
+  const showConversationViews =
+    !accountDestination &&
+    activeView === "chat" &&
+    hasConversationReply &&
+    !workbenchHasMultiplePanes;
   const executionSwitcher = !desktopHost && !historyShareToken && (
     <ExecutionEnvironmentSwitcher
       environments={environments}
@@ -1832,12 +1855,21 @@ export function GatewayAppView({
         }))
       }
       onOpenSidebar={() => setSidebarOpen((open) => !open)}
-      navigationActions={compactDeviceHeader && displayedConversationId && !isLocalDraftConversationId(displayedConversationId) ? (
-        <Button variant="ghost" size="icon" className="order-1 size-11 shrink-0"
-          aria-label={translate("chat.newConversation", settings.locale)} onClick={handleSidebarNewConversation}>
-          <SquarePen className="size-4.5" />
-        </Button>
-      ) : undefined}
+      navigationActions={
+        compactDeviceHeader &&
+        displayedConversationId &&
+        !isLocalDraftConversationId(displayedConversationId) ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="order-1 size-11 shrink-0"
+            aria-label={translate("chat.newConversation", settings.locale)}
+            onClick={handleSidebarNewConversation}
+          >
+            <SquarePen className="size-4.5" />
+          </Button>
+        ) : undefined
+      }
       leadingActions={
         <>
           {desktopHost && !accountDestination && <DesktopHostSlot kind="header" />}
@@ -1864,16 +1896,29 @@ export function GatewayAppView({
           </>
         )
       }
-      compactActions={compactDeviceHeader ? (
-        <>
-          {showConversationViews && (
-            <DropdownMenuItem className="min-h-11" onClick={() =>
-              setActiveConversationView(renderedConversationView === "trajectory" ? "conversation" : "trajectory")}>
-              {translate(renderedConversationView === "trajectory" ? "chat.mobileShowConversation" : "chat.mobileShowTrajectory", settings.locale)}
-            </DropdownMenuItem>
-          )}
-        </>
-      ) : undefined}
+      compactActions={
+        compactDeviceHeader ? (
+          <>
+            {showConversationViews && (
+              <DropdownMenuItem
+                className="min-h-11"
+                onClick={() =>
+                  setActiveConversationView(
+                    renderedConversationView === "trajectory" ? "conversation" : "trajectory",
+                  )
+                }
+              >
+                {translate(
+                  renderedConversationView === "trajectory"
+                    ? "chat.mobileShowConversation"
+                    : "chat.mobileShowTrajectory",
+                  settings.locale,
+                )}
+              </DropdownMenuItem>
+            )}
+          </>
+        ) : undefined
+      }
     />
   );
 
@@ -2126,592 +2171,611 @@ export function GatewayAppView({
                 onWidthChange={handleRightDockWidthChange}
                 onClose={handleRightDockClose}
                 minDockedWidth={
-                  desktopHost?.onWindowControlsTarget ? MIN_DOCKED_WORKSPACE_WITH_CAPTIONS : undefined
+                  desktopHost?.onWindowControlsTarget
+                    ? MIN_DOCKED_WORKSPACE_WITH_CAPTIONS
+                    : undefined
                 }
                 main={
                   <>
-                  {accountNavigation && (
-                    <div
-                      ref={accountSurface.setTarget}
-                      hidden={!accountDestination}
-                      inert={!accountDestination}
-                      className={accountDestination ? "flex min-h-0 min-w-0 flex-1" : "hidden"}
-                      data-workbench-account-content=""
-                    />
-                  )}
-                  <main
-                    className={accountDestination ? "hidden" : GATEWAY_MAIN_SHELL_CLASS}
-                    inert={!!accountDestination}
-                  >
-                    <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
-
-                    {activeView === "image-studio-hub" && !imageStudio.host && (
-                      <section className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-                        <h1 className="text-lg font-semibold">图像工作台</h1>
-                        <p role="status" className="max-w-lg text-sm text-muted-foreground">
-                          {imageStudio.unavailable}
-                        </p>
-                        {imageStudioIdentity && (
-                          <Button variant="outline" onClick={imageStudio.retry}>
-                            重试连接
-                          </Button>
-                        )}
-                      </section>
+                    {accountNavigation && (
+                      <div
+                        ref={accountSurface.setTarget}
+                        hidden={!accountDestination}
+                        inert={!accountDestination}
+                        className={accountDestination ? "flex min-h-0 min-w-0 flex-1" : "hidden"}
+                        data-workbench-account-content=""
+                      />
                     )}
-                    <ApplicationView
-                      activeView={activeView}
-                      imageStudioHost={
-                        imageStudio.host && {
-                          ...imageStudio.host,
-                          onOpenSettings: () => openSettings("image-studio"),
-                        }
-                      }
-                      settings={settings}
-                      setSettings={setSettings}
-                      resourceHost={kbrainResourceHostCapabilities}
-                      kbrainSettings={settingsHostAdapter.kbrain}
-                      isAgentMode={isAgentMode}
-                      initialSkills={availableSkills}
-                      initialSkillsRootDir={skillsRootDir}
-                      onOpenView={setActiveView}
-                      scheduledTasks={showDeviceTasks ? renderConnectedTasks() : undefined}
-                      className={
-                        activeView === "image-studio-hub" && !imageStudio.host
-                          ? "hidden"
-                          : "contents"
-                      }
-                      chat={{
-                        containerRef: chatFrameRef,
-                        containerProps: {
-                          className: `${GATEWAY_CHAT_FRAME_CLASS} zone-font-scale`,
-                          style: {
-                            "--zone-font-scale": settings.customSettings.fontScale.chat,
-                          } as CSSProperties,
-                          onDragEnter: handleChatFileDragEnter,
-                          onDragOver: handleChatFileDragOver,
-                          onDragLeave: handleChatFileDragLeave,
-                          onDrop: handleChatFileDrop,
-                        },
-                        content: (
-                          <>
-                            <GatewayDeviceConnectionNotice
-                              unavailable={sidebarSectionsDisabled}
-                              connectionLost={gatewayConnectionLost}
-                              agentOnline={status?.online}
-                              statusReadFailed={Boolean(statusError)}
-                              draftEditable={composerDraftOnly && !approvalBar}
-                              onReconnect={() => prepareChatRuntime("manual-reconnect")}
-                            />
-                            {savedDeviceDraftNotice && !sidebarSectionsDisabled ? (
-                              <GatewaySavedDeviceDraftNotice
-                                state={savedDeviceDraftNotice.state}
-                                path={savedDeviceDraftNotice.path}
-                                onRetry={retrySavedDeviceDraft}
-                              />
-                            ) : null}
-                            {chatProtocolIncompatibleMessage && !sidebarSectionsDisabled ? (
-                              <StatusNotice
-                                tone="error"
-                                message={chatProtocolIncompatibleMessage}
-                                className="mx-5 mt-3 max-sm:mx-3"
-                              />
-                            ) : null}
-                            {settingsSyncError && !sidebarSectionsDisabled ? (
-                              <StatusNotice
-                                tone="error"
-                                message={settingsSyncError}
-                                className="mx-5 mt-3 max-sm:mx-3"
-                              />
-                            ) : null}
-                            {deviceHistoryOpenFailed && !sidebarSectionsDisabled ? (
-                              <StatusNotice
-                                tone="error"
-                                message={
-                                  settings.locale === "zh-CN"
-                                    ? "暂时无法读取此设备会话。"
-                                    : "Couldn't read this device conversation."
-                                }
-                                description={
-                                  settings.locale === "zh-CN"
-                                    ? "草稿保留在原会话。历史读取成功后即可继续发送。"
-                                    : "Your draft stays in this conversation. Sending is available once history loads."
-                                }
-                                actions={
-                                  <Button variant="ghost" onClick={retryDeviceHistoryOpen}>
-                                    {settings.locale === "zh-CN" ? "重试" : "Retry"}
-                                  </Button>
-                                }
-                                className="mx-5 mt-3 max-sm:mx-3"
-                              />
-                            ) : !sidebarSectionsDisabled &&
-                              chatError &&
-                              displayedTranscriptRowCount === 0 ? (
-                              <StatusNotice
-                                tone="error"
-                                message={chatError}
-                                className="mx-5 mt-3 max-sm:mx-3"
-                              />
-                            ) : null}
+                    <main
+                      className={accountDestination ? "hidden" : GATEWAY_MAIN_SHELL_CLASS}
+                      inert={!!accountDestination}
+                    >
+                      <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
 
-                            {sessionWorkbench.enabled ? (
-                              renderConversationWorkbench()
-                            ) : (
-                              <DeviceConversationImageSurface
-                                host={fallbackImages}
-                                includeAttachments={Boolean(displayedConversationWorkdir)}
-                              >
-                              <section
-                                ref={transcriptStageRef}
-                                data-conversation-scope=""
-                                className="gateway-transcript-stage relative min-h-0 flex-1 overflow-hidden @container"
-                                // Preferred (persisted) width, so a fresh mount paints at
-                                // the user's width instead of the default.
-                                // TranscriptWidthControls narrows this same variable to
-                                // the stage in a layout effect — see its header.
-                                style={
-                                  {
-                                    [CHAT_TRANSCRIPT_WIDTH_CSS_VAR]: `${settings.customSettings.chatTranscript.width}px`,
-                                  } as CSSProperties
-                                }
-                              >
-                                {renderedConversationView === "trajectory" ? (
-                                  <TrajectoryView
-                                    conversationId={displayedConversationId}
-                                    host={trajectoryHost}
-                                    messages={trajectoryMessages}
-                                    workdir={displayedConversationWorkdir}
-                                    hasMoreMessages={selectedHistoryHasMore}
-                                    loadEarlierMessages={
-                                      selectedHistoryHasMore ? handleLoadEarlierHistory : undefined
+                      {activeView === "image-studio-hub" && !imageStudio.host && (
+                        <section className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+                          <h1 className="text-lg font-semibold">图像工作台</h1>
+                          <p role="status" className="max-w-lg text-sm text-muted-foreground">
+                            {imageStudio.unavailable}
+                          </p>
+                          {imageStudioIdentity && (
+                            <Button variant="outline" onClick={imageStudio.retry}>
+                              重试连接
+                            </Button>
+                          )}
+                        </section>
+                      )}
+                      <ApplicationView
+                        activeView={activeView}
+                        imageStudioHost={
+                          imageStudio.host && {
+                            ...imageStudio.host,
+                            onOpenSettings: () => openSettings("image-studio"),
+                          }
+                        }
+                        settings={settings}
+                        setSettings={setSettings}
+                        resourceHost={kbrainResourceHostCapabilities}
+                        kbrainSettings={settingsHostAdapter.kbrain}
+                        isAgentMode={isAgentMode}
+                        initialSkills={availableSkills}
+                        initialSkillsRootDir={skillsRootDir}
+                        onOpenView={setActiveView}
+                        scheduledTasks={showDeviceTasks ? renderConnectedTasks() : undefined}
+                        className={
+                          activeView === "image-studio-hub" && !imageStudio.host
+                            ? "hidden"
+                            : "contents"
+                        }
+                        chat={{
+                          containerRef: chatFrameRef,
+                          containerProps: {
+                            className: `${GATEWAY_CHAT_FRAME_CLASS} zone-font-scale`,
+                            style: {
+                              "--zone-font-scale": settings.customSettings.fontScale.chat,
+                            } as CSSProperties,
+                            onDragEnter: handleChatFileDragEnter,
+                            onDragOver: handleChatFileDragOver,
+                            onDragLeave: handleChatFileDragLeave,
+                            onDrop: handleChatFileDrop,
+                          },
+                          content: (
+                            <>
+                              <GatewayDeviceConnectionNotice
+                                unavailable={sidebarSectionsDisabled}
+                                connectionLost={gatewayConnectionLost}
+                                agentOnline={status?.online}
+                                statusReadFailed={Boolean(statusError)}
+                                draftEditable={composerDraftOnly && !approvalBar}
+                                onReconnect={() => prepareChatRuntime("manual-reconnect")}
+                              />
+                              {savedDeviceDraftNotice && !sidebarSectionsDisabled ? (
+                                <GatewaySavedDeviceDraftNotice
+                                  state={savedDeviceDraftNotice.state}
+                                  path={savedDeviceDraftNotice.path}
+                                  onRetry={retrySavedDeviceDraft}
+                                />
+                              ) : null}
+                              {chatProtocolIncompatibleMessage && !sidebarSectionsDisabled ? (
+                                <StatusNotice
+                                  tone="error"
+                                  message={chatProtocolIncompatibleMessage}
+                                  className="mx-5 mt-3 max-sm:mx-3"
+                                />
+                              ) : null}
+                              {settingsSyncError && !sidebarSectionsDisabled ? (
+                                <StatusNotice
+                                  tone="error"
+                                  message={settingsSyncError}
+                                  className="mx-5 mt-3 max-sm:mx-3"
+                                />
+                              ) : null}
+                              {deviceHistoryOpenFailed && !sidebarSectionsDisabled ? (
+                                <StatusNotice
+                                  tone="error"
+                                  message={
+                                    settings.locale === "zh-CN"
+                                      ? "暂时无法读取此设备会话。"
+                                      : "Couldn't read this device conversation."
+                                  }
+                                  description={
+                                    settings.locale === "zh-CN"
+                                      ? "草稿保留在原会话。历史读取成功后即可继续发送。"
+                                      : "Your draft stays in this conversation. Sending is available once history loads."
+                                  }
+                                  actions={
+                                    <Button variant="ghost" onClick={retryDeviceHistoryOpen}>
+                                      {settings.locale === "zh-CN" ? "重试" : "Retry"}
+                                    </Button>
+                                  }
+                                  className="mx-5 mt-3 max-sm:mx-3"
+                                />
+                              ) : !sidebarSectionsDisabled &&
+                                chatError &&
+                                displayedTranscriptRowCount === 0 ? (
+                                <StatusNotice
+                                  tone="error"
+                                  message={chatError}
+                                  className="mx-5 mt-3 max-sm:mx-3"
+                                />
+                              ) : null}
+
+                              {sessionWorkbench.enabled ? (
+                                renderConversationWorkbench()
+                              ) : (
+                                <DeviceConversationImageSurface
+                                  host={fallbackImages}
+                                  includeAttachments={Boolean(displayedConversationWorkdir)}
+                                >
+                                  <section
+                                    ref={transcriptStageRef}
+                                    data-conversation-scope=""
+                                    className="gateway-transcript-stage relative min-h-0 flex-1 overflow-hidden @container"
+                                    // Preferred (persisted) width, so a fresh mount paints at
+                                    // the user's width instead of the default.
+                                    // TranscriptWidthControls narrows this same variable to
+                                    // the stage in a layout effect — see its header.
+                                    style={
+                                      {
+                                        [CHAT_TRANSCRIPT_WIDTH_CSS_VAR]: `${settings.customSettings.chatTranscript.width}px`,
+                                      } as CSSProperties
                                     }
-                                    liveEvents={liveTrajectory}
-                                    authoritativeRevision={trajectoryAuthoritativeRevision}
-                                  />
-                                ) : (
-                                  <div className="relative h-full min-h-0">
-                                    <ScrollArea
-                                      ref={setTranscriptScrollAreaRoot}
-                                      viewportRef={setTranscriptViewport}
-                                      viewportProps={{
-                                        className: "chat-transcript-viewport",
-                                        "aria-label": translate(
-                                          "chat.transcript.messages",
-                                          settings.locale,
-                                        ),
-                                      }}
-                                      className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
-                                    >
-                                      <ChangedFilesActionsProvider value={changedFilesActions}>
-                                        <CheckpointRewindProvider
-                                          client={checkpointClient}
-                                          conversationId={displayedConversationId}
-                                          disabled={!displayedConversationId || transcriptBusy}
-                                          resolveAuthorizedRoots={resolveCheckpointAuthorizedRoots}
-                                          onRewound={handleCheckpointRewound}
-                                        >
-                                          <GatewayTranscript
-                                            conversationId={displayedConversationId}
-                                            rows={transcriptRows}
-                                            liveStartIndex={transcriptLiveStartIndex}
-                                            activeTurnKey={displayedTranscript.activeTurnKey}
-                                            contentWidth={
-                                              settings.customSettings.chatTranscript.width
-                                            }
-                                            isViewportFollowing={transcriptFollow.isFollowing}
-                                            viewportFollowing={transcriptFollowing}
-                                            navRef={transcriptNavRef}
-                                            onAnchorUserRowChange={setActiveFloorKey}
-                                            error={transcriptError}
-                                            toolStatus={transcriptToolStatus}
-                                            toolStatusIsCompaction={
-                                              transcriptToolStatusIsCompaction
-                                            }
-                                            retryAttempts={displayedTranscript.retryAttempts}
-                                            isStreaming={transcriptBusy}
-                                            isLoading={transcriptHistoryLoading}
-                                            loadingTitle={historyDetailLoadingTitle}
-                                            hasModels={modelOptions.length > 0}
-                                            onOpenSettings={openSettings}
-                                            hasMoreHistory={selectedHistoryHasMore}
-                                            isLoadingMoreHistory={loadingOlderHistory}
-                                            onLoadEarlierHistory={
-                                              selectedHistoryHasMore
-                                                ? handleLoadEarlierHistory
-                                                : undefined
-                                            }
-                                            showUsage={isAgentDevExecutionMode}
-                                            usageContextWindow={currentModelContextWindow}
-                                            workspaceRoot={displayedConversationWorkdir}
-                                            onOpenFileLink={handleOpenChatFileLink}
-                                            gitClient={gitClient}
-                                            onLoadUploadedImagePreview={
-                                              handleLoadUploadedImagePreview
-                                            }
-                                            onResendFromEdit={handleResendFromEdit}
-                                            onBranchConversation={handleBranchConversation}
-                                            branchPendingMessageId={branchPendingMessageId}
-                                            onSuggestionSelect={handleEmptyStateSuggestion}
-                                          />
-                                        </CheckpointRewindProvider>
-                                      </ChangedFilesActionsProvider>
-                                    </ScrollArea>
-                                    <TranscriptWidthControls
-                                      hostRef={transcriptStageRef}
-                                      width={settings.customSettings.chatTranscript.width}
-                                      onWidthChange={handleChatTranscriptWidthChange}
-                                      resizeLabel={
-                                        settings.locale === "en-US"
-                                          ? "Resize conversation content"
-                                          : "调整对话正文宽度"
-                                      }
-                                      resetLabel={
-                                        settings.locale === "en-US"
-                                          ? "Double-click to reset"
-                                          : "双击恢复默认宽度"
-                                      }
-                                      suspended={conversationOpenState.showOverlay}
-                                    />
-                                    {displayedTranscriptRowCount > 0 &&
-                                    !conversationOpenState.showOverlay ? (
-                                      <FloorNavRail
+                                  >
+                                    {renderedConversationView === "trajectory" ? (
+                                      <TrajectoryView
                                         conversationId={displayedConversationId}
-                                        floors={transcriptFloors}
-                                        activeRowKey={activeFloorKey}
-                                        bottomOffset="calc(var(--gateway-chat-composer-overlay-height, var(--spacing-176px)) + var(--spacing-12px))"
-                                        scrollViewport={transcriptViewport}
-                                        onJump={handleFloorJump}
+                                        host={trajectoryHost}
+                                        messages={trajectoryMessages}
+                                        workdir={displayedConversationWorkdir}
+                                        hasMoreMessages={selectedHistoryHasMore}
+                                        loadEarlierMessages={
+                                          selectedHistoryHasMore
+                                            ? handleLoadEarlierHistory
+                                            : undefined
+                                        }
+                                        liveEvents={liveTrajectory}
+                                        authoritativeRevision={trajectoryAuthoritativeRevision}
+                                      />
+                                    ) : (
+                                      <div className="relative h-full min-h-0">
+                                        <ScrollArea
+                                          ref={setTranscriptScrollAreaRoot}
+                                          viewportRef={setTranscriptViewport}
+                                          viewportProps={{
+                                            className: "chat-transcript-viewport",
+                                            "aria-label": translate(
+                                              "chat.transcript.messages",
+                                              settings.locale,
+                                            ),
+                                          }}
+                                          className={GATEWAY_TRANSCRIPT_SCROLL_CLASS}
+                                        >
+                                          <ChangedFilesActionsProvider value={changedFilesActions}>
+                                            <CheckpointRewindProvider
+                                              client={checkpointClient}
+                                              conversationId={displayedConversationId}
+                                              disabled={!displayedConversationId || transcriptBusy}
+                                              resolveAuthorizedRoots={
+                                                resolveCheckpointAuthorizedRoots
+                                              }
+                                              onRewound={handleCheckpointRewound}
+                                            >
+                                              <GatewayTranscript
+                                                conversationId={displayedConversationId}
+                                                rows={transcriptRows}
+                                                liveStartIndex={transcriptLiveStartIndex}
+                                                activeTurnKey={displayedTranscript.activeTurnKey}
+                                                contentWidth={
+                                                  settings.customSettings.chatTranscript.width
+                                                }
+                                                isViewportFollowing={transcriptFollow.isFollowing}
+                                                viewportFollowing={transcriptFollowing}
+                                                navRef={transcriptNavRef}
+                                                onAnchorUserRowChange={setActiveFloorKey}
+                                                error={transcriptError}
+                                                toolStatus={transcriptToolStatus}
+                                                toolStatusIsCompaction={
+                                                  transcriptToolStatusIsCompaction
+                                                }
+                                                retryAttempts={displayedTranscript.retryAttempts}
+                                                isStreaming={transcriptBusy}
+                                                isLoading={transcriptHistoryLoading}
+                                                loadingTitle={historyDetailLoadingTitle}
+                                                hasModels={modelOptions.length > 0}
+                                                onOpenSettings={openSettings}
+                                                hasMoreHistory={selectedHistoryHasMore}
+                                                isLoadingMoreHistory={loadingOlderHistory}
+                                                onLoadEarlierHistory={
+                                                  selectedHistoryHasMore
+                                                    ? handleLoadEarlierHistory
+                                                    : undefined
+                                                }
+                                                showUsage={isAgentDevExecutionMode}
+                                                usageContextWindow={currentModelContextWindow}
+                                                workspaceRoot={displayedConversationWorkdir}
+                                                onOpenFileLink={handleOpenChatFileLink}
+                                                gitClient={gitClient}
+                                                onLoadUploadedImagePreview={
+                                                  handleLoadUploadedImagePreview
+                                                }
+                                                onResendFromEdit={handleResendFromEdit}
+                                                onBranchConversation={handleBranchConversation}
+                                                branchPendingMessageId={branchPendingMessageId}
+                                                onSuggestionSelect={handleEmptyStateSuggestion}
+                                              />
+                                            </CheckpointRewindProvider>
+                                          </ChangedFilesActionsProvider>
+                                        </ScrollArea>
+                                        <TranscriptWidthControls
+                                          hostRef={transcriptStageRef}
+                                          width={settings.customSettings.chatTranscript.width}
+                                          onWidthChange={handleChatTranscriptWidthChange}
+                                          resizeLabel={
+                                            settings.locale === "en-US"
+                                              ? "Resize conversation content"
+                                              : "调整对话正文宽度"
+                                          }
+                                          resetLabel={
+                                            settings.locale === "en-US"
+                                              ? "Double-click to reset"
+                                              : "双击恢复默认宽度"
+                                          }
+                                          suspended={conversationOpenState.showOverlay}
+                                        />
+                                        {displayedTranscriptRowCount > 0 &&
+                                        !conversationOpenState.showOverlay ? (
+                                          <FloorNavRail
+                                            conversationId={displayedConversationId}
+                                            floors={transcriptFloors}
+                                            activeRowKey={activeFloorKey}
+                                            bottomOffset="calc(var(--gateway-chat-composer-overlay-height, var(--spacing-176px)) + var(--spacing-12px))"
+                                            scrollViewport={transcriptViewport}
+                                            onJump={handleFloorJump}
+                                          />
+                                        ) : null}
+                                        {conversationOpenState.showOverlay ? (
+                                          <HistorySwitchLoadingOverlay locale={settings.locale} />
+                                        ) : null}
+                                      </div>
+                                    )}
+                                    {renderedConversationView === "conversation" &&
+                                    displayedTranscriptRowCount > 0 &&
+                                    !conversationOpenState.showOverlay &&
+                                    !transcriptFollowing ? (
+                                      <TranscriptLatestButton
+                                        bottom={GATEWAY_TRANSCRIPT_LATEST_BOTTOM}
+                                        viewport={transcriptViewport}
+                                        onJump={transcriptFollow.jumpToBottom}
                                       />
                                     ) : null}
-                                    {conversationOpenState.showOverlay ? (
-                                      <HistorySwitchLoadingOverlay locale={settings.locale} />
-                                    ) : null}
-                                  </div>
-                                )}
-                                {renderedConversationView === "conversation" &&
-                                displayedTranscriptRowCount > 0 &&
-                                !conversationOpenState.showOverlay &&
-                                !transcriptFollowing ? (
-                                  <TranscriptLatestButton
-                                    bottom={GATEWAY_TRANSCRIPT_LATEST_BOTTOM}
-                                    viewport={transcriptViewport}
-                                    onJump={transcriptFollow.jumpToBottom}
-                                  />
-                                ) : null}
-                                <ChatComposerBar
-                                  focusImagePlacement
-                                  presentation="column"
-                                  mobileControls={compactDeviceHeader}
-                                  capabilities={DEVICE_COMPOSER_CAPABILITIES}
-                                  overlayHeightOwnerRef={chatFrameRef}
-                                  runClarifyTurn={
-                                    settings.customSettings.promptClarifyEnabled
-                                      ? runClarifyTurn
-                                      : undefined
-                                  }
-                                  clarifyContext={clarifyContext}
-                                  conversationId={displayedConversationId}
-                                  // 轨迹页是只读分析视图：挂起输入区（保持挂载，草稿不丢）。
-                                  hidden={renderedConversationView === "trajectory"}
-                                  composerRef={composerRef}
-                                  isSending={composerIsSending}
-                                  isUploadingFiles={isUploadingFiles}
-                                  isInputDisabled={composerInputDisabled}
-                                  draftOnly={composerDraftOnly}
-                                  // 麦克风在开启语音输入后显示；点击设置卡片会立即切换当前供应商。
-                                  sttSessionKey={displayedConversationId}
-                                  sttProvider={null}
-                                  sttProviderConfigured={false}
-                                  inputPlaceholder={composerPlaceholder}
-                                  workdir={displayedConversationWorkdir}
-                                  enabledSkills={enabledComposerSkills}
-                                  mentionableConversations={mentionableConversations}
-                                  searchMentionableConversations={searchMentionableConversations}
-                                  mentionApps={mentionApps}
-                                  commandHost={composerCommandHost}
-                                  goalBar={
-                                    <WebGoalBarHost
-                                      key={`goal-${displayedConversationId}`}
-                                      conversationId={
-                                        isLocalDraftConversationId(displayedConversationId)
-                                          ? undefined
-                                          : displayedConversationId
+                                    <ChatComposerBar
+                                      focusImagePlacement
+                                      presentation="column"
+                                      mobileControls={compactDeviceHeader}
+                                      capabilities={DEVICE_COMPOSER_CAPABILITIES}
+                                      overlayHeightOwnerRef={chatFrameRef}
+                                      runClarifyTurn={
+                                        settings.customSettings.promptClarifyEnabled
+                                          ? runClarifyTurn
+                                          : undefined
                                       }
-                                      client={api ?? undefined}
-                                      commandHost={composerCommandHost}
-                                      running={composerIsSending}
-                                    />
-                                  }
-                                  executionMode={settings.system.executionMode}
-                                  hasModels={modelOptions.length > 0}
-                                  currentModelLabel={currentModelLabel}
-                                  modelOptions={modelOptions}
-                                  selectedValue={selectedValue}
-                                  chatRuntimeControls={chatRuntimeControlsForCurrentProvider}
-                                  commandSafetyMode={settings.system.commandSafetyMode}
-                                  onCommandSafetyModeChange={(mode) =>
-                                    setSettings((prev) =>
-                                      prev.system.commandSafetyMode === mode
-                                        ? prev
-                                        : updateSystem(prev, { commandSafetyMode: mode }),
-                                    )
-                                  }
-                                  reasoningOptions={chatRuntimeReasoningOptions}
-                                  thinkingAlwaysOn={chatRuntimeThinkingAlwaysOn}
-                                  contextUsageTokensSource={contextUsageTokensSource}
-                                  contextWindow={currentModelContextWindow}
-                                  contextDisplayMode={
-                                    settings.customSettings.composerContextDisplay
-                                  }
-                                  onManualCompactConfirm={handleManualCompact}
-                                  manualCompactBlocked={
-                                    manualCompactPending || composerCompactionBlocked
-                                  }
-                                  gitClient={gitClient}
-                                  onOpenWorktree={handleOpenWorktree}
-                                  onWorktreeRemoved={handleWorktreeRemoved}
-                                  gitWriteEnabled={settings.remote.enableWebGit}
-                                  gitDisabledMessage={gitDisabledMessage}
-                                  workspaceActivityClient={workspaceActivityClient}
-                                  onSelectModel={handleSelectModel}
-                                  onSelectExecutionMode={handleSelectExecutionMode}
-                                  onOpenSettings={openSettings}
-                                  onSend={() => {
-                                    if (
-                                      submitInFlightRef.current ||
-                                      isUploadingFiles ||
-                                      isImportingPastedTextRef.current ||
-                                      composerInputDisabled
-                                    ) {
-                                      return;
-                                    }
-                                    if (
-                                      queuedChatEditSessionRef.current?.conversationId ===
-                                      getDisplayedConversationId()
-                                    ) {
-                                      submitInFlightRef.current = true;
-                                      void (async () => {
-                                        try {
-                                          await commitQueuedChatEdit();
-                                        } finally {
-                                          submitInFlightRef.current = false;
-                                        }
-                                      })();
-                                      return;
-                                    }
-                                    if (
-                                      displayedConversationBusyRef.current ||
-                                      queuedChatTurnsForDisplayedConversation.length > 0
-                                    ) {
-                                      submitInFlightRef.current = true;
-                                      void (async () => {
-                                        try {
-                                          await submitCurrentComposerToGuiQueue("append");
-                                        } finally {
-                                          submitInFlightRef.current = false;
-                                        }
-                                      })();
-                                      return;
-                                    }
-                                    const isCurrentAgent = api.captureActiveAgentScope();
-                                    submitInFlightRef.current = true;
-                                    void (async () => {
-                                      try {
-                                        const draft = composerRef.current?.getDraft() ?? null;
-                                        // Capture the send target before the paste import
-                                        // awaits: switching conversations mid-import must
-                                        // not reroute the message or clear the composer of
-                                        // the newly displayed conversation.
-                                        const sendConversationId = getDisplayedConversationId();
-                                        let text: string;
-                                        let files: PendingUploadedFile[];
-                                        let referencedConversations =
-                                          draft?.conversationMentions ?? [];
-                                        try {
-                                          const materialized = draft
-                                            ? await materializeComposerDraftForSend(
-                                                draft,
-                                                pendingUploadedFiles,
-                                                displayedConversationWorkdir,
-                                                sendConversationId,
-                                                isCurrentAgent,
-                                              )
-                                            : {
-                                                text: "",
-                                                uploadedFiles: pendingUploadedFiles,
-                                                referencedConversations: [],
-                                              };
-                                          text = materialized.text;
-                                          files = materialized.uploadedFiles;
-                                          referencedConversations =
-                                            materialized.referencedConversations;
-                                        } catch (error) {
-                                          if (isCurrentAgent())
-                                            addNotify(
-                                              "error",
-                                              asErrorMessage(error, "大段粘贴内容导入失败"),
-                                            );
-                                          return;
-                                        }
-
-                                        if (!isCurrentAgent() || (!text && files.length === 0)) {
-                                          return;
-                                        }
-                                        if (getDisplayedConversationId() === sendConversationId) {
-                                          composerRef.current?.clear();
-                                        }
-                                        setPendingUploadsForConversation(sendConversationId, []);
-                                        void sendChat(text, {
-                                          isCurrentAgent,
-                                          conversationId: sendConversationId,
-                                          uploadedFiles: files,
-                                          referencedConversations,
-                                          runtimeControls: chatRuntimeControlsForCurrentProvider,
-                                        }).catch(() => {
-                                          if (!isCurrentAgent()) return;
-                                          updatePendingUploadsForConversation(
-                                            sendConversationId,
-                                            (current) => mergePendingUploadedFiles(current, files),
-                                          );
-                                        });
-                                      } finally {
-                                        submitInFlightRef.current = false;
-                                      }
-                                    })();
-                                  }}
-                                  onStop={() => {
-                                    const nextQueuedTurn =
-                                      queuedChatTurnsForDisplayedConversation[0];
-                                    if (nextQueuedTurn && !queuePaused) {
-                                      // Keep WebUI's stop button aligned with the desktop
-                                      // composer: stop the active run, then drain the queue.
-                                      runQueuedTurnNow(nextQueuedTurn.id);
-                                      return;
-                                    }
-                                    void cancelChat(displayedConversationId);
-                                  }}
-                                  stopDisabled={transportInputDisabled}
-                                  onPrepareChatRuntime={() => {
-                                    if (!api || historyShareToken) {
-                                      return;
-                                    }
-                                    void prepareChatRuntime(
-                                      "composer-focus",
-                                      api,
-                                      CHAT_RUNTIME_FOREGROUND_PREPARE_TIMEOUT_MS,
-                                    ).catch(() => undefined);
-                                  }}
-                                  onComposerBusyChange={handleComposerBusyChange}
-                                  onChatRuntimeControlsChange={handleChatRuntimeControlsChange}
-                                  onPickReadableFiles={() => fileInputRef.current?.click()}
-                                  onPickWorkspaceFolder={() => folderInputRef.current?.click()}
-                                  onPasteFiles={handleImportReadableFiles}
-                                  onLoadUploadedImagePreview={handleLoadUploadedImagePreview}
-                                  loadHistoryPrompts={loadComposerHistoryPrompts}
-                                  pendingUploadedFiles={pendingUploadedFiles}
-                                  onRemovePendingUpload={(relativePath) => {
-                                    updatePendingUploadsForConversation(
-                                      getDisplayedConversationId(),
-                                      (current) =>
-                                        current.filter(
-                                          (file) => file.relativePath !== relativePath,
-                                        ),
-                                    );
-                                  }}
-                                  queuedTurns={queuedChatTurnsForDisplayedConversation}
-                                  queuePaused={queuePaused}
-                                  queueControlPending={queueControlPending}
-                                  queueRunDisabled={transportInputDisabled}
-                                  onQueuePausedChange={handleQueuePausedChange}
-                                  onRunQueuedTurnNow={runQueuedTurnNow}
-                                  onMoveQueuedTurnUp={moveQueuedTurnUp}
-                                  onEditQueuedTurn={editQueuedTurn}
-                                  onRemoveQueuedTurn={removeQueuedTurn}
-                                  taskProgressBar={
-                                    <TaskProgressBar
-                                      key={displayedConversationId}
-                                      snapshot={taskProgressSnapshot}
-                                      isConversationRunning={transcriptBusy}
-                                    />
-                                  }
-                                  approvalBar={approvalBar}
-                                  statsBar={
-                                    <ConversationStatsBarHost
-                                      // 前缀防与同级 taskProgressBar 的 key（裸会话 id）碰撞：React 对
-                                      // 同键兄弟的 keyed diff 会让旧 fiber 逃过删除，DOM 残留逐次累积。
-                                      key={`stats-${displayedConversationId}`}
+                                      clarifyContext={clarifyContext}
                                       conversationId={displayedConversationId}
-                                      host={trajectoryHost}
-                                      // 轨迹视图下输入区隐藏，状态栏无需拉取。
-                                      enabled={renderedConversationView !== "trajectory"}
+                                      // 轨迹页是只读分析视图：挂起输入区（保持挂载，草稿不丢）。
+                                      hidden={renderedConversationView === "trajectory"}
+                                      composerRef={composerRef}
+                                      isSending={composerIsSending}
+                                      isUploadingFiles={isUploadingFiles}
+                                      isInputDisabled={composerInputDisabled}
+                                      draftOnly={composerDraftOnly}
+                                      // 麦克风在开启语音输入后显示；点击设置卡片会立即切换当前供应商。
+                                      sttSessionKey={displayedConversationId}
+                                      sttProvider={null}
+                                      sttProviderConfigured={false}
+                                      inputPlaceholder={composerPlaceholder}
+                                      workdir={displayedConversationWorkdir}
+                                      enabledSkills={enabledComposerSkills}
+                                      mentionableConversations={mentionableConversations}
+                                      searchMentionableConversations={
+                                        searchMentionableConversations
+                                      }
+                                      mentionApps={mentionApps}
+                                      commandHost={composerCommandHost}
+                                      goalBar={
+                                        <WebGoalBarHost
+                                          key={`goal-${displayedConversationId}`}
+                                          conversationId={
+                                            isLocalDraftConversationId(displayedConversationId)
+                                              ? undefined
+                                              : displayedConversationId
+                                          }
+                                          client={api ?? undefined}
+                                          commandHost={composerCommandHost}
+                                          running={composerIsSending}
+                                        />
+                                      }
+                                      executionMode={settings.system.executionMode}
+                                      hasModels={modelOptions.length > 0}
+                                      currentModelLabel={currentModelLabel}
+                                      modelOptions={modelOptions}
+                                      selectedValue={selectedValue}
+                                      chatRuntimeControls={chatRuntimeControlsForCurrentProvider}
+                                      commandSafetyMode={settings.system.commandSafetyMode}
+                                      onCommandSafetyModeChange={(mode) =>
+                                        setSettings((prev) =>
+                                          prev.system.commandSafetyMode === mode
+                                            ? prev
+                                            : updateSystem(prev, { commandSafetyMode: mode }),
+                                        )
+                                      }
+                                      reasoningOptions={chatRuntimeReasoningOptions}
+                                      thinkingAlwaysOn={chatRuntimeThinkingAlwaysOn}
                                       contextUsageTokensSource={contextUsageTokensSource}
                                       contextWindow={currentModelContextWindow}
+                                      contextDisplayMode={
+                                        settings.customSettings.composerContextDisplay
+                                      }
                                       onManualCompactConfirm={handleManualCompact}
                                       manualCompactBlocked={
                                         manualCompactPending || composerCompactionBlocked
                                       }
+                                      gitClient={gitClient}
+                                      onOpenWorktree={handleOpenWorktree}
+                                      onWorktreeRemoved={handleWorktreeRemoved}
+                                      gitWriteEnabled={settings.remote.enableWebGit}
+                                      gitDisabledMessage={gitDisabledMessage}
+                                      workspaceActivityClient={workspaceActivityClient}
+                                      onSelectModel={handleSelectModel}
+                                      onSelectExecutionMode={handleSelectExecutionMode}
+                                      onOpenSettings={openSettings}
+                                      onSend={() => {
+                                        if (
+                                          submitInFlightRef.current ||
+                                          isUploadingFiles ||
+                                          isImportingPastedTextRef.current ||
+                                          composerInputDisabled
+                                        ) {
+                                          return;
+                                        }
+                                        if (
+                                          queuedChatEditSessionRef.current?.conversationId ===
+                                          getDisplayedConversationId()
+                                        ) {
+                                          submitInFlightRef.current = true;
+                                          void (async () => {
+                                            try {
+                                              await commitQueuedChatEdit();
+                                            } finally {
+                                              submitInFlightRef.current = false;
+                                            }
+                                          })();
+                                          return;
+                                        }
+                                        if (
+                                          displayedConversationBusyRef.current ||
+                                          queuedChatTurnsForDisplayedConversation.length > 0
+                                        ) {
+                                          submitInFlightRef.current = true;
+                                          void (async () => {
+                                            try {
+                                              await submitCurrentComposerToGuiQueue("append");
+                                            } finally {
+                                              submitInFlightRef.current = false;
+                                            }
+                                          })();
+                                          return;
+                                        }
+                                        const isCurrentAgent = api.captureActiveAgentScope();
+                                        submitInFlightRef.current = true;
+                                        void (async () => {
+                                          try {
+                                            const draft = composerRef.current?.getDraft() ?? null;
+                                            // Capture the send target before the paste import
+                                            // awaits: switching conversations mid-import must
+                                            // not reroute the message or clear the composer of
+                                            // the newly displayed conversation.
+                                            const sendConversationId = getDisplayedConversationId();
+                                            let text: string;
+                                            let files: PendingUploadedFile[];
+                                            let referencedConversations =
+                                              draft?.conversationMentions ?? [];
+                                            try {
+                                              const materialized = draft
+                                                ? await materializeComposerDraftForSend(
+                                                    draft,
+                                                    pendingUploadedFiles,
+                                                    displayedConversationWorkdir,
+                                                    sendConversationId,
+                                                    isCurrentAgent,
+                                                  )
+                                                : {
+                                                    text: "",
+                                                    uploadedFiles: pendingUploadedFiles,
+                                                    referencedConversations: [],
+                                                  };
+                                              text = materialized.text;
+                                              files = materialized.uploadedFiles;
+                                              referencedConversations =
+                                                materialized.referencedConversations;
+                                            } catch (error) {
+                                              if (isCurrentAgent())
+                                                addNotify(
+                                                  "error",
+                                                  asErrorMessage(error, "大段粘贴内容导入失败"),
+                                                );
+                                              return;
+                                            }
+
+                                            if (
+                                              !isCurrentAgent() ||
+                                              (!text && files.length === 0)
+                                            ) {
+                                              return;
+                                            }
+                                            if (
+                                              getDisplayedConversationId() === sendConversationId
+                                            ) {
+                                              composerRef.current?.clear();
+                                            }
+                                            setPendingUploadsForConversation(
+                                              sendConversationId,
+                                              [],
+                                            );
+                                            void sendChat(text, {
+                                              isCurrentAgent,
+                                              conversationId: sendConversationId,
+                                              uploadedFiles: files,
+                                              referencedConversations,
+                                              runtimeControls:
+                                                chatRuntimeControlsForCurrentProvider,
+                                            }).catch(() => {
+                                              if (!isCurrentAgent()) return;
+                                              updatePendingUploadsForConversation(
+                                                sendConversationId,
+                                                (current) =>
+                                                  mergePendingUploadedFiles(current, files),
+                                              );
+                                            });
+                                          } finally {
+                                            submitInFlightRef.current = false;
+                                          }
+                                        })();
+                                      }}
+                                      onStop={() => {
+                                        const nextQueuedTurn =
+                                          queuedChatTurnsForDisplayedConversation[0];
+                                        if (nextQueuedTurn && !queuePaused) {
+                                          // Keep WebUI's stop button aligned with the desktop
+                                          // composer: stop the active run, then drain the queue.
+                                          runQueuedTurnNow(nextQueuedTurn.id);
+                                          return;
+                                        }
+                                        void cancelChat(displayedConversationId);
+                                      }}
+                                      stopDisabled={transportInputDisabled}
+                                      onPrepareChatRuntime={() => {
+                                        if (!api || historyShareToken) {
+                                          return;
+                                        }
+                                        void prepareChatRuntime(
+                                          "composer-focus",
+                                          api,
+                                          CHAT_RUNTIME_FOREGROUND_PREPARE_TIMEOUT_MS,
+                                        ).catch(() => undefined);
+                                      }}
+                                      onComposerBusyChange={handleComposerBusyChange}
+                                      onChatRuntimeControlsChange={handleChatRuntimeControlsChange}
+                                      onPickReadableFiles={() => fileInputRef.current?.click()}
+                                      onPickWorkspaceFolder={() => folderInputRef.current?.click()}
+                                      onPasteFiles={handleImportReadableFiles}
+                                      onLoadUploadedImagePreview={handleLoadUploadedImagePreview}
+                                      loadHistoryPrompts={loadComposerHistoryPrompts}
+                                      pendingUploadedFiles={pendingUploadedFiles}
+                                      onRemovePendingUpload={(relativePath) => {
+                                        updatePendingUploadsForConversation(
+                                          getDisplayedConversationId(),
+                                          (current) =>
+                                            current.filter(
+                                              (file) => file.relativePath !== relativePath,
+                                            ),
+                                        );
+                                      }}
+                                      queuedTurns={queuedChatTurnsForDisplayedConversation}
+                                      queuePaused={queuePaused}
+                                      queueControlPending={queueControlPending}
+                                      queueRunDisabled={transportInputDisabled}
+                                      onQueuePausedChange={handleQueuePausedChange}
+                                      onRunQueuedTurnNow={runQueuedTurnNow}
+                                      onMoveQueuedTurnUp={moveQueuedTurnUp}
+                                      onEditQueuedTurn={editQueuedTurn}
+                                      onRemoveQueuedTurn={removeQueuedTurn}
+                                      taskProgressBar={
+                                        <TaskProgressBar
+                                          key={displayedConversationId}
+                                          snapshot={taskProgressSnapshot}
+                                          isConversationRunning={transcriptBusy}
+                                        />
+                                      }
+                                      approvalBar={approvalBar}
+                                      statsBar={
+                                        <ConversationStatsBarHost
+                                          // 前缀防与同级 taskProgressBar 的 key（裸会话 id）碰撞：React 对
+                                          // 同键兄弟的 keyed diff 会让旧 fiber 逃过删除，DOM 残留逐次累积。
+                                          key={`stats-${displayedConversationId}`}
+                                          conversationId={displayedConversationId}
+                                          host={trajectoryHost}
+                                          // 轨迹视图下输入区隐藏，状态栏无需拉取。
+                                          enabled={renderedConversationView !== "trajectory"}
+                                          contextUsageTokensSource={contextUsageTokensSource}
+                                          contextWindow={currentModelContextWindow}
+                                          onManualCompactConfirm={handleManualCompact}
+                                          manualCompactBlocked={
+                                            manualCompactPending || composerCompactionBlocked
+                                          }
+                                        />
+                                      }
+                                      fileDropOverlay={
+                                        isFileDropActive ? (
+                                          <FileDropOverlay
+                                            variant="composer"
+                                            canDropUpload={canDropUpload}
+                                            title={fileDropTitle}
+                                            description={fileDropDescription}
+                                            limitHint={fileDropLimitHint}
+                                          />
+                                        ) : null
+                                      }
                                     />
-                                  }
-                                  fileDropOverlay={
-                                    isFileDropActive ? (
-                                      <FileDropOverlay
-                                        variant="composer"
-                                        canDropUpload={canDropUpload}
-                                        title={fileDropTitle}
-                                        description={fileDropDescription}
-                                        limitHint={fileDropLimitHint}
-                                      />
-                                    ) : null
-                                  }
-                                />
-                              </section>
-                              </DeviceConversationImageSurface>
-                            )}
-                          </>
-                        ),
-                      }}
-                      workspaceOverlays={
-                        <WorkspaceOverlayHost
-                          locale={settings.locale}
-                          theme={effectiveTheme}
-                          workspaceViewScope={workspaceViewScope}
-                          workspaceEditors={workspaceEditors}
-                          onWorkspaceEditorPreviewFile={openWorkspaceFilePreview}
-                          onWorkspaceEditorInsertCodeMention={handleInsertCodeMention}
-                          onWorkspaceEditorHide={handleWorkspaceEditorHide}
-                          onWorkspaceEditorClose={handleWorkspaceEditorClosed}
-                          workspaceFilePreviewMounted={workspaceFilePreviewMounted}
-                          workspaceFilePreviewOpenRequest={workspaceFilePreviewOpenRequest}
-                          workspaceFilePreviewOpen={workspaceFilePreviewOpen}
-                          onWorkspaceFilePreviewOpenEditor={openWorkspaceEditorFile}
-                          onWorkspaceFilePreviewRequestClose={requestWorkspaceFilePreviewClose}
-                          onWorkspaceFilePreviewClose={handleWorkspaceFilePreviewClosed}
-                          workspaceSshTerminalMounted={workspaceSshTerminalMounted}
-                          workspaceSshTerminalOpenRequest={workspaceSshTerminalOpenRequest}
-                          workspaceSshTerminalOpen={workspaceSshTerminalOpen}
-                          terminalProjectPathKey={terminalProjectPathKey}
-                          terminalClient={terminalClient}
-                          sftpClient={sftpClient}
-                          terminalSessions={terminalSessions}
-                          onWorkspaceSshTerminalHide={hideWorkspaceSshTerminalOverlay}
-                          onSshTerminalOpenFile={handleOpenSftpFile}
-                          sshTerminalPaneLeasedSessionIds={workbenchLeasedDockSessionIds}
-                          onSshTerminalFocusLeasedSession={
-                            sessionWorkbench.enabled
-                              ? workbenchController.focusTerminalPaneForSession
-                              : undefined
-                          }
-                          onSshTerminalSessionTabDragStart={
-                            sessionWorkbench.enabled
-                              ? workbenchController.handleTerminalTabDragIntent
-                              : undefined
-                          }
-                        />
-                      }
-                    />
-                  </main>
+                                  </section>
+                                </DeviceConversationImageSurface>
+                              )}
+                            </>
+                          ),
+                        }}
+                        workspaceOverlays={
+                          <WorkspaceOverlayHost
+                            locale={settings.locale}
+                            theme={effectiveTheme}
+                            workspaceViewScope={workspaceViewScope}
+                            workspaceEditors={workspaceEditors}
+                            onWorkspaceEditorPreviewFile={openWorkspaceFilePreview}
+                            onWorkspaceEditorInsertCodeMention={handleInsertCodeMention}
+                            onWorkspaceEditorHide={handleWorkspaceEditorHide}
+                            onWorkspaceEditorClose={handleWorkspaceEditorClosed}
+                            workspaceFilePreviewMounted={workspaceFilePreviewMounted}
+                            workspaceFilePreviewOpenRequest={workspaceFilePreviewOpenRequest}
+                            workspaceFilePreviewOpen={workspaceFilePreviewOpen}
+                            onWorkspaceFilePreviewOpenEditor={openWorkspaceEditorFile}
+                            onWorkspaceFilePreviewRequestClose={requestWorkspaceFilePreviewClose}
+                            onWorkspaceFilePreviewClose={handleWorkspaceFilePreviewClosed}
+                            workspaceSshTerminalMounted={workspaceSshTerminalMounted}
+                            workspaceSshTerminalOpenRequest={workspaceSshTerminalOpenRequest}
+                            workspaceSshTerminalOpen={workspaceSshTerminalOpen}
+                            terminalProjectPathKey={terminalProjectPathKey}
+                            terminalClient={terminalClient}
+                            sftpClient={sftpClient}
+                            terminalSessions={terminalSessions}
+                            onWorkspaceSshTerminalHide={hideWorkspaceSshTerminalOverlay}
+                            onSshTerminalOpenFile={handleOpenSftpFile}
+                            sshTerminalPaneLeasedSessionIds={workbenchLeasedDockSessionIds}
+                            onSshTerminalFocusLeasedSession={
+                              sessionWorkbench.enabled
+                                ? workbenchController.focusTerminalPaneForSession
+                                : undefined
+                            }
+                            onSshTerminalSessionTabDragStart={
+                              sessionWorkbench.enabled
+                                ? workbenchController.handleTerminalTabDragIntent
+                                : undefined
+                            }
+                          />
+                        }
+                      />
+                    </main>
                   </>
                 }
-                tools={terminalClient ? (
+                tools={
+                  terminalClient ? (
                     <RightDockPanel
                       workspace={deviceWorkspace}
                       workspaceViewScope={workspaceViewScope}
@@ -2789,7 +2853,8 @@ export function GatewayAppView({
                       onInsertGitFileMention={handleRightDockInsertGitFileMention}
                       onClose={handleRightDockClose}
                     />
-                ) : null}
+                  ) : null
+                }
               />
             </WorkbenchBody>
           </WorkbenchShell>

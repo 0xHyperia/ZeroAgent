@@ -133,13 +133,13 @@ func (s *Service) LoadCloudFileToWorkspace(ctx context.Context, userID int64, lo
 			return nil, objectstore.ErrUnavailable
 		}
 		if err = verifyCloudArtifactObject(ctx, provider.objects, version, staged); err != nil {
-			staged.Close()
-			os.Remove(staged.Name())
+			_ = staged.Close()
+			_ = os.Remove(staged.Name())
 			return nil, err
 		}
 		if _, err = staged.Seek(0, 0); err != nil {
-			staged.Close()
-			os.Remove(staged.Name())
+			_ = staged.Close()
+			_ = os.Remove(staged.Name())
 			return nil, objectstore.ErrUnavailable
 		}
 		loaded.ArtifactVersionID = version.ID
@@ -154,7 +154,7 @@ func (s *Service) LoadCloudFileToWorkspace(ctx context.Context, userID int64, lo
 			return err == nil && current.SHA256 == version.SHA256
 		}
 	}
-	defer func() { staged.Close(); os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
 	loaded.Path = load.Path
 	if loaded.Path == "" {
 		id := loaded.FileID

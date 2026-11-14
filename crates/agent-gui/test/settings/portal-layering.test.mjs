@@ -75,7 +75,8 @@ test("all shared popup primitives use the semantic popover layer", () => {
   for (const [name, source] of popupPortalSources) {
     // 允许 Portal 带属性（如 dropdown-menu 的 container={portalContainer}）。
     assert.match(source, /<\w+(?:Primitive)?\.Portal(?:\s[^>]*)?>/, `${name} should render through a Portal`);
-    assert.match(source, /className="layer-popover(?: [^"]*)?"/, `${name} should use layer-popover`);
+    const positioner = source.match(/<\w+\.Positioner\b[^>]*>/)?.[0] ?? "";
+    assert.match(positioner, /"layer-popover(?: [^"]*)?"/, `${name} desktop positioner should use layer-popover`);
   }
 });
 
@@ -120,6 +121,18 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
       const attribute = (name) => attributes.find((entry) => entry.type === "JSXAttribute" && entry.name?.name === name);
       const chrome = attribute("data-desktop-remote-chrome-slot");
       const targetSource = source.slice(call.arguments[1]?.start, call.arguments[1]?.end);
+      if (source.includes('data-desktop-cloud-workbench=""') && ["headerTarget", "windowTarget"].includes(targetSource)) {
+        const cloud = readFileSync(new URL("../../../agent-gateway/web/src/pages/CloudChatPage.tsx", import.meta.url), "utf8");
+        if (targetSource === "headerTarget") {
+          assert.equal(source.slice(content.start, content.end), "props.headerLeadingActions");
+          assert.match(cloud, /ref=\{desktopCloudHost\?\.onHeaderTarget\}\s+data-desktop-host-slot="header"/);
+        } else {
+          assert.equal(content?.openingElement?.name.name, "WindowsTitleBar");
+          assert.ok(attribute("controlsOnly"));
+          assert.match(cloud, /ref=\{desktopCloudHost\?\.onWindowControlsTarget\}\s+data-desktop-host-slot="window"/);
+        }
+        continue;
+      }
       if (
         content?.type === "Identifier" &&
         content.name === "surface" &&
@@ -154,6 +167,16 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
           source.includes('className="za-conversation-image-focus"')) {
         const styles = readShared("components/resource-preview/conversation-image-preview.css");
         assert.match(styles, /\.za-conversation-image-focus\s*\{[^}]*z-index:\s*calc\(var\(--layer-modal\) - 1\)/);
+        continue;
+      }
+      if (targetSource === "document.body" && attribute("data-workspace-tab-preview-card")) {
+        assert.equal(attribute("role")?.value?.value, "tooltip");
+        assert.equal(attribute("className")?.value?.value, "za-tab-hover-preview");
+        const styles = readShared("components/project-tools/workspace-panels.css");
+        const rule = styles.match(/\.za-tab-hover-preview\s*\{[^}]*\}/)?.[0] ?? "";
+        const layer = Number(rule.match(/z-index:\s*(\d+);/)?.[1]);
+        assert.ok(layer > 0 && layer < layerValue("--layer-popover"));
+        assert.match(rule, /pointer-events:\s*none/);
         continue;
       }
       if (content?.type === "Identifier" && content.name === "controls" && targetSource === "captionMount" &&
@@ -192,16 +215,38 @@ test("custom React portals declare an overlay layer or an explicit layout-only d
       if (targetSource === "chrome.headerTarget" && content?.name === "fileHeader") {
         const dock = readShared("components/project-tools/RightDockPanel.tsx");
         assert.match(source, /const fileHeader = active \? \(\s*<WorkspaceFileHeader/);
-        assert.match(dock, /ref=\{setFileHeaderTarget\} className="z-10 shrink-0 empty:hidden"/);
+        assert.match(dock, /ref=\{setFileHeaderTarget\}\s+data-workspace-file-header-host=""\s+className="z-10 shrink-0 empty:hidden"/);
         assert.match(dock, /headerTarget: fileHeaderTarget/);
         continue;
       }
       if (targetSource === "headerTarget" && content?.name === "header" && source.includes('className="za-review-header-region"')) {
         const dock = readShared("components/project-tools/RightDockPanel.tsx");
-        assert.match(dock, /ref=\{setFileHeaderTarget\} className="z-10 shrink-0 empty:hidden"/);
+        assert.match(dock, /ref=\{setFileHeaderTarget\}\s+data-workspace-file-header-host=""\s+className="z-10 shrink-0 empty:hidden"/);
         assert.match(dock, /headerTarget: fileHeaderTarget/);
         assert.match(source, /headerTarget \? \(\s*active && createPortal\(header, headerTarget\)/);
         assert.doesNotMatch(source.slice(source.indexOf("const header = ("), call.start), /aria-modal|role="(?:dialog|alertdialog)"|layer-(?:popover|modal|toast|critical)/);
+        continue;
+      }
+      if (content?.type === "JSXElement" &&
+          content.openingElement.name.name === "MarkdownMermaidBlock" && targetSource === "element") {
+        assert.match(source.slice(0, call.start), /diagramHosts\.map\(\(\{ element, chart, id \}\) =>\s*$/);
+        assert.match(source, /workspaceMarkdownMermaid\(/);
+        const widget = readShared("components/workspace-editor/workspaceMarkdownMermaid.ts");
+        assert.match(widget, /element\.className = "za-md-mermaid-widget"/);
+        assert.match(widget, /Decoration\.replace\(\{[^}]*\bblock:\s*true\b/);
+        assert.doesNotMatch(source.slice(content.start, content.end), /aria-modal|\brole=|layer-(?:popover|modal|toast|critical)/);
+        continue;
+      }
+      if (targetSource === "props.toolbarTarget" &&
+          content?.type === "CallExpression" && content.callee.name === "reviewList" &&
+          content.arguments[0]?.value === "toolbar") {
+        assert.match(source, /toolbarTarget\?: HTMLElement \| null/);
+        assert.match(source, /function reviewList[\s\S]*?<PopoverContent\b/);
+        for (const file of ["ResourceSheetPreview.tsx", "ResourceSlidesPreview.tsx"]) {
+          const reader = readShared(`components/resource-preview/${file}`);
+          assert.match(reader, /<span ref=\{setCommentsToolbar\} className="za-(?:sheet|slide)-comments-(?:slot|tool)" \/>/);
+          assert.match(reader, /toolbarTarget=\{commentsToolbar\}/);
+        }
         continue;
       }
       if (content?.type === "Identifier" && content.name === "review" && targetSource === "selectionEdit.inlineHost" && source.includes("useWorkspaceMarkdownSelectionEdit(")) {

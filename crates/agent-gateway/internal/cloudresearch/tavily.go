@@ -149,7 +149,7 @@ func (t *Tavily) Search(parent context.Context, query string) (SearchResult, err
 	if err != nil {
 		return SearchResult{}, safeError(ctx, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		return SearchResult{}, responseError(response.StatusCode)
 	}

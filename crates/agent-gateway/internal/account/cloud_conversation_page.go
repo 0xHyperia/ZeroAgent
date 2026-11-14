@@ -62,7 +62,8 @@ func (s *MemoryStore) ListCloudConversationPage(ctx context.Context, userID int6
 	defer s.mu.RUnlock()
 	items := make([]CloudConversation, 0)
 	for _, item := range s.cloudConversations {
-		if item.UserID != userID || (value != "" && !(item.UpdatedAt.Before(cursor.Updated) || (item.UpdatedAt.Equal(cursor.Updated) && item.ID < cursor.ID))) {
+		beforeCursor := item.UpdatedAt.Before(cursor.Updated) || (item.UpdatedAt.Equal(cursor.Updated) && item.ID < cursor.ID)
+		if item.UserID != userID || (value != "" && !beforeCursor) {
 			continue
 		}
 		items = append(items, item)
@@ -94,7 +95,7 @@ func (s *PersistentStore) ListCloudConversationPage(ctx context.Context, userID 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]CloudConversation, 0)
 	for rows.Next() {
 		var item CloudConversation

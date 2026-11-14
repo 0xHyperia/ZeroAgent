@@ -152,13 +152,14 @@ func TestCloudImageGenerateEditDurableAndReplay(t *testing.T) {
 		}
 		posts.Add(1)
 		identity = r.Header.Get("Idempotency-Key")
-		if r.URL.Path == "/v1/images/generations" {
+		switch r.URL.Path {
+		case "/v1/images/generations":
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
 			if body["model"] != "gpt-image-test" || body["output_format"] != "png" || body["response_format"] != nil {
 				t.Error("incorrect image API fields", body)
 			}
-		} else if r.URL.Path == "/v1/images/edits" {
+		case "/v1/images/edits":
 			if err := r.ParseMultipartForm(1 << 20); err != nil {
 				t.Error(err)
 			}
@@ -167,7 +168,7 @@ func TestCloudImageGenerateEditDurableAndReplay(t *testing.T) {
 			if len(refs) != 1 {
 				t.Error("reference not transferred")
 			}
-		} else {
+		default:
 			t.Error("arbitrary image endpoint")
 		}
 		json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"b64_json": base64.StdEncoding.EncodeToString(data)}}})

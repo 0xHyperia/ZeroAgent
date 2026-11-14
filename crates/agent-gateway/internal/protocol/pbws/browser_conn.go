@@ -248,15 +248,9 @@ func (c *browserConn) handshake() bool {
 		return false
 	}
 
-	c.core.SetAuthorized()
-	// 握手前的读超时刻意未刷新；成功后立即续期。
-	c.core.TouchInboundActivity()
-	c.core.StartWriteLoop()
-	c.core.StartHeartbeat(c.buildHeartbeatPing)
-
-	// hello 应答走数据队列（FrameResponse）：与快照回放同队 FIFO，保证客户端先收 hello
-	// 再收回放帧（跨队列只有优先级、无顺序保证）。
-	if err := c.send(wscore.FrameResponse, "hello", &gatewayv2.WebServerFrame{
+	// Write hello before starting any producer. History recovery and heartbeats
+	// use the priority control queue and could otherwise overtake a queued hello.
+	if err := writeDirectMessage(c.conn, c.srv.writeTimeout(), &gatewayv2.WebServerFrame{
 		RequestId: frame.GetRequestId(),
 		Payload: &gatewayv2.WebServerFrame_Hello{
 			Hello: c.srv.serverHello(true, "", "", browserReadLimit),
@@ -265,8 +259,11 @@ func (c *browserConn) handshake() bool {
 		c.core.Close()
 		return false
 	}
-	// Subscribe only after the hello response is queued. Recovery/status uses
-	// the control lane and must never overtake authentication.
+	c.core.SetAuthorized()
+	// 握手前的读超时刻意未刷新；成功后立即续期。
+	c.core.TouchInboundActivity()
+	c.core.StartWriteLoop()
+	c.core.StartHeartbeat(c.buildHeartbeatPing)
 	c.startEventForwarders()
 	c.replaySnapshots()
 	return true

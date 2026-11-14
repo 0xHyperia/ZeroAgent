@@ -1,13 +1,3 @@
-import { sendComposerCommandTurn } from "../sendComposerCommandTurn";
-import { createWebComposerCommandHost } from "../webComposerCommandHost";
-// 会话 Pane 的统一宿主——复刻桌面端 RestorableConversationPaneHost:
-// 每个 Pane 始终挂同一组件,焦点切换只换 primary/background 绑定,不拆宿主。
-// 发送/停止/排队/上传/审批按本 Pane 的 conversationId 路由;选模型、编辑队列
-// 项、由正文重发等页面级操作在背景 Pane 上先走 focusGuard。Primary 把自己的
-// 输入框挂到页面 composerRef,卸载时把未发送草稿写回缓存。
-import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
-import { type ImportDeviceConversationFiles, useGatewayDeviceImages } from "@/components/GatewayDeviceImages";
-
 import {
   type ChangedFilesActions,
   ChangedFilesActionsProvider,
@@ -28,6 +18,12 @@ import { TaskProgressBar } from "@liveagent/ui/components/chat/TaskProgressBar";
 import { ToolApprovalBar } from "@liveagent/ui/components/chat/ToolApprovalBar";
 import { TranscriptLatestButton } from "@liveagent/ui/components/chat/TranscriptLatestButton";
 import { Loader2 } from "@liveagent/ui/components/IconSet";
+// 会话 Pane 的统一宿主——复刻桌面端 RestorableConversationPaneHost:
+// 每个 Pane 始终挂同一组件,焦点切换只换 primary/background 绑定,不拆宿主。
+// 发送/停止/排队/上传/审批按本 Pane 的 conversationId 路由;选模型、编辑队列
+// 项、由正文重发等页面级操作在背景 Pane 上先走 focusGuard。Primary 把自己的
+// 输入框挂到页面 composerRef,卸载时把未发送草稿写回缓存。
+import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
@@ -80,6 +76,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { createGatewayTrajectoryHost } from "@/agent-ui-adapters/trajectory";
+import {
+  type ImportDeviceConversationFiles,
+  useGatewayDeviceImages,
+} from "@/components/GatewayDeviceImages";
 import { GatewayTranscript } from "@/components/GatewayTranscript";
 import { executeClarifyPromptTurn } from "@/lib/chat/clarifyPromptTurn";
 import { trimLeadingHeadlessEntries } from "@/lib/chat/historyWindow";
@@ -122,8 +122,10 @@ import type {
   GatewayDeviceReplyIdentity,
 } from "../gatewayDeviceDraftRecovery";
 import { isLocalDraftConversationId } from "../gatewayLocalDraft";
+import { sendComposerCommandTurn } from "../sendComposerCommandTurn";
 import type { SendChatFn } from "../types";
 import { WebGoalBarHost } from "../WebGoalBarHost";
+import { createWebComposerCommandHost } from "../webComposerCommandHost";
 import { resolveWorkbenchComposerInputDisabled } from "./composerInputState";
 
 type ChatQueueSnapshotLike = Parameters<

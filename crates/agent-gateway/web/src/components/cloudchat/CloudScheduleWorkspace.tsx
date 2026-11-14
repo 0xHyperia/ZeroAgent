@@ -82,6 +82,7 @@ import {
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { Switch } from "@liveagent/ui/components/ui/switch";
 import { Textarea } from "@liveagent/ui/components/ui/textarea";
+import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import { t as translate } from "@liveagent/ui/i18n/index";
 import {
@@ -90,12 +91,11 @@ import {
   isCronRunActive,
   type ScheduledConversationRun,
 } from "@liveagent/ui/lib/automation/types";
+import { OFFICIAL_GATEWAY_URL } from "@liveagent/ui/lib/settings";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
-import { OFFICIAL_GATEWAY_URL } from "@liveagent/ui/lib/settings";
-import { toast } from "@liveagent/ui/components/ui/toast-manager";
-import { ModelPicker, type ModelPickerOption } from "@liveagent/ui/pages/settings/modelPicker";
 import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
+import { ModelPicker, type ModelPickerOption } from "@liveagent/ui/pages/settings/modelPicker";
 import {
   type CSSProperties,
   type ReactNode,
@@ -210,7 +210,8 @@ function defaultScheduleClock() {
   const next = new Date(now);
   next.setHours(9, 0, 0, 0);
   if (next <= now) next.setDate(next.getDate() + 1);
-  const wallTime = time_zone === "UTC" ? next : new Date(next.getTime() - next.getTimezoneOffset() * 60_000);
+  const wallTime =
+    time_zone === "UTC" ? next : new Date(next.getTime() - next.getTimezoneOffset() * 60_000);
   return { start: wallTime.toISOString().slice(0, 16), time_zone };
 }
 

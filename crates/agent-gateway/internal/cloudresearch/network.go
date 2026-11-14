@@ -176,7 +176,7 @@ func pinnedClient(ctx context.Context, u *url.URL, network Network, limits Limit
 				remoteHost, remotePort, peerErr := net.SplitHostPort(conn.RemoteAddr().String())
 				peer, parseErr := netip.ParseAddr(remoteHost)
 				if peerErr != nil || parseErr != nil || peer.Unmap() != ip || remotePort != port {
-					conn.Close()
+					_ = conn.Close()
 					return nil, ErrUnsafeURL
 				}
 				return conn, nil

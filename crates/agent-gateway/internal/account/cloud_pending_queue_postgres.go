@@ -71,7 +71,7 @@ func (s *PersistentStore) MutateCloudPendingQueue(ctx context.Context, userID in
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if mutation.Kind == "enqueue" && mutation.Item != nil {
 		// Same order as CreateCloudRun: request identity before conversation.
 		key := strconv.FormatInt(userID, 10) + ":" + mutation.Item.ClientItemID

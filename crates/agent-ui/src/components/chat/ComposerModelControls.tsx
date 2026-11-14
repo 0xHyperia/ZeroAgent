@@ -1,4 +1,3 @@
-import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
 import type {
   ChatRuntimeControls,
   ExecutionMode,
@@ -8,6 +7,7 @@ import type {
 } from "@liveagent/app/lib/settings";
 import type { SharedModelOption } from "@liveagent/ui/lib/models/modelOptions";
 import { memo } from "react";
+import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
 import { ComposerInlineModelControls } from "./ComposerInlineModelControls";
 export type ComposerModelControlsProps = {
   presentation?: "standard" | "inline";
@@ -31,7 +31,10 @@ export type ComposerModelControlsProps = {
   onRefreshModels?: () => void | Promise<void>;
   onSelectModel: (selection: SelectedModel) => void;
   onSelectExecutionMode: (mode: "text" | "tools") => void;
-  onOpenSettings: (section?: "providers" | "model-preferences" | "webSearch", providerId?: string) => void;
+  onOpenSettings: (
+    section?: "providers" | "model-preferences" | "webSearch",
+    providerId?: string,
+  ) => void;
   onChatRuntimeControlsChange: (patch: Partial<ChatRuntimeControls>) => void;
   /** 受控开关（/model 指令从外部打开）；缺省时弹层自管开关。 */
   open?: boolean;

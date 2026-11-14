@@ -50,6 +50,11 @@ type cloudSDKTestTransfer struct {
 
 func newCloudSDKFixture(t *testing.T, f *cloudHTTPFixture, enabled bool) *cloudSDKFixture {
 	t.Helper()
+	return newCloudSDKFixtureWithTimeout(t, f, enabled, time.Second)
+}
+
+func newCloudSDKFixtureWithTimeout(t *testing.T, f *cloudHTTPFixture, enabled bool, requestTimeout time.Duration) *cloudSDKFixture {
+	t.Helper()
 	sdk := &cloudSDKFixture{operations: map[string]cloudexecutor.Operation{}, receipts: map[string]cloudexecutor.Receipt{}, files: map[string][]byte{}, transfers: map[string]*cloudSDKTestTransfer{}, infos: map[string]map[string]any{}, workspaceSandbox: map[string]string{}, retired: map[string]bool{}, enabled: enabled, entered: make(chan struct{})}
 	now := time.Now().UTC()
 	sdk.info = map[string]any{"sandbox_id": "owned-cloud-fixture-vm", "state": "running", "started_at": now, "expires_at": now.Add(300 * time.Second), "network": map[string]any{"outbound": "denied", "public_access": false}, "auto_resume": false}
@@ -289,7 +294,7 @@ func newCloudSDKFixture(t *testing.T, f *cloudHTTPFixture, enabled bool) *cloudS
 		_ = json.NewEncoder(w).Encode(sdk.receipts[id])
 	}))
 	t.Cleanup(sdk.server.Close)
-	client, err := cloudexecutor.New(cloudexecutor.Config{BaseURL: sdk.server.URL, Token: strings.Repeat("f", 48), RequestTimeout: time.Second, CancelTimeout: 300 * time.Millisecond, PollInterval: 5 * time.Millisecond, MaxWait: 2 * time.Second})
+	client, err := cloudexecutor.New(cloudexecutor.Config{BaseURL: sdk.server.URL, Token: strings.Repeat("f", 48), RequestTimeout: requestTimeout, CancelTimeout: 300 * time.Millisecond, PollInterval: 5 * time.Millisecond, MaxWait: max(2*time.Second, requestTimeout)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,7 +59,7 @@ test("a workspace PDF tab aligns selectable text to mixed-size and rotated pages
     props: { reader: true, tabbed: true },
     mocks: {
       "./pdfPreviewAssets": { pdfPreviewAssetsURL: () => "/fixture-pdf-assets/" },
-      "pdfjs-dist": {
+      "pdfjs-dist/legacy/build/pdf.mjs": {
         version: "fixture",
         GlobalWorkerOptions: {},
         AnnotationMode: { DISABLE: 0 },
@@ -100,7 +100,7 @@ test("a workspace PDF tab aligns selectable text to mixed-size and rotated pages
           destroy: async () => {},
         }),
       },
-      "pdfjs-dist/build/pdf.worker.min.mjs?url": "/fixture-pdf-worker.mjs",
+      "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url": "/fixture-pdf-worker.mjs",
     },
   });
   const pages = () => app.host.querySelectorAll(".za-preview-pdf [data-pdf-page]");

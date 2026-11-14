@@ -93,7 +93,7 @@ func (s *PersistentStore) CreateCloudFile(ctx context.Context, input *CloudFile)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, file.UserID); err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func (s *PersistentStore) ListCloudFiles(ctx context.Context, userID int64, conv
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	files := make([]CloudFile, 0)
 	for rows.Next() {
 		file, scanErr := scanCloudFile(rows)
@@ -217,7 +217,7 @@ func (s *PersistentStore) UpdateCloudFile(ctx context.Context, userID int64, id 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ func (s *PersistentStore) ListCloudFileCleanup(ctx context.Context, limit int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	files := make([]CloudFile, 0)
 	for rows.Next() {
 		file, scanErr := scanCloudFile(rows)
@@ -286,7 +286,7 @@ func (s *PersistentStore) ListCloudFileParserCandidates(ctx context.Context, lim
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := []CloudFile{}
 	for rows.Next() {
 		file, scanErr := scanCloudFile(rows)

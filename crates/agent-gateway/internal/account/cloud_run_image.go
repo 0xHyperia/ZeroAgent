@@ -281,9 +281,10 @@ func (c *USAClient) createCloudImage(ctx context.Context, key, operation string,
 		}
 		for i, input := range inputs {
 			ext := ".png"
-			if input.mime == "image/jpeg" {
+			switch input.mime {
+			case "image/jpeg":
 				ext = ".jpg"
-			} else if input.mime == "image/webp" {
+			case "image/webp":
 				ext = ".webp"
 			}
 			part, err := writer.CreateFormFile("image[]", fmt.Sprintf("reference-%d%s", i+1, ext))
@@ -313,7 +314,7 @@ func (c *USAClient) createCloudImage(ctx context.Context, key, operation string,
 	if err != nil {
 		return nil, &cloudToolRunError{code: "image_outcome_unknown", unknown: true}
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		if response.StatusCode >= 500 || response.StatusCode == 408 {
 			return nil, &cloudToolRunError{code: "image_outcome_unknown", unknown: true}

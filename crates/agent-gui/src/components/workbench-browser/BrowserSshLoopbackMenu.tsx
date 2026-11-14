@@ -1,3 +1,4 @@
+import { resolveBrowserAddress } from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
 import { Button } from "@liveagent/ui/components/ui/button";
 import {
   Dialog,
@@ -12,7 +13,6 @@ import { Input } from "@liveagent/ui/components/ui/input";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { type FormEvent, useId, useState } from "react";
 import Cable from "~icons/lucide/cable";
-import { resolveBrowserAddress } from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
 
 export type BrowserSshTarget = { id: string; label: string };
 

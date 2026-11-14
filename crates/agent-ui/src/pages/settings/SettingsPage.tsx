@@ -184,17 +184,20 @@ export function SettingsPage(props: SettingsPageProps) {
         ),
       },
       ...(showLocalRuntimeSettings && props.settingsHost?.kbrain
-        ? [{
-            id: "webSearch",
-            groupKey: "settings.groupIntelligence",
-            groupOrder: 25,
-            order: 22,
-            labelKey: "settings.navWebSearch",
-            icon: <Globe className={extension.iconClassName} />,
-            render: () => props.settingsHost?.kbrain
-              ? <WebSearchSection kbrain={props.settingsHost.kbrain} />
-              : null,
-          } satisfies SettingsSectionDefinition<void>]
+        ? [
+            {
+              id: "webSearch",
+              groupKey: "settings.groupIntelligence",
+              groupOrder: 25,
+              order: 22,
+              labelKey: "settings.navWebSearch",
+              icon: <Globe className={extension.iconClassName} />,
+              render: () =>
+                props.settingsHost?.kbrain ? (
+                  <WebSearchSection kbrain={props.settingsHost.kbrain} />
+                ) : null,
+            } satisfies SettingsSectionDefinition<void>,
+          ]
         : []),
       {
         id: "stt",
@@ -315,9 +318,17 @@ export function SettingsPage(props: SettingsPageProps) {
           return zh ? "此客户端" : "This client";
         if (
           showLocalRuntimeSettings &&
-          ["skills", "mcp", "cron", "memory", "ssh", "remote", "hooks", "systemTools", "webSearch"].includes(
-            section,
-          )
+          [
+            "skills",
+            "mcp",
+            "cron",
+            "memory",
+            "ssh",
+            "remote",
+            "hooks",
+            "systemTools",
+            "webSearch",
+          ].includes(section)
         ) {
           return "runtimeKind" in props && props.runtimeKind === "device_agent"
             ? zh

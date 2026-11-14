@@ -138,8 +138,8 @@ func cloudDeviceSkillAt(packages []CloudExtension, ref cloudDeviceSkillRef) (clo
 		}
 		snapshot := cloudDeviceSkill{cloudDeviceSkillRef: ref, Entry: skill.Entry, Files: map[string]string{}}
 		if cloudExtensionBuiltin(pkg.ID) &&
-			!(pkg.ID == "product-design" && skill.Name == "audit" &&
-				ref.Revision == cloudProductDesignQARevision) {
+			(pkg.ID != "product-design" || skill.Name != "audit" ||
+				ref.Revision != cloudProductDesignQARevision) {
 			return snapshot, true, false
 		}
 		entry := revision.Files[skill.Entry]

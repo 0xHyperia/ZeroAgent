@@ -304,7 +304,7 @@ func (s *Service) PublishCloudArtifact(ctx context.Context, userID int64, pub Cl
 	if err != nil {
 		return nil, objectstore.ErrUnavailable
 	}
-	defer func() { staged.Close(); os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
 	transfer := sha256.Sum256([]byte(pub.ToolOperationID + ":artifact-download"))
 	transferID := pub.TransferID
 	if transferID == "" {
@@ -373,7 +373,7 @@ func verifyCloudArtifactObject(ctx context.Context, objects objectstore.Store, v
 	if err != nil {
 		return err
 	}
-	defer object.Body.Close()
+	defer func() { _ = object.Body.Close() }()
 	if object.Size != version.Size || object.ContentType != version.MIME || object.SHA256 != version.SHA256 {
 		return objectstore.ErrIntegrity
 	}

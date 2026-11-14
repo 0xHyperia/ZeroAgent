@@ -115,7 +115,7 @@ func (h *HTTPHandler) downloadCloudArtifact(w http.ResponseWriter, r *http.Reque
 		writeError(w, cloudArtifactAPIError(objectstore.ErrUnavailable))
 		return
 	}
-	defer func() { staged.Close(); os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
 	if err = verifyCloudArtifactObject(r.Context(), provider.objects, version, staged); err != nil {
 		writeError(w, cloudArtifactAPIError(err))
 		return

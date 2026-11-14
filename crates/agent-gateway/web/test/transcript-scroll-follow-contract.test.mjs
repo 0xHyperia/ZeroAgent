@@ -46,7 +46,7 @@ test("the desktop device transcript spacer follows the composer and its floating
   const desktopRule = gatewayStyles.match(/\.gateway-chat-frame:has\(\[data-desktop-device-composer\]\)\s*\{[^}]+\}/)?.[0];
   assert.ok(desktopRule);
   assert.match(desktopRule, /--gateway-transcript-bottom-minimum: 0px/);
-  assert.match(desktopRule, /--gateway-transcript-composer-reserve: var\(--gateway-chat-composer-clearance,/);
+  assert.match(desktopRule, /--gateway-transcript-composer-reserve: var\(\s*--gateway-chat-composer-clearance,/);
   assert.match(sharedTokens, /var\(--gateway-transcript-bottom-minimum, 12rem\)/);
   assert.match(sharedTokens, /calc\(var\(--gateway-transcript-composer-reserve,.*\+ var\(--spacing-18px\)\)/);
 });

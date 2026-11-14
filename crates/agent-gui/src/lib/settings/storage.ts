@@ -1,5 +1,5 @@
-import { webSearchFallbackStateFrom } from "@liveagent/ui/lib/providers/webSearchFallback";
 import { invoke } from "@liveagent/app/shims/tauriCore";
+import { webSearchFallbackStateFrom } from "@liveagent/ui/lib/providers/webSearchFallback";
 import {
   buildGatewaySettingsSyncPayload,
   buildGatewaySettingsSyncUpdatePayload,
@@ -36,10 +36,10 @@ import {
 import { SettingsStorageError, type SettingsStorageErrorCode } from "./errors";
 import {
   type AppSettings,
-  type McpSettings,
   type ChatRuntimeControls,
   type CustomProvider,
   getDefaultSettings,
+  type McpSettings,
   normalizeSettings,
   resolveWorkspaceProjects,
   type Theme,

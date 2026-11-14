@@ -76,7 +76,7 @@ func (s *PersistentStore) reserveCloudArtifact(ctx context.Context, userID int64
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
 		return nil, false, err
 	}
@@ -190,7 +190,7 @@ func (s *PersistentStore) ListCloudArtifacts(ctx context.Context, userID int64, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := []CloudArtifactVersion{}
 	for rows.Next() {
 		item, err := scanCloudArtifact(rows)
@@ -212,7 +212,7 @@ func (s *PersistentStore) updateCloudArtifactVersion(ctx context.Context, userID
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func (s *PersistentStore) DeleteCloudArtifactFamily(ctx context.Context, userID 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockSpaceWrite(ctx, tx, userID); err != nil {
 		return nil, err
 	}
@@ -295,13 +295,13 @@ func (s *PersistentStore) DeleteCloudArtifactFamily(ctx context.Context, userID 
 	for rows.Next() {
 		a, scanErr := scanCloudArtifact(rows)
 		if scanErr != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, scanErr
 		}
 		result = append(result, *a)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +315,7 @@ func (s *PersistentStore) ListCloudArtifactCleanup(ctx context.Context, limit in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := []CloudArtifactVersion{}
 	for rows.Next() {
 		a, err := scanCloudArtifact(rows)

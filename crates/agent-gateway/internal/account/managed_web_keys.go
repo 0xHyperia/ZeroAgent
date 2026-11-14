@@ -138,8 +138,7 @@ func projectManagedWebKeys(data json.RawMessage, single bool, session *Session) 
 		}
 		return value
 	}
-	var fields func(map[string]any, []string, []string) map[string]any
-	fields = func(row map[string]any, text, numbers []string) map[string]any {
+	var fields = func(row map[string]any, text, numbers []string) map[string]any {
 		result := map[string]any{}
 		for _, field := range text {
 			if value, ok := row[field].(string); ok {

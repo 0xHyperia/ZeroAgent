@@ -75,7 +75,7 @@ func (s *PersistentStore) CreateCloudProject(ctx context.Context, input *CloudPr
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_cloud_projects:'||$1::text,0))`, project.UserID); err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *PersistentStore) ListCloudProjects(ctx context.Context, userID int64, b
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudProject{}
 	for rows.Next() {
 		p, err := scanCloudProject(rows)
@@ -150,7 +150,7 @@ func (s *PersistentStore) UpdateCloudProject(ctx context.Context, userID int64, 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	p, err := lockCloudProject(ctx, tx, userID, id)
 	if err != nil {
 		return nil, err
@@ -173,7 +173,7 @@ func (s *PersistentStore) DeleteCloudProject(ctx context.Context, userID int64, 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	p, err := lockCloudProject(ctx, tx, userID, id)
 	if err != nil {
 		return err
@@ -228,7 +228,7 @@ func (s *PersistentStore) SetCloudConversationProject(ctx context.Context, userI
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var current string
 	if err = tx.QueryRowContext(ctx, `SELECT id::text FROM zerobox_cloud_conversations WHERE id=$1 AND user_id=$2 FOR UPDATE`, conversationID, userID).Scan(&current); errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -288,7 +288,7 @@ func (s *PersistentStore) ListCloudProjectConversations(ctx context.Context, use
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudProjectConversation{}
 	for rows.Next() {
 		binding, err := scanCloudProjectConversation(rows)
@@ -309,7 +309,7 @@ func (s *PersistentStore) SetCloudProjectFile(ctx context.Context, userID int64,
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	project, err := lockCloudProject(ctx, tx, userID, projectID)
 	if err != nil {
 		return nil, err
@@ -378,7 +378,7 @@ func (s *PersistentStore) ListCloudProjectFiles(ctx context.Context, userID int6
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudFile{}
 	for rows.Next() {
 		file, err := scanCloudFile(rows)

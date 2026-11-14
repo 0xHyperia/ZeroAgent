@@ -202,7 +202,8 @@ test("a queued request answered meanwhile is served from the exact cache", async
   assert.equal(base.calls.length, 1);
 });
 
-test("an upstream call that never delivers does not stall the queue", async () => {
+test("an upstream call that never delivers does not stall the queue", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const calls = [];
   const silent = {
     name: "shiki",
@@ -219,15 +220,20 @@ test("an upstream call that never delivers does not stall the queue", async () =
       return null;
     },
   };
-  const plugin = createThrottledCodePlugin(silent, { jobTimeoutMs: 20 });
+  const tasks = createManualScheduler();
+  const plugin = createThrottledCodePlugin(silent, { schedule: tasks.schedule, jobTimeoutMs: 20 });
   let delivered = null;
   plugin.highlight(OPTS("broken();"));
   plugin.highlight(OPTS("const fine = true;"), (result) => {
     delivered = result;
   });
-  await sleep(5);
+  tasks.runNext();
+  t.mock.timers.tick(19);
   assert.deepEqual(calls, ["broken();"], "the next block waits for the previous one");
-  await sleep(60);
+  assert.equal(tasks.tasks.length, 0);
+  t.mock.timers.tick(1);
+  tasks.runNext();
+  await microtasks();
   assert.deepEqual(calls, ["broken();", "const fine = true;"]);
   assert.equal(delivered?.tokens[0][0].content, "const fine = true;");
 });

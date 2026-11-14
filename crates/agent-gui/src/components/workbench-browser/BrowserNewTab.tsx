@@ -9,6 +9,11 @@ import {
   Terminal,
 } from "@liveagent/ui/components/IconSet";
 import {
+  formatBrowserAddress,
+  safeBrowserUrl,
+} from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
+import type { BrowserHistorySnapshot } from "@liveagent/ui/components/project-tools/workspaceBrowserHistory";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -22,8 +27,6 @@ import {
   matchesAccelerator,
 } from "@liveagent/ui/lib/shortcuts/shortcutKeys";
 import { useEffect, useRef } from "react";
-import { formatBrowserAddress, safeBrowserUrl } from "@liveagent/ui/components/project-tools/workspaceBrowserAddress";
-import type { BrowserHistorySnapshot } from "@liveagent/ui/components/project-tools/workspaceBrowserHistory";
 
 export type BrowserNewTabTools = {
   changes?: () => void;

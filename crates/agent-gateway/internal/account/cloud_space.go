@@ -71,10 +71,11 @@ type cloudSpaceRecords struct {
 }
 
 func (r cloudSpaceRecords) snapshot() *CloudSpaceSnapshot {
-	if r.limits.TotalBytes == 0 {
-		r.limits = defaultSpaceLimits()
+	limits := r.limits
+	if limits.TotalBytes == 0 {
+		limits = defaultSpaceLimits()
 	}
-	out := &CloudSpaceSnapshot{Items: []CloudSpaceItem{}, Usage: CloudSpaceUsage{LimitBytes: r.limits.TotalBytes, FileLimitBytes: r.limits.FileBytes, ArtifactLimitBytes: r.limits.ArtifactBytes, FileLimitCount: r.limits.MaxFiles, ArtifactLimitCount: r.limits.MaxArtifactVersions}}
+	out := &CloudSpaceSnapshot{Items: []CloudSpaceItem{}, Usage: CloudSpaceUsage{LimitBytes: limits.TotalBytes, FileLimitBytes: limits.FileBytes, ArtifactLimitBytes: limits.ArtifactBytes, FileLimitCount: limits.MaxFiles, ArtifactLimitCount: limits.MaxArtifactVersions}}
 	metadata := map[string]CloudSpaceMetadata{}
 	for _, m := range r.metadata {
 		metadata[m.Kind+":"+m.ID] = m
@@ -255,7 +256,7 @@ func filterCloudSpaceItems(snapshot *CloudSpaceSnapshot, query, category, scope,
 		if b.Kind == "folder" && a.Kind != "folder" {
 			return false
 		}
-		if order == "name" && strings.ToLower(a.Name) != strings.ToLower(b.Name) {
+		if order == "name" && !strings.EqualFold(a.Name, b.Name) {
 			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 		}
 		if order == "size" && a.Size != b.Size {

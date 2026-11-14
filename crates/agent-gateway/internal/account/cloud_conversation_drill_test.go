@@ -43,7 +43,8 @@ func TestCloudConversationLocalDrill(t *testing.T) {
 		var before strings.Builder
 		cursor := int64(0)
 		initialFrames := drillSSE(t, f, run.ID, 0, func(frame drillFrame) bool {
-			if frame.Kind == "snapshot" {
+			switch frame.Kind {
+			case "snapshot":
 				var data struct {
 					Run *CloudRun `json:"run"`
 				}
@@ -53,7 +54,7 @@ func TestCloudConversationLocalDrill(t *testing.T) {
 				}
 				cursor = data.Run.LastSeq
 				before.WriteString(data.Run.Output)
-			} else if frame.Kind == "cloud_run" {
+			case "cloud_run":
 				var event drillEvent
 				drillDecode(t, frame.Data, &event)
 				seq, err := strconv.ParseInt(event.Seq, 10, 64)

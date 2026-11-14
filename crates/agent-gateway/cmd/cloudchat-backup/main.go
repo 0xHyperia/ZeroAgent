@@ -83,7 +83,7 @@ func execute() error {
 	if err != nil {
 		return cloudbackup.ErrInvalid
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	decoder := json.NewDecoder(io.LimitReader(source, 64<<10))
 	decoder.DisallowUnknownFields()
 	var config privateConfig
@@ -105,7 +105,7 @@ func execute() error {
 	if err != nil {
 		return cloudbackup.ErrInvalid
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(4)
 	objects, err := cloudbackup.NewS3(objectstore.Config{Endpoint: config.ObjectEndpoint, Bucket: config.ObjectBucket, Region: config.ObjectRegion, AccessKeyID: config.ObjectAccessKey, SecretAccessKey: config.ObjectSecretKey, AllowLoopbackHTTP: config.AllowLoopbackHTTP})
 	if err != nil {
@@ -117,7 +117,7 @@ func execute() error {
 		return cloudbackup.ErrInvalid
 	}
 	cache := redis.NewClient(redisOptions)
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 	engine := &cloudbackup.Engine{DB: db, Redis: cache, Objects: objects, Config: cloudbackup.Config{DatabaseURL: config.DatabaseURL, ExpectedDatabase: config.ExpectedDatabase, Schema: config.Schema, Scope: config.Scope, PGDumpPath: config.PGDump, PGRestorePath: config.PGRestore, NodePath: config.Node, JournalHelperPath: config.JournalHelper, JournalDirectory: config.JournalDirectory, ExpectedJournalAuthority: config.JournalAuthority, ProtectedConfigSource: config.ProtectedConfigSource, RestoredConfigPath: config.RestoredConfigPath, BackupEncryptionKey: backupKey, AllowMutations: config.AllowMutations, MaxObjects: config.MaxObjects, MaxTotalBytes: config.MaxTotalBytes, Timeout: time.Duration(config.TimeoutSeconds) * time.Second}}
 	switch mode {
 	case "verify":

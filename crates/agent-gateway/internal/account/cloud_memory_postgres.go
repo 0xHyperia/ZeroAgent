@@ -49,7 +49,7 @@ func (s *PersistentStore) CreateCloudMemory(ctx context.Context, input *CloudMem
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('zeroagent_cloud_memories:'||$1::text,0))`, memory.UserID); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *PersistentStore) ListCloudMemories(ctx context.Context, userID int64, b
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudMemory{}
 	for rows.Next() {
 		memory, err := scanCloudMemory(rows)
@@ -196,7 +196,7 @@ func (s *PersistentStore) GetCloudMemoryContext(ctx context.Context, userID int6
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var enabled bool
 	err = tx.QueryRowContext(ctx, `SELECT enabled FROM zeroagent_cloud_memory_settings WHERE user_id=$1`, userID).Scan(&enabled)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -213,13 +213,13 @@ func (s *PersistentStore) GetCloudMemoryContext(ctx context.Context, userID int6
 	for rows.Next() {
 		memory, err := scanCloudMemory(rows)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		items = append(items, *memory)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}

@@ -93,7 +93,10 @@ html[data-liveagent-webui="gateway"].dark {
 
 .gateway-chat-frame:has([data-desktop-device-composer]) {
   --gateway-transcript-bottom-minimum: 0px;
-  --gateway-transcript-composer-reserve: var(--gateway-chat-composer-clearance, var(--gateway-chat-composer-overlay-height));
+  --gateway-transcript-composer-reserve: var(
+    --gateway-chat-composer-clearance,
+    var(--gateway-chat-composer-overlay-height)
+  );
 }
 .gateway-chat-frame {
   --chat-transcript-content-width: var(--spacing-768px);
@@ -115,7 +118,15 @@ html[data-liveagent-webui="gateway"].dark {
 
 @media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   .gateway-empty-state:has([data-compact-starters]) {
-    min-height: max(0px, calc(var(--zeroagent-visual-viewport-height, 100dvh) - var(--gateway-chat-composer-overlay-height) - 96px - var(--zeroagent-safe-area-top, 0px)));
+    min-height: max(
+      0px,
+      calc(
+        var(--zeroagent-visual-viewport-height, 100dvh) -
+        var(--gateway-chat-composer-overlay-height) -
+        96px -
+        var(--zeroagent-safe-area-top, 0px)
+      )
+    );
   }
 }
 

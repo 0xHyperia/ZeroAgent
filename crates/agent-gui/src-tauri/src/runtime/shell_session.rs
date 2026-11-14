@@ -1196,14 +1196,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn stop_terminates_descendants_in_the_process_group() {
-        use crate::runtime::process::{probe_process_start_time, ProcessProbe};
-
         let manager = ShellSessionManager::default();
-        let first = manager
+        let mut response = manager
             .start(
                 "tree".to_string(),
                 workdir(),
-                "sleep 30 & child=$!; printf \"$child\"; wait".to_string(),
+                "sleep 30 & child=$!; printf '%s\\n' \"$child\"; wait".to_string(),
                 None,
                 Some(300),
                 None,
@@ -1211,18 +1209,35 @@ mod tests {
                 None,
             )
             .expect("process tree should start");
-        let child_pid = collect_text(&first)
+        let mut output = collect_text(&response);
+        let pid_deadline = Instant::now() + Duration::from_secs(5);
+        while !output.contains('\n')
+            && response.status == ShellSessionStatus::Running
+            && Instant::now() < pid_deadline
+        {
+            response = manager
+                .wait("tree", Some(response.cursor), Some(200))
+                .expect("read descendant pid");
+            output.push_str(&collect_text(&response));
+        }
+        let stopped = manager
+            .stop("tree", Some(response.cursor))
+            .expect("process tree should stop");
+        assert_eq!(stopped.status, ShellSessionStatus::Cancelled);
+        let child_pid = output
             .trim()
             .parse::<u32>()
             .expect("command should report descendant pid");
-        let stopped = manager
-            .stop("tree", Some(first.cursor))
-            .expect("process tree should stop");
-        assert_eq!(stopped.status, ShellSessionStatus::Cancelled);
 
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
-            if matches!(probe_process_start_time(child_pid), ProcessProbe::Dead) {
+            let state = std::process::Command::new("ps")
+                .args(["-p", &child_pid.to_string(), "-o", "stat="])
+                .output()
+                .expect("check whether the descendant stopped");
+            // The container's PID 1 may leave a terminated orphan unreaped.
+            if !state.status.success() || String::from_utf8_lossy(&state.stdout).trim().starts_with('Z')
+            {
                 return;
             }
             std::thread::sleep(Duration::from_millis(20));

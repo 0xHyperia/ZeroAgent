@@ -1,17 +1,17 @@
-import { WEB_SEARCH_SETTINGS_CHANGED_EVENT } from "@liveagent/ui/lib/providers/webSearchFallback";
-import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import type { Context } from "@liveagent/app/lib/agentTypes";
 import { invoke } from "@liveagent/app/shims/tauriCore";
 import { listen } from "@liveagent/app/shims/tauriEvent";
 import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
 import { createWorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import { AppErrorBoundary } from "@liveagent/ui/components/AppErrorBoundary";
+import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import { Pin } from "@liveagent/ui/components/IconSet";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { Toaster } from "@liveagent/ui/components/ui/toaster";
 import { LocaleContext, t as translate, useLocaleContextValue } from "@liveagent/ui/i18n/index";
 import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
 import { useCatalogLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
+import { WEB_SEARCH_SETTINGS_CHANGED_EVENT } from "@liveagent/ui/lib/providers/webSearchFallback";
 import {
   configureResourceHostCapabilities,
   kbrainResourceHostCapabilities,
@@ -19,9 +19,9 @@ import {
 } from "@liveagent/ui/lib/resourceHost";
 import { buildGatewaySettingsSyncPayload } from "@liveagent/ui/lib/settings/sync";
 import { useSettingsOverlay } from "@liveagent/ui/lib/settings/useSettingsOverlay";
-import { notifySkillsDiscoveryUpdated } from "@liveagent/ui/lib/skills/index";
 import { applyFontFamilies } from "@liveagent/ui/lib/shared/fontFamily";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import { notifySkillsDiscoveryUpdated } from "@liveagent/ui/lib/skills/index";
 import { DeviceModelPreferencesDialog } from "@liveagent/ui/pages/settings/DeviceModelPreferencesDialog";
 import {
   lazy,
@@ -380,6 +380,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [remoteSelectionLeases]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Refresh on Gateway and workspace changes; unrelated preferences do not restart device discovery.
   useEffect(() => {
     const applyLocalOnly = () => {
       setExecutionState(
@@ -426,8 +427,11 @@ export default function App() {
     settings.remote.gatewayPort,
     settings.system.activeWorkspaceProjectId,
     settings.system.workspaceProjects,
+    settings.system.archivedWorkspaceProjectPaths,
+    settings.system.missingWorkspaceProjectPaths,
   ]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Re-register only when the Gateway or workspace directory changes.
   useEffect(() => {
     if (!relayReady || !settings.remote.enabled || !settings.remote.gatewayUrl.trim()) return;
     let cancelled = false;

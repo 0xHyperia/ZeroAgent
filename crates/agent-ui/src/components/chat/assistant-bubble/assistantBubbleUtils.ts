@@ -719,7 +719,9 @@ export function resolveAssistantTurnLayout(
     ({ block }) => block.kind === "tool" && isConversationImageTool(block.item.toolCall.name),
   );
   const visuals = new Set(visualEntries);
-  const { background, interaction } = splitInteractionEntries(entries.filter((entry) => !visuals.has(entry)));
+  const { background, interaction } = splitInteractionEntries(
+    entries.filter((entry) => !visuals.has(entry)),
+  );
 
   const lastRound = rounds.at(-1);
   if (options.live && !isTerminalStopReason(lastRound?.meta?.stopReason)) {

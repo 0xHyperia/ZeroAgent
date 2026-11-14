@@ -25,6 +25,7 @@ import {
   subscribeSearchJumpTarget,
 } from "@liveagent/ui/lib/chat/searchJumpTarget";
 import { buildToolApprovalRequestJson } from "@liveagent/ui/lib/chat/toolApprovalArgs";
+import { UploadedImagePreviewScope } from "@liveagent/ui/lib/chat/uploadedImagePreview";
 import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
@@ -60,6 +61,7 @@ import type { TrustedGatewayImageIdentity } from "@/agent-ui-adapters/imageStudi
 import { createGatewayWorkspaceProjectRootClient } from "@/agent-ui-adapters/workspaceProjectRoots";
 import type { GatewayTranscriptNavHandle } from "@/components/GatewayTranscript";
 import { ACCOUNT_CHANGED_EVENT, ACCOUNT_SESSION_STORAGE_KEY } from "@/lib/accountRequest";
+import { pushWorkbenchLocation } from "@/lib/browserMobileBack";
 import { registerAskUserQuestionAnswerHandler } from "@/lib/chat/askUserQuestionBridge";
 import type { HistoryWindowState } from "@/lib/chat/historyWindow";
 import {
@@ -94,7 +96,6 @@ import type {
 } from "@/lib/gatewayTypes";
 import { parseHistoryShareToken } from "@/lib/historyShare";
 import { isEmbeddedMobileRuntime, MOBILE_BACK_EVENT, mobileHaptic } from "@/lib/mobileRuntime";
-import { pushWorkbenchLocation } from "@/lib/browserMobileBack";
 import {
   getRelayDashboardStats,
   getRelayProfile,
@@ -110,11 +111,12 @@ import {
   workspaceProjectPathKey,
 } from "@/lib/settings";
 import { createIdleSidebarBackend, createWebSidebarBackend } from "@/lib/sidebar/webSidebarBackend";
+import { importReadableFiles } from "@/lib/uploadReadableFiles";
 import {
   GATEWAY_CHAT_FRAME_CLASS,
+  GATEWAY_EMBEDDED_SHELL_CLASS,
   GATEWAY_MAIN_BACKDROP_CLASS,
   GATEWAY_MAIN_SHELL_CLASS,
-  GATEWAY_EMBEDDED_SHELL_CLASS,
   GATEWAY_SHELL_CLASS,
 } from "@/lib/webStyleClasses";
 import { AccountLoginPage } from "@/pages/AccountLoginPage";
@@ -128,8 +130,6 @@ import {
 } from "./chatEventUtils";
 import { HISTORY_LIST_PAGE_SIZE, PROTECTED_DRAFT_CONVERSATION } from "./constants";
 import { GatewayAppView } from "./GatewayAppView";
-import { UploadedImagePreviewScope } from "@liveagent/ui/lib/chat/uploadedImagePreview";
-import { importReadableFiles } from "@/lib/uploadReadableFiles";
 import {
   createGatewayChatCommandActions,
   type QueuedEditSession,
@@ -1839,7 +1839,9 @@ function useGatewayAppController() {
       // after its composer unmounts. That capture has no text to replace.
       const segments =
         draft?.segments ??
-        (target?.kind === "session" ? readGatewayDeviceDraft(scope, target)?.segments : undefined) ??
+        (target?.kind === "session"
+          ? readGatewayDeviceDraft(scope, target)?.segments
+          : undefined) ??
         [];
       saveGatewayDeviceDraft(
         scope,
@@ -2374,19 +2376,19 @@ function useGatewayAppController() {
   const handleBranchConversation = useStableCallback(handleBranchConversationImpl);
   const handleResendFromEdit = useStableCallback(handleResendFromEditImpl);
   const handleLoadUploadedImagePreview = useStableCallback(handleLoadUploadedImagePreviewImpl);
-  const importDeviceConversationFiles = useStableCallback(async (
-    workdir: string, files: File[], signal: AbortSignal,
-  ) => {
-    if (!api) throw new Error("The device is unavailable.");
-    const isCurrent = api.captureActiveAgentScope();
-    const agentId = await resolveActiveAgentID();
-    signal.throwIfAborted();
-    if (!isCurrent() || !agentId) throw new Error("The device is unavailable.");
-    const result = await importReadableFiles(token, agentId, workdir, files, signal);
-    signal.throwIfAborted();
-    if (!isCurrent()) throw new Error("The device changed.");
-    return result.files;
-  });
+  const importDeviceConversationFiles = useStableCallback(
+    async (workdir: string, files: File[], signal: AbortSignal) => {
+      if (!api) throw new Error("The device is unavailable.");
+      const isCurrent = api.captureActiveAgentScope();
+      const agentId = await resolveActiveAgentID();
+      signal.throwIfAborted();
+      if (!isCurrent() || !agentId) throw new Error("The device is unavailable.");
+      const result = await importReadableFiles(token, agentId, workdir, files, signal);
+      signal.throwIfAborted();
+      if (!isCurrent()) throw new Error("The device changed.");
+      return result.files;
+    },
+  );
 
   const translateWorkspaceProject = useCallback(
     (key: string) => translate(key, settings.locale),
@@ -3446,7 +3448,9 @@ function useGatewayAppController() {
     const zh = settings.locale === "zh-CN";
     return (
       <LocaleContext.Provider value={localeContextValue}>
-        <div className={getDesktopRemoteHost() ? GATEWAY_EMBEDDED_SHELL_CLASS : GATEWAY_SHELL_CLASS}>
+        <div
+          className={getDesktopRemoteHost() ? GATEWAY_EMBEDDED_SHELL_CLASS : GATEWAY_SHELL_CLASS}
+        >
           <main className={GATEWAY_MAIN_SHELL_CLASS}>
             <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
             <div

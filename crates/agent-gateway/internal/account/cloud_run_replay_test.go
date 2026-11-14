@@ -367,7 +367,7 @@ func TestCloudRunReplayValidationRaceFindsConcurrentAcceptedRequest(t *testing.T
 		if createErr != nil {
 			t.Fatal(createErr)
 		}
-		if _, deleteErr := hook.MemoryStore.UpdateCloudFile(ctx, 7, file.ID, file.Version, CloudFileUpdate{State: CloudFileDeleting}); deleteErr != nil {
+		if _, deleteErr := hook.UpdateCloudFile(ctx, 7, file.ID, file.Version, CloudFileUpdate{State: CloudFileDeleting}); deleteErr != nil {
 			t.Fatal(deleteErr)
 		}
 	}

@@ -39,7 +39,7 @@ func configureBrowserResearch(t *testing.T, service *account.Service) {
 	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/search" {
 			if r.Header.Get("Authorization") != "Bearer browser-fixture-search-only" {
-				http.Error(w, "wrong fixture search authority", 403)
+				http.Error(w, "wrong fixture search authority", http.StatusForbidden)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -47,7 +47,7 @@ func configureBrowserResearch(t *testing.T, service *account.Service) {
 			return
 		}
 		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
-			http.Error(w, "credential boundary failed", 403)
+			http.Error(w, "credential boundary failed", http.StatusForbidden)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -96,13 +96,13 @@ func respondBrowserResearch(w http.ResponseWriter, round int, lastResult map[str
 	if round >= 2 {
 		sources, _ := lastResult["sources"].([]any)
 		if len(sources) == 0 {
-			http.Error(w, "missing synthetic source", 502)
+			http.Error(w, "missing synthetic source", http.StatusBadGateway)
 			return true
 		}
 		source, _ := sources[0].(map[string]any)
 		id, _ := source["source_id"].(string)
 		if id == "" || source["page_fetched"] != true {
-			http.Error(w, "synthetic page was not persisted", 502)
+			http.Error(w, "synthetic page was not persisted", http.StatusBadGateway)
 			return true
 		}
 		text := "本地合成研究已完成：正式成果应独立于临时沙箱保存。【来源:" + id + ":L1-L2】\n\n这仅验证引用流程，不代表真实联网研究质量。"

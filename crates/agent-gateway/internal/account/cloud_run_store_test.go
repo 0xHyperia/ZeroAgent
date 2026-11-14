@@ -329,7 +329,7 @@ func runCloudRunContract(t *testing.T, newFixture func(*testing.T) cloudRunTestF
 			t.Fatalf("cancelled run reclaimed: %v", err)
 		}
 		input = cloudRunTestInput(t, f, 11, input.ConversationID, "running-cancel", "again")
-		run, _, err = f.runs.CreateCloudRun(ctx, input)
+		_, _, err = f.runs.CreateCloudRun(ctx, input)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -367,11 +367,11 @@ func runCloudRunContract(t *testing.T, newFixture func(*testing.T) cloudRunTestF
 		f := newFixture(t)
 		ctx := context.Background()
 		input := cloudRunTestInput(t, f, 11, "", "expire", "hi")
-		run, _, err := f.runs.CreateCloudRun(ctx, input)
+		_, _, err := f.runs.CreateCloudRun(ctx, input)
 		if err != nil {
 			t.Fatal(err)
 		}
-		run, err = f.runs.ClaimCloudRun(ctx, "worker", time.Minute)
+		run, err := f.runs.ClaimCloudRun(ctx, "worker", time.Minute)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -435,7 +435,7 @@ func runCloudRunContract(t *testing.T, newFixture func(*testing.T) cloudRunTestF
 		if _, _, err := f.runs.CreateCloudRun(ctx, &invalid); !errors.Is(err, ErrCloudRunInvalid) {
 			t.Fatalf("invalid content: %v", err)
 		}
-		run, _, err := f.runs.CreateCloudRun(ctx, input)
+		_, _, err := f.runs.CreateCloudRun(ctx, input)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -445,7 +445,7 @@ func runCloudRunContract(t *testing.T, newFixture func(*testing.T) cloudRunTestF
 		if _, err = f.runs.ClaimCloudRun(ctx, "worker", 0); !errors.Is(err, ErrCloudRunInvalid) {
 			t.Fatalf("unbounded lease: %v", err)
 		}
-		run, err = f.runs.ClaimCloudRun(ctx, "worker", time.Minute)
+		run, err := f.runs.ClaimCloudRun(ctx, "worker", time.Minute)
 		if err != nil {
 			t.Fatal(err)
 		}

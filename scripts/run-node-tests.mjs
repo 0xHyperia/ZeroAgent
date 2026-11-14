@@ -11,26 +11,33 @@ function usage() {
 Options:
   --exclude-dir NAME       Skip directories with this exact name. Repeatable.
   --include-prefix PREFIX  Run only test files whose basename starts with PREFIX.
+  --concurrency COUNT      Run at most COUNT test files in parallel.
   --shard INDEX/TOTAL      Run every TOTAL-th discovered file starting at INDEX (1-based).`);
 }
 
 export function parseArguments(args) {
   const roots = [];
   const excludedDirectories = new Set();
+  let concurrency;
   let includePrefix;
   let shard;
 
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index];
     if (value === "-h" || value === "--help") return { help: true };
-    if (value === "--exclude-dir" || value === "--include-prefix" || value === "--shard") {
+    if (["--exclude-dir", "--include-prefix", "--concurrency", "--shard"].includes(value)) {
       const optionValue = args[index + 1];
       if (!optionValue || optionValue.startsWith("--")) {
         throw new Error(`${value} requires a value`);
       }
       if (value === "--exclude-dir") excludedDirectories.add(optionValue);
       else if (value === "--shard") shard = parseShard(optionValue);
-      else includePrefix = optionValue;
+      else if (value === "--concurrency") {
+        concurrency = Number(optionValue);
+        if (!/^\d+$/.test(optionValue) || !Number.isSafeInteger(concurrency) || concurrency < 1) {
+          throw new Error("--concurrency expects a positive integer");
+        }
+      } else includePrefix = optionValue;
       index += 1;
       continue;
     }
@@ -39,7 +46,7 @@ export function parseArguments(args) {
   }
 
   if (roots.length === 0) throw new Error("at least one test directory is required");
-  return { excludedDirectories, help: false, includePrefix, roots, shard };
+  return { concurrency, excludedDirectories, help: false, includePrefix, roots, shard };
 }
 
 function parseShard(value) {
@@ -112,9 +119,10 @@ export function splitTestFilesIntoBatches(
   return batches;
 }
 
-async function runTestBatch(files) {
+async function runTestBatch(files, concurrency) {
+  const flags = concurrency === undefined ? [] : [`--test-concurrency=${concurrency}`];
   return await new Promise((resolveExitCode) => {
-    const child = spawn(process.execPath, ["--test", ...files], {
+    const child = spawn(process.execPath, ["--test", ...flags, ...files], {
       shell: false,
       stdio: "inherit",
     });
@@ -126,9 +134,9 @@ async function runTestBatch(files) {
   });
 }
 
-async function runTests(files) {
+async function runTests(files, concurrency) {
   for (const batch of splitTestFilesIntoBatches(files)) {
-    const exitCode = await runTestBatch(batch);
+    const exitCode = await runTestBatch(batch, concurrency);
     if (exitCode !== 0) return exitCode;
   }
   return 0;
@@ -148,7 +156,7 @@ async function main() {
     console.log(`Running shard ${options.shard.index}/${options.shard.total}: ${selected.length} files.`);
     if (selected.length === 0) return;
   }
-  process.exitCode = await runTests(selected);
+  process.exitCode = await runTests(selected, options.concurrency);
 }
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);

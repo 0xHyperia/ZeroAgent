@@ -235,7 +235,7 @@ func (s *PersistentStore) CreateCloudRun(ctx context.Context, input *CloudRun) (
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	// Serialize the idempotency key before touching any conversation, including
 	// simultaneous submissions of that key to different conversations.
 	key := strconv.FormatInt(run.UserID, 10) + ":" + run.ClientRequestID
@@ -366,7 +366,7 @@ ORDER BY r.created_at DESC,r.id DESC LIMIT 100`, userID, conversationID, activeO
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]CloudRun, 0)
 	for rows.Next() {
 		run, err := scanCloudRun(rows)
@@ -386,7 +386,7 @@ func (s *PersistentStore) ClaimCloudRun(ctx context.Context, owner string, lease
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	limits, err := cloudRunAdmissionPolicyTx(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -456,7 +456,7 @@ func (s *PersistentStore) RenewCloudRunLease(ctx context.Context, userID int64, 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, err := s.lockCloudRun(ctx, tx, userID, id)
 	if err != nil {
 		return nil, err
@@ -487,7 +487,7 @@ func (s *PersistentStore) CommitCloudRun(ctx context.Context, userID int64, id, 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, err := s.lockCloudRun(ctx, tx, userID, id)
 	if err != nil {
 		return nil, err
@@ -550,7 +550,7 @@ func (s *PersistentStore) CancelCloudRun(ctx context.Context, userID int64, id s
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, err := s.lockCloudRun(ctx, tx, userID, id)
 	if err != nil {
 		return nil, err
@@ -598,7 +598,7 @@ WHERE e.run_id=$1 AND e.user_id=$2 AND e.seq>$3 ORDER BY e.seq LIMIT $4`, id, us
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]CloudRunEvent, 0)
 	for rows.Next() {
 		var event CloudRunEvent
@@ -625,13 +625,13 @@ WHERE state IN ('running','cancelling') AND lease_until<=clock_timestamp() ORDER
 	for rows.Next() {
 		var item identity
 		if err := rows.Scan(&item.id, &item.user); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		pending = append(pending, item)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return 0, err
 	}
@@ -653,7 +653,7 @@ func (s *PersistentStore) interruptExpiredCloudRun(ctx context.Context, userID i
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, err := s.lockCloudRun(ctx, tx, userID, id)
 	if errors.Is(err, ErrNotFound) {
 		return false, nil

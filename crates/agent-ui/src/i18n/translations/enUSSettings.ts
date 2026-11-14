@@ -42,8 +42,8 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.webSearch.help": "Get an API key:",
   "settings.webSearch.helpSearxng": "SearXNG (self-hosted, no key)",
   "settings.webSearch.privacy":
-    "When searching, K-brain sends the model's search queries to the selected service.",
-  "settings.webSearch.webNotice": "Settings are saved to the K-brain of the connected desktop.",
+    "When searching, ZeroAgent sends the model's search queries to the selected service.",
+  "settings.webSearch.webNotice": "Settings are saved to ZeroAgent on the connected desktop.",
   "settings.webSearch.save": "Save",
   "settings.webSearch.reload": "Reload",
   "settings.webSearch.loading": "Loading…",
@@ -52,7 +52,8 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.webSearch.unsaved": "Unsaved changes",
   "settings.webSearch.discard": "Discard unsaved changes and reload?",
   "settings.webSearch.conflict": "The device settings changed. Reload them before saving.",
-  "settings.webSearch.connectionChanged": "The K-brain connection changed. Reload before saving.",
+  "settings.webSearch.connectionChanged":
+    "The connected device or account changed. Reload before saving.",
   "settings.navImageCreation": "Image creation",
   "settings.navAccount": "Account",
   "settings.aiApproval.title": "AI approval",

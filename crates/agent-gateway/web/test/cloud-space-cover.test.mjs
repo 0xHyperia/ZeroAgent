@@ -74,8 +74,14 @@ async function mount(t, initial = {}, component = "cover") {
     if (previousObserver) Object.defineProperty(globalThis, "IntersectionObserver", previousObserver);
     else delete globalThis.IntersectionObserver;
   });
-  return { host, reads, props: () => props, update, intersect, flush,
-    retire: () => owner++, rendered: () => host.querySelector("[data-rendered-cover]") };
+  const rendered = () => host.querySelector("[data-rendered-cover]");
+  // SHA-256 verification and the lazy renderer can settle independently of React's current turn.
+  const waitForRendered = async () => {
+    await env.waitFor(rendered, "verified original to reach the format renderer");
+    return rendered();
+  };
+  return { host, reads, props: () => props, update, intersect, flush, waitForRendered,
+    retire: () => owner++, rendered };
 }
 
 test("list covers never read originals, while a grid starts only near the viewport", async t => {
@@ -91,7 +97,7 @@ test("list covers never read originals, while a grid starts only near the viewpo
   assert.equal(app.reads.metadata, 1);
   await app.intersect(app.host.querySelector(".za-resource-thumbnail"), true);
   assert.equal(app.reads.originals, 1);
-  assert.ok(app.rendered(), "Verified original reached the format renderer");
+  await app.waitForRendered();
 });
 
 test("grid covers keep the same rendered node across scrolling, view switches and metadata refresh", async t => {
@@ -100,7 +106,7 @@ test("grid covers keep the same rendered node across scrolling, view switches an
   await app.intersect(cover, true);
   const thumbnail = app.host.querySelector(".za-resource-thumbnail");
   await app.intersect(thumbnail, true);
-  const rendered = app.rendered(); assert.ok(rendered);
+  const rendered = await app.waitForRendered();
   await app.intersect(cover, false);
   await app.intersect(thumbnail, false);
   await app.update({ showPreview: false });
@@ -141,13 +147,7 @@ test("shared draft thumbnails still release offscreen previews unless retention 
   const app = await mount(t, {}, "thumbnail");
   const thumbnail = app.host.querySelector(".za-resource-thumbnail");
   await app.intersect(thumbnail, true);
-  // The original has to pass asynchronous SHA-256 verification and lazy rendering.
-  const deadline = Date.now() + 2_000;
-  while (!app.rendered() && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 20));
-    await app.flush();
-  }
-  assert.ok(app.rendered());
+  await app.waitForRendered();
   await app.intersect(thumbnail, false);
   assert.equal(app.rendered(), null);
 });

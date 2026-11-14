@@ -76,9 +76,9 @@ test("gateway shows the conversation view switcher in chrome only after an assis
     /const hasConversationReply =[\s\S]*?displayedConversationId !== "" &&[\s\S]*?!isLocalDraftConversationId\(displayedConversationId\)[\s\S]*?trajectoryMessages\.some\(\(message\) => message\.role === "assistant"\)/,
   );
   const chrome = gatewayAppViewSource.slice(chromeIndex, bodyIndex);
-  assert.match(gatewayAppViewSource, /const showConversationViews =\s*!accountDestination && activeView === "chat" &&\s*hasConversationReply && !workbenchHasMultiplePanes/);
+  assert.match(gatewayAppViewSource, /const showConversationViews =\s*!accountDestination\s*&&\s*activeView === "chat"\s*&&\s*hasConversationReply\s*&&\s*!workbenchHasMultiplePanes/);
   assert.match(chrome, /!compactDeviceHeader && showConversationViews\s*\?\s*\(\s*<ConversationViewTabs/);
-  assert.match(chrome, /\{showConversationViews && \([\s\S]*?setActiveConversationView\(renderedConversationView === "trajectory" \? "conversation" : "trajectory"\)/);
+  assert.match(chrome, /\{showConversationViews && \([\s\S]*?setActiveConversationView\(\s*renderedConversationView === "trajectory" \? "conversation" : "trajectory",?\s*\)/);
   assert.match(
     gatewayAppViewSource,
     /useConversationViewState\(displayedConversationId\)/,
@@ -97,7 +97,7 @@ test("gateway shows the conversation view switcher in chrome only after an assis
 test("the device header enables touch targets only in the mobile workbench", () => {
   assert.match(
     gatewayAppViewSource,
-    /const compactDeviceHeader = compactViewport && !desktopHost && !historyShareToken && !accountDestination/,
+    /const compactDeviceHeader =\s*compactViewport\s*&&\s*!desktopHost\s*&&\s*!historyShareToken\s*&&\s*!accountDestination/,
   );
   assert.match(gatewayAppViewSource, /<AppWorkbenchChrome\s+settings=\{settings\}\s+mobile=\{compactDeviceHeader\}/);
   assert.match(gatewayAppViewSource, /compactDeviceHeader \? "min-h-11 min-w-11"/);

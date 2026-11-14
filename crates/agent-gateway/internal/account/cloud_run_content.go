@@ -35,7 +35,7 @@ func cloudTextImagePart(part map[string]any, strict bool) (map[string]any, bool)
 			return nil, false
 		}
 		url, ok := image["url"].(string)
-		if !ok || !(strings.HasPrefix(url, "data:image/png;base64,") || strings.HasPrefix(url, "data:image/jpeg;base64,") || strings.HasPrefix(url, "data:image/webp;base64,") || strings.HasPrefix(url, "data:image/gif;base64,")) {
+		if !ok || (!strings.HasPrefix(url, "data:image/png;base64,") && !strings.HasPrefix(url, "data:image/jpeg;base64,") && !strings.HasPrefix(url, "data:image/webp;base64,") && !strings.HasPrefix(url, "data:image/gif;base64,")) {
 			return nil, false
 		}
 		clean := map[string]any{"url": url}

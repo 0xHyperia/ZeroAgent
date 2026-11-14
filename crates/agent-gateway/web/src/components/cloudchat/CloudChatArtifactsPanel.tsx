@@ -988,7 +988,8 @@ export function CloudChatArtifactsPanel(props: Props) {
                 onRequestRevision={
                   props.onRequestRevision && inSourceConversation
                     ? (comments, evidence) =>
-                        currentProps.current.onRequestRevision?.(selected, comments, evidence) ?? false
+                        currentProps.current.onRequestRevision?.(selected, comments, evidence) ??
+                        false
                     : undefined
                 }
                 onDownload={() => void download()}

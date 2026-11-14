@@ -1,4 +1,7 @@
-import { type ModelPickerOption, modelPickerTypes } from "@liveagent/ui/lib/models/modelPickerOptions";
+import {
+  type ModelPickerOption,
+  modelPickerTypes,
+} from "@liveagent/ui/lib/models/modelPickerOptions";
 import { modelListEntries } from "@liveagent/ui/lib/models/modelTypes";
 import { toModelValue } from "@liveagent/ui/lib/models/modelValue";
 import { ImageModelPreference } from "@liveagent/ui/pages/settings/ModelPreferenceFields";

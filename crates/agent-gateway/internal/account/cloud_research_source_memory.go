@@ -170,7 +170,7 @@ func (s *MemoryStore) ListCloudResearchSources(ctx context.Context, userID int64
 		if source.UserID != userID || source.DeletedAt != nil || conversationID != "" && source.ConversationID != conversationID {
 			continue
 		}
-		if beforeID != "" && (!source.CreatedAt.Before(before.CreatedAt) && !(source.CreatedAt.Equal(before.CreatedAt) && source.ID < before.ID)) {
+		if beforeID != "" && (!source.CreatedAt.Before(before.CreatedAt) && (!source.CreatedAt.Equal(before.CreatedAt) || source.ID >= before.ID)) {
 			continue
 		}
 		copy := cloneCloudResearchSource(source)

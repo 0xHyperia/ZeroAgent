@@ -1330,7 +1330,6 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       handleMoveToWorkspace,
       handleSetPinned,
       handleSetArchived,
-      onSetArchived,
       handleSetPendingDelete,
       handleShareConversation,
       handleStartRenaming,

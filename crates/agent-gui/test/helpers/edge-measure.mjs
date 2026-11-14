@@ -94,8 +94,22 @@ export async function measureInEdge(pages, expression) {
   let ws;
   try {
     const portFile = join(profile, "DevToolsActivePort");
-    for (let i = 0; i < 150 && !existsSync(portFile); i += 1) await sleep(100);
-    const [port, browserPath] = readFileSync(portFile, "utf8").trim().split(/\s+/);
+    let port;
+    let browserPath;
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      try {
+        const [candidate, path] = readFileSync(portFile, "utf8").trim().split(/\s+/);
+        if (/^\d+$/.test(candidate) && path?.startsWith("/devtools/browser/")) {
+          port = candidate;
+          browserPath = path;
+          break;
+        }
+      } catch (error) {
+        if (!["ENOENT", "EBUSY", "EPERM"].includes(error.code)) throw error;
+      }
+      await sleep(100);
+    }
+    if (!port || !browserPath) throw new Error("Edge did not publish its DevTools endpoint");
     ws = new WebSocket(`ws://127.0.0.1:${port}${browserPath}`);
     await withTimeout(new Promise((r) => ws.addEventListener("open", r)), 10_000, "ws open");
     let id = 0;

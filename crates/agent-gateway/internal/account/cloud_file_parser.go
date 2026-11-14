@@ -384,7 +384,7 @@ func (p *cloudFileParser) extract(ctx context.Context, e *fileParseExecution, fi
 	if err != nil {
 		return err
 	}
-	defer func() { staged.Close(); os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
 	client := p.client.WithOperationRunner(e.operation)
 	transferID := sha256.Sum256([]byte(task.ID + ":original"))
 	sourcePath := "original/document." + cloudFileParserFormat(*file)

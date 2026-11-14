@@ -54,9 +54,10 @@ func (h *HTTPHandler) cloudPrivateDraftResource(w http.ResponseWriter, r *http.R
 		var extra any
 		if err = decoder.Decode(&input); err == nil {
 			err = decoder.Decode(&extra)
-			if err == io.EOF {
+			switch err {
+			case io.EOF:
 				err = nil
-			} else if err == nil {
+			case nil:
 				err = ErrCloudRunInvalid
 			}
 		}

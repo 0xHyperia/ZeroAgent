@@ -70,7 +70,7 @@ func (s *PersistentStore) RequestCloudWorkspaceCleanup(ctx context.Context, user
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	binding, err := scanCloudWorkspace(tx.QueryRowContext(ctx, `SELECT `+cloudWorkspaceColumns+` FROM zeroagent_cloud_workspaces w WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, userID))
 	if err != nil {
 		return nil, err
@@ -89,13 +89,13 @@ func (s *PersistentStore) RequestCloudWorkspaceCleanup(ctx context.Context, user
 	for rows.Next() {
 		row, err := scanCloudWorkspaceObservation(rows)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		items = append(items, *row)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}

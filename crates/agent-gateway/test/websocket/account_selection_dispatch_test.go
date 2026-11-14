@@ -433,6 +433,13 @@ func TestAccountControllerRevalidatesSubscribedOutput(t *testing.T) {
 			if hello := receiveWebFrameRaw(t, conn).GetHello(); hello == nil || !hello.GetOk() {
 				t.Fatalf("hello: %v", hello)
 			}
+			// A status response follows subscription setup and the initial replay.
+			sendProtoFrame(t, conn, &gatewayv2.WebClientFrame{RequestId: "before-revoke", AgentId: fixture.device.ID,
+				Payload: &gatewayv2.WebClientFrame_StatusGet{StatusGet: &gatewayv2.StatusGetRequest{}},
+			})
+			if frame := receiveWebFrameWithID(t, conn, "before-revoke"); frame.GetStatus() == nil {
+				t.Fatal("valid selection barrier rejected")
+			}
 			publish := func() {
 				sm.DispatchFromAgentForSession(agent, &gatewayv2.AgentEnvelope{Payload: &gatewayv2.AgentEnvelope_SettingsSync{SettingsSync: &gatewayv2.SettingsSyncEvent{SettingsJson: "{}"}}})
 			}
@@ -446,14 +453,6 @@ func TestAccountControllerRevalidatesSubscribedOutput(t *testing.T) {
 			}
 			if !received {
 				t.Fatal("valid settings subscription did not receive output")
-			}
-			// Drain the initial reconnect replay through the same FIFO response lane.
-			// Only output produced after revocation belongs to the rejection assertion.
-			sendProtoFrame(t, conn, &gatewayv2.WebClientFrame{RequestId: "before-revoke", AgentId: fixture.device.ID,
-				Payload: &gatewayv2.WebClientFrame_StatusGet{StatusGet: &gatewayv2.StatusGetRequest{}},
-			})
-			if frame := receiveWebFrameWithID(t, conn, "before-revoke"); frame.GetStatus() == nil {
-				t.Fatal("valid selection barrier rejected")
 			}
 			fixture.invalidate(t, kind)
 			publish()

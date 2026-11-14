@@ -426,8 +426,9 @@ test("pane chrome owns per-conversation trajectory toggle and hides top tabs whe
   assert.match(viewSource, /setConversationView\(/);
   assert.match(
     viewSource,
-    /!accountDestination\s*&&\s*activeView === "chat"\s*&&\s*hasConversationReply\s*&&\s*!workbenchHasMultiplePanes\s*\?\s*\(\s*<ConversationViewTabs/,
+    /const showConversationViews\s*=\s*!accountDestination\s*&&\s*activeView === "chat"\s*&&\s*hasConversationReply\s*&&\s*!workbenchHasMultiplePanes/,
   );
+  assert.match(viewSource, /showConversationViews\s*\?\s*\(\s*<ConversationViewTabs/);
 });
 
 test("file-drop hover focuses the pane under the cursor via workbench hit-testing", () => {

@@ -24,14 +24,14 @@ func readSpaceMutationTx(ctx context.Context, tx *sql.Tx, userID int64, m CloudS
 	for rows.Next() {
 		item, e := scanSpaceItem(rows)
 		if e != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, e
 		}
 		snapshot.Items = append(snapshot.Items, item)
 		current = current || (item.ID == m.ID && item.Kind == m.Kind)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}

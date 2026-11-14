@@ -70,7 +70,7 @@ func newBrowserVisualFixture(t *testing.T) *browserVisualFixture {
 
 func (f *browserVisualFixture) serveImage(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "Bearer fixture-model-key-only" || r.Header.Get("Idempotency-Key") == "" {
-		http.Error(w, "invalid local image authority", 401)
+		http.Error(w, "invalid local image authority", http.StatusUnauthorized)
 		return
 	}
 	index := f.calls.Add(1) - 1

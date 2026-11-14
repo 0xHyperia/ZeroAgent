@@ -105,7 +105,8 @@ func commitCloudTool(op CloudToolOperation, state string, result json.RawMessage
 		copy := cloneCloudTool(op)
 		return &copy, nil
 	}
-	if op.State != CloudToolExecuting && op.State != CloudToolUnknown && !(op.State == CloudToolPrepared && (state == CloudToolCancelled || state == CloudToolFailed)) {
+	preparedTerminal := op.State == CloudToolPrepared && (state == CloudToolCancelled || state == CloudToolFailed)
+	if op.State != CloudToolExecuting && op.State != CloudToolUnknown && !preparedTerminal {
 		return nil, ErrCloudToolConflict
 	}
 	op.State, op.Result, op.ErrorCode = state, append(json.RawMessage(nil), result...), errorCode

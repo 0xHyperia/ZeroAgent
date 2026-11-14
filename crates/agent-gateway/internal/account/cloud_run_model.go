@@ -302,7 +302,7 @@ func (r *cloudRunRuntime) generateWithTools(ctx context.Context, run *CloudRun, 
 			return CloudRunFailed, "model_connection_failed"
 		}
 		if upstream.StatusCode < 200 || upstream.StatusCode >= 300 {
-			upstream.Body.Close()
+			_ = upstream.Body.Close()
 			r.recordCloudModelFailure(roundCtx, run, owner, round, upstream.StatusCode, publicPhase, "http_status")
 			return CloudRunFailed, "model_request_failed"
 		}
@@ -460,7 +460,7 @@ func upstreamMessagesAsAny(messages []map[string]any) []any {
 }
 
 func (r *cloudRunRuntime) receiveCloudModel(ctx context.Context, run *CloudRun, owner string, round int, upstream *http.Response, secrets []string, baseUsage json.RawMessage, hasOutput *bool, publishOutput bool) (*cloudModelRound, error) {
-	defer upstream.Body.Close()
+	defer func() { _ = upstream.Body.Close() }()
 	decoder := newCloudModelStream(secrets)
 	frames := make(chan cloudStreamFrame, 1)
 	readCtx, stopRead := context.WithCancel(ctx)

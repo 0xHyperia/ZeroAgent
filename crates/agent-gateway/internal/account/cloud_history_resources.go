@@ -195,7 +195,7 @@ func (s *PersistentStore) GetCloudHistoryResources(ctx context.Context, uid int6
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var count int
 	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM zerobox_cloud_messages m JOIN zerobox_cloud_conversations c ON c.id=m.conversation_id AND c.user_id=m.user_id WHERE m.user_id=$1 AND m.conversation_id=$2 AND m.id=ANY($3::uuid[])`, uid, conversationID, pq.Array(ids)).Scan(&count)
 	if err != nil {
@@ -220,7 +220,7 @@ func (s *PersistentStore) GetCloudHistoryResources(ctx context.Context, uid int6
 	for rows.Next() {
 		var c cloudHistoryResourceCandidate
 		if err = rows.Scan(&c.messageID, &c.kind, &c.id); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		if siteIdentity(c.id) {
@@ -228,7 +228,7 @@ func (s *PersistentStore) GetCloudHistoryResources(ctx context.Context, uid int6
 		}
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}

@@ -184,9 +184,10 @@ async function findGatewayConversationAttachment(id: string, path: string) {
         includeActiveSegment: false,
       });
       const found = window.segments.some((segment) =>
-        segment.messages.some((message) =>
-          message.role === "user" &&
-          getUserMessageAttachments({ ...message }).some((file) => file.absolutePath === path),
+        segment.messages.some(
+          (message) =>
+            message.role === "user" &&
+            getUserMessageAttachments({ ...message }).some((file) => file.absolutePath === path),
         ),
       );
       if (found) return { cwd: window.conversation.cwd ?? "" };
@@ -210,8 +211,13 @@ async function readGatewayConversationImage(conversationId: string, data: Record
   const connection = getKBrainRuntimeConnection();
   const { assetId, variant } = data;
   const unavailable = () => new Error("The conversation image is unavailable.");
-  if (!sessionId || !connection || typeof assetId !== "string" ||
-    !/^ia_[\w-]{1,96}$/.test(assetId) || (variant !== "original" && variant !== "thumbnail")) {
+  if (
+    !sessionId ||
+    !connection ||
+    typeof assetId !== "string" ||
+    !/^ia_[\w-]{1,96}$/.test(assetId) ||
+    (variant !== "original" && variant !== "thumbnail")
+  ) {
     throw unavailable();
   }
 
@@ -226,7 +232,9 @@ async function readGatewayConversationImage(conversationId: string, data: Record
   if (!project) throw unavailable();
   const job = await findImageRecord(
     (cursor) => client.listJobs(project.id, cursor),
-    (entry) => entry.projectId === project.id && entry.assetIds.includes(assetId) &&
+    (entry) =>
+      entry.projectId === project.id &&
+      entry.assetIds.includes(assetId) &&
       (entry.status === "succeeded" || entry.status === "partial_succeeded"),
   );
   if (!job || getKBrainRuntimeConnection() !== connection) throw unavailable();
@@ -254,9 +262,9 @@ async function findImageRecord<T>(
     const item = page.items.find(matches);
     if (item) return item;
     cursor = page.nextCursor;
-    if (!cursor || seen.has(cursor)) return undefined;
+    if (!cursor || seen.has(cursor)) break;
     seen.add(cursor);
-  } while (true);
+  } while (cursor);
 }
 
 function stringList(value: unknown): string[] {

@@ -98,7 +98,7 @@ func publishedResearchRows(ctx context.Context, query interface {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]CloudResearchSource, 0, len(publication.IDs))
 	for rows.Next() {
 		source, err := scanCloudResearchSource(rows)
@@ -125,7 +125,7 @@ func (s *PersistentStore) PersistCloudResearchSources(ctx context.Context, userI
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, op, err := s.researchOperationTx(ctx, tx, userID, runID, owner, attempt, operationID)
 	if err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func (s *PersistentStore) ListCloudResearchSources(ctx context.Context, userID i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]CloudResearchSource, 0)
 	for rows.Next() {
 		source, err := scanCloudResearchSource(rows)
@@ -275,7 +275,7 @@ func (s *PersistentStore) DeleteCloudResearchSource(ctx context.Context, userID 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	source, err := scanCloudResearchSource(tx.QueryRowContext(ctx, "SELECT "+cloudResearchSourceMetadataColumns+" FROM zeroagent_cloud_research_sources s WHERE s.id=$1 AND s.user_id=$2 FOR UPDATE", id, userID))
 	if err != nil {
 		return err
@@ -300,7 +300,7 @@ func (s *PersistentStore) ReserveCloudResearchSearch(ctx context.Context, userID
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, op, err := s.researchOperationTx(ctx, tx, userID, runID, owner, attempt, operationID)
 	if err != nil {
 		return false, err

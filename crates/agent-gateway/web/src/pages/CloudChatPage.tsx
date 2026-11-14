@@ -34,7 +34,6 @@ import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { CLOUD_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
-import { GATEWAY_COMPACT_VIEWPORT_QUERY } from "@liveagent/ui/hooks/use-mobile";
 import type {
   ExtensionCatalog,
   ExtensionPackage,
@@ -42,10 +41,14 @@ import type {
   ExtensionTryResult,
   ExtensionWorkspaceLocation,
 } from "@liveagent/ui/features/extensions/extensionTypes";
+import { GATEWAY_COMPACT_VIEWPORT_QUERY } from "@liveagent/ui/hooks/use-mobile";
 import { t as translate } from "@liveagent/ui/i18n/index";
 import type { AssistantDeliverable } from "@liveagent/ui/lib/chat/assistantResources";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
-import { createTextComposerDraft, draftContainsStarter } from "@liveagent/ui/lib/chat/composerDraft";
+import {
+  createTextComposerDraft,
+  draftContainsStarter,
+} from "@liveagent/ui/lib/chat/composerDraft";
 import {
   buildDocumentRevisionMessage,
   documentRevisionSkill,
@@ -2992,7 +2995,9 @@ export function CloudChatPage({
       if (part?.type === "file_reference") return [part.file_id];
       return [];
     });
-    const preserveImageEdit = imageEditContext && originalImageInputs.length === ids.length &&
+    const preserveImageEdit =
+      imageEditContext &&
+      originalImageInputs.length === ids.length &&
       originalImageInputs.every((id, i) => id === ids[i]);
     const content = ids.length
       ? [
@@ -4466,9 +4471,11 @@ export function CloudChatPage({
     embeddedTaskFollowLatest,
     embeddedTaskJump,
   ]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reopen the same reader when its task occurrence changes.
   useEffect(() => {
     if (embeddedTaskId) syncEmbeddedTaskReader(embeddedTaskReader);
   }, [embeddedTaskId, embeddedTaskOccurrence, embeddedTaskReader]);
+  const closeTaskReaderOnBack = useEffectEvent(() => closeTaskReader());
   useEffect(() => {
     if (embeddedTaskId && embeddedTaskResource) openEmbeddedTaskResource(embeddedTaskResource);
   }, [embeddedTaskId, embeddedTaskResource]);
@@ -4483,7 +4490,7 @@ export function CloudChatPage({
       } else if (composerMenu) {
         setComposerMenu(null);
       } else if ((scheduleRoute || embeddedTask) && activeTaskReader.current) {
-        closeTaskReader();
+        closeTaskReaderOnBack();
       } else if (sourcePanel) {
         setSourcePanel(null);
       } else if (filePanel || artifactPanel || workPanel || workspaceView !== "chat") {
@@ -5014,40 +5021,57 @@ export function CloudChatPage({
       files.push(region);
     }
     const draft = captureComposerDraft();
-    let receipt: { result: Promise<AssistantDeliverable | undefined>; stop: () => Promise<boolean> } | undefined;
+    let receipt:
+      | { result: Promise<AssistantDeliverable | undefined>; stop: () => Promise<boolean> }
+      | undefined;
     const accepted = await send(
       { ...draft, files, artifacts: [version], composer: createTextComposerDraft(edit.text) },
       true,
       edit,
-      edit.keepPreview ? (run) => {
-        if (signal.aborted) return;
-        const result = new Promise<AssistantDeliverable | undefined>((resolve) => {
-          const finish = (image?: AssistantDeliverable) => {
-            if (previewEditRun.current?.id === run.id) previewEditRun.current = null;
-            signal.removeEventListener("abort", abort);
-            resolve(image);
-          };
-          const abort = () => finish();
-          previewEditRun.current = {
-            id: run.id,
-            update: (next) => {
-              const image = cloudChatAssistantDeliverables({
-                id: next.assistant_message_id, role: "assistant", content: next.output, presentation: next.presentation,
-              }).find((item) => item.status === "saved" && item.mime?.startsWith("image/") && item.id !== version.id);
-              if (image || isCloudChatRunTerminal(next)) finish(image);
-            },
-          };
-          signal.addEventListener("abort", abort, { once: true });
-        });
-        receipt = {
-          result,
-          stop: async () => {
-            if (!isCurrentView(view) || latestRunRef.current?.id !== run.id || isCloudChatRunTerminal(latestRunRef.current)) return false;
-            displayRun(await runsClient.cancelRun(run.id), view);
-            return true;
-          },
-        };
-      } : undefined,
+      edit.keepPreview
+        ? (run) => {
+            if (signal.aborted) return;
+            const result = new Promise<AssistantDeliverable | undefined>((resolve) => {
+              const finish = (image?: AssistantDeliverable) => {
+                if (previewEditRun.current?.id === run.id) previewEditRun.current = null;
+                signal.removeEventListener("abort", abort);
+                resolve(image);
+              };
+              const abort = () => finish();
+              previewEditRun.current = {
+                id: run.id,
+                update: (next) => {
+                  const image = cloudChatAssistantDeliverables({
+                    id: next.assistant_message_id,
+                    role: "assistant",
+                    content: next.output,
+                    presentation: next.presentation,
+                  }).find(
+                    (item) =>
+                      item.status === "saved" &&
+                      item.mime?.startsWith("image/") &&
+                      item.id !== version.id,
+                  );
+                  if (image || isCloudChatRunTerminal(next)) finish(image);
+                },
+              };
+              signal.addEventListener("abort", abort, { once: true });
+            });
+            receipt = {
+              result,
+              stop: async () => {
+                if (
+                  !isCurrentView(view) ||
+                  latestRunRef.current?.id !== run.id ||
+                  isCloudChatRunTerminal(latestRunRef.current)
+                )
+                  return false;
+                displayRun(await runsClient.cancelRun(run.id), view);
+                return true;
+              },
+            };
+          }
+        : undefined,
     );
     return accepted === true ? (receipt ?? true) : false;
   }
@@ -5085,7 +5109,10 @@ export function CloudChatPage({
         : !cloudFileCanReference(latest))
     )
       return false;
-    if (!("family_id" in latest) || !comments.every((comment) => comment.block.startsWith("site:"))) {
+    if (
+      !("family_id" in latest) ||
+      !comments.every((comment) => comment.block.startsWith("site:"))
+    ) {
       if (streaming || pendingQueue.editingItem) return false;
       const screenshots: CloudChatFile[] = [];
       if (evidence.length) {
@@ -5096,7 +5123,7 @@ export function CloudChatPage({
           for (const image of evidence.slice(0, MAX_REVISION_EVIDENCE)) {
             guard();
             if (!isCurrentView(view)) return false;
-            const uploadId = crypto.randomUUID();
+            const uploadId = createUuid();
             let uploaded: CloudChatFile;
             try {
               uploaded = await filesClient.upload(
@@ -5110,7 +5137,8 @@ export function CloudChatPage({
               try {
                 uploaded = await filesClient.readUpload(uploadId, controller.signal);
               } catch (lookupError) {
-                if (lookupError instanceof CloudChatFileError && lookupError.status === 404) continue;
+                if (lookupError instanceof CloudChatFileError && lookupError.status === 404)
+                  continue;
                 throw lookupError;
               }
             }
@@ -6322,11 +6350,15 @@ export function CloudChatPage({
                               title="新对话"
                               aria-label="新对话"
                               onClick={() => navigateConversation()}
-                              className={mobileConversationHeader
-                                ? "cloud-header-new-chat size-11 shrink-0 rounded-lg"
-                                : "shrink-0 rounded-lg"}
+                              className={
+                                mobileConversationHeader
+                                  ? "cloud-header-new-chat size-11 shrink-0 rounded-lg"
+                                  : "shrink-0 rounded-lg"
+                              }
                             >
-                              <SquarePen className={mobileConversationHeader ? "size-4.5" : "size-4"} />
+                              <SquarePen
+                                className={mobileConversationHeader ? "size-4.5" : "size-4"}
+                              />
                             </Button>
                           ) : null}
                           {workspaceView === "chat" && conversationId && !canSwitchPresentation ? (
@@ -6508,8 +6540,12 @@ export function CloudChatPage({
                                     messages={messages}
                                     running={streaming}
                                     onConfigure={openModelPreferences}
-                                    onOpen={(item, trigger) => openGeneratedImage(item, false, trigger)}
-                                    onEdit={(item, trigger) => openGeneratedImage(item, true, trigger)}
+                                    onOpen={(item, trigger) =>
+                                      openGeneratedImage(item, false, trigger)
+                                    }
+                                    onEdit={(item, trigger) =>
+                                      openGeneratedImage(item, true, trigger)
+                                    }
                                     registerImages={imagePreview.register}
                                   >
                                     <GatewayTranscript
@@ -6788,7 +6824,8 @@ export function CloudChatPage({
                                   </>
                                 }
                                 contextBar={
-                                  scheduledConversation || (sidebar.isMobile && presentation !== "work") ? undefined : (
+                                  scheduledConversation ||
+                                  (sidebar.isMobile && presentation !== "work") ? undefined : (
                                     <div
                                       className="cloud-context-motion"
                                       data-open={presentation === "work"}

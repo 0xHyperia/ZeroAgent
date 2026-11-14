@@ -4,7 +4,31 @@ import (
 	"testing"
 
 	gatewayv2 "github.com/liveagent/agent-gateway/internal/proto/v2"
+	"github.com/liveagent/agent-gateway/internal/protocol/pbws"
+	"github.com/liveagent/agent-gateway/internal/session"
 )
+
+func TestV2HelloPrecedesExistingHistoryRecovery(t *testing.T) {
+	sm := session.NewManager()
+	sm.RecordAuthentication("desktop-agent", "0.9.0", "session-1")
+	sm.SetSession(session.NewAgentSession(sm.LatestAuthSnapshot("desktop-agent")))
+	sm.IngestRemoteHistorySnapshot("desktop-agent", &gatewayv2.HistorySyncSnapshot{
+		SourceId: "source", Generation: "generation", CutDeliverySeq: 7,
+	})
+	server := pbws.NewServer(newV2TestConfig(), sm, nil)
+	defer server.Close()
+	conn, cleanup := dialV2(t, server.BrowserHandler())
+	defer cleanup()
+
+	// The client must receive a successful hello even with recovery ready to replay.
+	helloV2(t, conn, "ws-token")
+	for attempt := 0; attempt < 4; attempt++ {
+		if frame := receiveWebFrameRaw(t, conn); frame.GetHistorySyncStatus().GetNeedsResync() {
+			return
+		}
+	}
+	t.Fatal("history recovery did not follow hello")
+}
 
 func TestV2HistoryResyncRejectsWrongGenerationAndAcceptsCurrentCut(t *testing.T) {
 	sm, _, conn, cleanup := newV2BrowserTest(t)

@@ -358,7 +358,7 @@ func (s *S3Store) Verify(ctx context.Context, key string, size int64, expectedSH
 	if err != nil {
 		return ObjectInfo{}, err
 	}
-	defer object.Body.Close()
+	defer func() { _ = object.Body.Close() }()
 	if object.Size != size {
 		return ObjectInfo{}, ErrLengthMismatch
 	}

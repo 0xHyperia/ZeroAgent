@@ -69,7 +69,7 @@ func (f *Fetcher) Fetch(parent context.Context, rawURL string) (Document, error)
 		}
 		if isRedirect(response.StatusCode) {
 			location := response.Header.Get("Location")
-			response.Body.Close()
+			_ = response.Body.Close()
 			closeTransport()
 			if redirects >= 3 {
 				return Document{}, ErrRedirectLimit
@@ -85,12 +85,12 @@ func (f *Fetcher) Fetch(parent context.Context, rawURL string) (Document, error)
 			continue
 		}
 		if response.StatusCode != http.StatusOK {
-			response.Body.Close()
+			_ = response.Body.Close()
 			closeTransport()
 			return Document{}, responseError(response.StatusCode)
 		}
 		body, err := readBody(ctx, response, f.limits)
-		response.Body.Close()
+		_ = response.Body.Close()
 		closeTransport()
 		if err != nil {
 			return Document{}, safeError(ctx, err)
@@ -180,7 +180,7 @@ func readBody(ctx context.Context, response *http.Response, limits Limits) ([]by
 	if err != nil {
 		return nil, ErrInvalidResponse
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	decoded, err := io.ReadAll(io.LimitReader(reader, int64(limits.MaxResponseBytes)+1))
 	if len(decoded) > limits.MaxResponseBytes {
 		return nil, ErrTooLarge

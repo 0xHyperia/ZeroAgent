@@ -4,12 +4,9 @@ import { openUrl } from "../../shims/tauriOpener";
 import { desktopAccountRequest } from "./desktopRemoteHost";
 import { nativeSessionHandle, requireNativeSession } from "./nativeSession";
 
-type Callbacks = Pick<
-  DesktopCloudHost,
-  | "onLogout"
-  | "onUserChange"
-  | "registerNavigationGuard"
-> & { onLocationChange?: (href: string) => void };
+type Callbacks = Pick<DesktopCloudHost, "onLogout" | "onUserChange" | "registerNavigationGuard"> & {
+  onLocationChange?: (href: string) => void;
+};
 type CloudResponse = { status: number; headers: Record<string, string> };
 const locationEvent = "zeroagent:desktop-cloud-location";
 const routeKey = (scope: string) => `zeroagent.desktop-cloud.location:${scope}`;

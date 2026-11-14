@@ -120,7 +120,7 @@ func (r *cloudRunRuntime) generateCloudTitle(run *CloudRun) {
 	if err != nil {
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return
 	}
@@ -295,7 +295,7 @@ func (s *PersistentStore) ApplyCloudTitle(ctx context.Context, run *CloudRun, or
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var current int64
 	// Serialize with configuration writes, including a disable racing this update.
 	err = tx.QueryRowContext(ctx, `SELECT version FROM zeroagent_cloud_generation_settings WHERE user_id=$1 AND version=$2 AND title->>'enabled'='true' FOR SHARE`, run.UserID, version).Scan(&current)

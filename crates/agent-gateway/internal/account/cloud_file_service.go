@@ -236,7 +236,7 @@ func (p *cloudFileService) verifyOriginal(ctx context.Context, file *CloudFile) 
 	if err != nil {
 		return err
 	}
-	defer object.Body.Close()
+	defer func() { _ = object.Body.Close() }()
 	if err = cloudFileVerifyInfo(file, object.ObjectInfo); err != nil {
 		return err
 	}
@@ -360,7 +360,7 @@ func (p *cloudFileService) stageDownload(ctx context.Context, file *CloudFile) (
 	if err != nil {
 		return nil, err
 	}
-	defer object.Body.Close()
+	defer func() { _ = object.Body.Close() }()
 	if err = cloudFileVerifyInfo(file, object.ObjectInfo); err != nil {
 		return nil, err
 	}
@@ -368,7 +368,7 @@ func (p *cloudFileService) stageDownload(ctx context.Context, file *CloudFile) (
 	if err != nil {
 		return nil, objectstore.ErrUnavailable
 	}
-	clean := func() { staged.Close(); os.Remove(staged.Name()) }
+	clean := func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }
 	hash := sha256.New()
 	count, err := io.Copy(io.MultiWriter(staged, hash), io.LimitReader(object.Body, CloudFileMaxBytes+1))
 	if err != nil {

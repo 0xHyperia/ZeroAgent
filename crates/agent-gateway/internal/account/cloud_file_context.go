@@ -209,7 +209,7 @@ func (s *Service) cloudFileImageDataURL(ctx context.Context, userID int64, file 
 	if err != nil {
 		return "", err
 	}
-	defer func() { staged.Close(); os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
 	data, err := io.ReadAll(io.LimitReader(staged, CloudFileMaxVisionBytes+1))
 	if err != nil || int64(len(data)) != file.Size {
 		return "", ErrCloudFileInvalid

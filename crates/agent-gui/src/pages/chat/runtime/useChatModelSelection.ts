@@ -217,7 +217,13 @@ export function useChatModelSelection(params: UseChatModelSelectionParams) {
       requestFormat: currentChatProvider?.requestFormat,
       modelId: currentChatModelId,
     }),
-    [currentChatModelId, currentChatProvider?.requestFormat, currentChatProvider?.type, currentChatProvider?.nativeWebSearchSupported, settings.kbrainWebSearch?.available],
+    [
+      currentChatModelId,
+      currentChatProvider?.requestFormat,
+      currentChatProvider?.type,
+      currentChatProvider?.nativeWebSearchSupported,
+      settings.kbrainWebSearch?.available,
+    ],
   );
   // 运行期思考档位补充到达会改变档位列表/恒开判定，版本号计入依赖使 memo 跟进。
   const thinkingLiveVersion = useThinkingLiveVersion();

@@ -230,7 +230,7 @@ func cloudToolResourcesTx(ctx context.Context, tx *sql.Tx, op *CloudToolOperatio
 	if rows == nil {
 		return nil, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudPresentationResource{}
 	for rows.Next() {
 		var item CloudPresentationResource
@@ -362,14 +362,14 @@ FROM zeroagent_cloud_tool_operations WHERE user_id=$1 AND run_id=$2 ORDER BY cre
 		var op CloudToolOperation
 		var input, result []byte
 		if err = rows.Scan(&op.ID, &op.UserID, &op.RunID, &op.CallKey, &op.Name, &op.State, &op.Version, &op.CreatedAt, &op.UpdatedAt, &op.ErrorCode, &input, &result); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		op.Input, op.Result = input, result
 		ops = append(ops, op)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return err
 	}
@@ -421,13 +421,13 @@ func ReconcileCloudPresentationForRestore(ctx context.Context, tx *sql.Tx, schem
 		for rows.Next() {
 			run, err := scanCloudRun(rows)
 			if err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return err
 			}
 			runs = append(runs, run)
 		}
 		err = rows.Err()
-		rows.Close()
+		_ = rows.Close()
 		if err != nil {
 			return err
 		}

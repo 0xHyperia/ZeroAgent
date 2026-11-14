@@ -1,16 +1,16 @@
-import type { DeviceConversationImageHost } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
 import { isConversationImageTool } from "@liveagent/ui/components/chat/assistant-bubble/assistantBubbleUtils";
 import {
   conversationImageDeliverables,
   parseConversationImageResult,
 } from "@liveagent/ui/components/chat/assistant-bubble/ConversationImageTool";
-import { UploadedImagePreviewScope } from "@liveagent/ui/lib/chat/uploadedImagePreview";
+import type { DeviceConversationImageHost } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
 import { toolResultMessageToText } from "@liveagent/ui/lib/chat/uiMessages";
+import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
+import { UploadedImagePreviewScope } from "@liveagent/ui/lib/chat/uploadedImagePreview";
 import { useCallback, useContext } from "react";
 import type { SendChatFn } from "@/app/types";
 import type { TranscriptStore } from "@/lib/chat/transcript/transcriptStore";
 import type { GatewayWebSocketClient } from "@/lib/gatewaySocket";
-import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 
 export type ImportDeviceConversationFiles = (
   workdir: string,

@@ -62,7 +62,7 @@ func (s *PersistentStore) ReserveCloudAllocation(ctx context.Context, userID int
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	now, err := cloudRunDBTime(ctx, tx)
 	if err != nil {
 		return nil, false, err

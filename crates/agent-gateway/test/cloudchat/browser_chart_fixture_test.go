@@ -53,7 +53,7 @@ func respondBrowserChart(w http.ResponseWriter, toolResults int, lastResult map[
 		artifact, _ := lastResult["artifact"].(map[string]any)
 		id, _ := artifact["id"].(string)
 		if _, err := uuid.Parse(id); err != nil {
-			http.Error(w, "synthetic chart publication did not succeed", 502)
+			http.Error(w, "synthetic chart publication did not succeed", http.StatusBadGateway)
 			return true
 		}
 		text := "320×180 合成条形图已保存，可以查看和下载。\n\n【成果:" + id + "】\n\n这是本地 UI 协议夹具，未执行真实 E2B，也不用于验收模型内容质量。"

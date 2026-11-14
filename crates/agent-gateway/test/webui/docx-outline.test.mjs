@@ -118,6 +118,8 @@ function docxFixture() {
 
 async function adapter(t, mocks = {}) {
   const env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks });
+  env.dom.window.HTMLElement.prototype.getBoundingClientRect = () =>
+    new env.dom.window.DOMRect(0, 0, 900, 900);
   const parser = Object.getOwnPropertyDescriptor(globalThis, "DOMParser");
   globalThis.DOMParser = env.dom.window.DOMParser;
   const host = document.body.appendChild(document.createElement("div")), root = env.createRoot(host);
@@ -253,7 +255,7 @@ test("Word annotation bridge rejects foreign frames, origins and channels and ne
  assert.ok(app.host.querySelector('[aria-label="修改建议"]'));
  assert.equal(sends,0);
  const input=app.host.querySelector('[aria-label="修改建议"]');
- await app.env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,'更加简洁');input.dispatchEvent(new window.Event('input',{bubbles:true}));});
+ await app.env.act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(input,'更加简洁');input.dispatchEvent(new window.Event('input',{bubbles:true}));});
  await app.env.act(async()=>app.host.querySelector('[aria-label="添加批注"]').click());
  assert.match(app.host.textContent,/这 1 条批注/);assert.equal(sends,0);
  await app.env.act(async()=>app.host.querySelector('[aria-label="查看 1 条批注"]').click());

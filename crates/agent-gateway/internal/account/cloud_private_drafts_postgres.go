@@ -69,7 +69,7 @@ func (s *PersistentStore) WriteCloudPrivateDraft(ctx context.Context, uid int64,
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `INSERT INTO zeroagent_cloud_draft_accounts(user_id) VALUES($1) ON CONFLICT DO NOTHING`, uid); err != nil {
 		return nil, err
 	}

@@ -269,7 +269,7 @@ func (s *PersistentStore) ListCloudRunViews(ctx context.Context, userID int64, c
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]CloudRun, 0)
 	for rows.Next() {
 		run, err := scanCloudRunView(rows)
@@ -288,7 +288,7 @@ func (s *PersistentStore) ListCloudRunActiveTools(ctx context.Context, userID in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]CloudRunActiveTool, 0)
 	for rows.Next() {
 		var item CloudRunActiveTool

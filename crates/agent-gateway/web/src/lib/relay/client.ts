@@ -450,10 +450,17 @@ export async function listRelayApiKeys() {
 function managedKeySummary(key: RelayApiKey): RelayApiKey {
   const configured = key.key_configured ?? Boolean(key.key?.trim());
   return {
-    id: key.id, name: key.name, group_id: key.group_id, status: key.status,
-    quota: key.quota, quota_used: key.quota_used, created_at: key.created_at,
-    group: key.group, key: configured ? "••••••••" : "",
-    key_masked: true, key_configured: configured,
+    id: key.id,
+    name: key.name,
+    group_id: key.group_id,
+    status: key.status,
+    quota: key.quota,
+    quota_used: key.quota_used,
+    created_at: key.created_at,
+    group: key.group,
+    key: configured ? "••••••••" : "",
+    key_masked: true,
+    key_configured: configured,
   };
 }
 

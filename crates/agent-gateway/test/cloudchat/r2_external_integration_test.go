@@ -107,7 +107,6 @@ func TestR2ExternalObjectAndConditionalRestoreContract(t *testing.T) {
 	if json.Unmarshal(bytes.TrimPrefix(private, []byte{0xef, 0xbb, 0xbf}), &cfg) != nil {
 		t.Fatal("invalid private R2 configuration")
 	}
-	private = nil
 	endpoint, err := url.Parse(cfg.Endpoint)
 	if err != nil || endpoint.Scheme != "https" || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || cfg.Allowance.S3MaxBytes < 64<<20 {
 		t.Fatal("external R2 acceptance requires explicit HTTPS configuration and allowance")
@@ -295,7 +294,6 @@ func TestR2ExternalObjectAndConditionalRestoreContract(t *testing.T) {
 	start = time.Now()
 	put(big, large)
 	step("put_head_get_full_sha_32mib_and_unicode_metadata", start)
-	large = nil
 	start = time.Now()
 	err = conditional.CheckRestoreWriteSemantics(ctx)
 	if err != nil {

@@ -127,7 +127,7 @@ func (s *PersistentStore) PrepareCloudTool(ctx context.Context, userID int64, ru
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, err := s.cloudToolRunTx(ctx, tx, userID, runID, owner, attempt, false)
 	if err != nil {
 		return nil, false, err
@@ -192,7 +192,7 @@ func (s *PersistentStore) ListCloudToolOperations(ctx context.Context, userID in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []CloudToolOperation{}
 	for rows.Next() {
 		op, err := scanCloudTool(rows)
@@ -234,7 +234,7 @@ func (s *PersistentStore) StartCloudTool(ctx context.Context, userID int64, id, 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	op, err := s.lockCloudTool(ctx, tx, userID, id, owner, attempt, false)
 	if err != nil {
 		return nil, err
@@ -257,7 +257,7 @@ func (s *PersistentStore) CommitCloudTool(ctx context.Context, userID int64, id,
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	op, err := s.lockCloudTool(ctx, tx, userID, id, owner, attempt, true)
 	if err != nil {
 		return nil, err
@@ -321,7 +321,7 @@ func (s *PersistentStore) ReserveCloudWorkspace(ctx context.Context, userID int6
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	run, err := s.cloudToolRunTx(ctx, tx, userID, runID, owner, attempt, false)
 	if err != nil {
 		return nil, false, err
@@ -374,7 +374,7 @@ func (s *PersistentStore) RecordCloudWorkspaceReceipt(ctx context.Context, userI
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	initial, err := scanCloudWorkspace(tx.QueryRowContext(ctx, `SELECT `+cloudWorkspaceColumns+` FROM zeroagent_cloud_workspaces w WHERE id=$1 AND user_id=$2`, bindingID, userID))
 	if err != nil {
 		return nil, err
@@ -429,14 +429,14 @@ func (s *PersistentStore) ListCloudWorkspaceCleanup(ctx context.Context, limit i
 	for rows.Next() {
 		row, err := scanCloudWorkspaceObservation(rows)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		row.State = CloudWorkspaceCleanupPending
 		items = append(items, *row)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -447,13 +447,13 @@ func (s *PersistentStore) ListCloudWorkspaceCleanup(ctx context.Context, limit i
 	for rows.Next() {
 		binding, err := scanCloudWorkspace(rows)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		items = append(items, unallocatedCloudWorkspaceCleanup(*binding))
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +479,7 @@ func (s *PersistentStore) CommitCloudWorkspaceCleanup(ctx context.Context, userI
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var bindingID string
 	err = tx.QueryRowContext(ctx, `SELECT binding_id::text FROM zeroagent_cloud_workspace_observations WHERE id=$1 AND user_id=$2`, id, userID).Scan(&bindingID)
 	synthetic := errors.Is(err, sql.ErrNoRows)

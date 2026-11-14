@@ -102,7 +102,11 @@ export function DesktopExecutionSwitcher({
             />
           }
         >
-          {cloudSelected ? <Cloud className="size-4 shrink-0" /> : <MonitorSmartphone className="size-4 shrink-0" />}
+          {cloudSelected ? (
+            <Cloud className="size-4 shrink-0" />
+          ) : (
+            <MonitorSmartphone className="size-4 shrink-0" />
+          )}
           <span className="truncate text-xs max-[640px]:hidden">{label}</span>
           <ChevronDown className="size-3.5 shrink-0 max-[640px]:hidden" />
         </DropdownMenuTrigger>

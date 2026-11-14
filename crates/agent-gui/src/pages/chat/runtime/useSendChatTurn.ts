@@ -537,7 +537,12 @@ export function useSendChatTurn(params: UseSendChatTurnParams) {
         ? prev
         : { ...prev, selectedModel },
     );
-    const providerConfig = createProviderRuntimeConfig(provider, model, runtimeControls, settings.kbrainWebSearch?.available);
+    const providerConfig = createProviderRuntimeConfig(
+      provider,
+      model,
+      runtimeControls,
+      settings.kbrainWebSearch?.available,
+    );
     const runtimeModel = createModelFromConfig(
       providerId,
       model,

@@ -1,4 +1,3 @@
-import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import {
   AssistantBubble,
   LiveAssistantStatus,
@@ -11,6 +10,7 @@ import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatF
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { DocumentRevisionMessageBody } from "@liveagent/ui/components/chat/DocumentRevisionMessageChip";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
+import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import { RetryDetailsBlock } from "@liveagent/ui/components/chat/RetryDetailsBlock";
 import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import {
@@ -271,10 +271,9 @@ function GatewayUserMessageBubbleBody(props: {
   const { text, attachments, workspaceRoot, onLoadUploadedImagePreview, loadCommitDetails } = props;
   const { visibleFiles, pastedTextFiles } = splitUserAttachmentsForDisplay(attachments, text);
 
-  const imageStrip =
-    onLoadUploadedImagePreview
-      ? visibleFiles.filter((file) => file.kind === "image" && (file.absolutePath || workspaceRoot))
-      : [];
+  const imageStrip = onLoadUploadedImagePreview
+    ? visibleFiles.filter((file) => file.kind === "image" && (file.absolutePath || workspaceRoot))
+    : [];
   const bubbleFiles = visibleFiles.filter((file) => !imageStrip.includes(file));
 
   return (
@@ -1246,7 +1245,8 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                   onOpenFileLink
                     ? (file) =>
                         onOpenFileLink(
-                          imagePreviewScope && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(file.relativePath)
+                          imagePreviewScope &&
+                            /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(file.relativePath)
                             ? { path: `cloud-files/${file.relativePath}`, source: "relative" }
                             : chatAttachmentFileLink(file),
                         )
@@ -1481,43 +1481,43 @@ export function GatewayTranscript({
           expandByDefault={expandProcessByDefault}
           isViewportFollowing={isViewportFollowing}
         >
-            <GatewayTranscriptListRegion
-              key={conversationId ?? "shared"}
-              conversationId={conversationId}
-              editRequest={editRequest}
-              onEditRequestHandled={onEditRequestHandled}
-              rows={rows}
-              scheduledTurn={scheduledTurn}
-              liveStartIndex={liveStartIndex}
-              activeTurnKey={activeTurnKey}
-              contentWidth={contentWidth}
-              scrollViewport={transcriptScrollViewport}
-              isViewportFollowing={isViewportFollowing}
-              viewportFollowing={viewportFollowing}
-              navRef={navRef}
-              onAnchorUserRowChange={onAnchorUserRowChange}
-              hasMoreHistory={hasMoreHistory}
-              isLoadingMoreHistory={isLoadingMoreHistory}
-              onLoadEarlierHistory={onLoadEarlierHistory}
-              isStreaming={isStreaming}
-              assistantLiveMode={assistantLiveMode}
-              showUsage={showUsage}
-              usageContextWindow={usageContextWindow}
-              workspaceRoot={workspaceRoot}
-              imagePreviewScope={imagePreviewScope}
-              gitClient={gitClient}
-              onOpenFileLink={onOpenFileLink}
-              onLoadUploadedImagePreview={onLoadUploadedImagePreview}
-              onResendFromEdit={onResendFromEdit}
-              onBranchConversation={onBranchConversation}
-              branchPendingMessageId={branchPendingMessageId}
-              resendCreatesBranch={resendCreatesBranch}
-              toolStatus={toolStatus}
-              toolStatusIsCompaction={toolStatusIsCompaction}
-              retryAttempts={retryAttempts}
-              readOnly={readOnly}
-              redactToolContent={redactToolContent}
-            />
+          <GatewayTranscriptListRegion
+            key={conversationId ?? "shared"}
+            conversationId={conversationId}
+            editRequest={editRequest}
+            onEditRequestHandled={onEditRequestHandled}
+            rows={rows}
+            scheduledTurn={scheduledTurn}
+            liveStartIndex={liveStartIndex}
+            activeTurnKey={activeTurnKey}
+            contentWidth={contentWidth}
+            scrollViewport={transcriptScrollViewport}
+            isViewportFollowing={isViewportFollowing}
+            viewportFollowing={viewportFollowing}
+            navRef={navRef}
+            onAnchorUserRowChange={onAnchorUserRowChange}
+            hasMoreHistory={hasMoreHistory}
+            isLoadingMoreHistory={isLoadingMoreHistory}
+            onLoadEarlierHistory={onLoadEarlierHistory}
+            isStreaming={isStreaming}
+            assistantLiveMode={assistantLiveMode}
+            showUsage={showUsage}
+            usageContextWindow={usageContextWindow}
+            workspaceRoot={workspaceRoot}
+            imagePreviewScope={imagePreviewScope}
+            gitClient={gitClient}
+            onOpenFileLink={onOpenFileLink}
+            onLoadUploadedImagePreview={onLoadUploadedImagePreview}
+            onResendFromEdit={onResendFromEdit}
+            onBranchConversation={onBranchConversation}
+            branchPendingMessageId={branchPendingMessageId}
+            resendCreatesBranch={resendCreatesBranch}
+            toolStatus={toolStatus}
+            toolStatusIsCompaction={toolStatusIsCompaction}
+            retryAttempts={retryAttempts}
+            readOnly={readOnly}
+            redactToolContent={redactToolContent}
+          />
         </ProcessDisclosureProvider>
         {shouldShowInlineError ? (
           <div
