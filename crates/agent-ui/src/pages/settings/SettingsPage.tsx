@@ -142,7 +142,13 @@ export function SettingsPage(props: SettingsPageProps) {
         order: 35,
         labelKey: "settings.navPlanning",
         icon: <CalendarDays className={extension.iconClassName} />,
-        render: () => <CalendarSection settings={settings} setSettings={setSettings} />,
+        render: () => (
+          <CalendarSection
+            settings={settings}
+            setSettings={setSettings}
+            showDeviceCalendarData={showLocalRuntimeSettings}
+          />
+        ),
       },
       {
         id: "memory",

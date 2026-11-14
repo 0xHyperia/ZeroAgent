@@ -6,8 +6,8 @@ import {
   type PDFPageProxy,
   version as pdfVersion,
   TextLayer,
-} from "pdfjs-dist";
-import pdfWorkerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+} from "pdfjs-dist/legacy/build/pdf.mjs";
+import pdfWorkerURL from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import {
   memo,
   type RefObject,

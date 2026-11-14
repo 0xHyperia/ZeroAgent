@@ -1,4 +1,4 @@
-import { AnnotationType, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist";
+import { AnnotationType, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { useEffect, useState } from "react";
 import { useLocale } from "../../i18n";
 import type { DocumentRegion } from "./docxReaderDocument";

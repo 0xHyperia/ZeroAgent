@@ -2301,6 +2301,7 @@ export function CloudSpacePage(props: Props) {
           closeLabel={text("关闭资料编辑", "Close file editor")}
           closeDisabled={working}
           className="cloud-space-editor"
+          data-name-editor={editorType === "folder" || editorType === "rename" ? "" : undefined}
         >
           <DialogHeader>
             <DialogTitle>

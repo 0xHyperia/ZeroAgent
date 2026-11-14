@@ -51,6 +51,39 @@ html[data-zeroagent-keyboard="open"]
 }
 
 @media (pointer: coarse) {
+  .account-login-shell {
+    height: var(--zeroagent-visual-viewport-height, 100dvh);
+    min-height: 0;
+    align-items: flex-start;
+    overscroll-behavior-y: contain;
+  }
+
+  .account-login-card {
+    margin-block: auto;
+    padding: 16px;
+  }
+
+  .account-login-card :is(input, button) {
+    min-height: 44px;
+  }
+
+  .account-login-card input {
+    font-size: 16px;
+  }
+
+  .account-login-card .account-password-toggle {
+    width: 44px;
+  }
+
+  .account-login-card #account-password {
+    padding-inline-end: 44px;
+  }
+
+  html[data-zeroagent-keyboard="open"] .account-login-shell {
+    min-height: 0;
+    padding-block: max(8px, calc(var(--zeroagent-safe-area-top) - var(--zeroagent-visual-viewport-offset-top, 0px))) 8px;
+  }
+
   html:not([data-zeroagent-platform])[data-zeroagent-keyboard="open"] {
     --app-viewport-height: var(--zeroagent-visual-viewport-height, 100dvh);
   }

@@ -6,6 +6,7 @@ import {
   Trash2,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -36,6 +37,7 @@ export function DevicesSection({
   const [editingId, setEditingId] = useState("");
   const [draftName, setDraftName] = useState("");
   const [error, setError] = useState("");
+  const { confirm, dialog } = useConfirmDialog();
   const presenceRef = useRef<Parameters<typeof mergeExecutionPresence>[1]>([]);
 
   const loadDevices = useCallback(async (options: { background?: boolean } = {}) => {
@@ -80,7 +82,7 @@ export function DevicesSection({
 
   async function saveName(device: ExecutionEnvironment) {
     const name = draftName.trim();
-    if (!device.device_id || !name) return;
+    if (!device.device_id || !name || busyId) return;
     setBusyId(device.device_id);
     setError("");
     try {
@@ -97,9 +99,17 @@ export function DevicesSection({
     }
   }
 
-  async function revoke(device: ExecutionEnvironment) {
-    if (!device.device_id || !window.confirm(`确定撤销“${device.name}”吗？该设备会立即断开。`))
-      return;
+  async function revoke(device: ExecutionEnvironment, trigger: HTMLElement) {
+    if (!device.device_id || busyId) return;
+    if (!(await confirm({
+      title: "撤销设备授权？",
+      description: `“${device.name}”会立即断开。`,
+      confirmLabel: "撤销授权",
+      cancelLabel: "取消",
+      preferCancel: true,
+      touchActions: true,
+      returnFocusOnCancel: () => trigger,
+    }))) return;
     setBusyId(device.device_id);
     setError("");
     try {
@@ -126,14 +136,16 @@ export function DevicesSection({
           size="icon"
           onClick={() => void loadDevices()}
           disabled={loading}
+          aria-label="刷新设备"
           title="刷新设备"
+          className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {!loading && devices.length === 0 ? (
+      {error ? <p role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">{error}</p> : null}
+      {!loading && !error && devices.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           尚未注册设备。登录 ZeroAgent 桌面客户端后，设备会自动出现在这里。
         </p>
@@ -159,7 +171,7 @@ export function DevicesSection({
                 <div className="flex min-w-0 items-center gap-2">
                   {editing ? (
                     <form
-                      className="flex min-w-0 flex-1 gap-2"
+                      className="flex min-w-0 flex-1 gap-2 pointer-coarse:flex-wrap"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void saveName(device);
@@ -170,22 +182,25 @@ export function DevicesSection({
                         onChange={(event) => setDraftName(event.target.value)}
                         maxLength={100}
                         autoFocus
-                        className="h-8 min-w-0"
+                        aria-label="设备名称"
+                        className="h-8 min-w-0 pointer-coarse:h-11 pointer-coarse:basis-full pointer-coarse:text-base"
                       />
-                      <Button type="submit" size="sm" disabled={!draftName.trim() || busyId === id}>
+                      <Button type="submit" size="sm" className="pointer-coarse:min-h-11" disabled={!draftName.trim() || Boolean(busyId)}>
                         保存
                       </Button>
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
+                        className="pointer-coarse:min-h-11"
+                        disabled={Boolean(busyId)}
                         onClick={() => setEditingId("")}
                       >
                         取消
                       </Button>
                     </form>
                   ) : (
-                    <span className="truncate text-sm font-medium" title={device.name}>
+                    <span className="truncate text-sm font-medium pointer-coarse:whitespace-normal pointer-coarse:[overflow-wrap:anywhere]" title={device.name}>
                       {device.name}
                     </span>
                   )}
@@ -207,6 +222,8 @@ export function DevicesSection({
                     variant="ghost"
                     size="icon"
                     title="重命名设备"
+                    aria-label="重命名设备"
+                    className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
                     disabled={Boolean(busyId)}
                     onClick={() => {
                       setEditingId(id);
@@ -220,9 +237,10 @@ export function DevicesSection({
                     variant="ghost"
                     size="icon"
                     title="撤销设备"
+                    aria-label="撤销设备"
                     disabled={Boolean(busyId)}
-                    onClick={() => void revoke(device)}
-                    className="text-destructive hover:text-destructive"
+                    onClick={(event) => void revoke(device, event.currentTarget)}
+                    className="text-destructive hover:text-destructive pointer-coarse:min-h-11 pointer-coarse:min-w-11"
                   >
                     {busyId === id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -236,6 +254,7 @@ export function DevicesSection({
           );
         })}
       </div>
+      {dialog}
     </section>
   );
 }

@@ -10,7 +10,7 @@ import {
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { Input } from "@liveagent/ui/components/ui/input";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { CodeFlowBackground } from "../components/CodeFlowBackground";
 import {
   getRelayPublicSettings,
@@ -61,6 +61,29 @@ export function AccountLoginPage({
   const [codeMessage, setCodeMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [oauthSubmitting, setOAuthSubmitting] = useState(false);
+  const shellRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const observer = new ResizeObserver(() => {
+      const field = document.activeElement;
+      if (
+        document.documentElement.dataset.zeroagentKeyboard !== "open" ||
+        !(field instanceof HTMLInputElement) ||
+        !shell.contains(field)
+      ) {
+        return;
+      }
+      const bounds = shell.getBoundingClientRect();
+      const target = field.getBoundingClientRect();
+      if (target.top < bounds.top + 8 || target.bottom > bounds.bottom - 8) {
+        field.scrollIntoView({ block: "center", inline: "nearest" });
+      }
+    });
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,10 +219,13 @@ export function AccountLoginPage({
   }
 
   return (
-    <main className="account-login-shell relative isolate flex min-h-dvh w-full items-center justify-center overflow-y-auto bg-background px-4 py-8 sm:px-6">
+    <main
+      ref={shellRef}
+      className="account-login-shell relative isolate flex min-h-dvh w-full items-center justify-center overflow-y-auto bg-background px-4 py-8 sm:px-6"
+    >
       <CodeFlowBackground />
       <form
-        className="relative z-10 min-w-0 w-full max-w-[calc(100vw-2rem)] rounded-2xl border border-border/70 bg-card/95 p-6 shadow-lg shadow-black/[0.04] backdrop-blur-[2px] sm:max-w-[420px] sm:p-8 dark:shadow-black/20"
+        className="account-login-card relative z-10 min-w-0 w-full max-w-[420px] rounded-2xl border border-border/70 bg-card/95 p-6 shadow-lg shadow-black/[0.04] backdrop-blur-[2px] sm:p-8 dark:shadow-black/20"
         onSubmit={submit}
       >
         <div className="mb-6 flex items-center gap-3">
@@ -263,7 +289,7 @@ export function AccountLoginPage({
                     setEmail(event.target.value);
                     onClearError();
                   }}
-                  autoFocus
+                  autoFocus={!window.matchMedia("(pointer: coarse)").matches}
                 />
               </div>
             </div>
@@ -287,7 +313,9 @@ export function AccountLoginPage({
                 <button
                   type="button"
                   title={showPassword ? "隐藏密码" : "显示密码"}
-                  className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center text-muted-foreground"
+                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                  aria-pressed={showPassword}
+                  className="account-password-toggle absolute right-0 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center text-muted-foreground"
                   onClick={() => setShowPassword((value) => !value)}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -330,8 +358,16 @@ export function AccountLoginPage({
                         {codeCountdown > 0 ? `${codeCountdown}s` : "发送验证码"}
                       </Button>
                     </div>
-                    {codeMessage && <p className="text-xs text-muted-foreground">{codeMessage}</p>}
-                    {codeError && <p className="text-xs text-destructive">{codeError}</p>}
+                    {codeMessage && (
+                      <p role="status" className="break-words text-xs text-muted-foreground">
+                        {codeMessage}
+                      </p>
+                    )}
+                    {codeError && (
+                      <p role="alert" className="break-words text-xs text-destructive">
+                        {codeError}
+                      </p>
+                    )}
                   </div>
                 )}
                 {publicSettings?.invitation_code_enabled && (
@@ -351,7 +387,10 @@ export function AccountLoginPage({
           </div>
         )}
         {error && (
-          <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive [overflow-wrap:anywhere]"
+          >
             {error}
           </p>
         )}

@@ -113,6 +113,12 @@ Android 15 模拟器用 Chrome 和系统触摸事件验证了两页 PPTX 的双�
 
 #### PDF 连续阅读与查找（2026-11-12）
 
+Android 15 开发版的系统 WebView 124 缺少 `URL.parse`，原 PDF.js 构建会在打开真实 PDF 时抛错。共享阅读器及对应 worker 改用同版本的 PDF.js 兼容构建，两页样本在原 WebView 恢复渲染与文本层。Web 继续用同一阅读器，文档和版本的授权读取不变。记录见 `.codex-artifacts/mobile-webui-goal/mobile-android-pdf-*.json`。
+
+隔离 Gateway 生产前端在 320px 和 430px 验证 DOCX、PDF、XLSX、PPTX、Markdown、图片、音频、视频及长行源码，共 18 项。Android 15 x86_64 开发版验证同源 Gateway 的 8 种样本打开，音频和视频验收到播放器出现。记录见 `.codex-artifacts/mobile-webui-goal/preview-matrix-results.json` 和 `mobile-priority-android.json`。
+
+Windows 本机、桌面内嵌远程和浏览器远程使用同一工作树的构建，在 1500×850 CSS px、200px 文件树中打开同一设备会话的 PDF、Markdown 和 PNG。三处均显示 PDF 画布和第二页文字，切换标签、操作文件树焦点及断线重连时保留草稿。撤销设备授权后关闭两个远程编辑器，浏览器返回原云端会话并恢复草稿，本机草稿仍可编辑。记录见 `.codex-artifacts/mobile-webui-goal/desktop-parity/mobile-priority-parity-results.json`。
+
 PDF 文字层以未旋转的纸面尺寸排版，再和画布使用同一缩放比例与页面旋转。普通选择、查找高亮及文字批注共用实际文字坐标，在宽窗、窄窗和缩放后都应落在用户指向的字行。
 
 按同一安装包的 `artifact-pdf-ask-for-edit-button` 路径，普通阅读中选中同一纸页的文字会在选区旁出现「请求修改」。点击后以原文和纸面位置打开现有批注输入，仍由用户确认发送。拖动时暂不显示按钮，清除选区、移出可视范围或按 Esc 后隐藏。窄窗内按钮避让边缘，已打开的批注输入保留草稿。顶部「请求修改」继续提供点选与框选，封面、Git 预览及只读入口不出现选字修改入口。

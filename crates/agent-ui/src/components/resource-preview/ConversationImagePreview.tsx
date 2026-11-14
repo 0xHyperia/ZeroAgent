@@ -389,6 +389,9 @@ export function ConversationImagePreview(props: Props) {
     index?: number;
   }>();
   const textResize = useRef<{ x: number; size: number } | null>(null);
+  const focusTextMark = useCallback((element: HTMLInputElement | null) => {
+    element?.focus({ preventScroll: true });
+  }, []);
   const stroke = useRef<
     { pointer: number; mark: Mark; origin: Mark["points"][number] } | undefined
   >(undefined);
@@ -1021,6 +1024,10 @@ export function ConversationImagePreview(props: Props) {
     }
     setTextMark(undefined);
   };
+  const focusTextCanvas = (control: HTMLElement) => {
+    const canvas = control.closest<HTMLElement>(".za-image-canvas");
+    requestAnimationFrame(() => canvas?.focus({ preventScroll: true }));
+  };
   const overlay = (style: CSSProperties) => {
     const width = Math.max(1, Number(style.width));
     const height = Math.max(1, Number(style.height));
@@ -1156,28 +1163,42 @@ export function ConversationImagePreview(props: Props) {
         </svg>
         {textMark && (
           <div
-            className="za-image-comment-layer"
-            style={style}
+            className="za-image-comment-layer za-image-text-layer"
+            style={{
+              "--za-image-text-layer-width": `${width}px`,
+              "--za-image-text-layer-height": `${height}px`,
+              "--za-image-text-layer-transform": style.transform,
+            } as CSSProperties}
+            data-image-gesture-exempt=""
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <div
+            <form
               className="za-image-text-editor"
               style={{
                 left: `${textMark.point.x * 100}%`,
                 top: `${textMark.point.y * 100}%`,
-                maxWidth: `${(1 - textMark.point.x) * 100}%`,
-                color: penColor,
+                "--za-image-text-editor-max-width": `${(1 - textMark.point.x) * 100}%`,
+                "--za-image-text-editor-color": penColor,
+              } as CSSProperties}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) saveText();
+              }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveText();
+                focusTextCanvas(event.currentTarget);
               }}
             >
               <input
                 type="text"
                 aria-label={zh ? "图上标注文字" : "Text on image"}
-                ref={(element) => element?.focus({ preventScroll: true })}
-                style={{ fontSize: Math.max(15, textMark.size * Number(style.height)) }}
+                ref={focusTextMark}
+                style={{
+                  "--za-image-text-size": `${Math.max(15, textMark.size * height)}px`,
+                } as CSSProperties}
                 maxLength={40}
                 value={textMark.text}
                 onChange={(event) => setTextMark({ ...textMark, text: event.currentTarget.value })}
-                onBlur={saveText}
                 onKeyDown={(event) => {
                   if (event.nativeEvent.isComposing) return;
                   if (event.key === "Enter" || event.key === "Escape") {
@@ -1189,6 +1210,28 @@ export function ConversationImagePreview(props: Props) {
                   }
                 }}
               />
+              <div className="za-image-text-actions">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={zh ? "取消文字标注" : "Cancel text annotation"}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    setTextMark(undefined);
+                    focusTextCanvas(event.currentTarget);
+                  }}
+                >
+                  <X />
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  onMouseDown={(event) => event.preventDefault()}
+                  disabled={!textMark.text.trim()}
+                >
+                  {zh ? "保存" : "Save"}
+                </Button>
+              </div>
               <span
                 className="za-image-text-resize"
                 aria-hidden="true"
@@ -1215,7 +1258,7 @@ export function ConversationImagePreview(props: Props) {
                   textResize.current = null;
                 }}
               />
-            </div>
+            </form>
           </div>
         )}
         {commenting && (

@@ -1180,6 +1180,41 @@
   min-width: 64px;
   gap: 6px;
 }
+@media (pointer: coarse) {
+  html[data-zeroagent-keyboard="open"] .cloud-space-editor[data-name-editor] {
+    padding-block: 0;
+
+    [data-slot="dialog-header"] {
+      min-height: 36px;
+      padding-block: 4px;
+    }
+
+    [data-slot="dialog-description"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      overflow-y: auto;
+    }
+
+    [data-slot="dialog-body"] {
+      min-width: 0;
+      padding: 4px 0 4px 12px;
+    }
+
+    .cloud-space-editor-actions {
+      flex-direction: row;
+      padding: 4px 8px;
+    }
+  }
+}
 .cloud-space-folder-options {
   display: flex;
   flex-direction: column;

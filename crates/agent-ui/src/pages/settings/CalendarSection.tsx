@@ -67,14 +67,13 @@ function HourSelect({
 }
 
 /** Settings → Resources → Calendar: entry switch, display preferences and calendar data. */
-export function CalendarSection({ settings, setSettings }: SettingsSectionProps) {
+export function CalendarSection({
+  settings,
+  setSettings,
+  showDeviceCalendarData,
+}: SettingsSectionProps & { showDeviceCalendarData: boolean }) {
   const { t, locale } = usePlanningT();
-  const state = usePlanning();
-  const snapshot = state.snapshot;
   const [preferences, setPreferences] = useCalendarPreferences();
-  const [dialog, setDialog] = useState<"import" | "trash" | "subscribe" | null>(null);
-  const [managing, setManaging] = useState<LayerRef | true | null>(null);
-  const [error, setError] = useState("");
   const toggle = (key: keyof CalendarPreferences) => (
     <AgentActivationSwitch
       checked={preferences[key] === true}
@@ -168,6 +167,21 @@ export function CalendarSection({ settings, setSettings }: SettingsSectionProps)
         )}
       </SettingsGroup>
 
+      {showDeviceCalendarData && <DeviceCalendarSettings cronColor={preferences.cronColor} />}
+    </div>
+  );
+}
+
+function DeviceCalendarSettings({ cronColor }: Pick<CalendarPreferences, "cronColor">) {
+  const { t, locale } = usePlanningT();
+  const state = usePlanning();
+  const snapshot = state.snapshot;
+  const [dialog, setDialog] = useState<"import" | "trash" | "subscribe" | null>(null);
+  const [managing, setManaging] = useState<LayerRef | true | null>(null);
+  const [error, setError] = useState("");
+
+  return (
+    <>
       <SettingsGroup title={t("planner.layers.title")}>
         {!snapshot ? (
           state.error ? (
@@ -186,7 +200,7 @@ export function CalendarSection({ settings, setSettings }: SettingsSectionProps)
         ) : (
           // Every calendar, task list and the scheduled-task layer, each opening the
           // 「日历与列表」 manager on its own row.
-          listLayers(snapshot, preferences.cronColor).map((layer) => (
+          listLayers(snapshot, cronColor).map((layer) => (
             <SettingsRow
               key={layer.layerId}
               title={
@@ -389,6 +403,6 @@ export function CalendarSection({ settings, setSettings }: SettingsSectionProps)
       {snapshot && dialog === "trash" && (
         <PlanningTrash snapshot={snapshot} onClose={() => setDialog(null)} />
       )}
-    </div>
+    </>
   );
 }
