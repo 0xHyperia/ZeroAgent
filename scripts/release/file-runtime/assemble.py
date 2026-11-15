@@ -123,6 +123,11 @@ def unpack_office(archive, destination, system, scratch):
             raise RuntimeError(f"LibreOffice administrative extraction exited {result.returncode}")
         suite = next(path.parent.parent for path in scratch.rglob("soffice.com")
                      if (path.parent.parent / "LICENSE.html").is_file())
+        # Headless conversion does not use optional spelling dictionaries.
+        # Registering all of them against an empty Windows profile delays the first render.
+        for dictionary in (suite / "share/extensions").glob("dict-*"):
+            if dictionary.is_dir() and dictionary.name != "dict-en":
+                shutil.rmtree(dictionary)
         copy_component(suite, destination)
         return "office/program/soffice.com", "office/Fonts/LiberationSans-Regular.ttf"
     if system == "Darwin":

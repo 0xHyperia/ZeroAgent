@@ -51,7 +51,14 @@ try {
       args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", firewall, runtime, python, script];
     } else if (process.platform === "darwin") {
       executable = "/usr/bin/sandbox-exec";
-      args = ["-p", "(version 1) (allow default) (deny network*)", python, ...args];
+      const profile = `(version 1)
+        (allow default)
+        (deny network*)
+        (deny system-socket (socket-domain AF_INET))
+        (deny system-socket (socket-domain AF_INET6))
+        (allow network* (local unix-socket (path-regex #"^/(private/)?(var/)?tmp/OSL_PIPE_")))
+        (allow network* (remote unix-socket (path-regex #"^/(private/)?(var/)?tmp/OSL_PIPE_")))`;
+      args = ["-p", profile, python, ...args];
     } else if (process.platform === "linux") {
       executable = "/usr/bin/sudo";
       const settings = Object.entries(env).map(([key, value]) => `${key}=${value}`);
