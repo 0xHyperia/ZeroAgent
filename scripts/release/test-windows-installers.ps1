@@ -334,7 +334,11 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
                 $allowed[$member] = $true
             }
             foreach ($name in $allowed.Keys) { if (!$inventory.ContainsKey($name)) { throw "Missing portable runtime member: $name" } }
-            if ($inventory.Count -ne (6 + $allowed.Count)) { throw 'Portable runtime contains undeclared files' }
+            $extra = @($inventory.Keys | Where-Object { $_.StartsWith('file-runtime/') -and !$allowed.ContainsKey($_) })
+            if ($extra.Count) {
+                $examples = ($extra | Sort-Object | Select-Object -First 5) -join ', '
+                throw "Portable runtime contains $($extra.Count) undeclared files. Examples: $examples"
+            }
         } elseif ($inventory.Count -ne 6) {
             throw 'Portable ZIP must contain the six expected payload files'
         } elseif ($RequireFileRuntime -and !$PreviousRelease) {

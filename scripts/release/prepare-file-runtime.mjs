@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { copyFile, cp, lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -89,54 +89,72 @@ async function checkTree(directory, prefix = "") {
 
 await checkTree(source);
 if (actual.size !== Object.keys(expected).length) throw new Error("Runtime manifest lists missing files");
-await mkdir(stage);
-const runtime = path.join(stage, "file-runtime");
-await cp(source, runtime, { recursive: true, errorOnExist: true, force: false });
-const tools = path.join(runtime, "tools");
-await mkdir(tools);
 const repoTools = fileURLToPath(new URL("../../crates/file-runtime/", import.meta.url));
-for (const name of ["file_tool.py", "office.py", "document_review.py", "pdf_tools.py", "runtime_common.py", "artifact_tool.mjs"]) {
-  await copyFile(path.join(repoTools, name), path.join(tools, name));
+
+async function copyRuntime(runtime) {
+  await cp(source, runtime, { recursive: true, errorOnExist: true, force: false });
+  const tools = path.join(runtime, "tools");
+  await mkdir(tools);
+  for (const name of ["file_tool.py", "office.py", "document_review.py", "pdf_tools.py", "runtime_common.py", "artifact_tool.mjs"]) {
+    await copyFile(path.join(repoTools, name), path.join(tools, name));
+  }
 }
-const runtimeEnvironment = {
-  ...process.env,
-  ZEROAGENT_FILE_NODE: path.join(runtime, manifest.node),
-  ZEROAGENT_FILE_ARTIFACT_ENTRY: path.join(runtime, manifest.artifact_tool),
-  ZEROAGENT_FILE_SOFFICE: path.join(runtime, manifest.soffice),
-  ZEROAGENT_FILE_TESSERACT: path.join(runtime, manifest.tesseract),
-  ZEROAGENT_FILE_CJK_FONT: path.join(runtime, manifest.cjk_font),
-  ZEROAGENT_FILE_POPPLER_BIN: path.join(runtime, manifest.poppler_bin),
-  ZEROAGENT_FILE_UNZIP: path.join(runtime, manifest.unzip),
-  ZEROAGENT_FILE_GIT: path.join(runtime, manifest.git),
-  ZEROAGENT_FILE_HEIF_CONVERT: path.join(runtime, manifest.heif_convert),
-  ZEROAGENT_FILE_JXR_DECODER: path.join(runtime, manifest.jxr_decoder),
-  ZEROAGENT_FILE_SKILL_ROOT: fileURLToPath(new URL("../../crates/agent-gateway/internal/account/skills/", import.meta.url)),
-  RUNTIME_NODE: path.join(runtime, manifest.node),
-  RUNTIME_PYTHON: path.join(runtime, manifest.python),
-  RUNTIME_NODE_MODULES: path.join(runtime, path.dirname(manifest.artifact_tool), "../../.."),
-  TESSDATA_PREFIX: path.join(runtime, manifest.tessdata),
-};
-const nodeVersion = spawnSync(runtimeEnvironment.ZEROAGENT_FILE_NODE, ["--version"], {
-  env: runtimeEnvironment, encoding: "utf8", timeout: 10_000,
-});
-if (nodeVersion.status !== 0 || nodeVersion.stdout.trim() !== "v24.22.1") {
-  throw new Error("The staged Node executable does not match the runtime lock", { cause: nodeVersion.error });
+
+function verifyRuntime(runtime) {
+  const runtimeEnvironment = {
+    ...process.env,
+    ZEROAGENT_FILE_NODE: path.join(runtime, manifest.node),
+    ZEROAGENT_FILE_ARTIFACT_ENTRY: path.join(runtime, manifest.artifact_tool),
+    ZEROAGENT_FILE_SOFFICE: path.join(runtime, manifest.soffice),
+    ZEROAGENT_FILE_TESSERACT: path.join(runtime, manifest.tesseract),
+    ZEROAGENT_FILE_CJK_FONT: path.join(runtime, manifest.cjk_font),
+    ZEROAGENT_FILE_POPPLER_BIN: path.join(runtime, manifest.poppler_bin),
+    ZEROAGENT_FILE_UNZIP: path.join(runtime, manifest.unzip),
+    ZEROAGENT_FILE_GIT: path.join(runtime, manifest.git),
+    ZEROAGENT_FILE_HEIF_CONVERT: path.join(runtime, manifest.heif_convert),
+    ZEROAGENT_FILE_JXR_DECODER: path.join(runtime, manifest.jxr_decoder),
+    ZEROAGENT_FILE_SKILL_ROOT: fileURLToPath(new URL("../../crates/agent-gateway/internal/account/skills/", import.meta.url)),
+    RUNTIME_NODE: path.join(runtime, manifest.node),
+    RUNTIME_PYTHON: path.join(runtime, manifest.python),
+    RUNTIME_NODE_MODULES: path.join(runtime, path.dirname(manifest.artifact_tool), "../../.."),
+    TESSDATA_PREFIX: path.join(runtime, manifest.tessdata),
+  };
+  const nodeVersion = spawnSync(runtimeEnvironment.ZEROAGENT_FILE_NODE, ["--version"], {
+    env: runtimeEnvironment, encoding: "utf8", timeout: 10_000,
+  });
+  if (nodeVersion.status !== 0 || nodeVersion.stdout.trim() !== "v24.22.1") {
+    throw new Error("The staged Node executable does not match the runtime lock", { cause: nodeVersion.error });
+  }
+  const probe = spawnSync(runtimeEnvironment.ZEROAGENT_FILE_NODE, [path.join(runtime, "tools", "artifact_tool.mjs"), "--probe"], {
+    env: runtimeEnvironment, encoding: "utf8", timeout: 30_000,
+  });
+  if (probe.status !== 0) throw new Error("The staged Artifact Tool failed to load", { cause: probe.error ?? probe.stderr });
+  const capabilities = JSON.parse(probe.stdout);
+  if (capabilities.version !== sources.artifact_tool.version || !capabilities.workbook || !capabilities.presentation) {
+    throw new Error("The staged Artifact Tool does not match the runtime manifest");
+  }
+  const acceptance = spawnSync(path.join(runtime, manifest.python), ["-IB", path.join(repoTools, "test_file_tool.py"), "-v"], {
+    env: runtimeEnvironment, stdio: "inherit", timeout: 600_000,
+  });
+  if (acceptance.status !== 0) throw new Error("The staged file runtime failed its offline acceptance", { cause: acceptance.error });
+  const verifyInstalled = fileURLToPath(new URL("./verify-installed-file-runtime.mjs", import.meta.url));
+  const offlineRevision = spawnSync(process.execPath, [verifyInstalled, runtime], { stdio: "inherit", timeout: 260_000 });
+  if (offlineRevision.status !== 0) throw new Error("The staged runtime failed the clean-profile file acceptance", { cause: offlineRevision.error });
 }
-const probe = spawnSync(runtimeEnvironment.ZEROAGENT_FILE_NODE, [path.join(tools, "artifact_tool.mjs"), "--probe"], {
-  env: runtimeEnvironment, encoding: "utf8", timeout: 30_000,
-});
-if (probe.status !== 0) throw new Error("The staged Artifact Tool failed to load", { cause: probe.error ?? probe.stderr });
-const capabilities = JSON.parse(probe.stdout);
-if (capabilities.version !== sources.artifact_tool.version || !capabilities.workbook || !capabilities.presentation) {
-  throw new Error("The staged Artifact Tool does not match the runtime manifest");
+
+await mkdir(stage);
+// Native tools can generate caches next to their binaries. Exercise a disposable
+// copy and keep the packaged file tree identical to the verified input.
+const qaDirectory = await mkdtemp(path.join(path.dirname(stage), "za-qa-"));
+try {
+  const qaRuntime = path.join(qaDirectory, "file-runtime");
+  await copyRuntime(qaRuntime);
+  verifyRuntime(qaRuntime);
+} finally {
+  await rm(qaDirectory, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }
-const acceptance = spawnSync(path.join(runtime, manifest.python), ["-IB", path.join(repoTools, "test_file_tool.py"), "-v"], {
-  env: runtimeEnvironment, stdio: "inherit", timeout: 600_000,
-});
-if (acceptance.status !== 0) throw new Error("The staged file runtime failed its offline acceptance", { cause: acceptance.error });
-const verifyInstalled = fileURLToPath(new URL("./verify-installed-file-runtime.mjs", import.meta.url));
-const offlineRevision = spawnSync(process.execPath, [verifyInstalled, runtime], { stdio: "inherit", timeout: 260_000 });
-if (offlineRevision.status !== 0) throw new Error("The staged runtime failed the clean-profile file acceptance", { cause: offlineRevision.error });
+const runtime = path.join(stage, "file-runtime");
+await copyRuntime(runtime);
 await writeFile(path.join(stage, "tauri.file-runtime.conf.json"), JSON.stringify({
   bundle: { resources: { [runtime]: "file-runtime" } },
 }) + "\n", { flag: "wx" });
