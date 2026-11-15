@@ -6,7 +6,7 @@ readonly APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa3
 readonly APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
 
 usage() {
-  echo "Usage: $0 <appimage-path>" >&2
+  echo "Usage: $0 <appimage-path> <verified-file-runtime>" >&2
 }
 
 fail() {
@@ -14,18 +14,21 @@ fail() {
   exit 1
 }
 
-if [ "$#" -ne 1 ]; then
+if [ "$#" -ne 2 ]; then
   usage
   exit 2
 fi
 
-for command_name in curl find grep head realpath sha256sum; do
+for command_name in cmp curl find grep head realpath sha256sum; do
   command -v "$command_name" >/dev/null 2>&1 || fail "missing required command: $command_name"
 done
 
 appimage_path="$(realpath "$1")"
 test -f "$appimage_path" || fail "AppImage not found: $appimage_path"
 test -x "$appimage_path" || fail "AppImage is not executable: $appimage_path"
+runtime_dir="$(realpath "$2")"
+test -s "$runtime_dir/runtime.json" || fail "verified file runtime manifest is missing"
+test -f "$runtime_dir/tools/file_tool.py" || fail "verified file tools are missing"
 
 appimage_dir="$(dirname "$appimage_path")"
 work_dir="$(mktemp -d "$appimage_dir/.liveagent-appimage.XXXXXX")"
@@ -86,6 +89,11 @@ else
   chmod +x "$appimagetool_path"
 fi
 
+resource_dir="$app_dir/usr/lib/ZeroAgent"
+test -d "$resource_dir/browser-extension" || fail "Tauri's ZeroAgent resource directory is missing"
+test ! -e "$resource_dir/file-runtime" || fail "the base AppImage already contains the file runtime"
+cp -a -- "$runtime_dir" "$resource_dir/file-runtime"
+
 repacked_path="$work_dir/repacked.AppImage"
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$appimagetool_path" \
   --no-appstream \
@@ -104,10 +112,12 @@ verified_app_dir="$verify_dir/squashfs-root"
 test -x "$verified_app_dir/AppRun" || fail "repacked AppImage is missing executable AppRun"
 test -x "$verified_app_dir/AppRun.wrapped" || fail "repacked AppImage is missing executable AppRun.wrapped"
 if find "$verified_app_dir/usr/lib" \( -type f -o -type l \) \
-  -name 'libwayland-*.so*' -print -quit | grep -q .; then
+  -not -path '*/ZeroAgent/file-runtime/*' -name 'libwayland-*.so*' -print -quit | grep -q .; then
   fail "repacked AppImage still contains bundled libwayland libraries"
 fi
+cmp -- "$runtime_dir/runtime.json" "$verified_app_dir/usr/lib/ZeroAgent/file-runtime/runtime.json" || \
+  fail "repacked AppImage does not contain the verified runtime manifest"
 
 mv -f -- "$repacked_path" "$appimage_path"
 rm -f -- "$appimage_path.sig"
-echo "Repacked AppImage without bundled Wayland libraries: $appimage_path"
+echo "Repacked AppImage with the verified file runtime: $appimage_path"

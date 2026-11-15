@@ -26,7 +26,7 @@
 
 本地 `node scripts/dev-stack.mjs restart desktop` 及调用它的 PowerShell 启动脚本继承同一配置。可用 `ZEROAGENT_DEV_FILE_RUNTIME` 指定运行时目录，或在没有指定依赖包时使用当前检出的 `.zeroagent/file-runtime/desktop-dev`。本地清单格式为 1，包含目录内的 Python 路径及已准备的附加工具路径，文件工具位于同目录的 `tools/`。附加引擎可按开发任务补齐，调用缺少的引擎时报告具体组件。正式包和 Windows 便携版仍校验完整组件。宿主把解析后的绝对路径注入实际运行的 K-brain 子进程。
 
-候选包检查从 MSI、NSIS 安装目录、便携 ZIP、DMG 内的应用和 Linux 各种包载荷运行 Python。测试进程使用全新的用户目录、隔离的 PATH 和 Python 网络审计钩子，验证 DOCX 段落改稿、PDF 定页改稿、PDF 渲染和原件不变。随后通过文档技能的渲染脚本，用包内 LibreOffice 导出两页 Word 改稿，并通过包内 Poppler 逐页渲染。检查记录解释器与 LibreOffice 的实际路径，核对导出 PDF 的页数、修改文字及未修改页。测试原生子进程的离线运行需要在禁网环境执行。三种设备入口的阅读器和真实模型执行仍需单独验收。
+候选包检查从 MSI、NSIS 安装目录、便携 ZIP、DMG 内的应用和 Linux 各种包载荷运行 Python。Linux 的 DEB 和 RPM 将运行时作为 Tauri 资源打包，AppImage 在 `linuxdeploy` 处理完应用库之后加入已校验的运行时，然后重新打包和签名。测试进程使用全新的用户目录、隔离的 PATH 和 Python 网络审计钩子，验证 DOCX 段落改稿、PDF 定页改稿、PDF 渲染和原件不变。随后通过文档技能的渲染脚本，用包内 LibreOffice 导出两页 Word 改稿，并通过包内 Poppler 逐页渲染。检查记录解释器与 LibreOffice 的实际路径，核对导出 PDF 的页数、修改文字及未修改页。测试原生子进程的离线运行需要在禁网环境执行。三种设备入口的阅读器和真实模型执行仍需单独验收。
 
 CloudChat 模板从同一目录打包技能及工具，锁定 Office、PDF、OCR 和图片格式转换依赖。Linux x64 依赖层提供 Node.js 24.22.1、Artifact Tool 2.8.145 和原生 Skia。候选计划包含 SDK 生成的内容摘要。
 

@@ -24,6 +24,18 @@ test("desktop release consumes privately hosted packs for all four native target
   assert.doesNotMatch(desktop, /vars\.ZEROAGENT_FILE_RUNTIME_PACKS/);
 });
 
+test("the AppImage receives the file runtime after linuxdeploy finishes", () => {
+  const workflow = read(".github/workflows/desktop-release.yml");
+  const postprocess = read("scripts/release/postprocess-linux-appimage.sh");
+  const appImageBuild = workflow.split(/\r?\n/).find((line) => line.includes("--bundles appimage "));
+  assert.ok(appImageBuild);
+  assert.doesNotMatch(appImageBuild, /tauri\.file-runtime\.conf\.json/);
+  assert.match(workflow, /pnpm tauri bundle .*tauri\.file-runtime\.conf\.json.*--bundles deb,rpm/);
+  assert.match(workflow, /postprocess-linux-appimage\.sh "\$appimage_path" .*\/file-runtime"[\s\S]*tauri signer sign/);
+  assert.match(postprocess, /cp -a -- "\$runtime_dir" "\$resource_dir\/file-runtime"[\s\S]*repacked_path=/);
+  assert.match(postprocess, /cmp -- .*"\$verified_app_dir\/usr\/lib\/ZeroAgent\/file-runtime\/runtime\.json"/);
+});
+
 test("every runtime dependency uses a verified HTTPS input", () => {
   const assets = [
     ...Object.values(lock.shared),

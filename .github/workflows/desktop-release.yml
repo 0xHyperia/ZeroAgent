@@ -611,7 +611,10 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          pnpm tauri build --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target x86_64-unknown-linux-gnu --bundles appimage deb rpm 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          # linuxdeploy rewrites and resolves native libraries in the AppDir.
+          # Add the already relocatable runtime after that pass, during repacking.
+          pnpm tauri build --verbose --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target x86_64-unknown-linux-gnu --bundles appimage 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri bundle --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target x86_64-unknown-linux-gnu --bundles deb,rpm 2>&1 | tee -a "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
@@ -620,7 +623,7 @@ jobs:
       - name: Verify Linux GLIBC baseline
         run: bash scripts/release/verify-linux-glibc-baseline.sh target/x86_64-unknown-linux-gnu/release/zeroagent
 
-      - name: Strip bundled Wayland libraries and re-sign AppImage
+      - name: Install the file runtime, strip bundled Wayland libraries and re-sign AppImage
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -629,7 +632,7 @@ jobs:
           appimage_path="$(find crates/agent-gui/src-tauri/target target -type f -name '*.AppImage' -path '*bundle*' -print -quit 2>/dev/null || true)"
           test -n "$appimage_path"
           appimage_path="$(realpath "$appimage_path")"
-          scripts/release/postprocess-linux-appimage.sh "$appimage_path"
+          scripts/release/postprocess-linux-appimage.sh "$appimage_path" "$RUNNER_TEMP/zeroagent-file-runtime/file-runtime"
           test ! -e "$appimage_path.sig"
           pnpm --dir crates/agent-gui tauri signer sign "$appimage_path"
           test -s "$appimage_path.sig"
