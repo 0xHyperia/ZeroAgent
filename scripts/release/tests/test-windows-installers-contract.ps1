@@ -101,6 +101,15 @@ try {
     Assert-True (-not (Test-Path -LiteralPath $report.scratchDirectory)) 'Dry-run must not create the install scratch directory'
     $script:passed++
 
+    foreach ($package in @('msi', 'nsis', 'portable')) {
+        $report = Invoke-Case "plan-$package" $valid $true @{ Package = $package }
+        $expectedOperation = if ($package -eq 'portable') { 'verify-portable' } else { "$package-install" }
+        $expectedCount = if ($package -eq 'portable') { 1 } else { 3 }
+        Assert-True ($report.status -eq 'dry-run' -and $report.plan.Count -eq $expectedCount -and
+            $report.plan[0].operation -eq $expectedOperation) "Incorrect standalone $package test plan"
+        $script:passed++
+    }
+
     $report = Invoke-Case 'runtime-required' $valid $true @{ RequireFileRuntime = $true }
     Assert-True ($report.status -eq 'failed' -and $report.error -match 'missing the required file runtime') 'Release accepted a portable package without its runtime'
     $script:passed++
@@ -173,7 +182,7 @@ try {
     $tokens = $null; $parseErrors = $null
     $syntax = [Management.Automation.Language.Parser]::ParseFile($testedScript, [ref]$tokens, [ref]$parseErrors)
     Assert-True ($parseErrors.Count -eq 0) 'Installer script must parse cleanly'
-    foreach ($functionName in @('Get-SafeFullPath', 'Get-FreshnessBlockers', 'Assert-Below', 'Get-Sha256Bytes', 'New-UpgradeDataFixtures', 'Assert-UpgradeDataFixtures', 'Get-OwnedFiles', 'Test-InstalledPayloads')) {
+    foreach ($functionName in @('Get-SafeFullPath', 'Get-FreshnessBlockers', 'Assert-Below', 'Get-Sha256Bytes', 'New-UpgradeDataFixtures', 'Assert-UpgradeDataFixtures', 'Get-OwnedFileRecord', 'Get-OwnedFiles', 'Test-InstalledPayloads')) {
         $definition = $syntax.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName }, $true)
         Invoke-Expression $definition.Extent.Text
     }

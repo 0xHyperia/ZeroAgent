@@ -401,30 +401,54 @@ jobs:
           test "${#assets[@]}" -gt 0
           cargo run --locked --release --manifest-path scripts/release/verify-updater-signatures/Cargo.toml -- --config "crates/agent-gui/$ZEROAGENT_TAURI_VERSION_CONFIG" "${assets[@]}"
 
-      - name: Test Windows installers on disposable runner
-        timeout-minutes: 25
-        shell: pwsh
-        env:
-          ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
-        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:ZEROAGENT_APP_VERSION" -RequireFileRuntime
-
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: qa-windows-installers
-          path: ${{ runner.temp }}/zeroagent-installer-acceptance/*
-          if-no-files-found: ignore
-
       - uses: actions/upload-artifact@v7
         with:
           name: liveagent-windows-x64
           path: dist/*
           if-no-files-found: error
 
+  windows-file-qa:
+    name: Windows x64 Offline (${{ matrix.package }})
+    runs-on: windows-latest
+    needs: [release-metadata, windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [msi, nsis, portable]
+    env:
+      ZEROAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
+      ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-metadata.outputs.source_sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: liveagent-windows-x64
+          path: dist
+
+      - name: Test the Windows package on a disposable runner
+        timeout-minutes: 35
+        shell: pwsh
+        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:ZEROAGENT_APP_VERSION" -RequireFileRuntime -Package '${{ matrix.package }}'
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: qa-windows-${{ matrix.package }}
+          path: ${{ runner.temp }}/zeroagent-installer-acceptance/*
+          if-no-files-found: ignore
+
   windows-upgrade:
     name: Windows x64 In-Place Upgrade
     if: github.event_name == 'workflow_dispatch' && inputs.artifacts_only && inputs.previous_windows_release != ''
-    needs: [release-metadata, windows]
+    needs: [release-metadata, windows-file-qa]
     runs-on: windows-latest
     permissions:
       contents: read
@@ -720,6 +744,7 @@ jobs:
       - release-metadata
       - macos
       - windows
+      - windows-file-qa
       - linux
     env:
       ZEROAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}

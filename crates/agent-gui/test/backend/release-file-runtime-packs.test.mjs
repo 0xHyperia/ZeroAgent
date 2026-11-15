@@ -10,7 +10,7 @@ const root = new URL("../../../../", import.meta.url);
 const read = (name) => readFileSync(new URL(name, root), "utf8");
 const lock = JSON.parse(read("scripts/release/file-runtime/dependencies.lock.json"));
 
-test("desktop release consumes privately hosted packs for all four native targets", () => {
+test("desktop release consumes Actions runtime packs for all four native targets", () => {
   const pack = read(".github/workflows/file-runtime-packs.yml");
   const desktop = read(".github/workflows/desktop-release.yml");
   const targets = [...pack.matchAll(/target: ([a-z0-9_-]+)\r?$/gm)].map(([, target]) => target);
@@ -22,6 +22,15 @@ test("desktop release consumes privately hosted packs for all four native target
   assert.equal([...desktop.matchAll(/needs: \[release-metadata, file-runtime\]/g)].length, 3);
   assert.equal([...desktop.matchAll(/ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"/g)].length, 3);
   assert.doesNotMatch(desktop, /vars\.ZEROAGENT_FILE_RUNTIME_PACKS/);
+});
+
+test("desktop publishing waits for independent offline Windows package checks", () => {
+  const workflow = read(".github/workflows/desktop-release.yml");
+  const windows = workflow.split("  windows-file-qa:")[1]?.split("  windows-upgrade:")[0];
+  const publish = workflow.split("  publish:")[1];
+  assert.match(windows, /package: \[msi, nsis, portable\]/);
+  assert.match(windows, /-RequireFileRuntime -Package/);
+  assert.match(publish, /needs:[\s\S]*- windows-file-qa/);
 });
 
 test("the AppImage receives the file runtime after linuxdeploy finishes", () => {
