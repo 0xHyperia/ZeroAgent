@@ -280,6 +280,9 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
     $zip = [IO.Compression.ZipFile]::OpenRead($Path)
     try {
         $inventory = @{}; $seen = @{}; [long]$total = 0
+        $runtimeManifest = $zip.GetEntry('file-runtime/runtime.json')
+        if ($null -eq $runtimeManifest) { $runtimeManifest = $zip.GetEntry('file-runtime\runtime.json') }
+        [long]$limit = if ($null -ne $runtimeManifest) { 4GB } else { 2GB }
         foreach ($entry in $zip.Entries) {
             $name = $entry.FullName.Replace('\', '/')
             if ($name -match '^/|:|(^|/)\.\.?(/|$)|//|[\x00-\x1f]' -or
@@ -293,7 +296,9 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
             $runtimeMember = $name.StartsWith('file-runtime/')
             if ($script:payloadNames -notcontains $name -and !$runtimeMember) { throw "Unexpected portable ZIP file: $name" }
             $total += $entry.Length
-            if ((!$runtimeMember -and $entry.Length -le 0) -or $entry.Length -gt 536870912 -or $total -gt 2147483648) { throw 'Portable ZIP exceeds payload size limits or contains an empty file' }
+            if (!$runtimeMember -and $entry.Length -le 0) { throw "Portable ZIP contains an empty application file: $name" }
+            if ($entry.Length -gt 512MB) { throw "Portable ZIP member exceeds 512 MiB: $name ($($entry.Length) bytes)" }
+            if ($total -gt $limit) { throw "Portable ZIP payload exceeds the $limit-byte extraction limit at $name" }
             $stream = $entry.Open(); $sha = [Security.Cryptography.SHA256]::Create()
             try {
                 $hash = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
@@ -312,7 +317,6 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
         if ($PreviousRelease -and $inventory.Count -eq 1 -and $inventory.ContainsKey('ZeroAgent.exe')) {
             return $inventory
         }
-        $runtimeManifest = $zip.GetEntry('file-runtime/runtime.json')
         if ($runtimeManifest) {
             if ($runtimeManifest.Length -gt 16777216) { throw 'Portable runtime manifest exceeds its size limit' }
             $reader = [IO.StreamReader]::new($runtimeManifest.Open())
