@@ -665,17 +665,25 @@ jobs:
           ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/zeroagent-linux-payloads"
-          mkdir -p "$root/deb" "$root/rpm" "$root/appimage"
-          dpkg-deb --extract dist/*.deb "$root/deb"
-          package="$(realpath dist/*.rpm)"
-          (cd "$root/rpm" && rpm2cpio "$package" | cpio --extract --make-directories --quiet)
+          root="$(mktemp -d "$RUNNER_TEMP/zeroagent-linux-payloads.XXXXXX")"
+          trap 'rm -rf -- "$root"' EXIT
+          runtime="$RUNNER_TEMP/zeroagent-file-runtime/file-runtime"
+          reader="$(node -p 'require(process.argv[1]).unzip' "$runtime/runtime.json")"
           appimage="$(realpath dist/*.AppImage)"
-          (cd "$root/appimage" && "$appimage" --appimage-extract >/dev/null)
           for format in deb rpm appimage; do
-            mapfile -t manifests < <(find "$root/$format" -path '*/file-runtime/runtime.json' -type f)
-            test "${#manifests[@]}" -eq 1
-            node scripts/release/verify-installed-file-runtime.mjs "$(dirname "${manifests[0]}")"
+            echo "Checking the $format file runtime payload"
+            payload="$root/$format"
+            mkdir "$payload"
+            case "$format" in
+              deb) dpkg-deb --extract dist/*.deb "$payload" ;;
+              rpm) "$runtime/$reader" -xf dist/*.rpm -C "$payload" ;;
+              appimage) (cd "$payload" && "$appimage" --appimage-extract >/dev/null)
+                        payload="$payload/squashfs-root" ;;
+            esac
+            installed="$payload/usr/lib/ZeroAgent/file-runtime"
+            test -s "$installed/runtime.json" || { echo "Missing $format runtime manifest at $installed" >&2; exit 1; }
+            node scripts/release/verify-installed-file-runtime.mjs "$installed"
+            rm -rf -- "$root/$format"
           done
 
       - name: Verify updater asset signatures

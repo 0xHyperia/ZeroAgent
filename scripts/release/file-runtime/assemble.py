@@ -212,6 +212,19 @@ def assemble(options):
                 extract_tar(paths["node"], Path(node_scratch))
             node_root, = Path(node_scratch).iterdir()
             copy_component(node_root, dest / "node")
+            if system != "Windows":
+                # These commands are relative symlinks in the Node distribution.
+                # Use the original module path so imports resolve after relocation.
+                for command in ("corepack", "npm", "npx"):
+                    launcher = node_root / "bin" / command
+                    if launcher.is_symlink():
+                        module = launcher.resolve(strict=True).relative_to(node_root).as_posix()
+                        wrapper = dest / "node/bin" / command
+                        wrapper.write_text(
+                            '#!/bin/sh\nbin_dir=${0%/*}\n'
+                            f'exec "$bin_dir/node" "$bin_dir/../{module}" "$@"\n',
+                            encoding="utf-8",
+                        )
         (dest / artifact_rel).parent.mkdir(parents=True, exist_ok=True)
         copy_component(base / artifact_rel, dest / artifact_rel)
         print("Assembling Tesseract, Poppler and libarchive with their locked libraries", flush=True)
