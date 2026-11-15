@@ -1,4 +1,4 @@
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -134,8 +134,7 @@ async function main() {
   await writeFile(process.argv[3], JSON.stringify({ engine: "@oai/artifact-tool", ...result }), { flag: "wx" });
 }
 
-const launchedFile = process.argv[1] && await realpath(process.argv[1]).catch(() => null);
-if (launchedFile && import.meta.url === pathToFileURL(launchedFile).href) {
+if (import.meta.main) {
   await main().catch((error) => {
     process.stderr.write(String(error.message).slice(0, 700));
     process.exitCode = 1;
