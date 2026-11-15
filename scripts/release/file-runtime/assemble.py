@@ -80,7 +80,11 @@ def copy_component(source, destination):
     # entire verified dependency tree is still available.
     shutil.copytree(
         source, destination,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "LibreOffice_*.msi"),
+        ignore=shutil.ignore_patterns(
+            "__pycache__", "*.pyc", "*.pyo", "LibreOffice_*.msi",
+            # Spreadsheet and presentation skills run the Node distribution.
+            "artifact_tool_v2", "artifact_tool_v2-*.dist-info",
+        ),
     )
 
 
@@ -128,6 +132,12 @@ def unpack_office(archive, destination, system, scratch):
         for dictionary in (suite / "share/extensions").glob("dict-*"):
             if dictionary.is_dir() and dictionary.name != "dict-en":
                 shutil.rmtree(dictionary)
+        # Keep the uncompressed NSIS payload within its 32-bit size limit.
+        # The office UI translation catalogs are independent of document locale data.
+        for translations in (suite / "program/resource").iterdir():
+            if (translations.is_dir() and not translations.name.startswith(("en_", "zh_"))
+                    and any(translations.glob("*.mo"))):
+                shutil.rmtree(translations)
         copy_component(suite, destination)
         return "office/program/soffice.com", "office/Fonts/LiberationSans-Regular.ttf"
     if system == "Darwin":
