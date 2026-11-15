@@ -67,10 +67,12 @@ export function normalizeReleaseTag(input) {
 export function parseReleaseVersion(input) {
   const releaseTag = normalizeReleaseTag(input);
   const appVersion = releaseTag.slice(1);
+  const { prerelease } = parseAppVersion(appVersion);
 
   return {
     appVersion,
-    isPrerelease: appVersion.split("+", 1)[0].includes("-"),
+    isPrerelease: prerelease !== undefined,
+    publishPublic: prerelease === undefined || prerelease.split(".", 1)[0] === "beta",
     releaseTag,
   };
 }

@@ -45,6 +45,7 @@ test("release version script resolves tag metadata without mutating package.json
   assert.equal(metadata.releaseTag, "v9.10.11-beta.2");
   assert.equal(metadata.appVersion, "9.10.11-beta.2");
   assert.equal(metadata.isPrerelease, true);
+  assert.equal(metadata.publishPublic, true);
   assert.equal(readFileSync(packageJsonPath, "utf8"), before);
 });
 
@@ -78,9 +79,24 @@ test("release version script writes GitHub env, outputs, and Tauri config", () =
     );
     assert.match(readFileSync(outputPath, "utf8"), /^release_tag=v1\.2\.3$/m);
     assert.match(readFileSync(outputPath, "utf8"), /^is_prerelease=false$/m);
+    assert.match(readFileSync(outputPath, "utf8"), /^publish_public=true$/m);
     assert.deepEqual(JSON.parse(readFileSync(tauriConfigPath, "utf8")), {
       version: "1.2.3",
     });
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+test("source-only release tags expose a false publish_public workflow output", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "zeroagent-release-route-"));
+  try {
+    for (const channel of ["alpha", "rc"]) {
+      const outputPath = path.join(dir, channel);
+      const result = runVersionScript([`v1.0.0-${channel}.1`, "--github-output", outputPath]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(readFileSync(outputPath, "utf8"), /^publish_public=false$/m);
+    }
   } finally {
     rmSync(dir, { force: true, recursive: true });
   }

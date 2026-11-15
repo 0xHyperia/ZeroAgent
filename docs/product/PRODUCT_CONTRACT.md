@@ -66,8 +66,9 @@
 
 ## 发布与运维
 
-- `0xHyperia/ZeroAgent` 根据其仓库可见性发布完整源码和运维产物；用户可下载的二进制同时
-  发布到 `USA-Zero/ZeroAgent`，不得附带源码归档或内部运维信息。
+- `0xHyperia/ZeroAgent` 持有完整 Release。桌面安装包和 Android APK 只在 beta 与正式标签下
+  同步到 `USA-Zero/ZeroAgent`。alpha、rc 和其他预发布标签仅在源码仓库发布。
+  公开分发不得附带源码归档或内部运维信息。
 - 公开 Release Notes 只描述用户可感知的 ZeroAgent 变化，不得提及私有源码拓扑、Gateway
   镜像、凭据、内部部署或未公开基础设施。
 - Gateway 生产镜像必须不可变并按审核通过的 digest 部署。就绪检查必须验证必要依赖，而不

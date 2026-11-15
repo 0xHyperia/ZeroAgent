@@ -118,6 +118,7 @@ try {
       `release_tag=${metadata.releaseTag}`,
       `app_version=${metadata.appVersion}`,
       `is_prerelease=${metadata.isPrerelease}`,
+      `publish_public=${metadata.publishPublic}`,
     ];
     if (options.tauriConfigPath) {
       outputLines.push(`tauri_version_config=${options.tauriConfigPath}`);

@@ -6,13 +6,26 @@ test("parseReleaseVersion reports the app version and prerelease flag", () => {
   assert.deepEqual(parseReleaseVersion("v1.3.6"), {
     appVersion: "1.3.6",
     isPrerelease: false,
+    publishPublic: true,
     releaseTag: "v1.3.6",
   });
   assert.deepEqual(parseReleaseVersion("refs/tags/v1.3.6-beta.1"), {
     appVersion: "1.3.6-beta.1",
     isPrerelease: true,
+    publishPublic: true,
     releaseTag: "v1.3.6-beta.1",
   });
+});
+
+test("public distribution is limited to stable and beta tags", () => {
+  for (const tag of ["v1.0.0", "v1.0.0+build-beta", "v1.0.0-beta", "v1.0.0-beta.2+build"]) {
+    assert.equal(parseReleaseVersion(tag).publishPublic, true, tag);
+  }
+  for (const tag of ["v1.0.0-alpha.1", "v1.0.0-rc.1", "v1.0.0-preview.beta", "v1.0.0-beta-test", "v1.0.0-1"]) {
+    const metadata = parseReleaseVersion(tag);
+    assert.equal(metadata.isPrerelease, true, tag);
+    assert.equal(metadata.publishPublic, false, tag);
+  }
 });
 
 test("tauriVersionConfig leaves stable versions to Tauri", () => {

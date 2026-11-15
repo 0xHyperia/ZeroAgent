@@ -28,16 +28,18 @@ test("release and Gateway documentation use the ZeroAgent repository and image",
   }
 });
 
-test("desktop releases publish the same assets to source and public repositories", () => {
+test("desktop releases gate public credentials, notes, manifest URLs and uploads on the release tag", () => {
   const workflow = readRepoFile(".github/workflows/desktop-release.yml");
 
   assert.match(workflow, /SOURCE_RELEASE_TOKEN/);
-  assert.match(workflow, /PUBLIC_RELEASE_TOKEN/);
+  assert.match(workflow, /Validate public release repository\s+if: steps\.version\.outputs\.publish_public == 'true' &&/);
+  assert.match(workflow, /PUBLIC_RELEASE_TOKEN: \$\{\{ needs\.release-metadata\.outputs\.publish_public == 'true' && secrets\.PUBLIC_RELEASE_TOKEN/);
   assert.match(workflow, /publish_release "\$SOURCE_REPOSITORY"/);
-  assert.match(workflow, /publish_release "\$RELEASE_REPOSITORY"/);
+  assert.match(workflow, /if \[ "\$PUBLISH_PUBLIC" = true \]; then\s+publish_release "\$RELEASE_REPOSITORY"/);
   assert.match(workflow, /\.github\/release-notes\/\$RELEASE_TAG\.md/);
   assert.match(workflow, /\.github\/release-notes-public\/\$RELEASE_TAG\.md/);
-  assert.match(workflow, /Missing public release notes/);
+  assert.match(workflow, /manifest_repository="\$SOURCE_REPOSITORY"[\s\S]*if \[ "\$PUBLISH_PUBLIC" = true \]; then\s+test -n "\$PUBLIC_RELEASE_TOKEN"\s+test -s "\$curated_public_notes_path"[\s\S]*manifest_repository="\$RELEASE_REPOSITORY"/);
+  assert.match(workflow, /RELEASE_REPOSITORY="\$manifest_repository" node scripts\/release\/create-tauri-updater-manifest\.mjs/);
 });
 
 test("Windows packaging retains stock uninstall without the upstream data cleanup hook", () => {

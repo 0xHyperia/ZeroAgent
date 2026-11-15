@@ -576,6 +576,8 @@
         "crates/agent-gui/test/backend/release-notes.test.mjs",
         "crates/agent-gui/test/backend/release-branding.test.mjs",
         "crates/agent-gui/test/backend/release-version.test.mjs",
+        "crates/agent-gui/test/backend/release-android.test.mjs",
+        "scripts/release/release-version.test.mjs",
         "scripts/release/verify-updater-signatures/tests/cli.rs",
         "scripts/release/tests/test-windows-installers-contract.ps1"
       ],

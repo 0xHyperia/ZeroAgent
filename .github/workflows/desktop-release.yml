@@ -39,6 +39,7 @@ jobs:
     outputs:
       app_version: ${{ steps.version.outputs.app_version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      publish_public: ${{ steps.version.outputs.publish_public }}
       release_tag: ${{ steps.version.outputs.release_tag }}
       source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
@@ -79,7 +80,7 @@ jobs:
         run: node scripts/release/prepare-app-version-from-tag.mjs "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT" --json
 
       - name: Validate public release repository
-        if: github.event_name != 'workflow_dispatch' || !inputs.artifacts_only
+        if: steps.version.outputs.publish_public == 'true' && (github.event_name != 'workflow_dispatch' || !inputs.artifacts_only)
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
         run: |
@@ -692,7 +693,8 @@ jobs:
       - name: Publish assets
         env:
           SOURCE_RELEASE_TOKEN: ${{ github.token }}
-          PUBLIC_RELEASE_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          PUBLIC_RELEASE_TOKEN: ${{ needs.release-metadata.outputs.publish_public == 'true' && secrets.PUBLIC_RELEASE_TOKEN || '' }}
+          PUBLISH_PUBLIC: ${{ needs.release-metadata.outputs.publish_public }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.release-metadata.outputs.release_tag }}
           PACKYCODE_API_KEY: ${{ secrets.PACKYCODE_API_KEY }}
@@ -704,7 +706,6 @@ jobs:
           set -euo pipefail
           is_prerelease="$ZEROAGENT_IS_PRERELEASE"
           test -n "$SOURCE_RELEASE_TOKEN"
-          test -n "$PUBLIC_RELEASE_TOKEN"
 
           github_notes_path="$RUNNER_TEMP/liveagent-github-release-notes.md"
           source_notes_path="$RUNNER_TEMP/liveagent-source-release-notes.md"
@@ -728,11 +729,18 @@ jobs:
           if [ ! -s "$source_notes_path" ]; then
             printf 'ZeroAgent %s\n' "$RELEASE_TAG" > "$source_notes_path"
           fi
-          test -s "$curated_public_notes_path" || {
-            echo "Missing public release notes: $curated_public_notes_path" >&2
-            exit 1
-          }
-          cp "$curated_public_notes_path" "$public_notes_path"
+          manifest_repository="$SOURCE_REPOSITORY"
+          manifest_notes_path="$source_notes_path"
+          if [ "$PUBLISH_PUBLIC" = true ]; then
+            test -n "$PUBLIC_RELEASE_TOKEN"
+            test -s "$curated_public_notes_path" || {
+              echo "Missing public release notes: $curated_public_notes_path" >&2
+              exit 1
+            }
+            cp "$curated_public_notes_path" "$public_notes_path"
+            manifest_repository="$RELEASE_REPOSITORY"
+            manifest_notes_path="$public_notes_path"
+          fi
 
           rm -rf public-release-assets
           mkdir -p public-release-assets
@@ -745,7 +753,7 @@ jobs:
             exit 1
           fi
 
-          node scripts/release/create-tauri-updater-manifest.mjs release-artifacts release-artifacts/latest.json "$public_notes_path"
+          RELEASE_REPOSITORY="$manifest_repository" node scripts/release/create-tauri-updater-manifest.mjs release-artifacts release-artifacts/latest.json "$manifest_notes_path"
 
           publish_release() {
             local repository="$1"
@@ -787,4 +795,6 @@ jobs:
           }
 
           publish_release "$SOURCE_REPOSITORY" "$SOURCE_RELEASE_TOKEN" source "$source_notes_path"
-          publish_release "$RELEASE_REPOSITORY" "$PUBLIC_RELEASE_TOKEN" public "$public_notes_path"
+          if [ "$PUBLISH_PUBLIC" = true ]; then
+            publish_release "$RELEASE_REPOSITORY" "$PUBLIC_RELEASE_TOKEN" public "$public_notes_path"
+          fi

@@ -36,8 +36,9 @@ jobs:
     name: Android arm64 APK
     runs-on: ubuntu-latest
     outputs:
-      build_tag: ${{ steps.version.outputs.build_tag }}
       release_tag: ${{ steps.version.outputs.release_tag }}
+      publish_release: ${{ steps.version.outputs.publish_release }}
+      publish_public: ${{ steps.version.outputs.publish_public }}
       apk_name: ${{ steps.package.outputs.apk_name }}
     steps:
       - uses: actions/checkout@v6
@@ -112,14 +113,14 @@ jobs:
         shell: bash
         working-directory: crates/agent-gui
         env:
-          REQUESTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
           REQUESTED_BUILD_TAG: ${{ inputs.build_tag }}
         run: |
           set -euo pipefail
-          release_tag="$REQUESTED_RELEASE_TAG"
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            release_tag="$RELEASE_TAG_INPUT"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            release_tag="$REQUESTED_RELEASE_TAG"
+          else
+            release_tag="$GITHUB_REF_NAME"
           fi
           build_tag="$release_tag"
           if [ -z "$build_tag" ]; then
@@ -131,9 +132,11 @@ jobs:
           node ../../scripts/release/prepare-app-version-from-tag.mjs \
             "$build_tag" \
             --github-env "$GITHUB_ENV" \
+            --github-output "$GITHUB_OUTPUT" \
             --tauri-config src-tauri/tauri.version.generated.conf.json
-          echo "build_tag=$build_tag" >> "$GITHUB_OUTPUT"
-          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$release_tag" ]; then
+            echo 'publish_release=true' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Initialize Android project
         working-directory: crates/agent-gui
@@ -211,7 +214,7 @@ jobs:
           mkdir -p dist
           keystore="$RUNNER_TEMP/zeroagent-android.p12"
           aligned_apk="$RUNNER_TEMP/zeroagent-aligned.apk"
-          output_apk="dist/ZeroAgent-${{ steps.version.outputs.build_tag }}-Android-arm64.apk"
+          output_apk="dist/ZeroAgent-${{ steps.version.outputs.release_tag }}-Android-arm64.apk"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
           "$build_tools/zipalign" -p -f 4 "$unsigned_apk" "$aligned_apk"
           "$build_tools/apksigner" sign \
@@ -230,27 +233,28 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ZeroAgent-${{ steps.version.outputs.build_tag }}-Android-arm64
+          name: ZeroAgent-${{ steps.version.outputs.release_tag }}-Android-arm64
           path: ${{ steps.package.outputs.apk }}
           if-no-files-found: error
 
   publish:
     name: Upload APK to GitHub Releases
     needs: android
-    if: needs.android.outputs.release_tag != ''
+    if: needs.android.outputs.publish_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: ZeroAgent-${{ needs.android.outputs.build_tag }}-Android-arm64
+          name: ZeroAgent-${{ needs.android.outputs.release_tag }}-Android-arm64
           path: dist
 
       - name: Upload APK to GitHub Releases
         env:
           SOURCE_RELEASE_TOKEN: ${{ github.token }}
-          PUBLIC_RELEASE_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          PUBLIC_RELEASE_TOKEN: ${{ needs.android.outputs.publish_public == 'true' && secrets.PUBLIC_RELEASE_TOKEN || '' }}
+          PUBLISH_PUBLIC: ${{ needs.android.outputs.publish_public }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.android.outputs.release_tag }}
           APK_PATH: dist/${{ needs.android.outputs.apk_name }}
@@ -271,6 +275,8 @@ jobs:
           }
 
           test -n "$SOURCE_RELEASE_TOKEN"
-          test -n "$PUBLIC_RELEASE_TOKEN"
           upload_apk "$SOURCE_REPOSITORY" "$SOURCE_RELEASE_TOKEN"
-          upload_apk "$RELEASE_REPOSITORY" "$PUBLIC_RELEASE_TOKEN"
+          if [ "$PUBLISH_PUBLIC" = true ]; then
+            test -n "$PUBLIC_RELEASE_TOKEN"
+            upload_apk "$RELEASE_REPOSITORY" "$PUBLIC_RELEASE_TOKEN"
+          fi
