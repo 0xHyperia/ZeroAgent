@@ -200,6 +200,7 @@ def _build_lo_env(user_profile: str) -> dict:
     """
 
     env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["HOME"] = user_profile
     env.setdefault("XDG_CONFIG_HOME", join(user_profile, "xdg_config"))
     env.setdefault("XDG_CACHE_HOME", join(user_profile, "xdg_cache"))

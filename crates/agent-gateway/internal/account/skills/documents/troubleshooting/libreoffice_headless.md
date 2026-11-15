@@ -25,7 +25,7 @@ BASENAME=$(basename "$INPUT" .docx)
 LO_PROFILE=./.lo_profile_${BASENAME}_$$
 mkdir -p "$OUTDIR" "$LO_PROFILE"
 
-HOME="$LO_PROFILE" soffice --headless -env:UserInstallation=file://"$LO_PROFILE" \
+PYTHONDONTWRITEBYTECODE=1 HOME="$LO_PROFILE" soffice --headless -env:UserInstallation=file://"$LO_PROFILE" \
   --convert-to pdf --outdir "$OUTDIR" "$INPUT"
 ```
 

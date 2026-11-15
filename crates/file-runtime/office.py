@@ -1,5 +1,6 @@
 import csv
 from copy import copy
+import os
 from pathlib import Path
 import posixpath
 import re
@@ -106,9 +107,11 @@ def office_convert(source, output, scratch, recalculate=False):
         ".csv": ["--infilter=Text - txt - csv (StarCalc):44,34,76,1,,0,false,false"],
         ".tsv": ["--infilter=Text - txt - csv (StarCalc):9,34,76,1,,0,false,false"],
     }.get(source.suffix, [])
+    # LibreOffice starts its own Python interpreter for PyUNO.
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     run_engine([engine_path("ZEROAGENT_FILE_SOFFICE"), f"-env:UserInstallation={profile}",
                 "--headless", "--nologo", "--norestore", *source_filter, "--convert-to", export_filter,
-                "--outdir", str(folder), str(source)], scratch)
+                "--outdir", str(folder), str(source)], scratch, env=env)
     converted = folder / (source.stem + output.suffix)
     if not converted.is_file():
         raise FileToolError("conversion_failed", "Office did not produce a converted file.")

@@ -134,6 +134,8 @@
 
 ### Bug 修复
 
+- 文档转换和预览避免 LibreOffice 的内置 Python 在安装目录生成字节码缓存，Windows 安装版离线改稿后可以正常卸载。
+
 - 文件运行时在独立副本中执行验收，避免测试生成的缓存进入桌面安装包与 Windows 便携包。
 
 - 修复 GitHub Actions 中的 Gateway 静态检查及桌面和 WebUI 回归测试，覆盖设备握手、终端子进程清理和文件阅读器。修复浏览器收到历史同步状态早于 WebSocket 握手应答的问题，以及局域网 HTTP 下的 CloudChat 附件上传问题。联网搜索设置统一使用 ZeroAgent 品牌名称。

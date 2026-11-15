@@ -147,8 +147,17 @@ with TemporaryDirectory(prefix="zeroagent-installed-reader-") as directory:
     call_tool(root, "pdf", "render", {"source": "revised.pdf", "output": "revised.png", "page": 1})
     render_word(root)
 
+new_bytecode = sorted(
+    item for path in runtime.rglob("*.pyc")
+    if (item := path.relative_to(runtime).as_posix()) not in manifest["files"]
+)
+if new_bytecode:
+    examples = ", ".join(new_bytecode[:5])
+    raise RuntimeError(f"Document conversion generated {len(new_bytecode)} bytecode files in the runtime: {examples}")
+
 print(json.dumps({
     "python": str(python), "pythonVersion": python_version,
     "docx": "passed", "pdf": "passed", "word_render": "passed", "word_pdf": "passed",
+    "runtime_bytecode": "clean",
     "python_network": "blocked-by-audit-hook", "libreoffice": str(soffice),
 }))

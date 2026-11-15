@@ -1197,6 +1197,7 @@ fn run_soffice_document_conversion(
     #[cfg(windows)]
     crate::runtime::process::configure_child_process_group(&mut command);
     let output = command
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .arg(format!("-env:UserInstallation={profile_url}"))
         .arg("--headless")
         .arg("--norestore")

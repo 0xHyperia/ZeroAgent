@@ -114,9 +114,9 @@ def engine_path(variable):
     return str(path)
 
 
-def run_engine(args, scratch):
+def run_engine(args, scratch, *, env=None):
     try:
-        return subprocess.run(args, cwd=scratch, check=True, timeout=120,
+        return subprocess.run(args, cwd=scratch, env=env, check=True, timeout=120,
                               stdin=subprocess.DEVNULL, capture_output=True)
     except subprocess.TimeoutExpired as error:
         raise FileToolError("engine_timeout", "The rendering or conversion engine timed out.") from error
