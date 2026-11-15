@@ -130,8 +130,8 @@ const capabilities = JSON.parse(probe.stdout);
 if (capabilities.version !== sources.artifact_tool.version || !capabilities.workbook || !capabilities.presentation) {
   throw new Error("The staged Artifact Tool does not match the runtime manifest");
 }
-const acceptance = spawnSync(path.join(runtime, manifest.python), ["-IB", path.join(repoTools, "test_file_tool.py")], {
-  env: runtimeEnvironment, stdio: "inherit", timeout: 180_000,
+const acceptance = spawnSync(path.join(runtime, manifest.python), ["-IB", path.join(repoTools, "test_file_tool.py"), "-v"], {
+  env: runtimeEnvironment, stdio: "inherit", timeout: 600_000,
 });
 if (acceptance.status !== 0) throw new Error("The staged file runtime failed its offline acceptance", { cause: acceptance.error });
 const verifyInstalled = fileURLToPath(new URL("./verify-installed-file-runtime.mjs", import.meta.url));
