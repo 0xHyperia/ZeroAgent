@@ -17,7 +17,7 @@ async function sha256(filename) {
   return digest.digest("hex");
 }
 
-const scratch = await mkdtemp(join(tmpdir(), "za-pack-"));
+const scratch = await mkdtemp(join(process.env.RUNNER_TEMP || tmpdir(), "za-pack-"));
 try {
   const runtime = resolve(input);
   const prepare = fileURLToPath(new URL("../prepare-file-runtime.mjs", import.meta.url));
@@ -39,5 +39,5 @@ try {
   };
   await writeFile(join(output, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n", { flag: "wx" });
 } finally {
-  await rm(scratch, { recursive: true, force: true });
+  await rm(scratch, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }

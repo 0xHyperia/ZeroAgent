@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const argument = process.argv[2];
@@ -30,7 +30,7 @@ function runtimeMember(name, directory = false) {
 const python = runtimeMember("python");
 const soffice = runtimeMember("soffice");
 const poppler = runtimeMember("poppler_bin", true);
-const scratch = mkdtempSync(join(tmpdir(), "zeroagent-installed-file-runtime-"));
+const scratch = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), "za-file-qa-"));
 try {
   const env = {
     ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR } : {}),
@@ -69,12 +69,16 @@ try {
     }
   }
   const check = spawnSync(executable, args, {
-    env, cwd: scratch, stdio: "inherit", timeout: 240_000, windowsHide: true,
+    env, cwd: process.platform === "win32" ? dirname(script) : scratch,
+    stdio: "inherit", timeout: 240_000, windowsHide: true,
   });
   if (check.status !== 0) {
     const reason = check.error?.message ?? check.signal ?? `exit ${check.status}`;
     throw new Error(`Installed file runtime acceptance failed (${reason})`, { cause: check.error });
   }
+} catch (error) {
+  console.error(error.message);
+  throw error;
 } finally {
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }

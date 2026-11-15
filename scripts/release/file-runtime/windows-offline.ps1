@@ -12,15 +12,17 @@ try {
   foreach ($profile in $disabledProfiles) {
     Set-NetFirewallProfile -Name $profile.Name -Enabled True
   }
-  # Bind the rule to the exact interpreter launched below. Windows can enumerate
-  # the same file through its short-name path when the runner uses an 8.3 TEMP.
-  $applications = @($Python) + @(Get-ChildItem -LiteralPath $Runtime -Recurse -File |
+  # The verifier launches Python by absolute path and audits every child it
+  # starts. Include the renderers' companion executables and the exact Python.
+  $officeDir = Split-Path -Parent $env:ZEROAGENT_FILE_SOFFICE
+  $popplerDir = $env:ZEROAGENT_FILE_POPPLER_BIN
+  $applications = @($Python) + @(Get-ChildItem -LiteralPath $officeDir, $popplerDir -File |
     Where-Object { $_.Extension -in @('.exe', '.com') -or $_.Name -eq 'soffice.bin' } | ForEach-Object FullName)
-  $applications = @($applications | Sort-Object -Unique)
   foreach ($application in $applications) {
     [void](New-NetFirewallRule -DisplayName $group -Group $group -Direction Outbound `
       -Program $application -Action Block -Profile Any)
   }
+  [Console]::Error.WriteLine("Windows firewall rules active for $($applications.Count) packaged executables")
   & $Python -IB $Verifier $Runtime
   exit $LASTEXITCODE
 } finally {
