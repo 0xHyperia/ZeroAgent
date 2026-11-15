@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -46,9 +46,13 @@ test("every runtime dependency uses a verified HTTPS input", () => {
 test("Artifact Tool reports its actual supported version and verifies its exports", (t) => {
   const scratch = mkdtempSync(join(tmpdir(), "za-artifact-tool-"));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
-  const script = fileURLToPath(new URL("crates/file-runtime/artifact_tool.mjs", root));
+  const realScript = fileURLToPath(new URL("crates/file-runtime/artifact_tool.mjs", root));
   const entry = join(scratch, "dist", "artifact_tool.mjs");
   mkdirSync(join(scratch, "dist"));
+  mkdirSync(join(scratch, "tools"));
+  copyFileSync(realScript, join(scratch, "tools", "artifact_tool.mjs"));
+  symlinkSync(join(scratch, "tools"), join(scratch, "linked-tools"), process.platform === "win32" ? "junction" : "dir");
+  const script = join(scratch, "linked-tools", "artifact_tool.mjs");
   writeFileSync(entry, "export class Workbook {}\nexport class Presentation {}\n");
   for (const version of ["2.8.145", "2.8.146"]) {
     writeFileSync(join(scratch, "package.json"), JSON.stringify({ name: "@oai/artifact-tool", version }));
