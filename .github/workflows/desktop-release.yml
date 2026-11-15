@@ -345,7 +345,9 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target x86_64-pc-windows-msvc 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          node ../../scripts/release/file-runtime/prepare-windows-nsis.mjs "$RUNNER_TEMP/zeroagent-nsis" \
+            "$(node -p 'require("@tauri-apps/cli/package.json").version')"
+          pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --config "$RUNNER_TEMP/zeroagent-nsis/tauri.nsis.conf.json" --target x86_64-pc-windows-msvc 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
