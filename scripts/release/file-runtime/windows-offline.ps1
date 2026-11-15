@@ -23,8 +23,10 @@ try {
       -Program $application -Action Block -Profile Any)
   }
   [Console]::Error.WriteLine("Windows firewall rules active for $($applications.Count) packaged executables")
-  & $Python -IB $Verifier $Runtime
-  exit $LASTEXITCODE
+  $proof = & $Python -IB $Verifier $Runtime
+  if ($LASTEXITCODE -ne 0) { throw "Bundled Python verification exited $LASTEXITCODE" }
+  if (-not $proof) { throw 'Bundled Python returned no verification result' }
+  [Console]::Out.WriteLine(($proof -join "`n"))
 } finally {
   Get-NetFirewallRule -Group $group -ErrorAction SilentlyContinue | Remove-NetFirewallRule
   foreach ($profile in $disabledProfiles) {

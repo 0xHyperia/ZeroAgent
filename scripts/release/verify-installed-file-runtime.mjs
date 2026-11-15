@@ -70,12 +70,20 @@ try {
   }
   const check = spawnSync(executable, args, {
     env, cwd: process.platform === "win32" ? dirname(script) : scratch,
-    stdio: "inherit", timeout: 240_000, windowsHide: true,
+    encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], timeout: 240_000, windowsHide: true,
   });
   if (check.status !== 0) {
     const reason = check.error?.message ?? check.signal ?? `exit ${check.status}`;
     throw new Error(`Installed file runtime acceptance failed (${reason})`, { cause: check.error });
   }
+  if (!check.stdout.trim()) throw new Error("Bundled Python did not report an acceptance result");
+  const proof = JSON.parse(check.stdout);
+  if (relative(python, realpathSync.native(proof.python)) ||
+      relative(soffice, realpathSync.native(proof.libreoffice)) ||
+      ![proof.docx, proof.pdf, proof.word_render, proof.word_pdf].every((result) => result === "passed")) {
+    throw new Error("Installed file runtime returned an incomplete acceptance result");
+  }
+  console.log(JSON.stringify(proof));
 } catch (error) {
   console.error(error.message);
   throw error;
