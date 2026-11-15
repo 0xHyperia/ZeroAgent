@@ -14,6 +14,7 @@ if (!["x86_64-pc-windows-msvc", "x86_64-apple-darwin", "aarch64-apple-darwin", "
   throw new Error("Usage: node stage-file-runtime.mjs <desktop target> <new staging directory>");
 }
 const prepare = fileURLToPath(new URL("./prepare-file-runtime.mjs", import.meta.url));
+const tar = process.platform === "win32" ? join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
 function stage(source, manifestSha256) {
   execFileSync(process.execPath, [prepare, source, resolve(destination), target, manifestSha256], { stdio: "inherit" });
 }
@@ -33,7 +34,7 @@ if (packDirectory) {
   if (hash.digest("hex") !== receipt.sha256) throw new Error("File runtime archive checksum mismatch");
   const tree = await mkdtemp(join(tmpdir(), "za-runtime-input-"));
   try {
-    execFileSync("tar", ["-xzf", archive, "-C", tree], { stdio: "inherit" });
+    execFileSync(tar, ["-xzf", archive, "-C", tree], { stdio: "inherit" });
     stage(tree, receipt.manifestSha256);
   } finally {
     await rm(tree, { recursive: true, force: true });
@@ -64,7 +65,7 @@ if (packDirectory) {
     if (hash.digest("hex") !== pack.sha256) throw new Error("File runtime archive checksum mismatch");
     const tree = join(scratch, "pack");
     await mkdir(tree);
-    execFileSync("tar", ["-xzf", archive, "-C", tree], { stdio: "inherit" });
+    execFileSync(tar, ["-xzf", archive, "-C", tree], { stdio: "inherit" });
     stage(tree, pack.manifestSha256);
   } finally {
     await rm(scratch, { recursive: true, force: true });

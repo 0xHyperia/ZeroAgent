@@ -10,6 +10,8 @@ const [target, input, output] = process.argv.slice(2);
 if (!target || !input || !output) {
   throw new Error("Usage: node pack.mjs <target> <assembled runtime directory> <output directory>");
 }
+// Git for Windows' GNU tar reads a drive-letter archive path as a remote host.
+const tar = process.platform === "win32" ? join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
 
 async function sha256(filename) {
   const digest = createHash("sha256");
@@ -29,7 +31,7 @@ try {
 
   await mkdir(output);
   const archive = resolve(output, "file-runtime.tar.gz");
-  execFileSync("tar", ["-czf", archive, "-C", runtime, "."], { stdio: "inherit" });
+  execFileSync(tar, ["-czf", archive, "-C", runtime, "."], { stdio: "inherit" });
   const receipt = {
     format: 1,
     target,
