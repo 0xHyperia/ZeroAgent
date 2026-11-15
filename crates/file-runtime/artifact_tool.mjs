@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 const supportedVersions = new Set(["2.8.145", "2.8.146"]);
 
-async function loadArtifactTool() {
+async function resolveArtifactTool() {
   const entry = process.env.ZEROAGENT_FILE_ARTIFACT_ENTRY;
   if (!entry || !path.isAbsolute(entry)) {
     throw new Error("The installed Artifact Tool runtime is unavailable.");
@@ -13,7 +13,12 @@ async function loadArtifactTool() {
   if (manifest.name !== "@oai/artifact-tool" || !supportedVersions.has(manifest.version)) {
     throw new Error("Artifact Tool version does not match the runtime lock.");
   }
-  return { api: await import(pathToFileURL(entry).href), version: manifest.version };
+  return { entry, version: manifest.version };
+}
+
+export async function loadArtifactTool() {
+  const { entry } = await resolveArtifactTool();
+  return import(pathToFileURL(entry).href);
 }
 
 function position(box) {
@@ -118,7 +123,8 @@ async function presentations(api, { operation, source, output, request, inputs }
 }
 
 async function main() {
-  const { api, version } = await loadArtifactTool();
+  const { entry, version } = await resolveArtifactTool();
+  const api = await import(pathToFileURL(entry).href);
   if (process.argv[2] === "--probe") {
     process.stdout.write(JSON.stringify({ version, workbook: !!api.Workbook, presentation: !!api.Presentation }));
     return;
@@ -129,7 +135,7 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((error) => {
+  await main().catch((error) => {
     process.stderr.write(String(error.message).slice(0, 700));
     process.exitCode = 1;
   });

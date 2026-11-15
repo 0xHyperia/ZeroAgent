@@ -207,6 +207,9 @@ def assemble(options):
         for archive in archives:
             with TemporaryDirectory(dir=scratch) as package_scratch:
                 unpack_conda(archive, conda, notices, Path(package_scratch))
+        for models in (conda / "share/tessdata", conda / "Library/share/tessdata"):
+            if models.is_dir():
+                shutil.rmtree(models)
         copy_component(conda, dest / "native")
 
         print("Assembling LibreOffice and fonts", flush=True)
@@ -215,8 +218,10 @@ def assemble(options):
         soffice, latin_font = unpack_office(paths["soffice"], dest / "office", system, office_scratch)
 
     (dest / "fonts").mkdir()
-    (dest / "tessdata").mkdir()
+    (dest / "tessdata/configs").mkdir(parents=True)
     shutil.copy2(paths["cjk_font"], dest / "fonts" / "NotoSansSC-VF.ttf")
+    shutil.copy2(paths["ocr-pdf-config"], dest / "tessdata/configs/pdf")
+    shutil.copy2(paths["ocr-pdf-font"], dest / "tessdata/pdf.ttf")
     for name in ("eng", "chi_sim", "chi_tra"):
         shutil.copy2(paths[name], dest / "tessdata" / f"{name}.traineddata")
 
