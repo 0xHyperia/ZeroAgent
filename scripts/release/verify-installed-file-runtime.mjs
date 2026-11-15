@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const argument = process.argv[2];
 if (!argument) throw new Error("Usage: node verify-installed-file-runtime.mjs <installed file-runtime directory>");
-const runtime = realpathSync(resolve(argument));
+const runtime = realpathSync.native(resolve(argument));
 const manifest = JSON.parse(readFileSync(join(runtime, "runtime.json"), "utf8"));
 if (manifest.format !== 1) throw new Error("Installed runtime manifest is invalid");
 
@@ -15,7 +15,7 @@ function runtimeMember(name, directory = false) {
   if (typeof entry !== "string" || !entry || isAbsolute(entry)) {
     throw new Error(`Installed runtime manifest is missing a valid ${name} entry`);
   }
-  const absolute = realpathSync(join(runtime, entry));
+  const absolute = realpathSync.native(join(runtime, entry));
   const member = relative(runtime, absolute);
   if (!member || isAbsolute(member) || member === ".." || member.startsWith(`..${sep}`)) {
     throw new Error(`Installed ${name} resolves outside the file runtime`);
