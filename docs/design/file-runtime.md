@@ -20,7 +20,9 @@
 
 开发启动、正式安装版和便携版共用清单格式及文件工具。正式构建把已验证的完整运行时作为 Tauri 资源安装，Windows 便携版把同一目录放在可执行文件旁。阅读器发送前向实际执行的设备核对其运行时，失败在原批注区域反馈，保留全部批注、当前文件和输入焦点。重试仍检查同一对话与授权。缺少运行时时仍可阅读文件和撰写批注。
 
-`scripts/release/stage-file-runtime.mjs` 接受 `ZEROAGENT_FILE_RUNTIME_PACKS`，按 Windows x64、macOS x64、macOS arm64、Linux x64 的 Rust target 查找含 `url`、`sha256`、`manifestSha256` 的已审核包。每个压缩包的根目录放置格式为 1 的 `runtime.json`，记录来源、版本、许可证、文件摘要和可执行入口。也可以使用 `ZEROAGENT_FILE_RUNTIME_SOURCE` 指定本地依赖树，同时用 `ZEROAGENT_FILE_RUNTIME_MANIFEST_SHA256` 指定审核过的清单摘要。组装校验摘要和依赖，运行文件测试并生成 Tauri 资源配置。发布构建必须配置该变量才能生成候选包。
+桌面发布工作流按同一源码提交调用 `file-runtime-packs.yml`，在目标架构的 Windows x64、macOS Intel、macOS Apple Silicon 和 Linux x64 运行器上组装依赖。`dependencies.lock.json` 固定上游下载和 SHA-256。构建保留许可证，并生成格式为 1 的 `runtime.json`，记录版本、来源、逐文件摘要和入口。验证通过后，把压缩包和含目标、提交及两个摘要的收据托管在私有源码仓库的 Actions 产物中，保留 30 天。桌面发布只从同一次运行下载，校验收据及内容后生成 Tauri 资源配置。不需要配置仓库变量或向公开仓库上传运行时归档。
+
+文件工具的测试与实际离线改稿使用全新用户目录。离线验证在 Linux 使用独立网络命名空间，在 macOS 限制子进程网络，在 Windows 对包内可执行文件临时设置出站阻止规则。桌面候选从安装或解包后的目录重复该检查。可以在不创建标签的情况下用 Desktop Release 工作流的 `artifacts_only` 验收候选。桌面依赖升级通过变更锁文件并重新验证，回滚沿用旧提交和对应发布包。开发者仍可显式配置本地依赖树或内部包索引。
 
 本地 `node scripts/dev-stack.mjs restart desktop` 及调用它的 PowerShell 启动脚本继承同一配置。可用 `ZEROAGENT_DEV_FILE_RUNTIME` 指定运行时目录，或在没有指定依赖包时使用当前检出的 `.zeroagent/file-runtime/desktop-dev`。本地清单格式为 1，包含目录内的 Python 路径及已准备的附加工具路径，文件工具位于同目录的 `tools/`。附加引擎可按开发任务补齐，调用缺少的引擎时报告具体组件。正式包和 Windows 便携版仍校验完整组件。宿主把解析后的绝对路径注入实际运行的 K-brain 子进程。
 

@@ -1,0 +1,88 @@
+name: File Runtime Packs
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source commit to use for assembly and verification
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit to use for assembly and verification
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: File Runtime ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Verify reviewed source commit
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.19.0
+
+      - name: Install Linux assembly prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpio rpm2cpio zstd libgl1 libglu1-mesa libxinerama1 libxrender1 libfontconfig1
+
+      - name: Assemble locked file runtime
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          python scripts/release/file-runtime/assemble.py "$TARGET" "$RUNNER_TEMP/za-runtime-tree" \
+            --downloads "$RUNNER_TEMP/za-runtime-downloads" --scratch "$RUNNER_TEMP"
+
+      - name: Verify in a clean offline profile and package
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: node scripts/release/file-runtime/pack.mjs "$TARGET" "$RUNNER_TEMP/za-runtime-tree" "$RUNNER_TEMP/za-runtime-pack"
+
+      - name: Store verified pack and receipt in the source repository
+        uses: actions/upload-artifact@v7
+        with:
+          name: file-runtime-${{ matrix.target }}
+          path: ${{ runner.temp }}/za-runtime-pack/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30

@@ -88,10 +88,16 @@ jobs:
           test -n "$GH_TOKEN"
           gh api "repos/$RELEASE_REPOSITORY/commits/main" --silent
 
+  file-runtime:
+    uses: ./.github/workflows/file-runtime-packs.yml
+    needs: release-metadata
+    with:
+      source_sha: ${{ needs.release-metadata.outputs.source_sha }}
+
   macos:
     name: macOS ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    needs: release-metadata
+    needs: [release-metadata, file-runtime]
     env:
       TAURI_ENV_TARGET_TRIPLE: ${{ matrix.target }}
       ZEROAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
@@ -179,10 +185,15 @@ jobs:
           ZEROAGENT_BACKEND_TEST_BINARY: ${{ github.workspace }}/crates/agent-gui/src-tauri/binaries/k-brain-${{ matrix.target }}
         run: cargo test --locked -p zeroagent --lib --target ${{ matrix.target }}
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: file-runtime-${{ matrix.target }}
+          path: ${{ runner.temp }}/za-runtime-pack
+
       - name: Stage verified macOS file runtime
         shell: bash
         env:
-          ZEROAGENT_FILE_RUNTIME_PACKS: ${{ vars.ZEROAGENT_FILE_RUNTIME_PACKS }}
+          ZEROAGENT_FILE_RUNTIME_PACK_DIR: ${{ runner.temp }}/za-runtime-pack
         run: node scripts/release/stage-file-runtime.mjs "${{ matrix.target }}" "$RUNNER_TEMP/zeroagent-file-runtime"
 
       - name: Build macOS bundles
@@ -215,6 +226,8 @@ jobs:
 
       - name: Exercise file runtime from the macOS disk image
         shell: bash
+        env:
+          ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
         run: |
           set -euo pipefail
           mount="$RUNNER_TEMP/zeroagent-dmg"
@@ -246,7 +259,7 @@ jobs:
   windows:
     name: Windows x64
     runs-on: windows-latest
-    needs: release-metadata
+    needs: [release-metadata, file-runtime]
     env:
       TAURI_ENV_TARGET_TRIPLE: x86_64-pc-windows-msvc
       ZEROAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
@@ -311,10 +324,15 @@ jobs:
       - name: Prepare reviewed K-brain binaries
         run: pnpm --dir crates/agent-gui prepare:kbrain:release
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: file-runtime-x86_64-pc-windows-msvc
+          path: ${{ runner.temp }}/za-runtime-pack
+
       - name: Stage verified Windows file runtime
         shell: bash
         env:
-          ZEROAGENT_FILE_RUNTIME_PACKS: ${{ vars.ZEROAGENT_FILE_RUNTIME_PACKS }}
+          ZEROAGENT_FILE_RUNTIME_PACK_DIR: ${{ runner.temp }}/za-runtime-pack
         run: node scripts/release/stage-file-runtime.mjs x86_64-pc-windows-msvc "$RUNNER_TEMP/zeroagent-file-runtime"
 
       - name: Build Windows bundles
@@ -378,6 +396,8 @@ jobs:
       - name: Test Windows installers on disposable runner
         timeout-minutes: 25
         shell: pwsh
+        env:
+          ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
         run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:ZEROAGENT_APP_VERSION" -RequireFileRuntime
 
       - uses: actions/upload-artifact@v7
@@ -480,7 +500,7 @@ jobs:
   linux:
     name: Linux x64
     runs-on: ubuntu-22.04
-    needs: release-metadata
+    needs: [release-metadata, file-runtime]
     env:
       TAURI_ENV_TARGET_TRIPLE: x86_64-unknown-linux-gnu
       ZEROAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
@@ -571,10 +591,15 @@ jobs:
       - name: Prepare reviewed K-brain binaries
         run: pnpm --dir crates/agent-gui prepare:kbrain:release
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: file-runtime-x86_64-unknown-linux-gnu
+          path: ${{ runner.temp }}/za-runtime-pack
+
       - name: Stage verified Linux file runtime
         shell: bash
         env:
-          ZEROAGENT_FILE_RUNTIME_PACKS: ${{ vars.ZEROAGENT_FILE_RUNTIME_PACKS }}
+          ZEROAGENT_FILE_RUNTIME_PACK_DIR: ${{ runner.temp }}/za-runtime-pack
         run: node scripts/release/stage-file-runtime.mjs x86_64-unknown-linux-gnu "$RUNNER_TEMP/zeroagent-file-runtime"
 
       - name: Build Linux bundles
@@ -631,6 +656,8 @@ jobs:
 
       - name: Exercise the runtime from each Linux package payload
         shell: bash
+        env:
+          ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/zeroagent-linux-payloads"

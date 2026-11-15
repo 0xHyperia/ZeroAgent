@@ -2,7 +2,7 @@
   "schema_version": 1,
   "rules": [
     {
-      "glob": "{crates/file-runtime/**,crates/agent-gui/src-tauri/src/services/file_runtime.rs,crates/agent-gateway/internal/account/skills/{documents,pdf,spreadsheet,presentations}/**,scripts/release/{prepare-file-runtime.mjs,stage-file-runtime.mjs,verify-installed-file-runtime.mjs,verify-file-runtime.py}}",
+      "glob": "{crates/file-runtime/**,crates/agent-gui/src-tauri/src/services/file_runtime.rs,crates/agent-gateway/internal/account/skills/{documents,pdf,spreadsheet,presentations}/**,scripts/release/file-runtime/**,.github/workflows/file-runtime-packs.yml,scripts/release/{prepare-file-runtime.mjs,stage-file-runtime.mjs,verify-installed-file-runtime.mjs,verify-file-runtime.py}}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [

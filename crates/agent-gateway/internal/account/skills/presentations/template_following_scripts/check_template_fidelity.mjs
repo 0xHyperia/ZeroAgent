@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+import { runtimeZipCommand } from "../container_tools/runtime_helpers.mjs";
 
 const DEFAULT_SLIDE_SIZE = { width: 1280, height: 720 };
 
@@ -102,7 +103,7 @@ function runCapture(command, args, options = {}) {
 }
 
 function zipNames(pptxPath) {
-  const output = runCapture(process.env.ZEROAGENT_FILE_UNZIP, ["-Z1", pptxPath], { encoding: "utf8" });
+  const output = runCapture(...runtimeZipCommand(pptxPath), { encoding: "utf8" });
   if (!output) return [];
   return String(output)
     .split(/\r?\n/)
@@ -110,7 +111,7 @@ function zipNames(pptxPath) {
 }
 
 function readZipText(pptxPath, entryName) {
-  const output = runCapture(process.env.ZEROAGENT_FILE_UNZIP, ["-p", pptxPath, entryName]);
+  const output = runCapture(...runtimeZipCommand(pptxPath, entryName));
   return output ? Buffer.from(output).toString("utf8") : "";
 }
 

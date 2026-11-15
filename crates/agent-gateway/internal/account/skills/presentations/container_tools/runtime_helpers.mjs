@@ -3,6 +3,17 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+export function runtimeZipCommand(filename, entry) {
+  const executable = process.env.ZEROAGENT_FILE_UNZIP;
+  if (!executable || !path.isAbsolute(executable)) {
+    throw new Error("ZEROAGENT_FILE_UNZIP must be an absolute path.");
+  }
+  const bsdtar = /^bsdtar(?:\.exe)?$/i.test(path.basename(executable));
+  return entry === undefined
+    ? [executable, [bsdtar ? "-tf" : "-Z1", filename]]
+    : [executable, [bsdtar ? "-xOf" : "-p", filename, entry]];
+}
+
 export async function runtimeNodeModules() {
   const envName = "RUNTIME_NODE_MODULES";
   const nodeModules = process.env[envName];

@@ -770,7 +770,10 @@
         "crates/agent-gateway/internal/account/cloud_extension_manifest.go",
         "crates/cloud-executor/sandbox/template/build.mjs",
         "crates/agent-ui/src/lib/chat/documentRevisionMessage.ts",
-        "scripts/release/stage-file-runtime.mjs"
+        "scripts/release/stage-file-runtime.mjs",
+        "scripts/release/file-runtime/assemble.py",
+        "scripts/release/file-runtime/dependencies.lock.json",
+        ".github/workflows/file-runtime-packs.yml"
       ],
       "tests": [
         "crates/file-runtime/test_file_tool.py",

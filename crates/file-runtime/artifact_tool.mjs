@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const expectedVersion = "2.8.145";
+const supportedVersions = new Set(["2.8.145", "2.8.146"]);
 
 export async function loadArtifactTool() {
   const entry = process.env.ZEROAGENT_FILE_ARTIFACT_ENTRY;
@@ -10,7 +10,7 @@ export async function loadArtifactTool() {
     throw new Error("The installed Artifact Tool runtime is unavailable.");
   }
   const manifest = JSON.parse(await readFile(path.resolve(path.dirname(entry), "../package.json"), "utf8"));
-  if (manifest.name !== "@oai/artifact-tool" || manifest.version !== expectedVersion) {
+  if (manifest.name !== "@oai/artifact-tool" || !supportedVersions.has(manifest.version)) {
     throw new Error("Artifact Tool version does not match the runtime lock.");
   }
   return import(pathToFileURL(entry).href);

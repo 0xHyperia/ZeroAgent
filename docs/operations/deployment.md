@@ -11,6 +11,7 @@
 | `v*` tag / 手动指定 tag | `.github/workflows/gateway-docker.yml` | 构建并推送 `vX.Y.Z` 与 `latest` Gateway 镜像。 |
 | `v*` tag / 手动指定 tag | `.github/workflows/desktop-release.yml` | 并行构建 macOS Intel、macOS Apple Silicon、Windows x64 和 Linux x64 桌面包。按标签决定是否同步到 `USA-Zero/ZeroAgent`。 |
 | `v*` tag / 手动构建 | `.github/workflows/android-release.yml` | 构建签名 APK，并按同一标签规则上传到对应 Release。 |
+| 桌面发布调用 / 手动指定提交 | `.github/workflows/file-runtime-packs.yml` | 按固定依赖构建四平台文件运行时，在目标系统离线验证后上传到源码仓库的私有 Actions 产物。 |
 
 ## 模型目录同步
 

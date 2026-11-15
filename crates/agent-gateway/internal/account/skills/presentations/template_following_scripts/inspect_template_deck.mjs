@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs as parseNodeArgs } from "node:util";
 
-import { importRuntimeModule } from "../container_tools/runtime_helpers.mjs";
+import { importRuntimeModule, runtimeZipCommand } from "../container_tools/runtime_helpers.mjs";
 
 function parseArgs(argv) {
   return parseNodeArgs({
@@ -75,18 +75,22 @@ function isWithin(child, parent) {
 }
 
 function zipNames(pptxPath) {
-  return String(runCapture(process.env.ZEROAGENT_FILE_UNZIP, ["-Z1", pptxPath], { encoding: "utf8" }))
+  return String(runCapture(...runtimeZipCommand(pptxPath), { encoding: "utf8" }))
     .split(/\r?\n/)
     .filter(Boolean);
 }
 
 function readZipText(pptxPath, entryName) {
-  return Buffer.from(runCapture(process.env.ZEROAGENT_FILE_UNZIP, ["-p", pptxPath, entryName])).toString("utf8");
+  return readZipEntry(pptxPath, entryName).toString("utf8");
+}
+
+function readZipEntry(pptxPath, entryName) {
+  return Buffer.from(runCapture(...runtimeZipCommand(pptxPath, entryName)));
 }
 
 async function copyZipEntry(pptxPath, entryName, targetPath) {
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  await fs.writeFile(targetPath, Buffer.from(runCapture(process.env.ZEROAGENT_FILE_UNZIP, ["-p", pptxPath, entryName])));
+  await fs.writeFile(targetPath, readZipEntry(pptxPath, entryName));
 }
 
 async function writeJson(filePath, value) {

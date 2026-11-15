@@ -35,7 +35,7 @@ if (manifest.format !== 1 || manifest.target !== target || typeof manifest.tessd
 }
 if (typeof manifest.artifact_tool !== "string" ||
     !manifest.artifact_tool.endsWith("node_modules/@oai/artifact-tool/dist/artifact_tool.mjs") ||
-    sources.artifact_tool?.version !== "2.8.145" || sources.node?.version !== "24.22.1") {
+    !["2.8.145", "2.8.146"].includes(sources.artifact_tool?.version) || sources.node?.version !== "24.22.1") {
   throw new Error("Runtime must contain the pinned Node and Artifact Tool in their installed package layout");
 }
 for (const name of components) {
@@ -133,7 +133,7 @@ const acceptance = spawnSync(path.join(runtime, manifest.python), ["-IB", path.j
 });
 if (acceptance.status !== 0) throw new Error("The staged file runtime failed its offline acceptance", { cause: acceptance.error });
 const verifyInstalled = fileURLToPath(new URL("./verify-installed-file-runtime.mjs", import.meta.url));
-const offlineRevision = spawnSync(process.execPath, [verifyInstalled, runtime], { stdio: "inherit", timeout: 165_000 });
+const offlineRevision = spawnSync(process.execPath, [verifyInstalled, runtime], { stdio: "inherit", timeout: 260_000 });
 if (offlineRevision.status !== 0) throw new Error("The staged runtime failed the clean-profile file acceptance", { cause: offlineRevision.error });
 await writeFile(path.join(stage, "tauri.file-runtime.conf.json"), JSON.stringify({
   bundle: { resources: { [runtime]: "file-runtime" } },

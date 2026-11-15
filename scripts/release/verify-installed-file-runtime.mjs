@@ -40,8 +40,27 @@ try {
     ZEROAGENT_FILE_SOFFICE: soffice, ZEROAGENT_FILE_POPPLER_BIN: poppler,
   };
   const script = fileURLToPath(new URL("./verify-file-runtime.py", import.meta.url));
-  const check = spawnSync(python, ["-IB", script, runtime], {
-    env, cwd: scratch, stdio: "inherit", timeout: 150_000, windowsHide: true,
+  let executable = python;
+  let args = ["-IB", script, runtime];
+  if (process.env.ZEROAGENT_REQUIRE_OFFLINE_FILE_QA === "1") {
+    if (process.platform === "win32") {
+      executable = process.env.SystemRoot + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+      const firewall = fileURLToPath(new URL("./file-runtime/windows-offline.ps1", import.meta.url));
+      args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", firewall, runtime, python, script];
+    } else if (process.platform === "darwin") {
+      executable = "/usr/bin/sandbox-exec";
+      args = ["-p", "(version 1) (allow default) (deny network*)", python, ...args];
+    } else if (process.platform === "linux") {
+      executable = "/usr/bin/sudo";
+      const settings = Object.entries(env).map(([key, value]) => `${key}=${value}`);
+      args = ["-n", "/usr/bin/unshare", "--net", "--setuid", String(process.getuid()),
+        "--setgid", String(process.getgid()), "--", "/usr/bin/env", "-i", ...settings, python, ...args];
+    } else {
+      throw new Error(`Offline file-runtime QA is unavailable on ${process.platform}`);
+    }
+  }
+  const check = spawnSync(executable, args, {
+    env, cwd: scratch, stdio: "inherit", timeout: 240_000, windowsHide: true,
   });
   if (check.status !== 0) {
     const reason = check.error?.message ?? check.signal ?? `exit ${check.status}`;

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,7 +19,26 @@ function stage(source, manifestSha256) {
 }
 
 const source = process.env.ZEROAGENT_FILE_RUNTIME_SOURCE;
-if (source) {
+const packDirectory = process.env.ZEROAGENT_FILE_RUNTIME_PACK_DIR;
+if (packDirectory) {
+  const receipt = JSON.parse(await readFile(join(packDirectory, "receipt.json"), "utf8"));
+  const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  if (receipt.format !== 1 || receipt.target !== target || receipt.source_sha !== sourceSha ||
+      !validHash(receipt.sha256) || !validHash(receipt.manifestSha256)) {
+    throw new Error(`File runtime receipt does not match ${target} at ${sourceSha}`);
+  }
+  const archive = resolve(packDirectory, "file-runtime.tar.gz");
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(archive)) hash.update(chunk);
+  if (hash.digest("hex") !== receipt.sha256) throw new Error("File runtime archive checksum mismatch");
+  const tree = await mkdtemp(join(tmpdir(), "za-runtime-input-"));
+  try {
+    execFileSync("tar", ["-xzf", archive, "-C", tree], { stdio: "inherit" });
+    stage(tree, receipt.manifestSha256);
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+} else if (source) {
   const manifestSha256 = process.env.ZEROAGENT_FILE_RUNTIME_MANIFEST_SHA256;
   if (!validHash(manifestSha256)) throw new Error("Set ZEROAGENT_FILE_RUNTIME_MANIFEST_SHA256 to the reviewed runtime manifest digest");
   stage(resolve(source), manifestSha256);
