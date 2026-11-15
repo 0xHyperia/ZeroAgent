@@ -55,7 +55,7 @@ test("Windows upgrade acceptance is opt-in and consumes the signed candidate on 
   const upgrade = workflow.match(/\n  windows-upgrade:\n([\s\S]*?)(?=\n  [\w-]+:\n)/)?.[1];
   assert.ok(upgrade);
   assert.match(upgrade, /if: github\.event_name == 'workflow_dispatch' && inputs\.artifacts_only && inputs\.previous_windows_release != ''/);
-  assert.match(upgrade, /needs: \[release-metadata, windows\]\s+runs-on: windows-latest\s+permissions:\s+contents: read/);
+  assert.match(upgrade, /needs: \[release-metadata, windows-file-qa\]\s+runs-on: windows-latest\s+permissions:\s+contents: read/);
   assert.match(upgrade, /actions\/download-artifact@v8\s+with:\s+name: liveagent-windows-x64/);
   assert.match(upgrade, /-PreviousVersion \$env:PREVIOUS_WINDOWS_RELEASE\.Substring\(1\)/);
   assert.match(upgrade, /\$asset\[0\]\.digest -cne \$digest/);

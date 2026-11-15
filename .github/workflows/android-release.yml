@@ -251,6 +251,7 @@ jobs:
           path: dist
 
       - name: Upload APK to GitHub Releases
+        timeout-minutes: 250
         env:
           SOURCE_RELEASE_TOKEN: ${{ github.token }}
           PUBLIC_RELEASE_TOKEN: ${{ needs.android.outputs.publish_public == 'true' && secrets.PUBLIC_RELEASE_TOKEN || '' }}
@@ -263,14 +264,16 @@ jobs:
           upload_apk() {
             local repository="$1"
             local token="$2"
-            for attempt in $(seq 1 180); do
+            local wait_minutes=120
+            local poll_seconds=20
+            for attempt in $(seq 1 "$((wait_minutes * 60 / poll_seconds))"); do
               if GH_TOKEN="$token" gh release view "$RELEASE_TAG" --repo "$repository" >/dev/null 2>&1; then
                 GH_TOKEN="$token" gh release upload "$RELEASE_TAG" "$APK_PATH" --repo "$repository" --clobber
                 return 0
               fi
-              sleep 20
+              sleep "$poll_seconds"
             done
-            echo "Release $repository@$RELEASE_TAG was not available after 60 minutes." >&2
+            echo "Release $repository@$RELEASE_TAG was not available after $wait_minutes minutes." >&2
             return 1
           }
 

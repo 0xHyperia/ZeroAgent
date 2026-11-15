@@ -44,8 +44,9 @@ test("Android workflow builds a signed arm64 APK and can publish it", () => {
   assert.match(workflow, /PUBLIC_RELEASE_TOKEN: \$\{\{ needs\.android\.outputs\.publish_public == 'true' && secrets\.PUBLIC_RELEASE_TOKEN/);
   assert.match(workflow, /upload_apk "\$SOURCE_REPOSITORY"/);
   assert.match(workflow, /if \[ "\$PUBLISH_PUBLIC" = true \]; then\s+test -n "\$PUBLIC_RELEASE_TOKEN"\s+upload_apk "\$RELEASE_REPOSITORY"/);
-  assert.match(workflow, /seq 1 180/);
-  assert.match(workflow, /not available after 60 minutes/);
+  assert.match(workflow, /seq 1 "\$\(\(wait_minutes \* 60 \/ poll_seconds\)\)"/);
+  assert.match(workflow, /local wait_minutes=120/);
+  assert.match(workflow, /not available after \$wait_minutes minutes/);
   assert.match(workflow, /Install ZeroAgent Android launcher icons/);
   assert.match(workflow, /src-tauri\/icons\/android/);
   assert.match(workflow, /cp -R "\$source_dir"\/\. "\$target_dir"\//);
