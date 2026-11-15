@@ -189,7 +189,7 @@ def assemble(options):
             else:
                 extract_tar(paths["node"], Path(node_scratch))
             node_root, = Path(node_scratch).iterdir()
-            shutil.move(node_root, dest / "node")
+            copy_component(node_root, dest / "node")
         (dest / artifact_rel).parent.mkdir(parents=True, exist_ok=True)
         copy_component(base / artifact_rel, dest / artifact_rel)
         print("Assembling Tesseract, Poppler and libarchive with their locked libraries", flush=True)

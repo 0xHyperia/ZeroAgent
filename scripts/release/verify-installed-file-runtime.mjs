@@ -36,7 +36,9 @@ try {
     ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR } : {}),
     HOME: scratch, USERPROFILE: scratch, APPDATA: scratch, LOCALAPPDATA: scratch,
     TMPDIR: scratch, TMP: scratch, TEMP: scratch, XDG_CONFIG_HOME: scratch,
-    PATH: scratch, PIP_NO_INDEX: "1",
+    // LibreOffice's POSIX launcher calls base utilities such as dirname and uname.
+    // Python and both renderers still run by verified absolute path.
+    PATH: process.platform === "win32" ? scratch : "/usr/bin:/bin", PIP_NO_INDEX: "1",
     ZEROAGENT_FILE_SOFFICE: soffice, ZEROAGENT_FILE_POPPLER_BIN: poppler,
   };
   const script = fileURLToPath(new URL("./verify-file-runtime.py", import.meta.url));
