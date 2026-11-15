@@ -33,7 +33,8 @@ const poppler = runtimeMember("poppler_bin", true);
 const scratch = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), "za-file-qa-"));
 try {
   const env = {
-    ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR } : {}),
+    ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
+      ComSpec: process.env.ComSpec, PATHEXT: ".COM;.EXE;.BAT;.CMD" } : {}),
     HOME: scratch, USERPROFILE: scratch, APPDATA: scratch, LOCALAPPDATA: scratch,
     TMPDIR: scratch, TMP: scratch, TEMP: scratch, XDG_CONFIG_HOME: scratch,
     // LibreOffice's POSIX launcher calls base utilities such as dirname and uname.
