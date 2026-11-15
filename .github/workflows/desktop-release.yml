@@ -205,22 +205,28 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target ${{ matrix.target }} 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target ${{ matrix.target }} --bundles app 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
           fi
 
-      - name: Stage macOS artifact
+      - name: Create and stage the macOS disk image
         run: |
           set -euo pipefail
           mkdir -p dist
-          dmg_path="$(find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name 'ZeroAgent_*.dmg' -print -quit)"
-          updater_path="$(find "target/${{ matrix.target }}/release/bundle/macos" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
-          test -n "$dmg_path"
+          bundles="target/${{ matrix.target }}/release/bundle/macos"
+          test -d "$bundles/ZeroAgent.app"
+          updater_path="$(find "$bundles" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
           test -n "$updater_path"
           test -f "$updater_path.sig"
-          cp "$dmg_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.dmg"
+          # Build the disk image without mounting a writable volume or launching Finder.
+          image_source="$(mktemp -d "$RUNNER_TEMP/zeroagent-dmg-source.XXXXXX")"
+          trap 'rm -rf -- "$image_source"' EXIT
+          ditto "$bundles/ZeroAgent.app" "$image_source/ZeroAgent.app"
+          ln -s /Applications "$image_source/Applications"
+          hdiutil create -volname ZeroAgent -fs HFS+ -srcfolder "$image_source" -format UDZO -imagekey zlib-level=6 \
+            "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.dmg"
           cp "$updater_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz"
           cp "$updater_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz.sig"
 
