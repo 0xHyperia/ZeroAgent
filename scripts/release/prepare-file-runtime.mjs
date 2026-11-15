@@ -127,7 +127,9 @@ const probe = spawnSync(runtimeEnvironment.ZEROAGENT_FILE_NODE, [path.join(tools
 });
 if (probe.status !== 0) throw new Error("The staged Artifact Tool failed to load", { cause: probe.error ?? probe.stderr });
 const capabilities = JSON.parse(probe.stdout);
-if (!capabilities.workbook || !capabilities.presentation) throw new Error("The staged Artifact Tool is incomplete");
+if (capabilities.version !== sources.artifact_tool.version || !capabilities.workbook || !capabilities.presentation) {
+  throw new Error("The staged Artifact Tool does not match the runtime manifest");
+}
 const acceptance = spawnSync(path.join(runtime, manifest.python), ["-IB", path.join(repoTools, "test_file_tool.py")], {
   env: runtimeEnvironment, stdio: "inherit", timeout: 180_000,
 });

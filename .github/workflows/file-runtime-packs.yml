@@ -63,6 +63,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cpio rpm2cpio zstd libgl1 libglu1-mesa libxinerama1 libxrender1 libfontconfig1
 
+      - name: Check macOS archive decoder
+        if: runner.os == 'macOS'
+        run: |
+          command -v zstd || brew install zstd
+          zstd --version
+
       - name: Assemble locked file runtime
         shell: bash
         env:

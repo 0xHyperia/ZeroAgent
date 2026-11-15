@@ -93,8 +93,15 @@ def unpack_conda(archive, prefix, notices, scratch):
                     raise ValueError(f"Unexpected member in {archive.name}")
                 package.extract(member, scratch)
                 destination = prefix if kind == "pkg-" else scratch
-                subprocess.run(["tar", "-xf", scratch / member, "-C", destination], check=True)
-                (scratch / member).unlink()
+                payload = scratch / member
+                if platform.system() == "Darwin":
+                    # The system BSD tar on macOS does not decode these zstd streams.
+                    tar = payload.with_suffix("")
+                    subprocess.run(["zstd", "-q", "-d", payload, "-o", tar], check=True)
+                    payload.unlink()
+                    payload = tar
+                subprocess.run(["tar", "-xf", payload, "-C", destination], check=True)
+                payload.unlink()
     else:
         extract_tar(archive, scratch)
         for entry in scratch.iterdir():
@@ -135,7 +142,7 @@ def unpack_office(archive, destination, system, scratch):
     for rpm in sorted(scratch.glob("*/RPMS/*.rpm")):
         command = subprocess.Popen(["rpm2cpio", rpm], stdout=subprocess.PIPE)
         with command.stdout:
-            extracted = subprocess.run(["cpio", "-idmu", "--quiet", "--no-absolute-filenames"],
+            extracted = subprocess.run(["cpio", "-idmu", "--quiet", "--no-absolute-filenames", "./opt/*"],
                                        stdin=command.stdout, cwd=scratch)
         if command.wait() or extracted.returncode:
             raise RuntimeError(f"Cannot extract {rpm.name}")

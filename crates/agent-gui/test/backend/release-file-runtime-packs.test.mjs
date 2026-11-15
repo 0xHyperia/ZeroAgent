@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -40,6 +40,23 @@ test("every runtime dependency uses a verified HTTPS input", () => {
     for (const name of ["poppler", "tesseract", "libarchive"]) {
       assert.equal(packages.filter((packageInput) => packageInput.name === name).length, 1);
     }
+  }
+});
+
+test("Artifact Tool reports its actual supported version and verifies its exports", (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "za-artifact-tool-"));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL("crates/file-runtime/artifact_tool.mjs", root));
+  const entry = join(scratch, "dist", "artifact_tool.mjs");
+  mkdirSync(join(scratch, "dist"));
+  writeFileSync(entry, "export class Workbook {}\nexport class Presentation {}\n");
+  for (const version of ["2.8.145", "2.8.146"]) {
+    writeFileSync(join(scratch, "package.json"), JSON.stringify({ name: "@oai/artifact-tool", version }));
+    const probe = spawnSync(process.execPath, [script, "--probe"], {
+      encoding: "utf8", env: { ...process.env, ZEROAGENT_FILE_ARTIFACT_ENTRY: entry },
+    });
+    assert.equal(probe.status, 0, probe.stderr);
+    assert.deepEqual(JSON.parse(probe.stdout), { version, workbook: true, presentation: true });
   }
 });
 
