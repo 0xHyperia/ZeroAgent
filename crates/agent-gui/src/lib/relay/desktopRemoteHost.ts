@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import type { DesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import type { ExecutionSelection } from "@/lib/executionTargets";
 import { openUrl } from "../../shims/tauriOpener";
@@ -31,6 +31,10 @@ import {
 
 type RemoteOpen = { bridgeId: string; selection: ExecutionSelection };
 type RemoteHttp = { status: number; headers: Record<string, string>; bodyBase64: string };
+type ImageStreamEvent =
+  | { type: "start"; status: number; contentType: string }
+  | { type: "data"; bytes: string }
+  | { type: "end" };
 type HostInput = {
   initialView?: DesktopRemoteHost["initialView"];
   settings: AppSettings;
@@ -74,6 +78,84 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(status === 204 ? null : JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
+  });
+}
+
+function streamDeviceImageEvents(
+  call: typeof invoke,
+  sessionHandle: string,
+  bridgeId: string,
+  path: string,
+  headers: Headers,
+  requireCurrent: () => void,
+  signal?: AbortSignal | null,
+): Promise<Response> {
+  const streamId = crypto.randomUUID();
+  const events = new Channel<ImageStreamEvent>();
+  return new Promise((resolve, reject) => {
+    let started = false;
+    let stopped = false;
+    let controller: ReadableStreamDefaultController<Uint8Array<ArrayBuffer>>;
+    const cancelNative = () =>
+      void call("account_remote_image_events_cancel", { sessionHandle, bridgeId, streamId }).catch(
+        () => {},
+      );
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    const fail = (error: unknown) => {
+      if (stopped) return;
+      stopped = true;
+      cleanup();
+      if (started) controller.error(error);
+      else reject(error);
+      cancelNative();
+    };
+    const abort = () => fail(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    const body = new ReadableStream<Uint8Array<ArrayBuffer>>({
+      start: (value) => {
+        controller = value;
+      },
+      cancel: () => {
+        stopped = true;
+        cleanup();
+        cancelNative();
+      },
+    });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+    events.onmessage = (event) => {
+      if (stopped) {
+        if (event.type === "start") cancelNative();
+        return;
+      }
+      try {
+        requireCurrent();
+        if (event.type === "start" && !started) {
+          const response = new Response(body, {
+            status: event.status,
+            headers: { "Content-Type": event.contentType },
+          });
+          started = true;
+          resolve(response);
+        } else if (event.type === "data" && started) {
+          controller.enqueue(bytes(event.bytes));
+        } else if (event.type === "end" && started) {
+          stopped = true;
+          cleanup();
+          controller.close();
+        } else {
+          fail(new Error("Invalid remote image event response"));
+        }
+      } catch (error) {
+        fail(error);
+      }
+    };
+    void call("account_remote_image_events", {
+      request: { sessionHandle, bridgeId, path, cursor: headers.get("last-event-id") ?? "0", streamId },
+      events,
+    }).catch(fail);
   });
 }
 
@@ -287,8 +369,17 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
           response = jsonResponse(value, init?.method === "DELETE" ? 204 : 200);
         } else {
           const request = new Request(url.href, { ...init, signal: undefined });
+          if (/^\/api\/image\/jobs\/[^/]+\/events$/.test(url.pathname) && request.method === "GET") {
+            return streamDeviceImageEvents(
+              call, session.sessionHandle, bridgeId, `${url.pathname}${url.search}`,
+              request.headers, requireCurrent, init?.signal,
+            );
+          }
           const headers: Record<string, string> = {};
-          for (const name of ["content-type", "authorization", "x-zeroagent-workspace-path"]) {
+          for (const name of [
+            "content-type", "authorization", "x-zeroagent-workspace-path",
+            ...(url.pathname.startsWith("/api/image/") ? ["accept", "idempotency-key"] : []),
+          ]) {
             const value = request.headers.get(name);
             if (value) headers[name] = value;
           }
@@ -308,7 +399,8 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
             },
           });
           response = new Response(
-            result.status === 204 || result.status === 304 ? null : bytes(result.bodyBase64),
+            request.method === "HEAD" || result.status === 204 || result.status === 304
+              ? null : bytes(result.bodyBase64),
             {
               status: result.status,
               headers: result.headers,

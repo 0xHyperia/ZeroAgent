@@ -1,7 +1,8 @@
 import { ImageClientError } from "@liveagent/ui/lib/imaging/errors";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { TrustedGatewayImageIdentity } from "../agent-ui-adapters/imageStudio";
 import { desktopRemoteFetch, gatewayOrigin } from "./desktopRemoteHost";
+import { decodeSelectionCredential } from "./executionTargets";
 
 export async function fetchSingleUserImageIdentity(
   origin: string,
@@ -35,20 +36,62 @@ export async function fetchSingleUserImageIdentity(
   return { ownerId: "local", backendId: v.backendId, gatewayOrigin: origin, accessToken: token };
 }
 
-export function useSingleUserImageIdentity(token: string, supplied?: TrustedGatewayImageIdentity) {
-  const [active, setActive] = useState<{ token: string; identity: TrustedGatewayImageIdentity }>();
+export async function fetchDeviceImageIdentity(
+  origin: string,
+  token: string,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = desktopRemoteFetch,
+): Promise<TrustedGatewayImageIdentity> {
+  const selection = decodeSelectionCredential(token);
+  const selectedBackend = selection?.agentId || selection?.deviceId;
+  if (selection?.runtimeKind !== "device_agent" || !selectedBackend) {
+    throw new ImageClientError("IMAGE_AUTH_REQUIRED");
+  }
+  const response = await fetcher(`${origin}/api/image/identity`, {
+    signal,
+    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
+    cache: "no-store",
+    redirect: "error",
+  });
+  if (!response.ok) {
+    const code = response.status === 401 ? "IMAGE_AUTH_REQUIRED"
+      : response.status === 403 ? "IMAGE_FORBIDDEN"
+        : response.status === 503 ? "IMAGE_REMOTE_UPGRADE_REQUIRED" : "IMAGE_BACKEND_UNAVAILABLE";
+    throw new ImageClientError(code, response.status);
+  }
+  const value = await response.json();
+  if (value?.mode !== "device" || value.backendId !== selectedBackend ||
+      typeof value.ownerId !== "string" || !/^[1-9]\d*$/.test(value.ownerId)) {
+    throw new ImageClientError("IMAGE_PROTOCOL_ERROR");
+  }
+  return { mode: "device", ownerId: value.ownerId, backendId: selectedBackend, gatewayOrigin: origin, accessToken: token };
+}
+
+export function useGatewayImageIdentity(token: string, supplied?: TrustedGatewayImageIdentity) {
+  const [attempt, setAttempt] = useState(0);
+  const [active, setActive] = useState<{
+    token: string; attempt: number; identity?: TrustedGatewayImageIdentity; error?: unknown;
+  }>();
   useEffect(() => {
     if (supplied || !token.trim()) return;
     const controller = new AbortController();
-    void fetchSingleUserImageIdentity(gatewayOrigin(), token, controller.signal)
+    const fetch = token.startsWith("selection.") ? fetchDeviceImageIdentity : fetchSingleUserImageIdentity;
+    void fetch(gatewayOrigin(), token, controller.signal)
       .then((identity) => {
-        if (!controller.signal.aborted) setActive({ token, identity });
+        if (!controller.signal.aborted) setActive({ token, attempt, identity });
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setActive(undefined);
+      .catch((error) => {
+        if (!controller.signal.aborted) setActive({ token, attempt, error });
       });
     return () => controller.abort();
-  }, [token, supplied]);
-  if (supplied) return supplied;
-  return active?.token === token ? active.identity : undefined;
+  }, [token, attempt, supplied]);
+  const current = active?.token === token && active.attempt === attempt ? active : undefined;
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  return {
+    identity: supplied ?? current?.identity,
+    error: supplied ? undefined : current?.error,
+    pending: Boolean(!supplied && token && !current),
+    retry,
+  };
 }

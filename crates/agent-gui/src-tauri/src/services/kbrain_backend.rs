@@ -1469,6 +1469,29 @@ impl KBrainBackendState {
         manager.is_running().then(|| manager.connection())
     }
 
+    pub(crate) fn remote_image_connection(
+        self: &Arc<Self>,
+        owner: i64,
+    ) -> Result<PublicBackendConnection, String> {
+        let sessions = self.account_sessions.as_ref().ok_or("Account is unavailable")?;
+        let scope = format!("{}|user:{owner}", sessions.trusted_origin().origin().ascii_serialization());
+        let expected = BackendProfile::from_account_scope(Some(&scope))?;
+        let current = || {
+            self.allows_profile_commands()
+                && self.account_bound.load(Ordering::SeqCst)
+                && self.profile.lock().is_ok_and(|profile| *profile == expected)
+        };
+        if !current() {
+            return Err("Image workbench account does not own the active profile".into());
+        }
+        let backend = self.running_connection().ok_or("Image runtime is unavailable")?;
+        let connection = self.viewer_connection(&backend)?;
+        if !current() {
+            return Err("Image workbench profile changed".into());
+        }
+        Ok(connection)
+    }
+
     #[cfg(desktop)]
     pub(crate) async fn file_runtime_ready(&self) -> bool {
         let Some(manager) = self.manager.lock().ok().and_then(|manager| manager.as_ref().cloned())

@@ -9,6 +9,7 @@ function hookHarness() {
   let previousDeps;
   let cleanup;
   const loader = createWebModuleLoader({ mocks: { react: {
+    useCallback(callback) { return callback; },
     useState(initial) {
       const slot = index++;
       if (!(slot in state)) state[slot] = initial;

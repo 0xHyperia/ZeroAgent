@@ -179,6 +179,7 @@ test("workbench exposes preview, composer and history without project, version, 
     assert.deepEqual(calls.projects, ["图像工作台"], "empty backend initializes its archive automatically");
     const toggle = button("历史记录");
     assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    assert.equal(document.getElementById(toggle.getAttribute("aria-controls")), byLabel("历史记录"));
     await click(toggle);
     assert.equal(toggle.getAttribute("aria-expanded"), "true");
     // This checks toggle state only; hidden/lg:flex CSS needs a real browser.
@@ -201,15 +202,19 @@ test("history searches prompt/model, filters status and changes original preview
     await change(byLabel("提示词"), "Unsaved prompt");
     await change(byLabel("搜索历史记录"), "  WATERCOLOR  ");
     assert.equal(gallery.querySelectorAll("article").length, 1);
-    await click(button("历史记录"));
+    const historyToggle = button("历史记录");
+    await click(historyToggle);
     await click(byLabel("查看任务：Prompt older"));
-    assert.equal(button("历史记录").getAttribute("aria-expanded"), "false");
+    assert.equal(historyToggle.getAttribute("aria-expanded"), "false");
+    assert.equal(document.activeElement, historyToggle);
     assert.equal(byLabel("图片预览").querySelector("img").alt, "Prompt older");
     assert.ok(calls.reads.some(r => r.id === "ia_old" && r.variant === "original"));
     assert.equal(byLabel("提示词").value, "Unsaved prompt");
     assert.equal(byLabel("查看任务：Prompt older").getAttribute("aria-pressed"), "true");
     await click(button("下载图片"));
     assert.deepEqual(calls.exports, [{ id: "ia_old", destination: "download" }]);
+    await click(historyToggle);
+    assert.equal(byLabel("搜索历史记录").value, "  WATERCOLOR  ");
     await change(byLabel("搜索历史记录"), "Prompt active");
     assert.equal(gallery.querySelector("article").getAttribute("aria-label"), "任务 active");
     await change(byLabel("搜索历史记录"), "");

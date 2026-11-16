@@ -2542,6 +2542,8 @@ export const ZH_CN_COMMON_TRANSLATIONS = {
   "imageStudio.gateway.identityUnavailable":
     "Gateway 尚未提供可信图像身份（IMAGE_IDENTITY_UNAVAILABLE）。当前共享令牌登录无法确定图像所属用户，图像工作台暂不可用。",
   "imageStudio.gateway.networkError": "图像连接失败（IMAGE_NETWORK_ERROR）。",
+  "imageStudio.gateway.deviceUpgrade": "当前 Gateway 不支持远程图像工作台。更新 Gateway 后重试。",
+  "imageStudio.gateway.mobileDeviceUnavailable": "请在浏览器或 ZeroAgent 桌面端打开远程图像工作台。",
   "imageStudio.gateway.errorWithCode": "{message}（{code}）",
   "sharedHistory.shareDialog.title": "分享会话",
   "sharedHistory.shareDialog.enableShare": "开启分享",

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { AppErrorBoundary } from "../../components/AppErrorBoundary";
 import {
   AlertCircle,
@@ -39,6 +39,7 @@ export interface ImageStudioPageProps {
   exportDestinations?: readonly ExportDestination[];
   storage?: DraftStorage;
   defaultTargetId?: string;
+  reconnectVersion?: number;
   onOpenSettings?: () => void;
   /** Host-level controls for the title bar, e.g. the app theme toggle. */
   headerActions?: ReactNode;
@@ -122,12 +123,22 @@ function ImageStudioWorkbench({
   exportDestinations = [],
   storage,
   defaultTargetId,
+  reconnectVersion,
   onOpenSettings,
   headerActions,
 }: ImageStudioPageProps) {
   const { controller, view } = useImageStudio(client, ownerId, backendId, storage, defaultTargetId);
+  const lastReconnect = useRef(reconnectVersion);
+  useEffect(() => {
+    if (lastReconnect.current !== reconnectVersion) {
+      lastReconnect.current = reconnectVersion;
+      void controller.start();
+    }
+  }, [controller, reconnectVersion]);
   const { locale, t } = useLocale();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const historyId = useId();
+  const historyToggle = useRef<HTMLButtonElement>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   useEffect(
     () =>
@@ -198,11 +209,13 @@ function ImageStudioWorkbench({
           <h1 className="text-lg font-semibold tracking-tight">{t("imageStudio.title")}</h1>
           <div className="flex items-center gap-1">
             <Button
-              className="lg:hidden"
+              ref={historyToggle}
+              className="@5xl:hidden"
               variant="ghost"
               size="sm"
               aria-expanded={historyOpen}
-              onClick={() => setHistoryOpen(!historyOpen)}
+              aria-controls={historyId}
+              onClick={() => setHistoryOpen((open) => !open)}
             >
               {t("imageStudio.history")}
             </Button>
@@ -254,12 +267,14 @@ function ImageStudioWorkbench({
         />
       )}
       <div
-        className={`grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:overflow-hidden ${selectedJob ? "@5xl:grid-cols-[17rem_minmax(0,1fr)_16rem] @7xl:grid-cols-[19rem_minmax(0,1fr)_19rem]" : "xl:grid-cols-[minmax(0,1fr)_22rem]"}`}
+        className={`grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-4 p-4 sm:p-6 ${selectedJob ? "@5xl:grid-cols-[17rem_minmax(0,1fr)_16rem] @7xl:grid-cols-[19rem_minmax(0,1fr)_19rem]" : "@5xl:grid-cols-[minmax(0,1fr)_19rem] @7xl:grid-cols-[minmax(0,1fr)_22rem]"}`}
       >
-        <div className="flex min-h-0 min-w-0 flex-col gap-4 lg:overflow-y-auto">
+        <div
+          className={`${historyOpen ? "hidden" : "flex"} min-h-0 min-w-0 flex-col gap-4 overflow-y-auto @5xl:flex`}
+        >
           <section
             aria-label={t("imageStudio.preview")}
-            className="flex min-h-64 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card lg:min-h-0"
+            className="flex min-h-64 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card @5xl:min-h-0"
           >
             <div className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border px-4 py-2">
               <div className="min-w-0 flex-1">
@@ -387,8 +402,9 @@ function ImageStudioWorkbench({
           )}
         </div>
         <aside
+          id={historyId}
           aria-label={t("imageStudio.history")}
-          className={`${historyOpen ? "flex" : "hidden"} min-h-64 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card lg:flex lg:min-h-0 ${selectedJob ? "@5xl:order-first" : ""}`}
+          className={`${historyOpen ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card @5xl:flex ${selectedJob ? "@5xl:order-first" : ""}`}
         >
           <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-4">
             <h2 className="font-semibold">{t("imageStudio.history")}</h2>
@@ -410,7 +426,10 @@ function ImageStudioWorkbench({
             activeJobId={selectedJob?.id}
             onSelectJob={(id) => {
               controller.selectJob(id);
-              setHistoryOpen(false);
+              if (historyOpen) {
+                setHistoryOpen(false);
+                historyToggle.current?.focus();
+              }
             }}
           />
         </aside>

@@ -10,7 +10,7 @@ import {
 // Pure browser helper shared with desktop; it has no Tauri/native dependencies.
 import { createBrowserImageDownload } from "@liveagent/ui/lib/imaging/browserDownload";
 import { ImageClientError } from "@liveagent/ui/lib/imaging/errors";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { desktopRemoteFetch, gatewayOrigin } from "../lib/desktopRemoteHost";
 import { createGatewayImageClient, type GatewayImageConnection } from "../lib/imageStudio";
 
@@ -22,6 +22,7 @@ export interface TrustedGatewayImageIdentity {
   /** Bind identity to the gateway and login session that verified it. */
   gatewayOrigin: string;
   accessToken: string;
+  mode?: "device";
 }
 
 export function createWebImageStudioHost(
@@ -73,6 +74,7 @@ export function createWebImageStudioHost(
 
 export function gatewayImageErrorNotice(error: unknown, t: Translate = defaultTranslate): string {
   if (!(error instanceof ImageClientError)) return t("imageStudio.gateway.networkError");
+  if (error.code === "IMAGE_REMOTE_UPGRADE_REQUIRED") return t("imageStudio.gateway.deviceUpgrade");
   const status = error.status ? `HTTP ${error.status} · ` : "";
   const text =
     error.code === "IMAGE_IDENTITY_UNAVAILABLE"
@@ -154,8 +156,9 @@ export function useWebImageStudioHost(
     active?.workspace === workspace
       ? active
       : undefined;
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
   return {
-    retry: () => setAttempt((value) => value + 1),
+    retry,
     host: current?.host,
     unavailable:
       (current?.error && gatewayImageErrorNotice(current.error.cause, t)) ??

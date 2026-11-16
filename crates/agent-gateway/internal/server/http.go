@@ -68,14 +68,15 @@ func NewHTTPServerWithReadiness(
 	rootMux.HandleFunc("GET /image-proxy", handler.ImageProxy(cfg.RequestTimeout))
 	rootMux.HandleFunc("GET /api/public/history-shares/{token}", publicHistoryShare(cfg, sm))
 	rootMux.Handle("GET /api/public/model-catalog", handler.NewModelCatalogProxy(cfg.ModelCatalogURL, cfg.RequestTimeout))
-	// The hosted multi-account image adapter is intentionally unavailable until principal/grant
-	// integration is complete. Never serve SPA HTML or infer an owner from a shared bearer.
 	unavailableImages := http.Handler(&handler.ImageGateway{})
+	imageAPI := unavailableImages
 	if accounts == nil {
-		unavailableImages = auth.HTTPMiddleware(cfg.Token, unavailableImages)
+		imageAPI = auth.HTTPMiddleware(cfg.Token, unavailableImages)
+	} else {
+		imageAPI = protectedAPIHandler(cfg, sm, accounts)
 	}
-	rootMux.Handle("/api/image", unavailableImages)
-	rootMux.Handle("/api/image/", unavailableImages)
+	rootMux.Handle("/api/image", imageAPI)
+	rootMux.Handle("/api/image/", imageAPI)
 
 	if accounts != nil {
 		rootMux.Handle("/api/status", protectedAPIHandler(cfg, sm, accounts))
@@ -176,6 +177,9 @@ type selectionCredentialPayload struct {
 
 func protectedAPIHandler(cfg *config.Config, sm *session.Manager, accounts *account.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/image/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		parts := strings.SplitN(strings.TrimSpace(r.Header.Get("Authorization")), " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
@@ -200,6 +204,23 @@ func protectedAPIHandler(cfg *config.Config, sm *session.Manager, accounts *acco
 		device, err := accounts.Device(r.Context(), accountSession.UserID, agentID)
 		if err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]any{"error": "selected device is unavailable"})
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/image/") {
+			if lease.EffectiveScope() != account.SelectionScopeDevice || credential.DeviceID != lease.DeviceID || device.RevokedAt != nil {
+				deviceImageError(w, http.StatusForbidden, "IMAGE_FORBIDDEN")
+				return
+			}
+			authorized := func(ctx context.Context) bool {
+				current, selected, err := accounts.ValidateSelection(ctx, cookie.Value, lease.ID)
+				if err != nil || current.UserID != accountSession.UserID || selected.AgentID != agentID ||
+					selected.DeviceID != lease.DeviceID || selected.EffectiveScope() != account.SelectionScopeDevice {
+					return false
+				}
+				device, err := accounts.Device(ctx, current.UserID, agentID)
+				return err == nil && device.RevokedAt == nil
+			}
+			serveDeviceImage(w, r, sm, agentID, accountSession.UserID, lease.ExpiresAt, authorized)
 			return
 		}
 		switch r.URL.Path {

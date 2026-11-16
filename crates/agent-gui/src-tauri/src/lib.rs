@@ -75,6 +75,8 @@ macro_rules! app_invoke_handler {
             services::account_session::gateway::account_gateway_socket_close,
             services::account_session::desktop_remote::account_remote_open,
             services::account_session::desktop_remote::account_remote_http,
+            services::account_session::desktop_remote::account_remote_image_events,
+            services::account_session::desktop_remote::account_remote_image_events_cancel,
             services::account_session::desktop_remote::account_remote_close,
             services::account_session::desktop_cloud::account_cloud_open,
             services::account_session::desktop_cloud::account_cloud_fetch,

@@ -114,6 +114,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  gatewayImageErrorNotice,
   type TrustedGatewayImageIdentity,
   useWebImageStudioHost,
 } from "@/agent-ui-adapters/imageStudio";
@@ -127,7 +128,8 @@ import { MobileSidebarUpdate } from "@/components/mobile/MobileAppExperience";
 import { FirstRunOnboarding } from "@/components/onboarding/FirstRunOnboarding";
 import { executeClarifyPromptTurn } from "@/lib/chat/clarifyPromptTurn";
 import { gatewayOrigin, getDesktopRemoteHost } from "@/lib/desktopRemoteHost";
-import { useSingleUserImageIdentity } from "@/lib/imageIdentity";
+import { useGatewayImageIdentity } from "@/lib/imageIdentity";
+import { isEmbeddedMobileRuntime } from "@/lib/mobileRuntime";
 import { bindRelayKeysToSettings } from "@/lib/relay/providers";
 import {
   getNextTheme,
@@ -199,15 +201,34 @@ export function GatewayAppView({
   const desktopSettingsTarget = useWorkbenchNavigationTarget(desktopHost?.settingsNavigation);
   const [settingsRailTarget, setSettingsRailTarget] = useState<HTMLDivElement | null>(null);
   const navigationTarget = desktopSettingsTarget ?? settingsRailTarget;
-  const verifiedImageIdentity = useSingleUserImageIdentity(
-    viewModel.imageStudioToken,
+  const imageDeviceUnsupported = isEmbeddedMobileRuntime() && viewModel.imageStudioToken.startsWith("selection.");
+  const imageDeviceToken = imageDeviceUnsupported ? "" : viewModel.imageStudioToken;
+  const identity = useGatewayImageIdentity(
+    imageDeviceToken,
     imageStudioIdentity,
   );
   const imageStudio = useWebImageStudioHost(
-    viewModel.imageStudioToken,
-    verifiedImageIdentity,
+    imageDeviceToken,
+    identity.identity,
     viewModel.activeWorkspaceProjectPath,
+    (key) => translate(key, viewModel.settings.locale),
   );
+  const imageDeviceOnline = viewModel.status?.online;
+  const offlineImageDevice = useRef<string | undefined>(undefined);
+  const [imageReconnect, setImageReconnect] = useState(0);
+  const retryImageIdentity = identity.retry;
+  const retryImageHost = imageStudio.retry;
+  useEffect(() => {
+    if (!imageDeviceToken.startsWith("selection.")) return;
+    if (imageDeviceOnline === false) {
+      offlineImageDevice.current = imageDeviceToken;
+    } else if (imageDeviceOnline && offlineImageDevice.current === imageDeviceToken) {
+      offlineImageDevice.current = undefined;
+      if (imageStudio.host) setImageReconnect((version) => version + 1);
+      else if (identity.identity) retryImageHost();
+      else retryImageIdentity();
+    }
+  }, [identity.identity, imageDeviceOnline, imageDeviceToken, imageStudio.host, retryImageHost, retryImageIdentity]);
   const chatFrameRef = useRef<HTMLDivElement | null>(null);
   useWindowFileDropGuard();
 
@@ -2194,13 +2215,21 @@ export function GatewayAppView({
 
                       {activeView === "image-studio-hub" && !imageStudio.host && (
                         <section className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-                          <h1 className="text-lg font-semibold">图像工作台</h1>
+                          <h1 className="text-lg font-semibold">
+                            {translate("imageStudio.name", settings.locale)}
+                          </h1>
                           <p role="status" className="max-w-lg text-sm text-muted-foreground">
-                            {imageStudio.unavailable}
+                            {imageDeviceUnsupported
+                              ? translate("imageStudio.gateway.mobileDeviceUnavailable", settings.locale)
+                              : identity.pending
+                              ? translate("imageStudio.connecting", settings.locale)
+                              : identity.error
+                                ? gatewayImageErrorNotice(identity.error, (key) => translate(key, settings.locale))
+                                : imageStudio.unavailable}
                           </p>
-                          {imageStudioIdentity && (
-                            <Button variant="outline" onClick={imageStudio.retry}>
-                              重试连接
+                          {imageDeviceToken && !identity.pending && (
+                            <Button variant="outline" onClick={identity.identity ? imageStudio.retry : identity.retry}>
+                              {translate("imageStudio.retryConnect", settings.locale)}
                             </Button>
                           )}
                         </section>
@@ -2210,7 +2239,9 @@ export function GatewayAppView({
                         imageStudioHost={
                           imageStudio.host && {
                             ...imageStudio.host,
-                            onOpenSettings: () => openSettings("image-studio"),
+                            reconnectVersion: imageReconnect,
+                            onOpenSettings: identity.identity?.mode === "device"
+                              ? undefined : () => openSettings("image-studio"),
                           }
                         }
                         settings={settings}
@@ -2909,7 +2940,7 @@ export function GatewayAppView({
                 <SettingsPage
                   runtimeKind="device_agent"
                   onOpenModelPreferences={() => setModelPreferencesOpen(true)}
-                  imageClient={imageStudio.host?.client}
+                  imageClient={identity.identity?.mode === "device" ? undefined : imageStudio.host?.client}
                   registerLeaveGuard={viewModel.registerSettingsLeaveGuard}
                   settings={{
                     ...settings,

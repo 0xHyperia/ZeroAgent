@@ -47,6 +47,7 @@ mod chat_ingress_transport;
 mod clarify;
 mod composer_action;
 mod connection;
+pub(crate) mod device_image;
 #[cfg(windows)]
 mod private_loopback;
 mod controller;
@@ -135,6 +136,7 @@ pub struct GatewayController {
     pub(crate) git_clone_task_registry: Arc<GitCloneTaskRegistry>,
     config_tx: watch::Sender<RemoteSettingsPayload>,
     local_gateway: Arc<crate::services::local_gateway::LocalGatewayManager>,
+    device_images: device_image::DeviceImages,
     runner_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     status: Mutex<GatewayStatusSnapshot>,
     outbound_tx: Mutex<Option<GatewayOutboundSender>>,

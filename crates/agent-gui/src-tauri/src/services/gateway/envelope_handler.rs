@@ -102,6 +102,9 @@ impl GatewayController {
                 Ok(())
             }
             Some(proto::gateway_envelope::Payload::TunnelFrame(frame)) => {
+                if frame.stream_id.starts_with("image-") {
+                    return self.device_images.handle(self, frame);
+                }
                 if frame.stream_id.starts_with("private-") {
                     #[cfg(windows)]
                     return self.private_loopback.handle(self, frame);

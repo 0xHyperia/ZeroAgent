@@ -17,7 +17,7 @@ function fixture(handler) {
     assert.fail(`unexpected Native command ${command}`);
   };
   const loader = createTsModuleLoader({ mocks: {
-    "@tauri-apps/api/core": { invoke },
+    "@tauri-apps/api/core": { invoke, Channel: class {} },
     "./client": { revealRelayApiKey: async () => assert.fail("key reveal is outside this transport fixture") },
     "./nativeSession": { requireNativeSession: async () => session, nativeSessionHandle: () => handle },
   } });
@@ -73,6 +73,43 @@ test("Native remote HTTP preserves bytes and only passes controlled headers to t
     for (const path of ["https://foreign.invalid/api/status", "/non-api", "//foreign.invalid/api/status"]) await assert.rejects(host.request(path), /超出已配置 Gateway/);
     assert.equal(f.calls.filter((call) => call.command === "account_remote_http").length, 1);
   } finally { dispose(); }
+});
+
+test("remote image progress is streamed and abort only cancels the captured device stream", async () => {
+  let events;
+  let finish;
+  const f = fixture((command, args, { selection }) => {
+    if (command === "account_remote_open") return { bridgeId: "image-bridge", selection };
+    if (command === "account_remote_image_events") {
+      events = args.events;
+      events.onmessage({ type: "start", status: 200, contentType: "text/event-stream" });
+      return new Promise((resolve) => { finish = resolve; });
+    }
+  });
+  const { host, dispose } = await f.api.createDesktopRemoteHost(f.input, f.dependencies);
+  const abort = new AbortController();
+  try {
+    const response = await host.request("/api/image/jobs/job/events?backendId=device-a", {
+      signal: abort.signal,
+      headers: { "Last-Event-ID": "5" },
+    });
+    const request = f.calls.find((item) => item.command === "account_remote_image_events").args.request;
+    assert.equal(request.bridgeId, "image-bridge");
+    assert.equal(request.cursor, "5");
+    assert.equal(response.headers.get("content-type"), "text/event-stream");
+    const reader = response.body.getReader();
+    const message = "id: 6\ndata: {}\n\n";
+    events.onmessage({ type: "data", bytes: Buffer.from(message).toString("base64") });
+    assert.equal(new TextDecoder().decode((await reader.read()).value), message);
+    abort.abort();
+    await assert.rejects(reader.read(), { name: "AbortError" });
+    const cancellation = f.calls.find((item) => item.command === "account_remote_image_events_cancel");
+    assert.equal(cancellation.args.streamId, request.streamId);
+    assert.equal(cancellation.args.bridgeId, request.bridgeId);
+  } finally {
+    finish?.();
+    dispose();
+  }
 });
 
 test("private browser navigation uses the selected native bridge and expires with it", async () => {

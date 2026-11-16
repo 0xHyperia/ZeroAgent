@@ -142,6 +142,18 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
       settingsNavigation,
       async request(path) {
         requests.push(path);
+        if (path === "/api/image/identity") return Response.json({ mode: "device", ownerId: "7", backendId: agent });
+        if (path.startsWith("/api/image/")) {
+          const route = new URL(path, server.origin);
+          assert.equal(route.searchParams.get("backendId"), agent);
+          const version = "kbrain.image.v1";
+          if (route.pathname.endsWith("/health")) return Response.json({ status: "ok", capabilities: { image: { supported: true, version } } });
+          if (route.pathname.endsWith("/projects")) {
+            const date = "2026-11-16T00:00:00Z";
+            return Response.json({ version, items: [{ id: "project-fixture", title: "Fixture archive", revision: 1, createdAt: date, updatedAt: date }] });
+          }
+          return Response.json({ version, items: [] });
+        }
         if (path.startsWith("/api/auth/me")) return Response.json({ user: publicUser });
         if (path.startsWith("/api/usa-zero/user/profile")) return Response.json({ code: 0, data: publicUser });
         if (path.includes("/dashboard/stats")) return Response.json({ code: 0, data: { today_tokens: 0 } });
@@ -180,6 +192,11 @@ test("the actual desktop remote bundle mounts the complete shared WebUI and disp
     assert.ok(slots.update?.isConnected, "desktop updates have a live navigation portal target");
     assert.equal(root.querySelector(".application-rail img").getAttribute("src"), "/zeroagent-logo.png", "remote rail uses the logo shipped by the desktop host");
     const composer = root.querySelector("[contenteditable='true'],textarea");
+    const imageAction = root.querySelector('nav button[aria-label="Image Studio"],nav button[aria-label="图像工作台"]');
+    assert.ok(imageAction, "device Image Studio stays in the shared application rail");
+    imageAction.click();
+    await waitFor(() => root.querySelector('[aria-label="Create image"],[aria-label="图像创作"]'), "the remote image composer");
+    assert.ok(requests.some((path) => path.startsWith("/api/image/projects?") && path.includes("backendId=device-a")));
     root.querySelector('nav button[aria-label="Skills"]').click();
     const featureSidebar = await waitFor(() => root.querySelector(".workbench-feature-sidebar"), "contextual feature navigation");
     assert.ok(featureSidebar.querySelector('[aria-current="page"]').textContent.includes("Skills"));

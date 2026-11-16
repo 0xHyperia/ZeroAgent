@@ -442,6 +442,7 @@ mod tests {
                 selection: serde_json::Value::Null,
                 credential: "fixture-lease".into(),
                 closed,
+                image_streams: Default::default(),
             }),
             authority: authority.clone(),
             remote_port: 5173,

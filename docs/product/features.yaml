@@ -356,6 +356,8 @@
         "crates/agent-gateway/web/src/desktopRemoteEntry.tsx",
         "crates/agent-gateway/web/src/lib/desktopRemoteHost.ts",
         "crates/agent-gateway/web/src/app/GatewayDeviceConnectionNotice.tsx",
+        "crates/agent-gateway/internal/server/device_image.go",
+        "crates/agent-gui/src-tauri/src/services/gateway/device_image.rs",
         "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote.rs",
         "scripts/prepare-desktop-remote.mjs",
         "crates/agent-gateway/internal/protocol/pbws/controller_selection.go",
@@ -366,6 +368,7 @@
       "tests": [
         "crates/agent-gateway/web/test/execution-targets.test.mjs",
         "crates/agent-gateway/web/test/device-conversation-reconnect.test.mjs",
+        "crates/agent-gateway/internal/server/device_image_test.go",
         "crates/agent-gateway/internal/session/tunnel_state_test.go",
         "crates/agent-gateway/test/tunnel/tunnel_e2e_test.go",
         "crates/agent-gui/test/providers/desktop-gateway-proxy.test.mjs",

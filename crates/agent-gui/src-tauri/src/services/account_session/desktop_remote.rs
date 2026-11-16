@@ -3,10 +3,13 @@
 //! The existing one-use desktop handoff establishes the HTTP session required by
 //! Gateway uploads. Neither that cookie nor the USA-Zero token reaches the view.
 use super::*;
+use crate::services::gateway::device_image::{
+    image_request_header, remote_image_route, IMAGE_JSON_MAX, IMAGE_UPLOAD_MAX,
+};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::header::{COOKIE, LOCATION, SET_COOKIE};
 use std::{collections::HashMap, future::Future};
-use tauri::{Manager, State};
+use tauri::State;
 use tokio::sync::watch;
 
 #[cfg(windows)]
@@ -27,6 +30,7 @@ struct RemoteBridge {
     selection: Value,
     credential: String,
     closed: watch::Sender<bool>,
+    image_streams: Mutex<HashMap<uuid::Uuid, watch::Sender<bool>>>,
 }
 
 #[derive(Default)]
@@ -300,6 +304,7 @@ async fn open_remote(
         selection: Value::Null,
         credential: String::new(),
         closed,
+        image_streams: Mutex::new(HashMap::new()),
     };
     let initialized = async {
         let location = response
@@ -422,7 +427,14 @@ async fn remote_http(
     let method = request.method.to_ascii_uppercase();
     let handoff = url.path() == CONFIRMED_HANDOFF_PATH;
     let workspace_scope = bridge.selection["scope"] == "workspace";
-    if !resource_route(&method, url.path()) || handoff != workspace_scope {
+    let image = remote_image_route(&method, url.path());
+    let image_content =
+        image && url.path().starts_with("/api/image/assets/") && url.path().ends_with("/content");
+    if image {
+        if workspace_scope || url.path().ends_with("/events") {
+            return Err("Remote image route is not allowed for this selection".into());
+        }
+    } else if !resource_route(&method, url.path()) || handoff != workspace_scope {
         return Err("Remote Gateway endpoint is not allowed".into());
     }
     if handoff {
@@ -440,6 +452,7 @@ async fn remote_http(
         || request.headers.iter().any(|(name, value)| {
             let allowed_size = match name.to_ascii_lowercase().as_str() {
                 "accept" | "content-type" | "authorization" => 4096,
+                name if image && image_request_header(name) => 4096,
                 "x-zeroagent-workspace-path" if handoff => 5500,
                 _ => 0,
             };
@@ -456,13 +469,20 @@ async fn remote_http(
         return Err("Remote Gateway request targets another selection".into());
     }
     let encoded = request.body_base64.unwrap_or_default();
-    if encoded.len() > (MAX_REQUEST_BYTES + 2) / 3 * 4 {
+    let request_limit = if url.path() == "/api/image/assets" {
+        IMAGE_UPLOAD_MAX
+    } else if image {
+        IMAGE_JSON_MAX
+    } else {
+        MAX_REQUEST_BYTES
+    };
+    if encoded.len() > request_limit.div_ceil(3) * 4 {
         return Err("Remote Gateway upload is too large".into());
     }
     let body = BASE64
         .decode(encoded)
         .map_err(|_| "Invalid remote Gateway body")?;
-    if body.len() > MAX_REQUEST_BYTES || method == "GET" && !body.is_empty() {
+    if body.len() > request_limit || matches!(method.as_str(), "GET" | "HEAD") && !body.is_empty() {
         return Err("Invalid remote Gateway request body".into());
     }
     let query: Vec<_> = url
@@ -472,7 +492,7 @@ async fn remote_http(
         .collect();
     url.set_query(None);
     url.query_pairs_mut().extend_pairs(query);
-    if method == "POST" {
+    if method == "POST" && !image {
         url.query_pairs_mut()
             .append_pair("agent_id", &bridge.device_id);
     }
@@ -500,9 +520,19 @@ async fn remote_http(
             .await
             .map_err(|_| "Remote Gateway request failed")?;
         let status = response.status().as_u16();
+        let mime = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .unwrap_or_default()
+            .to_owned();
+        let binary =
+            image_content && matches!(mime.as_str(), "image/png" | "image/jpeg" | "image/webp");
+        let response_limit = if binary { 32 << 20 } else { MAX_RESPONSE_BYTES };
         if response
             .content_length()
-            .is_some_and(|size| size > MAX_RESPONSE_BYTES as u64)
+            .is_some_and(|size| method != "HEAD" && size > response_limit as u64)
         {
             return Err("Remote Gateway response is too large".into());
         }
@@ -512,12 +542,14 @@ async fn remote_http(
             .await
             .map_err(|_| "Remote Gateway response failed")?
         {
-            if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            if bytes.len() + chunk.len() > response_limit {
                 return Err("Remote Gateway response is too large".into());
             }
             bytes.extend_from_slice(&chunk);
         }
-        let bytes = if status == 204 {
+        let bytes = if binary {
+            bytes
+        } else if status == 204 || method == "HEAD" {
             Vec::new()
         } else {
             let mut value: Value =
@@ -532,11 +564,150 @@ async fn remote_http(
         }
         Ok(RemoteHttpResponse {
             status,
-            headers: HashMap::from([("content-type".into(), "application/json".into())]),
+            headers: HashMap::from([(
+                "content-type".into(),
+                if binary {
+                    mime
+                } else {
+                    "application/json".into()
+                },
+            )]),
             body_base64: BASE64.encode(bytes),
         })
     })
     .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RemoteImageStreamRequest {
+    session_handle: String,
+    bridge_id: String,
+    stream_id: uuid::Uuid,
+    path: String,
+    cursor: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum RemoteImageStreamEvent {
+    Start { status: u16, content_type: String },
+    Data { bytes: String },
+    End,
+}
+
+#[tauri::command]
+pub async fn account_remote_image_events(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AccountSessionState>>,
+    remote: State<'_, Arc<RemoteGatewayState>>,
+    request: RemoteImageStreamRequest,
+    events: tauri::ipc::Channel<RemoteImageStreamEvent>,
+) -> Result<(), String> {
+    super::api::guard_viewer(&app, state.inner(), &request.session_handle).await?;
+    let bridge = remote
+        .bridge(&request.session_handle, &request.bridge_id)
+        .await?;
+    let url = super::gateway::gateway_url(&bridge.origin, &request.path)?;
+    if bridge.selection["scope"] == "workspace"
+        || !remote_image_route("GET", url.path())
+        || !url.path().ends_with("/events")
+        || request.cursor.parse::<u64>().is_err()
+    {
+        return Err("Invalid remote image event stream".into());
+    }
+    let (stop, mut cancelled) = watch::channel(false);
+    {
+        let mut streams = bridge.image_streams.lock().await;
+        if streams.len() >= 24 || streams.contains_key(&request.stream_id) {
+            return Err("Too many remote image event streams".into());
+        }
+        streams.insert(request.stream_id, stop);
+    }
+    let result = while_current(state.inner(), &bridge, async {
+        let read = async {
+            let mut response = state
+                .client
+                .get(url)
+                .header(COOKIE, format!("{COOKIE_NAME}={}", bridge.cookie))
+                .bearer_auth(&bridge.credential)
+                .header("accept", "text/event-stream")
+                .header("last-event-id", request.cursor)
+                .timeout(Duration::from_secs(30 * 60))
+                .send()
+                .await
+                .map_err(|_| "Remote image event request failed")?;
+            let status = response.status().as_u16();
+            let content_type = if status == 200 {
+                "text/event-stream"
+            } else {
+                "application/json"
+            };
+            if response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(';').next())
+                != Some(content_type)
+            {
+                return Err("Unexpected remote image event content type".into());
+            }
+            events
+                .send(RemoteImageStreamEvent::Start {
+                    status,
+                    content_type: content_type.into(),
+                })
+                .map_err(|_| "Remote image event view closed")?;
+            let mut total = 0usize;
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|_| "Remote image event stream closed")?
+            {
+                total += chunk.len();
+                if total > 8 << 20 {
+                    return Err("Remote image event stream is too large".into());
+                }
+                for part in chunk.chunks(64 << 10) {
+                    events
+                        .send(RemoteImageStreamEvent::Data {
+                            bytes: BASE64.encode(part),
+                        })
+                        .map_err(|_| "Remote image event view closed")?;
+                }
+            }
+            events
+                .send(RemoteImageStreamEvent::End)
+                .map_err(|_| "Remote image event view closed")?;
+            Ok(())
+        };
+        tokio::select! {
+            biased;
+            _ = cancelled.wait_for(|closed| *closed) => Ok(()),
+            result = read => result,
+        }
+    })
+    .await;
+    bridge.image_streams.lock().await.remove(&request.stream_id);
+    result
+}
+
+#[tauri::command]
+pub async fn account_remote_image_events_cancel(
+    remote: State<'_, Arc<RemoteGatewayState>>,
+    session_handle: String,
+    bridge_id: String,
+    stream_id: uuid::Uuid,
+) -> Result<(), String> {
+    let bridge = remote.bridge(&session_handle, &bridge_id).await?;
+    if let Some(stream) = bridge.image_streams.lock().await.get(&stream_id) {
+        stream.send_replace(true);
+    }
+    Ok(())
 }
 
 #[tauri::command]

@@ -2685,6 +2685,8 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "imageStudio.gateway.identityUnavailable":
     "Gateway has not provided a trusted image identity (IMAGE_IDENTITY_UNAVAILABLE). A shared-token login can't tell which user owns the images, so Image Studio is unavailable.",
   "imageStudio.gateway.networkError": "Image connection failed (IMAGE_NETWORK_ERROR).",
+  "imageStudio.gateway.deviceUpgrade": "This Gateway does not support remote Image Studio. Update it and retry.",
+  "imageStudio.gateway.mobileDeviceUnavailable": "Open remote Image Studio in a browser or the ZeroAgent desktop app.",
   "imageStudio.gateway.errorWithCode": "{message} ({code})",
   "sharedHistory.shareDialog.title": "Share conversation",
   "sharedHistory.shareDialog.enableShare": "Enable share",

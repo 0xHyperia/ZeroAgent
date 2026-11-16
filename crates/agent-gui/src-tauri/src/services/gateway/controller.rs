@@ -75,6 +75,7 @@ impl GatewayController {
             git_clone_task_registry,
             config_tx,
             local_gateway,
+            device_images: Default::default(),
             runner_task: Mutex::new(None),
             status: Mutex::new(GatewayStatusSnapshot {
                 online: false,
