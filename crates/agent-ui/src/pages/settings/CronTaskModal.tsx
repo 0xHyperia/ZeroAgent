@@ -69,6 +69,7 @@ import {
   WorkbenchCronPreview,
 } from "./WorkbenchCronPreview";
 import { WorkbenchCronLimits, WorkbenchCronSchedule } from "./WorkbenchCronSchedule";
+import { WorkbenchScheduleDialog } from "./WorkbenchScheduleDialog";
 
 export type CronPromptModelOption = ModelPickerOption;
 
@@ -540,6 +541,7 @@ export function CronTaskModal({
   const modalTitle = mode === "add" ? t("settings.cronModalAdd") : t("settings.cronModalEdit");
   const Configuration = workbench ? "details" : "div";
   const MoreSettings = workbench && type === "prompt" ? "details" : "div";
+  const EditorContent = workbench ? WorkbenchScheduleDialog : DialogContent;
 
   return (
     <Dialog
@@ -548,14 +550,11 @@ export function CronTaskModal({
         if (!open) void requestClose();
       }}
     >
-      <DialogContent
-        layout={workbench ? "fullscreen-mobile" : undefined}
+      <EditorContent
         data-schedule-editor={workbench ? "device" : undefined}
         className={cn(
-          "flex max-w-xl flex-col p-0",
-          workbench
-            ? "max-h-[min(90dvh,760px)] max-w-[38rem] max-[720px]:max-h-none"
-            : !choosingType && "h-[min(48rem,calc(100dvh-2rem))]",
+          !workbench && "flex max-w-xl flex-col p-0",
+          !workbench && !choosingType && "h-[min(48rem,calc(100dvh-2rem))]",
         )}
         initialFocus={
           workbench
@@ -649,9 +648,9 @@ export function CronTaskModal({
         ) : (
           <>
             {/* Body */}
-            <DialogBody className="p-0 max-[820px]:p-0">
+            <DialogBody className={workbench ? "space-y-3" : "p-0 max-[820px]:p-0"}>
               {workbench ? (
-                <div className="space-y-3 px-4">
+                <div className="space-y-3">
                   {mode === "edit" && (
                     <Input
                       ref={taskName}
@@ -699,7 +698,7 @@ export function CronTaskModal({
                 </div>
               ) : null}
               <Configuration
-                {...(workbench ? { open: type !== "prompt", className: "group px-4" } : {})}
+                {...(workbench ? { open: type !== "prompt", className: "group" } : {})}
               >
                 {workbench ? (
                   <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -1202,14 +1201,14 @@ export function CronTaskModal({
                 <Button
                   className={workbench ? "rounded-full" : undefined}
                   variant={workbench ? "secondary" : "outline"}
-                  size="sm"
+                  size={workbench ? "default" : "sm"}
                   onClick={() => void requestClose()}
                   disabled={isSaving}
                 >
                   {t("settings.cancel")}
                 </Button>
                 <Button
-                  size="sm"
+                  size={workbench ? "default" : "sm"}
                   className={workbench ? "rounded-full" : undefined}
                   onClick={() => void handleSave()}
                   disabled={!formReady || !previewReady || isSaving}
@@ -1221,7 +1220,7 @@ export function CronTaskModal({
           </>
         )}
         {discardDialog}
-      </DialogContent>
+      </EditorContent>
     </Dialog>
   );
 }

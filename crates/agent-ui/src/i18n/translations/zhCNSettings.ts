@@ -164,6 +164,7 @@ export const ZH_CN_SETTINGS_TRANSLATIONS = {
   "settings.navAgents": "提示词模板",
   "settings.navSsh": "SSH",
   "settings.navCron": "定时任务",
+  "settings.openScheduledTasks": "打开定时任务",
   "settings.navRemote": "远程访问",
   "settings.navSkills": "Skills",
   "settings.navImageStudio": "图像工作台",

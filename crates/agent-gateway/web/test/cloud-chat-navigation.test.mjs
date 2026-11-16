@@ -196,7 +196,9 @@ test("desktop task navigation keeps sources independent and supports local creat
   const details = app.host.querySelector('button[aria-label="Task details"]');
   assert.ok(details);
   await app.env.act(async () => { details.click(); await tick(); });
-  assert.match(app.host.textContent, /Run history/);
+  const inspector = app.host.querySelector('aside[aria-label="Task details"]');
+  assert.match(inspector.textContent, /Scheduled task.*Local report/);
+  assert.doesNotMatch(inspector.textContent, /Run history/);
 });
 
 test("the task landing distinguishes reading, unavailable, filtered, and first-task states", async (t) => {
@@ -324,6 +326,7 @@ test("device task results resolve the selected run's exact message and retain ra
   const runs = [
     { id: "new-run", runId: "canonical-new", sessionId: "shared-session", state: "done", success: true, startedAt: 2000, output: "New raw output" },
     { id: "old-run", runId: "canonical-old", sessionId: "shared-session", state: "done", success: true, startedAt: 1000, output: "Old raw output" },
+    { id: "missing-anchor", runId: "canonical-missing", sessionId: "shared-session", state: "done", success: true, startedAt: 900, output: "Stored fallback result" },
   ];
   let releaseFirstRead;
   let oldReads = 0;
@@ -347,7 +350,7 @@ test("device task results resolve the selected run's exact message and retain ra
         await new Promise((resolve) => { releaseFirstRead = resolve; });
       }
       const run = runs.find(({ id }) => id === execution);
-      return { sessionId: run.sessionId, runId: run.runId, messageId: `message-${execution}` };
+      return { sessionId: run.sessionId, runId: run.runId, messageId: execution === "missing-anchor" ? undefined : `message-${execution}` };
     },
     cancel: async (task, runId) => {
       cancellations.push([task, runId]);
@@ -388,14 +391,18 @@ test("device task results resolve the selected run's exact message and retain ra
   assert.equal(result()?.getAttribute("data-jump"), "message-new-run");
   await app.render(app.env.React.createElement(Harness, { id: "prompt", run: "old-run" }));
   assert.equal(result()?.getAttribute("data-jump"), "message-old-run");
+  await app.render(app.env.React.createElement(Harness, { id: "prompt", run: "missing-anchor" }));
+  assert.match(app.host.querySelector("main").textContent, /Stored fallback result/);
   await app.render(app.env.React.createElement(Harness, { id: "shell" }));
   assert.equal(result(), null);
   assert.match(app.host.querySelector("main").textContent, /Raw shell output/);
   const details = app.host.querySelector('button[aria-label="Task details"]');
   await app.env.act(async () => { details.click(); await tick(); });
   const inspector = app.host.querySelector('aside[aria-label="Task details"]');
-  assert.equal(inspector.querySelector("pre").textContent, "Raw shell output");
-  assert.doesNotMatch(inspector.textContent, /No output yet|Open result conversation/);
+  assert.match(inspector.textContent, /Scheduled task.*Shell task/);
+  assert.equal(inspector.querySelector("summary, pre"), null);
+  assert.doesNotMatch(inspector.textContent, /Run history|Clear finished runs|Outputs/);
+  assert.match(app.host.querySelector("main").textContent, /Raw shell output/);
   await app.env.act(async () => { details.click(); await tick(); });
   runs.unshift(
     { id: "other-session", runId: "canonical-other", sessionId: "other", state: "leased", startedAt: 4000 },

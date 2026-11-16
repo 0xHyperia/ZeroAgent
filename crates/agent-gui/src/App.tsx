@@ -996,6 +996,7 @@ export default function App() {
     () => createWorkbenchNavigationPortal(() => closeSettingsRef.current()),
     [],
   );
+  const scheduledTasksNavigation = useRef<(() => void) | null>(null);
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const openSettingsRef = useRef(openSettings);
@@ -1299,6 +1300,7 @@ export default function App() {
                 >
                   <ChatPage
                     settingsNavigation={settingsNavigation}
+                    scheduledTasksNavigationRef={scheduledTasksNavigation}
                     active={!cloudSelected && localExecutionSelected}
                     relayUser={relayUser}
                     relayStats={relayStats}
@@ -1432,6 +1434,11 @@ export default function App() {
                     settings={settings}
                     settingsHost={settingsHostAdapter}
                     onOpenModelPreferences={() => setModelPreferencesOpen(true)}
+                    onOpenScheduledTasks={
+                      localExecutionSelected && !cloudSelected && isTauriHost()
+                        ? () => scheduledTasksNavigation.current?.()
+                        : undefined
+                    }
                     imageClient={imageStudioHost?.client}
                     registerLeaveGuard={registerSettingsLeaveGuard}
                     setSettings={setSettings}

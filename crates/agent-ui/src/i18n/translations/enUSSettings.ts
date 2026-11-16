@@ -180,6 +180,7 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.navAgents": "Prompt Templates",
   "settings.navSsh": "SSH",
   "settings.navCron": "Scheduled tasks",
+  "settings.openScheduledTasks": "Open scheduled tasks",
   "settings.navRemote": "Remote Access",
   "settings.navSkills": "Skills",
   "settings.navImageStudio": "Image Studio",

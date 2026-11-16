@@ -16,7 +16,7 @@ for (const surface of ["desktop", "web"]) test(`SettingsPage ${surface} shows pr
   let providerProps;
   const env = await createDomTestEnv({
     mocks: {
-      [shared("SettingsShell.tsx")]: { SettingsShell: ({ registry }) => { section = registry.settingsSections.find((item) => item.id === "providers"); return section.render(); } },
+      [shared("SettingsShell.tsx")]: { SettingsShell: ({ registry, initialSection }) => { section = registry.settingsSections.find((item) => item.id === initialSection); return section.render(); } },
       [shared("ProvidersSection.tsx")]: { ProvidersSection: (props) => { providerProps = props; return env.React.createElement("div", null, "original-provider-interface"); } },
       [shared("SystemSettingsForm.tsx")]: { SystemSettingsForm: () => null },
       [shared("AgentsSection.tsx")]: { AgentsSection: () => null },
@@ -27,7 +27,7 @@ for (const surface of ["desktop", "web"]) test(`SettingsPage ${surface} shows pr
       [shared("SshSection.tsx")]: { SshSection: () => null },
       [shared("SttSection.tsx")]: { SttSection: () => null },
       [shared("HooksSection.tsx")]: { HooksSection: () => null },
-      [shared("CronSection.tsx")]: { CronSection: () => null },
+      [shared("CronSection.tsx")]: { CronSection: () => "upstream-cron-section" },
       [shared("memory/MemoryPanel.tsx")]: { MemoryPanel: () => null },
       "@liveagent/ui/i18n/index": { useLocale: () => ({ t: (key) => key }) },
       "@liveagent/adapters/settingsExtension": {
@@ -54,7 +54,7 @@ for (const surface of ["desktop", "web"]) test(`SettingsPage ${surface} shows pr
   const host = document.body.appendChild(document.createElement("div"));
   const root = env.createRoot(host);
   try {
-    await env.act(async () => root.render(env.React.createElement(SettingsPage, {
+    const render = (options = {}) => env.act(async () => root.render(env.React.createElement(SettingsPage, {
       settings,
       setSettings: () => {},
       saveState: { status: "saved" },
@@ -64,7 +64,9 @@ for (const surface of ["desktop", "web"]) test(`SettingsPage ${surface} shows pr
       settingsHost: { isKbrain: true, kbrain },
       imageClient: { getSettings: async () => { calls.push("image"); throw new Error("image settings must not load"); } },
       registerLeaveGuard: () => { calls.push("image-guard"); return () => {}; },
+      ...options,
     })));
+    await render();
     await env.act(async () => Promise.resolve());
     assert.match(host.textContent, /protected-managed-provider-interface/);
     const tabs = [...host.querySelectorAll("button")].filter((button) => ["对话模型", "图像服务"].includes(button.textContent));
@@ -75,6 +77,15 @@ for (const surface of ["desktop", "web"]) test(`SettingsPage ${surface} shows pr
     assert.equal(providerProps.settings, settings);
     assert.equal(typeof providerProps.setSettings, "function");
     assert.deepEqual(calls, [], "the removed simplified backend editor must not load");
+
+    await render({ initialSection: "cron", onOpenScheduledTasks: () => calls.push("open-tasks") });
+    assert.doesNotMatch(host.textContent, /upstream-cron-section/);
+    const shortcut = host.querySelector("button");
+    assert.ok(shortcut);
+    await env.act(async () => shortcut.click());
+    assert.deepEqual(calls, ["open-tasks"]);
+    await render({ initialSection: "cron" });
+    assert.equal(host.textContent, "upstream-cron-section");
   } finally {
     await env.act(async () => root.unmount());
     host.remove();

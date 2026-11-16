@@ -1437,9 +1437,6 @@ html[data-zeroagent-keyboard="open"] .za-confirmation-viewport {
   border-color: hsl(var(--foreground) / 0.15);
   box-shadow: 0 0 0 2px hsl(var(--foreground) / 0.06);
 }
-[data-design-settings] .settings-nav > div > div:first-child {
-  display: none;
-}
 [data-design-settings] .settings-nav {
   padding-top: 8px;
 }

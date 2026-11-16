@@ -2940,6 +2940,11 @@ export function GatewayAppView({
                 <SettingsPage
                   runtimeKind="device_agent"
                   onOpenModelPreferences={() => setModelPreferencesOpen(true)}
+                  onOpenScheduledTasks={
+                    taskOwner && taskDeviceId
+                      ? () => selectNavigation("cron-hub", sidebar.isMobile)
+                      : undefined
+                  }
                   imageClient={identity.identity?.mode === "device" ? undefined : imageStudio.host?.client}
                   registerLeaveGuard={viewModel.registerSettingsLeaveGuard}
                   settings={{

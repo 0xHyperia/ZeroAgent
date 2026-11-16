@@ -17,6 +17,8 @@ import {
   Wrench,
   Zap,
 } from "@liveagent/ui/components/IconSet";
+import { Button } from "@liveagent/ui/components/ui/button";
+import { useLocale } from "@liveagent/ui/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SettingsSectionDefinition, UiExtensionRegistry } from "../../contracts/registry";
 import { AgentsSection } from "./AgentsSection";
@@ -52,7 +54,9 @@ export function SettingsPage(props: SettingsPageProps) {
     hiddenSections = [],
     sttSettingsService,
     onSttProviderChange,
+    onOpenScheduledTasks,
   } = props;
+  const { t } = useLocale();
   const [pendingProviderId, setPendingProviderId] = useState(initialProviderId);
   const [sttSelectedProvider, setSttSelectedProvider] = useState<SttProviderId>(
     () =>
@@ -233,7 +237,14 @@ export function SettingsPage(props: SettingsPageProps) {
         order: 30,
         labelKey: "settings.navCron",
         icon: <Clock3 className={extension.iconClassName} />,
-        render: () => <CronSection settings={settings} setSettings={setSettings} />,
+        render: () =>
+          onOpenScheduledTasks ? (
+            <Button variant="outline" onClick={onOpenScheduledTasks}>
+              {t("settings.openScheduledTasks")}
+            </Button>
+          ) : (
+            <CronSection settings={settings} setSettings={setSettings} />
+          ),
       },
       {
         id: "ssh",
@@ -274,6 +285,8 @@ export function SettingsPage(props: SettingsPageProps) {
       settings,
       sttSelectedProvider,
       sttSettingsService,
+      onOpenScheduledTasks,
+      t,
     ],
   );
   const registry: UiExtensionRegistry<void> = {

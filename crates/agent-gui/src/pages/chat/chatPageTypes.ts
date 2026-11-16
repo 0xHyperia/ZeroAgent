@@ -8,7 +8,7 @@ import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbe
 import type { CronRunRecord, ScheduledConversationRun } from "@liveagent/ui/lib/automation/types";
 import type { ResourceHostCapabilities } from "@liveagent/ui/lib/resourceHost";
 import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { AppUpdateController } from "../../lib/appUpdates";
 import type { RelayDashboardStats, RelayUser } from "../../lib/relay/client";
 import type { AppSettings, SttProviderId } from "../../lib/settings";
@@ -18,6 +18,7 @@ export type ChatPageProps = {
   /** Keep the local runtime serving remote clients while another device is visible. */
   active?: boolean;
   settingsNavigation?: WorkbenchNavigationPortal;
+  scheduledTasksNavigationRef?: RefObject<(() => void) | null>;
   relayUser: RelayUser;
   relayStats: RelayDashboardStats | null;
   onRefreshRelayAccount: () => Promise<void>;

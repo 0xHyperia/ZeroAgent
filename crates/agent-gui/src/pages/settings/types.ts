@@ -43,6 +43,7 @@ export type SettingsPageProps = {
   settingsHost?: SettingsHostAdapter;
   imageClient?: ImageStudioClient;
   onOpenModelPreferences?: () => void;
+  onOpenScheduledTasks?: () => void;
   registerLeaveGuard?: (guard: () => boolean) => () => void;
   setSettings: SetSettingsFn;
   saveState: SettingsSaveState;

@@ -1,5 +1,5 @@
 import { ArrowLeft, Search } from "@liveagent/ui/components/IconSet";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useId, useMemo, useRef, useState } from "react";
 import { SidebarResizeHandle } from "../../components/ui/sidebar-resize";
 import { TooltipButton } from "../../components/ui/tooltip-button";
 import { ZoneFontScaleContext } from "../../components/ui/zone-font-scale";
@@ -77,6 +77,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
     presentation = "page",
   } = props;
   const { t } = useLocale();
+  const groupLabelPrefix = useId();
   const shellRef = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState(initialSection);
   const [previousInitialSection, setPreviousInitialSection] = useState(initialSection);
@@ -283,14 +284,19 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
               {visibleGroups.map(([groupKey, definitions], groupIndex) => (
                 <div
                   key={groupKey}
+                  role="group"
+                  aria-labelledby={`${groupLabelPrefix}-${groupKey}`}
                   className={cn(
                     "web:max-820:contents web:max-820:mt-0 web:max-820:[&_>_div:last-child]:contents web:max-820:[&_>_div:last-child_>_*_+_*]:mt-0",
                     groupIndex > 0 && "mt-3.5",
                   )}
                 >
-                  <div className="mb-1.5 px-2.5 text-xs font-medium text-muted-foreground/70 web:max-820:hidden">
+                  <h2
+                    id={`${groupLabelPrefix}-${groupKey}`}
+                    className="mb-1.5 px-2.5 text-xs font-medium text-muted-foreground"
+                  >
                     {t(groupKey)}
-                  </div>
+                  </h2>
                   <div className="space-y-px">
                     {definitions.map((definition) => {
                       const active = definition.id === activeSection.id;

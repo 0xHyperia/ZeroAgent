@@ -840,6 +840,7 @@
         "crates/agent-gateway/web/src/lib/deviceScheduleDraft.ts",
         "crates/agent-gateway/web/src/lib/deviceScheduleHost.ts",
         "crates/agent-ui/src/pages/settings/WorkbenchCronPreview.tsx",
+        "crates/agent-ui/src/pages/settings/WorkbenchScheduleDialog.tsx",
         "patches/kbrain/0014-device-cron-draft-preview.patch",
         "patches/kbrain/0016-device-manual-run-receipts.patch",
         "crates/agent-gateway/web/src/components/cloudchat/WorkspaceHandoffDialog.tsx"

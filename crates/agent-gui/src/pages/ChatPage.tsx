@@ -5053,6 +5053,18 @@ function ChatPageContent(props: ChatPageProps) {
     });
   }
 
+  const selectNavigationRef = useRef(selectNavigation);
+  selectNavigationRef.current = selectNavigation;
+  const scheduledTasksNavigationRef = props.scheduledTasksNavigationRef;
+  useEffect(() => {
+    if (!scheduledTasksNavigationRef) return;
+    scheduledTasksNavigationRef.current = () =>
+      selectNavigationRef.current("cron-hub", sidebar.isMobile);
+    return () => {
+      scheduledTasksNavigationRef.current = null;
+    };
+  }, [scheduledTasksNavigationRef, sidebar.isMobile]);
+
   const accountSidebar =
     shownSidebar === "library" || shownSidebar === "customize" ? shownSidebar : null;
   const renderTasks = (sidebarOnly: boolean) =>

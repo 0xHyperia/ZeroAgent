@@ -11,12 +11,23 @@ test('page settings keeps real section navigation, mobile list/detail and nested
  const {SettingsShell}=env.loadModule('@liveagent/ui/pages/settings/SettingsShell.tsx');
  const host=document.body.appendChild(document.createElement('div')),root=createRoot(host);
  let backs=0,section;
- const definition=id=>({id,labelKey:id,groupKey:'general',groupOrder:0,order:id==='system'?0:1,render:()=>React.createElement('p',null,`${id} content`)});
+ const definition=id=>({id,labelKey:id,groupKey:id==='system'?'general':'accountGroup',groupOrder:id==='system'?0:1,order:0,render:()=>React.createElement('p',null,`${id} content`)});
  const props={registry:{surface:'web',services:{},slots:{},settingsSections:[definition('system'),definition('account')]},context:null,saveState:{status:'saved'},onBack:()=>backs++,onSectionChange:id=>section=id};
  try{
   await act(async()=>root.render(React.createElement(SettingsShell,{...props,presentation:'page'})));
   assert.equal(document.activeElement,host.querySelector('h1'));
   assert.equal(host.querySelector('[data-settings-presentation]').dataset.mobileDetail,'false');
+  const groupTitles=()=>[...host.querySelectorAll('.settings-nav [role="group"]')].map(group=>document.getElementById(group.getAttribute('aria-labelledby')).textContent);
+  assert.deepEqual(groupTitles(),['general','accountGroup']);
+  const search=host.querySelector('input[type="search"]');
+  const searchFor=async value=>act(async()=>{
+   Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(search,value);
+   search.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await searchFor('account');
+  assert.deepEqual(groupTitles(),['accountGroup']);
+  await searchFor('');
+  assert.deepEqual(groupTitles(),['general','accountGroup']);
   await act(async()=>host.querySelector('[data-settings-nav-id="account"]').click());
   assert.equal(section,'account');assert.match(host.querySelector('main').textContent,/account content/);
   assert.equal(host.querySelector('[data-settings-presentation]').dataset.mobileDetail,'true');

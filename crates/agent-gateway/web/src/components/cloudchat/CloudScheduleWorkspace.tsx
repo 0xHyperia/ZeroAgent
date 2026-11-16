@@ -96,6 +96,7 @@ import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import { ModelPicker, type ModelPickerOption } from "@liveagent/ui/pages/settings/modelPicker";
+import { WorkbenchScheduleDialog } from "@liveagent/ui/pages/settings/WorkbenchScheduleDialog";
 import {
   type CSSProperties,
   type ReactNode,
@@ -432,7 +433,6 @@ export function CloudScheduleWorkspace({
   }>();
   const [cloudJumpSequence, setCloudJumpSequence] = useState(0);
   const [unavailableCloudJump, setUnavailableCloudJump] = useState<string>();
-  const [deviceJumpSequence, setDeviceJumpSequence] = useState(0);
   const [manualDeviceRun, setManualDeviceRun] = useState<string>();
   const [deviceAnchorResult, setDeviceAnchorResult] = useState<{
     key: string;
@@ -674,7 +674,6 @@ export function CloudScheduleWorkspace({
           anchorExecutionId,
           deviceConversationId,
           anchorRunId,
-          deviceJumpSequence,
         ])
       : undefined;
   const readRunAnchor = useEffectEvent((taskId: string, executionId: string) =>
@@ -1297,7 +1296,6 @@ export function CloudScheduleWorkspace({
           try {
             const runs = await device.runs(task);
             if (current) {
-              restoreMobileHistoryFocus();
               restoreDeviceRunFocus(runs);
               setDeviceHistory({ owner, target, task, runs });
             }
@@ -2632,6 +2630,7 @@ export function CloudScheduleWorkspace({
     if (!cancel || !deviceTask || busy || deviceFailure) return;
     void write(() => cancel(deviceTask.id, run.runId ?? run.id));
   };
+
   const cancelDeviceRun =
     device?.cancel && deviceTask && deviceRun && isCronRunActive(deviceRun) ? (
       <Button
@@ -2782,27 +2781,25 @@ export function CloudScheduleWorkspace({
               <div
                 className={`relative flex min-h-0 min-w-0 flex-1 flex-col px-4 md:px-6 ${deviceConversationId ? "gap-2" : "gap-4 pb-8"} ${taskDetailsInset}`}
               >
-                {currentDeviceHistory?.error &&
-                  !deviceRunSelectionState &&
-                  !mobileHistoryVisible && (
-                    <div className="order-1 mx-auto w-full max-w-3xl shrink-0 pt-4">
-                      <StatusNotice
-                        compact
-                        tone="warning"
-                        message={deviceHistoryError}
-                        actions={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="min-h-11 md:min-h-9"
-                            onClick={() => setRefresh((value) => value + 1)}
-                          >
-                            {text("重试", "Retry")}
-                          </Button>
-                        }
-                      />
-                    </div>
-                  )}
+                {currentDeviceHistory?.error && !deviceRunSelectionState && (
+                  <div className="order-1 mx-auto w-full max-w-3xl shrink-0 pt-4">
+                    <StatusNotice
+                      compact
+                      tone="warning"
+                      message={deviceHistoryError}
+                      actions={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="min-h-11 md:min-h-9"
+                          onClick={() => setRefresh((value) => value + 1)}
+                        >
+                          {text("重试", "Retry")}
+                        </Button>
+                      }
+                    />
+                  </div>
+                )}
                 {deviceRunSelectionState === "loading" ? (
                   <p
                     role="status"
@@ -2876,7 +2873,7 @@ export function CloudScheduleWorkspace({
                     {!deviceConversationId && !deviceRun && deviceTask.prompt && (
                       <TaskPromptBubble>{deviceTask.prompt}</TaskPromptBubble>
                     )}
-                    {deviceRun && !deviceConversationId && (
+                    {deviceRun && (!deviceConversationId || deviceRun.output) && (
                       <article className="space-y-4" aria-label={text("运行结果", "Run result")}>
                         <TaskStoredRunHeader
                           text={text}
@@ -2889,24 +2886,28 @@ export function CloudScheduleWorkspace({
                           manual={deviceRun.counted === false}
                         />
                         {deviceRun.output && (
-                          <pre className="whitespace-pre-wrap break-words text-sm">
+                          <pre
+                            className={`whitespace-pre-wrap break-words text-sm ${deviceConversationId ? "max-h-48 overflow-auto" : ""}`}
+                          >
                             {deviceRun.output}
                           </pre>
                         )}
-                        {deviceRun.sessionId && onOpenDeviceConversation && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="max-md:min-h-11"
-                            onClick={() => {
-                              if (deviceRun.sessionId)
-                                onOpenDeviceConversation(deviceRun.sessionId);
-                            }}
-                          >
-                            {text("打开结果对话", "Open result conversation")}
-                          </Button>
-                        )}
-                        {cancelDeviceRun}
+                        {!deviceConversationId &&
+                          deviceRun.sessionId &&
+                          onOpenDeviceConversation && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="max-md:min-h-11"
+                              onClick={() => {
+                                if (deviceRun.sessionId)
+                                  onOpenDeviceConversation(deviceRun.sessionId);
+                              }}
+                            >
+                              {text("打开结果对话", "Open result conversation")}
+                            </Button>
+                          )}
+                        {!deviceConversationId && cancelDeviceRun}
                       </article>
                     )}
                     {!deviceConversationId && (
@@ -2948,8 +2949,8 @@ export function CloudScheduleWorkspace({
                     {deviceAnchor && !deviceAnchor.messageId && (
                       <p className="px-2 text-xs text-muted-foreground" role="status">
                         {text(
-                          "正文中无法定位这次运行。可在任务详情中查看本次输出。",
-                          "This run cannot be located in the conversation. Its output is in task details.",
+                          "正文中无法定位这次运行。",
+                          "This run cannot be located in the conversation.",
                         )}
                       </p>
                     )}
@@ -2996,73 +2997,7 @@ export function CloudScheduleWorkspace({
                           {time(new Date(deviceNext).toISOString(), deviceTasks?.timeZone)}
                         </p>
                       )}
-                      <ScheduleDisclosure
-                        title={text("运行记录", "Run history")}
-                        {...historyDisclosure}
-                      >
-                        {mobileHistoryFeedback(
-                          !currentDeviceHistory && !deviceFailure,
-                          currentDeviceHistory?.error ? deviceHistoryError : undefined,
-                        )}
-                        {deviceRuns.length ? (
-                          <div className={isMobile ? undefined : "max-h-56 overflow-y-auto"}>
-                            {deviceRuns.map((run) => (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                key={run.id}
-                                aria-current={run.id === deviceRun?.id ? "true" : undefined}
-                                className={`h-auto min-h-11 w-full flex-col items-start justify-center gap-0.5 px-2 py-1 font-normal ${deviceRun?.id === run.id ? "bg-muted" : ""}`}
-                                onClick={() => {
-                                  setManualDeviceRun(undefined);
-                                  setDeviceJumpSequence((sequence) => sequence + 1);
-                                  leaveMobileTaskDetails(true);
-                                  onNavigate({ ...route, run: run.id });
-                                }}
-                              >
-                                {time(new Date(run.startedAt).toISOString(), deviceTasks?.timeZone)}
-                                <span className="text-xs text-muted-foreground">
-                                  {deviceRunStatus(run)}
-                                </span>
-                              </Button>
-                            ))}
-                          </div>
-                        ) : currentDeviceHistory && !currentDeviceHistory.error ? (
-                          <p className="text-muted-foreground">
-                            {deviceRunSelectionState
-                              ? text("暂无可读取的运行记录", "No available run history")
-                              : text("暂无运行记录", "No runs yet")}
-                          </p>
-                        ) : null}
-                      </ScheduleDisclosure>
                     </TaskInspectorGroup>
-                    {deviceRun && (
-                      <TaskInspectorGroup title={text("输出", "Outputs")}>
-                        {deviceRun.output ? (
-                          <pre
-                            className={`whitespace-pre-wrap break-words text-xs ${isMobile ? "" : "max-h-48 overflow-auto"}`}
-                          >
-                            {deviceRun.output}
-                          </pre>
-                        ) : (
-                          <p className="text-muted-foreground">
-                            {text("暂无输出", "No output yet")}
-                          </p>
-                        )}
-                        {deviceConversationId && onOpenDeviceConversation && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              leaveMobileTaskDetails(false);
-                              onOpenDeviceConversation(deviceConversationId);
-                            }}
-                          >
-                            {text("打开结果对话", "Open result conversation")}
-                          </Button>
-                        )}
-                      </TaskInspectorGroup>
-                    )}
                   </TaskInspector>
                 )}
               </div>
@@ -4620,8 +4555,7 @@ function ScheduleEditor({
         if (!open) void requestClose();
       }}
     >
-      <DialogContent
-        layout="fullscreen-mobile"
+      <WorkbenchScheduleDialog
         data-schedule-editor="cloud"
         initialFocus={() =>
           editSources
@@ -4632,10 +4566,8 @@ function ScheduleEditor({
                 ? taskName.current
                 : instructions.current
         }
-        showCloseButton
         closeDisabled={busy}
         closeLabel={text("关闭", "Close")}
-        className="flex max-h-[min(90dvh,760px)] flex-col overflow-hidden max-[720px]:max-h-none sm:max-w-[38rem]"
       >
         <DialogHeader className="min-h-16 justify-center">
           <DialogTitle>
@@ -5219,11 +5151,7 @@ function ScheduleEditor({
             )}
           </DialogBody>
           <DialogFooter>
-            <DialogActions
-              className={
-                !existing || resumeAfterEdit ? "max-[720px]:[&>button]:min-h-11" : undefined
-              }
-            >
+            <DialogActions className="max-[720px]:[&>button]:min-h-11">
               <Button
                 type="button"
                 variant="secondary"
@@ -5257,7 +5185,7 @@ function ScheduleEditor({
           </DialogFooter>
         </form>
         {discardDialog}
-      </DialogContent>
+      </WorkbenchScheduleDialog>
     </Dialog>
   );
 }
