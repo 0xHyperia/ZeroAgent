@@ -212,13 +212,43 @@ jobs:
           node scripts/release/verify-kbrain-packaging.mjs --target x86_64-unknown-linux-gnu --binary-dir crates/agent-gui/src-tauri/binaries --patch-manifest patches/kbrain/manifest.json
 
       - name: Install Tauri Linux dependencies
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          apt_options=(
+            -o Dir::Etc::sourceparts=-
+            -o Acquire::Retries=1
+            -o Acquire::http::Timeout=15
+            -o Acquire::https::Timeout=15
+          )
+          packages=(libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev)
+          download_dependencies() {
+            local source_file=$1
+            timeout 90s sudo apt-get "${apt_options[@]}" -o "Dir::Etc::sourcelist=$source_file" update --error-on=any &&
+              timeout 120s sudo apt-get "${apt_options[@]}" -o "Dir::Etc::sourcelist=$source_file" install \
+                -y --no-install-recommends --download-only "${packages[@]}"
+          }
+          sources=/etc/apt/sources.list.d/ubuntu.sources
+          if ! download_dependencies "$sources"; then
+            echo '::warning::Runner Ubuntu mirror did not finish downloading Tauri dependencies. Retrying with the official archives.'
+            . /etc/os-release
+            sources="$RUNNER_TEMP/tauri-ubuntu.sources"
+            cat > "$sources" <<EOF
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu
+          Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: https://security.ubuntu.com/ubuntu
+          Suites: ${VERSION_CODENAME}-security
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+            download_dependencies "$sources"
+          fi
+          sudo apt-get "${apt_options[@]}" -o "Dir::Etc::sourcelist=$sources" install \
+            -y --no-install-recommends --no-download "${packages[@]}"
 
       - name: Install repository-pinned Protoc
         uses: jdx/mise-action@v4

@@ -149,7 +149,7 @@
 
 ### Bug 修复
 
-- 修复合并 LiveAgent v2.0.27 后 GitHub Actions 的 Gateway、桌面、WebUI 和共享界面静态检查。
+- 修复合并 LiveAgent v2.0.27 后 GitHub Actions 的 Gateway、桌面、WebUI 和共享界面静态检查。Tauri 原生检查在 Ubuntu runner 软件源下载超时时改用 Ubuntu 官方归档。
 
 - 修复本机及设备工作台刷新或分页读取时，已在其他客户端删除的会话重新出现的问题。
 
