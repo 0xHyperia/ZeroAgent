@@ -128,6 +128,12 @@ test("cloud connection failure leaves the desktop switcher available and retry k
   const snapshots = [];
   let mountHost;
   const env = await createDomTestEnv({ mocks: {
+    "@/lib/cloudWorkspaceAvailability": {
+      readCloudWorkspaceAvailability: async () => ({
+        available: false,
+        catalog: { version: 0, packages: [] },
+      }),
+    },
     [source("lib/relay/desktopCloudHost.ts")]: {
       openDesktopCloudHost: async () => {
         calls.open++;
@@ -179,6 +185,7 @@ test("cloud connection failure leaves the desktop switcher available and retry k
   await act(async () => failedHost.onMountReady());
   assert.match(parent.textContent, /Opening the cloud workbench/);
   await act(async () => mountHost.onMountReady());
+  assert.equal(mountHost.workspaceAvailability.available, false);
   const surface = parent.querySelector("main");
   assert.ok(surface);
   assert.equal(surface.closest(".hidden"), null);

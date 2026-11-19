@@ -1,14 +1,14 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v2.0.21",
-  "base_commit": "c5092f5d3ff64626d84de70e301ca4101ec06994",
-  "commit": "d874b4360761d1534f15dd920ab5e912b68dc9b0",
-  "integration_commit": "361e9a660f86df4d1d81c513b3194eebb9e889ff",
-  "previous_tag": "v2.0.15",
-  "previous_upstream_commit": "dab301d1e95f1d28858e9e2054deee35fddd9961",
+  "tag": "v2.0.26",
+  "base_commit": "d3a934536f7110d87c9e95409f6c71751f15ca62",
+  "commit": "2c0476ac5a3e7e0ab852fce42bf307062e5b7c07",
+  "integration_commit": "fbe2e5d940f7bc73f44b466829a47fcc6cc7bffb",
+  "previous_tag": "v2.0.21",
+  "previous_upstream_commit": "d874b4360761d1534f15dd920ab5e912b68dc9b0",
   "prerelease": false,
-  "validation_status": "Windows native check and patched K-brain build, Gateway tests/vet, Linux race and Docker readiness, Proto compatibility, frontend production builds and focused suites; third-party search verified with the Windows K-brain binary and controlled fixtures; full frontend and cross-platform release acceptance pending",
+  "validation_status": "Desktop and WebUI frontend suites, production builds, Proto compatibility, Gateway tests/vet/Linux race/Docker readiness, Windows native checks and patched K-brain usage smoke passed; real-account workbench and signed cross-platform acceptance pending",
   "channel": "stable",
-  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.21",
-  "published_at": "2026-11-14T16:02:45Z"
+  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.26",
+  "published_at": "2026-11-19T07:14:06Z"
 }

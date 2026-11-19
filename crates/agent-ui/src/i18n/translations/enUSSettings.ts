@@ -1859,14 +1859,14 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.navUsage": "Usage statistics",
   "settings.usage.title": "Usage statistics",
   "settings.usage.description":
-    "Token usage across all sessions recorded by K-brain, in this device's time zone.",
+    "Token usage recorded by the ZeroAgent engine across sessions, in this device's time zone.",
   "settings.usage.refresh": "Refresh",
   "settings.usage.refreshing": "Refreshing",
   "settings.usage.loading": "Loading usage statistics…",
   "settings.usage.loadFailed": "Could not load usage statistics: {error}",
   "settings.usage.retry": "Retry",
   "settings.usage.unavailable":
-    "This K-brain version does not provide usage statistics. Update ZeroAgent to see them.",
+    "This device version does not provide usage statistics. Update ZeroAgent on this device.",
   "settings.usage.empty": "No usage yet",
   "settings.usage.emptyHint":
     "Once you start chatting, token usage, active days and model shares appear here.",

@@ -150,7 +150,7 @@ test("STT connection test saves the current form and identifies the active runti
   assert.match(section, /stt: \{ \.\.\.previous\.stt, enabled, allowIncomplete: true \}/);
   assert.doesNotMatch(webSettingsSync, /receivedSyncedStt/);
   assert.doesNotMatch(webSettingsSync, /webSttSettingsService/);
-  assert.match(webSettingsSync, /if \(liveSyncEpochRef\.current === 0\)/);
+  assert.match(webSettingsSync, /if \(settingsSnapshotEpoch\.current === initialSnapshotEpoch\)/);
   assert.match(webSettingsSync, /persistWebSettings\(next\)/);
   assert.doesNotMatch(
     webSettingsSync,
