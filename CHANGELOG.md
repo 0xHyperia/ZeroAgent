@@ -4,7 +4,9 @@
 
 ## [Unreleased]
 
-同步 LiveAgent v2.0.27，保留 USA-Zero 账号、托管连接、密钥保护和设备授权。以下为 v0.3.23 之后尚未正式发布的改动，包含 v0.4.0-beta.2 预览候选及后续开发改动。
+## v1.0.0-beta.1 - 2026-11-19
+
+ZeroAgent 1.0 的首个公开 Beta，同步 LiveAgent v2.0.27。以下记录自上一公开版 v0.3.23 以来的变化。公开版默认关闭云端工作区，可通过 Web 和 Android 继续控制已授权的电脑。云端能力的启用条件见 [ADR 0080](docs/product/decisions/0080-cloud-workspace-release-availability.md)。
 
 ### 新增功能
 
@@ -294,7 +296,7 @@
 - 修复刷新模型目录或重启后丢失启用状态和已选模型的问题，恢复 ClawHub 技能浏览和安装。
 - 修复表格合并区域滚动、单元格选区错位和部分附件预览问题。版本读取失败时保留已打开的正文。
 
-工程与兼容性细节见 [v0.4.0-beta.2 候选说明](.github/release-notes/v0.4.0-beta.2.md)、[LiveAgent v2.0.15 同步报告](docs/upstream/v2.0.15.md) 和 [工作台验收记录](docs/design/zeroagent-cross-platform-ux.md#工作台发布级验收)。
+工程与兼容性细节见 [v1.0.0-beta.1 发布说明](.github/release-notes/v1.0.0-beta.1.md)、[LiveAgent v2.0.27 同步报告](docs/upstream/v2.0.27.md) 和 [工作台验收记录](docs/design/zeroagent-cross-platform-ux.md#工作台发布级验收)。
 
 ## v0.3.23 - 2026-08-27
 
