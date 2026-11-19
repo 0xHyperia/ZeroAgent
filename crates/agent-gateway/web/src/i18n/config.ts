@@ -23,6 +23,7 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "app.checkForUpdates": "检查更新",
     "app.desktopSettingsSyncFailed": "同步桌面端设置失败。",
     "app.webSettingsSaveFailed": "保存 WebUI 设置失败。",
+    "app.loadingCloudWorkspace": "正在加载云端工作区",
     "chat.runtime.settingsSyncTitle": "正在同步桌面端设置",
     "chat.runtime.protocolIncompatible":
       "桌面端版本不支持可靠聊天同步。请更新 ZeroAgent 桌面端后再使用 WebUI 聊天。",
@@ -150,6 +151,7 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "app.checkForUpdates": "Check for updates",
     "app.desktopSettingsSyncFailed": "Failed to sync desktop settings.",
     "app.webSettingsSaveFailed": "Failed to save WebUI settings.",
+    "app.loadingCloudWorkspace": "Loading cloud workspace",
     "chat.runtime.settingsSyncTitle": "Syncing desktop settings",
     "chat.runtime.protocolIncompatible":
       "This desktop version does not support reliable chat sync. Update ZeroAgent desktop before using WebUI chat.",

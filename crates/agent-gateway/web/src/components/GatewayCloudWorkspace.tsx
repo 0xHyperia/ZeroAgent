@@ -1,15 +1,17 @@
+import { type Locale, t as translate } from "@liveagent/ui/i18n/index";
 import { type ReactNode, useEffect, useState } from "react";
 import {
   type CloudWorkspaceAvailability,
   readCloudWorkspaceAvailability,
 } from "@/lib/cloudWorkspaceAvailability";
+import { GatewayLoadingCard, GatewayLoadingScreen } from "@/pages/GatewayLoadingScreen";
 
 export function GatewayCloudWorkspace({
   children,
-  loading,
+  locale,
 }: {
   children: (availability: CloudWorkspaceAvailability) => ReactNode;
-  loading: ReactNode;
+  locale: Locale;
 }) {
   const [availability, setAvailability] = useState<CloudWorkspaceAvailability>();
   useEffect(() => {
@@ -21,5 +23,10 @@ export function GatewayCloudWorkspace({
     );
     return () => controller.abort();
   }, []);
-  return availability ? children(availability) : loading;
+  if (availability) return children(availability);
+  return (
+    <GatewayLoadingScreen>
+      <GatewayLoadingCard label={translate("app.loadingCloudWorkspace", locale)} />
+    </GatewayLoadingScreen>
+  );
 }

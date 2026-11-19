@@ -84,6 +84,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarHeaderRow,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -1473,7 +1474,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         data-escape-owner={selectionMode ? "sidebar-selection" : undefined}
         data-app-frame-column="sidebar"
         data-sidebar-preview-region=""
-        className="chat-history-sidebar zone-font-scale bg-settings-rail group-data-[side=left]:border-r-0 [&_button:not(:disabled)]:cursor-pointer"
+        className="chat-history-sidebar workbench-sidebar zone-font-scale [&_button:not(:disabled)]:cursor-pointer"
         style={{ "--zone-font-scale": fontScale } as CSSProperties}
       >
         {reorder.draggingKey && draggedTitle ? (
@@ -1505,8 +1506,56 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
           )}
         >
           {headerTop}
-          <SidebarHeader className="px-3 pb-2 pt-2">
-            <div data-tauri-drag-region className="flex items-center justify-between gap-2">
+          <SidebarHeader>
+            <SidebarHeaderRow
+              actions={
+                <>
+                  <Button
+                    ref={conversationSearchTrigger}
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={sectionsDisabled}
+                    onClick={(event) => {
+                      conversationSearchOpener.current = event.currentTarget;
+                      setConversationSearchOpen(true);
+                    }}
+                    title={t("chat.searchConversations")}
+                    aria-label={t("chat.searchConversations")}
+                    aria-haspopup="dialog"
+                    aria-expanded={conversationSearchOpen}
+                    className="chat-history-search-button rounded-lg text-muted-foreground hover:text-foreground"
+                  >
+                    <Search className="size-4" />
+                  </Button>
+                  {!hideCloseButton || isMobileMenuLayout ? (
+                    <SidebarTrigger
+                      showShortcut={!previewOpen}
+                      onClick={(event) => {
+                        if (previewOpen && onPinPreview) {
+                          event.preventDefault();
+                          onPinPreview();
+                        }
+                      }}
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      title={t(previewOpen ? "tooltip.openSidebar" : "sidebar.closeSidebar")}
+                      aria-label={t(previewOpen ? "tooltip.openSidebar" : "sidebar.closeSidebar")}
+                      className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
+                    >
+                      {mobileRail && isMobileMenuLayout ? (
+                        <X className="size-4" />
+                      ) : previewOpen ? (
+                        <PanelLeft className="size-4" />
+                      ) : (
+                        <PanelLeftClose className="size-4" />
+                      )}
+                    </SidebarTrigger>
+                  ) : null}
+                </>
+              }
+            >
               {brand ?? (
                 <div className="flex min-w-0 -translate-y-0.5 items-center gap-2">
                   <img
@@ -1521,55 +1570,10 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                   </div>
                 </div>
               )}
-
-              <div className="flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]">
-                <Button
-                  ref={conversationSearchTrigger}
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={sectionsDisabled}
-                  onClick={(event) => {
-                    conversationSearchOpener.current = event.currentTarget;
-                    setConversationSearchOpen(true);
-                  }}
-                  title={t("chat.searchConversations")}
-                  aria-label={t("chat.searchConversations")}
-                  aria-haspopup="dialog"
-                  aria-expanded={conversationSearchOpen}
-                  className="chat-history-search-button rounded-lg text-muted-foreground hover:text-foreground"
-                >
-                  <Search className="size-4" />
-                </Button>
-                {!hideCloseButton || isMobileMenuLayout ? (
-                  <SidebarTrigger
-                    showShortcut={!previewOpen}
-                    onClick={(event) => {
-                      if (previewOpen && onPinPreview) {
-                        event.preventDefault();
-                        onPinPreview();
-                      }
-                    }}
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    title={t(previewOpen ? "tooltip.openSidebar" : "sidebar.closeSidebar")}
-                    aria-label={t(previewOpen ? "tooltip.openSidebar" : "sidebar.closeSidebar")}
-                    className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-                  >
-                    {mobileRail && isMobileMenuLayout ? (
-                      <X className="size-4" />
-                    ) : previewOpen ? (
-                      <PanelLeft className="size-4" />
-                    ) : (
-                      <PanelLeftClose className="size-4" />
-                    )}
-                  </SidebarTrigger>
-                ) : null}
-              </div>
-            </div>
-
-            <SidebarMenu className="mt-2.5 gap-px">
+            </SidebarHeaderRow>
+          </SidebarHeader>
+          <div className="workbench-sidebar-list shrink-0 pb-2">
+            <SidebarMenu className="gap-px">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   type="button"
@@ -1625,7 +1629,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                 },
               )}
             </SidebarMenu>
-          </SidebarHeader>
+          </div>
 
           {typeof navigationContent === "function"
             ? navigationContent({ renderConversation: renderHistoryRow })

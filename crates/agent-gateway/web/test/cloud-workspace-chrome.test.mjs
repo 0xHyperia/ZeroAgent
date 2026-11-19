@@ -47,7 +47,7 @@ test('library sidebar shows account files, cancels stale reads, and does not sel
  let env;
  env=await createWebDomTestEnv({mocks:{
   '@liveagent/ui/components/IconSet':new Proxy({},{get:()=>()=>null}),
-  '@liveagent/ui/components/ui/sidebar':{Sidebar:props=>env.React.createElement('aside',{'aria-label':props.label},props.children),SidebarHeader:props=>env.React.createElement('header',null,props.children),SidebarHeaderRow:props=>env.React.createElement('div',null,props.children),SidebarTrigger:props=>env.React.createElement('button',{onClick:props.onClick},'固定')},
+  '@liveagent/ui/components/ui/sidebar':{Sidebar:props=>env.React.createElement('aside',{'aria-label':props.label},props.children),SidebarHeader:props=>env.React.createElement('header',null,props.children),SidebarHeaderRow:props=>env.React.createElement('div',null,props.children),SidebarContent:props=>env.React.createElement('div',null,props.children),SidebarTrigger:props=>env.React.createElement('button',{onClick:props.onClick},'固定')},
  }});
  const {React,act,createRoot}=env,{CloudContextSidebar}=env.loadModule('src/components/cloudchat/CloudContextSidebar.tsx');
  const host=document.body.appendChild(document.createElement('div')),root=createRoot(host),actions=[],reads=[];

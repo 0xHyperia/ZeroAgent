@@ -432,6 +432,7 @@ export function SystemSettingsForm(
             <SettingsToggleGroup
               value={[settings.theme]}
               aria-label={t("settings.appearance")}
+              data-theme-preference=""
               onValueChange={(values) => {
                 const theme = THEME_OPTIONS.find((option) => option === values[0]);
                 if (theme) setSettings((prev) => ({ ...prev, theme }));

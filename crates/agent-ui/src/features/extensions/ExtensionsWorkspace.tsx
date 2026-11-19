@@ -1,8 +1,7 @@
-import type { ReactNode } from "react";
-import type { RenderWorkbenchPageHeader } from "../../application/AppWorkbenchChrome";
 import {
   type CSSProperties,
   type MouseEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -11,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { RenderWorkbenchPageHeader } from "../../application/AppWorkbenchChrome";
 import { mountWorkbenchLayout } from "../../application/workbenchLayoutPortal";
 import {
   ArrowLeft,
@@ -82,6 +82,7 @@ import {
   extensionTryError,
   usesExtensionPackagePresentation,
 } from "../../lib/extensions/presentation";
+import { cn } from "../../lib/shared/utils";
 import { ExtensionDirectoryItem } from "./ExtensionDirectoryItem";
 import { ExtensionImportDialog } from "./ExtensionImportDialog";
 import { ExtensionMark } from "./ExtensionMark";
@@ -216,6 +217,7 @@ function ExtensionsNavigationFrame({
   title,
   preview,
   mobileRail,
+  fontScale,
   sidebarLayout,
   children,
   target,
@@ -224,23 +226,23 @@ function ExtensionsNavigationFrame({
   title: string;
   preview?: boolean;
   mobileRail?: ReactNode;
+  fontScale?: number;
   sidebarLayout: ReturnType<typeof useSidebarWidthLayout>;
   children: ReactNode;
   target?: HTMLElement | null;
 }) {
   if (shared) {
     const navigation = (
-      <div className="za-extensions-shared-sidebar relative shrink-0">
-        <Sidebar
-          label={title}
-          previewOpen={preview}
-          mobileRail={mobileRail}
-          className="bg-background"
-          data-sidebar-preview-region=""
-        >
-          {children}
-        </Sidebar>
-      </div>
+      <Sidebar
+        label={title}
+        previewOpen={preview}
+        mobileRail={mobileRail}
+        className="workbench-sidebar zone-font-scale"
+        style={{ "--zone-font-scale": fontScale ?? 1 } as CSSProperties}
+        data-sidebar-preview-region=""
+      >
+        {children}
+      </Sidebar>
     );
     return target === undefined
       ? navigation
@@ -290,6 +292,7 @@ type ExtensionsWorkspaceProps = {
   location?: ExtensionWorkspaceLocation;
   onNavigate?: (location: ExtensionWorkspaceLocation) => void;
   sharedSidebar?: boolean;
+  sidebarFontScale?: number;
   mobileRail?: ReactNode;
   /** undefined keeps the browser layout; null leaves sidebar navigation to the host. */
   sidebarTarget?: HTMLElement | null;
@@ -1170,7 +1173,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
   );
   const closeSidebarLabel = props.mobileRail ? copy("关闭边栏", "Close sidebar") : undefined;
   const sidebarHeader = (
-    <SidebarHeader className="px-3 pb-2 pt-2.5">
+    <SidebarHeader className={props.sharedSidebar ? undefined : "px-3 pb-2 pt-2.5"}>
       <SidebarHeaderRow
         actions={
           <>
@@ -1270,13 +1273,19 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
           title={customizeLabel}
           preview={props.previewOpen}
           mobileRail={props.mobileRail}
+          fontScale={props.sidebarFontScale}
         >
-          {props.mobileRail && sidebarHeader}
-          <ScrollArea className={props.mobileRail ? "min-h-0 flex-1" : "h-full"}>
+          {props.sharedSidebar && sidebarHeader}
+          <ScrollArea className={props.sharedSidebar ? "min-h-0 flex-1" : "h-full"}>
             <aside>
-              {!props.mobileRail && sidebarHeader}
-              <SidebarContent className="overflow-visible pb-3">
-                <SidebarGroup className="px-3">
+              {!props.sharedSidebar && sidebarHeader}
+              <SidebarContent
+                className={cn(
+                  "overflow-visible pb-3",
+                  props.sharedSidebar && "workbench-sidebar-list",
+                )}
+              >
+                <SidebarGroup className={props.sharedSidebar ? undefined : "px-3"}>
                   <nav aria-label={customizeLabel}>
                     <SidebarMenu className="gap-1">
                       <SidebarMenuItem>
@@ -1312,7 +1321,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                     </SidebarMenu>
                   </nav>
                 </SidebarGroup>
-                <SidebarGroup className="mt-4 px-3">
+                <SidebarGroup className={cn("mt-4", !props.sharedSidebar && "px-3")}>
                   <SidebarGroupLabel className="h-7">
                     {installedLabel}
                     {adapter.scope.startsWith("cloud:") && (
@@ -1347,7 +1356,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                   </SidebarGroupContent>
                 </SidebarGroup>
                 {props.onOpenDeviceSettings && (
-                  <SidebarGroup className="mt-4 px-3">
+                  <SidebarGroup className={cn("mt-4", !props.sharedSidebar && "px-3")}>
                     <SidebarGroupLabel className="h-7">{deviceScope}</SidebarGroupLabel>
                     <SidebarMenu className="gap-1">
                       {deviceEntries.map(({ id, name, icon: Icon }) => (

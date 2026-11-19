@@ -1,10 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 import { createWebModuleLoader } from "../../test/helpers/load-web-module.mjs";
 
 const { readCloudWorkspaceAvailability } = createWebModuleLoader().loadModule(
   "src/lib/cloudWorkspaceAvailability.ts",
 );
+
+test("cloud refresh uses the full loading shell until workspace availability resolves", async () => {
+  const env = await createWebDomTestEnv();
+  const { act, createRoot, dom, loadModule, React } = env;
+  const { GatewayCloudWorkspace } = loadModule("src/components/GatewayCloudWorkspace.tsx");
+  const { promise, resolve } = Promise.withResolvers();
+  dom.window.fetch = () => promise;
+  const host = dom.window.document.createElement("div");
+  const root = createRoot(host);
+
+  try {
+    await act(async () => {
+      root.render(React.createElement(GatewayCloudWorkspace, {
+        locale: "zh-CN",
+        children: ({ available }) => available ? "Cloud open" : "Cloud closed",
+      }));
+    });
+    const status = host.querySelector(".gateway-shell main.gateway-main-shell .gateway-chat-frame [role='status']");
+    assert.equal(status?.textContent, "正在加载云端工作区");
+    assert.ok(status.parentElement.classList.contains("items-center"));
+    assert.ok(status.parentElement.classList.contains("justify-center"));
+
+    await act(async () => resolve(Response.json({ cloud_workspace_available: false })));
+    assert.equal(host.textContent, "Cloud closed");
+    assert.equal(host.querySelector("[role='status']"), null);
+  } finally {
+    await act(async () => root.unmount());
+    env.cleanup();
+  }
+});
 
 test("the closed workspace shows public summaries without a Gateway catalog", async () => {
   const signal = new AbortController().signal;

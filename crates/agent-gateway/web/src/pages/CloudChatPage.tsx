@@ -430,7 +430,7 @@ const ExtensionsWorkspace = lazy(() =>
   })),
 );
 const EMPTY_PATHS = new Set<string>();
-const CLOSED_CLOUD_NAVIGATION = [
+const CLOSED_CLOUD_ALLOWED_ACTIONS = [
   "[data-cloud-view-navigation]",
   "[data-rail-item]",
   "[data-sidebar='trigger']",
@@ -438,6 +438,8 @@ const CLOSED_CLOUD_NAVIGATION = [
   "[data-app-header-navigation]",
   "[data-settings-nav-id]",
   "[data-workbench-settings]",
+  "[data-theme-toggle]",
+  "[data-theme-preference]",
   "[data-conversation-execution-location]",
   "[data-slot='dialog-close']",
   "[data-slot='dialog-close-button']",
@@ -449,7 +451,8 @@ const CLOSED_CLOUD_NAVIGATION = [
 ].join(",");
 
 function blockClosedCloudAction(event: SyntheticEvent) {
-  if (!(event.target instanceof Element) || event.target.closest(CLOSED_CLOUD_NAVIGATION)) return;
+  if (!(event.target instanceof Element) || event.target.closest(CLOSED_CLOUD_ALLOWED_ACTIONS))
+    return;
   if (
     !event.target.closest(
       "button, a[href], input, select, textarea, form, [contenteditable], [role='button'], [role='menuitem'], [role='tab'], [role='switch']",
@@ -6231,6 +6234,7 @@ export function CloudChatPage({
       {contextDestination === "library" ? (
         <CloudContextSidebar
           mobileRail={sidebar.isMobile ? renderApplicationRail(true) : undefined}
+          fontScale={settings.customSettings.fontScale.sidebar}
           key={user.id}
           preview={desktopAccountLayout?.sidebarPreview ?? sidebarPreview.open}
           reportLoadErrors={!embeddedAccount}
@@ -6356,7 +6360,7 @@ export function CloudChatPage({
         data-embedded-account={embeddedAccount || undefined}
         data-desktop-cloud-window={desktopCloudWindow || undefined}
         data-desktop-cloud-titlebar-inset={
-          (desktopCloudChrome && desktopCloudHost?.nativeTitlebarInset) || undefined
+          (desktopCloudWindow && desktopCloudHost?.nativeTitlebarInset) || undefined
         }
         data-workspace-view={workspaceView}
         coverage={embeddedWorkbench || scheduleRoute ? "local" : "viewport"}
@@ -7754,6 +7758,7 @@ export function CloudChatPage({
                     }
                   }}
                   sharedSidebar
+                  sidebarFontScale={settings.customSettings.fontScale.sidebar}
                   mobileRail={
                     workbenchActive && customizeOpen && sidebar.isMobile
                       ? renderApplicationRail(true)

@@ -64,9 +64,10 @@ export function WorkbenchCanvas({
     <div
       {...props}
       data-workbench-page-canvas={mode === "page" ? "" : undefined}
+      data-workbench-sidebar-preview={mode === "sidebar-preview" ? "" : undefined}
       className={cn(
         mode === "sidebar-preview"
-          ? "absolute inset-y-0 left-(--app-rail-width) z-30 flex w-0"
+          ? "absolute z-30 flex w-0"
           : "relative flex min-h-0 min-w-0 flex-1",
         className,
       )}

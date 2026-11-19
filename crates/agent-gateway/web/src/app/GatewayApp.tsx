@@ -113,16 +113,10 @@ import {
 } from "@/lib/settings";
 import { createIdleSidebarBackend, createWebSidebarBackend } from "@/lib/sidebar/webSidebarBackend";
 import { importReadableFiles } from "@/lib/uploadReadableFiles";
-import {
-  GATEWAY_CHAT_FRAME_CLASS,
-  GATEWAY_EMBEDDED_SHELL_CLASS,
-  GATEWAY_MAIN_BACKDROP_CLASS,
-  GATEWAY_MAIN_SHELL_CLASS,
-  GATEWAY_SHELL_CLASS,
-} from "@/lib/webStyleClasses";
+import { GATEWAY_MAIN_SHELL_CLASS, GATEWAY_SHELL_CLASS } from "@/lib/webStyleClasses";
 import { AccountLoginPage } from "@/pages/AccountLoginPage";
 import { CloudChatPage } from "@/pages/CloudChatPage";
-import { SettingsSyncLoading } from "@/pages/SettingsSyncLoading";
+import { GatewayLoadingCard, GatewayLoadingScreen } from "@/pages/GatewayLoadingScreen";
 import { SharedHistoryPage } from "@/pages/SharedHistoryPage";
 import {
   asErrorMessage,
@@ -3420,10 +3414,7 @@ function useGatewayAppController() {
   if (selection?.runtime_kind === "web_chat") {
     return (
       <LocaleContext.Provider value={localeContextValue}>
-        <GatewayCloudWorkspace
-          key={(relayUser ?? accountUser)?.id}
-          loading={<SettingsSyncLoading locale={settings.locale} />}
-        >
+        <GatewayCloudWorkspace key={(relayUser ?? accountUser)?.id} locale={settings.locale}>
           {(workspaceAvailability) => (
             <CloudChatPage
               workspaceAvailability={workspaceAvailability}
@@ -3457,45 +3448,34 @@ function useGatewayAppController() {
     const zh = settings.locale === "zh-CN";
     return (
       <LocaleContext.Provider value={localeContextValue}>
-        <div
-          className={getDesktopRemoteHost() ? GATEWAY_EMBEDDED_SHELL_CLASS : GATEWAY_SHELL_CLASS}
-        >
-          <main className={GATEWAY_MAIN_SHELL_CLASS}>
-            <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
-            <div
-              className={cn(
-                GATEWAY_CHAT_FRAME_CLASS,
-                "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
-                "items-center justify-center max-820:h-full",
-              )}
-            >
-              {deviceDraftLease ? (
-                <StatusNotice
-                  className="mx-4 max-w-md"
-                  tone={deviceDraftFailed ? "error" : "info"}
-                  busy={!deviceDraftFailed}
-                  message={
-                    deviceDraftFailed
-                      ? zh
-                        ? "所选设备工作区暂不可用。"
-                        : "The selected device workspace is unavailable."
-                      : zh
-                        ? "正在打开设备工作区…"
-                        : "Opening device workspace…"
-                  }
-                  description={zh ? "云端草稿已保留。" : "Your cloud draft is saved."}
-                  actions={
-                    <Button variant="ghost" onClick={() => returnToCloudDraft(deviceDraftLease)}>
-                      {zh ? "返回云端" : "Return to Cloud"}
-                    </Button>
-                  }
-                />
-              ) : (
-                <SettingsSyncLoading locale={settings.locale} />
-              )}
-            </div>
-          </main>
-        </div>
+        <GatewayLoadingScreen embedded={Boolean(getDesktopRemoteHost())}>
+          {deviceDraftLease ? (
+            <StatusNotice
+              className="mx-4 max-w-md"
+              tone={deviceDraftFailed ? "error" : "info"}
+              busy={!deviceDraftFailed}
+              message={
+                deviceDraftFailed
+                  ? zh
+                    ? "所选设备工作区暂不可用。"
+                    : "The selected device workspace is unavailable."
+                  : zh
+                    ? "正在打开设备工作区…"
+                    : "Opening device workspace…"
+              }
+              description={zh ? "云端草稿已保留。" : "Your cloud draft is saved."}
+              actions={
+                <Button variant="ghost" onClick={() => returnToCloudDraft(deviceDraftLease)}>
+                  {zh ? "返回云端" : "Return to Cloud"}
+                </Button>
+              }
+            />
+          ) : (
+            <GatewayLoadingCard
+              label={translate("chat.runtime.settingsSyncTitle", settings.locale)}
+            />
+          )}
+        </GatewayLoadingScreen>
       </LocaleContext.Provider>
     );
   }

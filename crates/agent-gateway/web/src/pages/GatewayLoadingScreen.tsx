@@ -1,15 +1,42 @@
-import { type Locale, t as translate } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import type { ReactNode } from "react";
+import {
+  GATEWAY_CHAT_FRAME_CLASS,
+  GATEWAY_EMBEDDED_SHELL_CLASS,
+  GATEWAY_MAIN_BACKDROP_CLASS,
+  GATEWAY_MAIN_SHELL_CLASS,
+  GATEWAY_SHELL_CLASS,
+} from "@/lib/webStyleClasses";
 
-type SettingsSyncLoadingProps = {
-  locale: Locale;
-};
+export function GatewayLoadingScreen({
+  children,
+  embedded = false,
+}: {
+  children: ReactNode;
+  embedded?: boolean;
+}) {
+  return (
+    <div className={embedded ? GATEWAY_EMBEDDED_SHELL_CLASS : GATEWAY_SHELL_CLASS}>
+      <main className={GATEWAY_MAIN_SHELL_CLASS}>
+        <div className={GATEWAY_MAIN_BACKDROP_CLASS} />
+        <div
+          className={cn(
+            GATEWAY_CHAT_FRAME_CLASS,
+            "relative flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center px-4",
+          )}
+        >
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
 
-export function SettingsSyncLoading({ locale }: SettingsSyncLoadingProps) {
+export function GatewayLoadingCard({ label }: { label: string }) {
   return (
     <div
       className={cn(
-        "relative z-1 flex flex-col items-center gap-18px overflow-hidden",
+        "relative z-1 flex max-w-full flex-col items-center gap-18px overflow-hidden text-center",
         "rounded-24px border border-solid border-white/70 bg-white/55",
         "px-46px pt-38px pb-32px",
         "shadow-login-container backdrop-blur-40px backdrop-saturate-160",
@@ -47,7 +74,7 @@ export function SettingsSyncLoading({ locale }: SettingsSyncLoadingProps) {
       </div>
 
       <strong className="text-sm font-semibold tracking-minus-0p01em text-foreground">
-        {translate("chat.runtime.settingsSyncTitle", locale)}
+        {label}
       </strong>
 
       <span

@@ -2372,7 +2372,7 @@ export function CloudScheduleWorkspace({
   const renderSidebarContents = (focusable: boolean, showCreate = true, mobileList = false) => (
     <>
       {mobileList && renderWorkbenchHeader && renderTaskListHeader(focusable, true)}
-      <SidebarHeader className="shrink-0 px-3 pb-2 pt-2.5">
+      <SidebarHeader className={mobileList ? "px-3 pb-2 pt-2.5" : undefined}>
         {!(mobileList && renderWorkbenchHeader) && renderTaskListHeader(focusable, false)}
         {searchOpen && (
           <SidebarInput
@@ -2392,52 +2392,56 @@ export function CloudScheduleWorkspace({
             aria-label={searchLabel}
           />
         )}
-        {showCreate && (
-          <SidebarMenu className="mt-2.5">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                variant="navigation"
-                className={`sidebar-list-row ${isMobile ? "min-h-11" : "min-h-9"}`}
-                disabled={!canCreate}
-                onClick={() => newTask()}
-              >
-                <Plus className="size-4" />
-                <span>{newTaskLabel}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        )}
-        {hasSidebarFilters && (
-          <section
-            aria-label={text("当前筛选", "Active filters")}
-            className="mt-1 flex min-w-0 items-center gap-1 border-t border-border/60 pt-1.5"
-          >
-            <div className="min-w-0 flex-1 px-2 text-xs leading-4 text-muted-foreground">
-              {scopedTargetLabel && (
-                <p className="truncate" title={scopedTargetLabel}>
-                  {scopedTargetLabel}
-                </p>
-              )}
-              {statusFilterLabel && (
-                <p className="truncate" title={statusFilterLabel}>
-                  {statusFilterLabel}
-                </p>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              className={`${isMobile ? "min-h-11" : "min-h-8"} h-auto shrink-0 whitespace-nowrap px-2 text-xs`}
-              onClick={clearTaskFilters}
-            >
-              {clearFiltersLabel}
-            </Button>
-          </section>
-        )}
       </SidebarHeader>
+      {(showCreate || hasSidebarFilters) && (
+        <div className="workbench-sidebar-list shrink-0 pb-2">
+          {showCreate && (
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  variant="navigation"
+                  className={`sidebar-list-row ${isMobile ? "min-h-11" : "min-h-9"}`}
+                  disabled={!canCreate}
+                  onClick={() => newTask()}
+                >
+                  <Plus className="size-4" />
+                  <span>{newTaskLabel}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          )}
+          {hasSidebarFilters && (
+            <section
+              aria-label={text("当前筛选", "Active filters")}
+              className="mt-1 flex min-w-0 items-center gap-1 border-t border-border/60 pt-1.5"
+            >
+              <div className="min-w-0 flex-1 px-2 text-xs leading-4 text-muted-foreground">
+                {scopedTargetLabel && (
+                  <p className="truncate" title={scopedTargetLabel}>
+                    {scopedTargetLabel}
+                  </p>
+                )}
+                {statusFilterLabel && (
+                  <p className="truncate" title={statusFilterLabel}>
+                    {statusFilterLabel}
+                  </p>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                className={`${isMobile ? "min-h-11" : "min-h-8"} h-auto shrink-0 whitespace-nowrap px-2 text-xs`}
+                onClick={clearTaskFilters}
+              >
+                {clearFiltersLabel}
+              </Button>
+            </section>
+          )}
+        </div>
+      )}
       <SidebarContent className="overflow-hidden">
         <div
           ref={mobileList ? mobileListViewport : undefined}
-          className="za-native-scroll scroll-fade flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3 pb-3"
+          className="za-native-scroll scroll-fade flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-(--workbench-sidebar-gutter,12px) pb-3"
         >
           {groups.map((group) => {
             const rows = taskRows.filter((item) => item.group === group);
@@ -2653,7 +2657,7 @@ export function CloudScheduleWorkspace({
       previewOpen={previewOpen}
       mobileRail={mobileRail}
       data-sidebar-preview-region=""
-      className="workbench-feature-sidebar zone-font-scale bg-background"
+      className="workbench-sidebar zone-font-scale"
       style={{ "--zone-font-scale": fontScale } as CSSProperties}
     >
       {renderSidebarContents(!isMobile || openMobile)}

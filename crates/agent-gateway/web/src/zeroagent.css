@@ -430,15 +430,6 @@ html[data-zeroagent-platform="android"]
   -webkit-font-smoothing: antialiased;
 }
 
-.cloud-chat-shell .chat-history-sidebar {
-  border-right: 1px solid hsl(var(--border) / 0.6);
-}
-.cloud-sidebar-brand,
-.cloud-chat-shell .cloud-context-sidebar h2 {
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 24px;
-}
 .cloud-chat-shell {
   background: hsl(var(--settings-rail));
 }
@@ -465,7 +456,7 @@ html[data-zeroagent-platform="android"]
     not ((pointer: coarse) and (max-width: 1000px) and (max-height: 550px))
   ) {
   .cloud-chat-shell[data-desktop-cloud-window] > [data-workbench-layout="page"] {
-    padding: 4px 4px 4px 0;
+    --workbench-page-inset: 4px;
   }
   .cloud-chat-shell[data-desktop-cloud-titlebar-inset]
     [data-workbench-layout="page"]
@@ -473,10 +464,8 @@ html[data-zeroagent-platform="android"]
     padding-top: var(--desktop-cloud-header-height);
   }
   .cloud-chat-shell[data-desktop-cloud-titlebar-inset]
-    .cloud-context-sidebar
-    > [data-slot="sidebar-inner"]
-    > [data-sidebar="header"] {
-    padding-top: var(--desktop-cloud-header-height);
+    .workbench-sidebar[data-slot="sidebar-container"] {
+    --workbench-sidebar-title-inset: var(--desktop-cloud-header-height);
   }
 }
 .cloud-chat-shell[data-desktop-cloud-titlebar-inset]
@@ -510,14 +499,8 @@ html[data-zeroagent-platform="android"]
 .cloud-chat-shell .application-rail {
   border-right: 0;
 }
-.cloud-chat-shell .cloud-context-sidebar {
-  background: hsl(var(--background));
-}
 .cloud-chat-shell .chat-history-sidebar [data-sidebar="footer"] {
   background: transparent;
-}
-.cloud-chat-shell .cloud-context-sidebar {
-  border-right: 1px solid hsl(var(--border) / 0.5);
 }
 .cloud-header-new-chat {
   color: hsl(var(--foreground));
@@ -529,9 +512,6 @@ html[data-zeroagent-platform="android"]
   ) {
   .cloud-chat-shell .gateway-cloud-main [data-app-workbench-chrome] {
     --app-header-height: 52px;
-  }
-  .cloud-chat-shell .cloud-context-sidebar > [data-slot="sidebar-inner"] > [data-sidebar="header"] {
-    padding-top: 10px;
   }
 }
 .cloud-conversation-title {

@@ -427,9 +427,15 @@ function SidebarHeaderRow({
   actions: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-8 min-w-0 items-center justify-between gap-2">
+    <div
+      data-sidebar-header-row=""
+      data-tauri-drag-region=""
+      className="flex min-h-8 min-w-0 items-center justify-between gap-2"
+    >
       <div className="flex min-w-0 flex-1 items-center gap-2">{children}</div>
-      <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+      <div className="flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]">
+        {actions}
+      </div>
     </div>
   );
 }

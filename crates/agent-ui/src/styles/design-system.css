@@ -876,13 +876,34 @@ html[data-zeroagent-keyboard="open"] .za-confirmation-viewport {
   background: hsl(var(--background));
   border-right: 1px solid var(--za-workbench-border);
 }
-:where(.app-workspace-shell .chat-history-sidebar-inner) > [data-sidebar="header"] {
-  padding-top: 10px;
+.workbench-sidebar {
+  --workbench-sidebar-gutter: 12px;
+  --workbench-sidebar-title-inset: 10px;
+  background: hsl(var(--background));
+}
+.workbench-sidebar[data-slot="sidebar-container"][data-side="left"]:not([data-preview]) {
+  border-inline-end: 1px solid var(--za-workbench-border);
+}
+.workbench-sidebar .sidebar-mobile-panel {
+  --workbench-sidebar-gutter: 8px;
+  --workbench-sidebar-title-inset: 6px;
+}
+.workbench-sidebar [data-sidebar="header"] {
+  padding: var(--workbench-sidebar-title-inset) var(--workbench-sidebar-gutter) 8px;
+}
+.workbench-sidebar [data-sidebar-header-row] :is(h1, h2, .cloud-sidebar-brand) {
+  font-size: calc(17px * var(--zone-font-scale, 1));
+  font-weight: 600;
+  line-height: calc(24px * var(--zone-font-scale, 1));
+}
+.workbench-sidebar-list {
+  padding-inline: var(--workbench-sidebar-gutter, 12px);
+  padding-block-start: 2px;
 }
 .app-workspace-shell [data-sidebar="footer"] {
   background: transparent;
 }
-:where(.chat-history-sidebar-inner > [data-sidebar="header"]) [data-sidebar="menu-button"] {
+:where(.chat-history-sidebar-inner > .workbench-sidebar-list) [data-sidebar="menu-button"] {
   min-height: 36px;
   border-radius: 8px;
 }
@@ -912,8 +933,7 @@ html[data-zeroagent-keyboard="open"] .za-confirmation-viewport {
     min-height: 44px;
   }
 }
-[data-workbench-account-sidebar] > [data-workbench-account-navigation],
-[data-workbench-account-sidebar] > .za-extensions-shared-sidebar {
+[data-workbench-account-sidebar] > [data-workbench-account-navigation] {
   display: contents;
 }
 [data-app-workbench-body]:has(> [data-workbench-account-sidebar] [data-slot="sidebar"])
@@ -1339,14 +1359,20 @@ html[data-zeroagent-keyboard="open"] .za-confirmation-viewport {
 
 /* Settings use the same navigation and content rhythm in every host. */
 [data-workbench-layout="page"] {
-  padding: 2px 2px 2px 0;
+  --workbench-page-inset: 2px;
+  --workbench-page-border: 1px;
+  padding: var(--workbench-page-inset) var(--workbench-page-inset) var(--workbench-page-inset) 0;
   background: hsl(var(--settings-rail));
 }
 [data-workbench-page-canvas] {
   overflow: hidden;
-  border: 1px solid var(--za-workbench-border);
+  border: var(--workbench-page-border, 1px) solid var(--za-workbench-border);
   border-radius: var(--za-radius-workbench);
   background: hsl(var(--background));
+}
+[data-workbench-sidebar-preview] {
+  inset-block: calc(var(--workbench-page-inset, 0px) + var(--workbench-page-border, 0px));
+  inset-inline-start: calc(var(--app-rail-width) + var(--workbench-page-border, 0px));
 }
 [data-settings-navigation-mode="external"] {
   padding: 0;
@@ -1396,7 +1422,8 @@ html[data-zeroagent-keyboard="open"] .za-confirmation-viewport {
 }
 @media (max-width: 820px), (pointer: coarse) and (max-width: 1000px) and (max-height: 550px) {
   [data-workbench-layout="page"] {
-    padding: 0;
+    --workbench-page-inset: 0px;
+    --workbench-page-border: 0px;
   }
   [data-workbench-page-canvas] {
     border: 0;
@@ -1603,7 +1630,6 @@ html[data-zeroagent-keyboard="open"] .za-confirmation-viewport {
   width: 100%;
   min-width: 0;
 }
-.sidebar-mobile-rail-layout .cloud-sidebar-brand,
 .sidebar-mobile-rail-layout .sidebar-mobile-panel h2 {
   font-size: calc(17px * var(--zone-font-scale, 1));
   font-weight: 600;

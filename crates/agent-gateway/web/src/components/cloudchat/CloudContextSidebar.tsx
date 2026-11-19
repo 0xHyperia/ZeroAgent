@@ -1,12 +1,13 @@
 import { BookOpen, FileText, PanelLeft, PanelLeftClose, X } from "@liveagent/ui/components/IconSet";
 import {
   Sidebar,
+  SidebarContent,
   SidebarHeader,
   SidebarHeaderRow,
   SidebarTrigger,
 } from "@liveagent/ui/components/ui/sidebar";
 import { useLocale } from "@liveagent/ui/i18n";
-import { type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import type { CloudChatFile, CloudChatFilesClient } from "@/lib/cloudChatFiles";
 import type { CloudSpaceClient, CloudSpaceLocation } from "@/lib/cloudSpace";
 import { CloudSpaceNavigation } from "./CloudSpaceNavigation";
@@ -17,6 +18,7 @@ type Resource = "files" | "artifacts";
 export function CloudContextSidebar(props: {
   preview: boolean;
   mobileRail?: ReactNode;
+  fontScale?: number;
   spaceClient?: CloudSpaceClient;
   spaceLocation?: CloudSpaceLocation;
   spaceRevision?: number;
@@ -64,10 +66,11 @@ export function CloudContextSidebar(props: {
       label={text("资料空间导航", "Library navigation")}
       previewOpen={props.preview}
       mobileRail={props.mobileRail}
-      className="cloud-context-sidebar bg-settings-rail"
+      className="cloud-context-sidebar workbench-sidebar zone-font-scale"
       data-context-destination="library"
+      style={{ "--zone-font-scale": props.fontScale ?? 1 } as CSSProperties}
     >
-      <SidebarHeader className="px-3 pb-2 pt-2.5">
+      <SidebarHeader>
         <SidebarHeaderRow
           actions={
             <SidebarTrigger
@@ -96,7 +99,7 @@ export function CloudContextSidebar(props: {
           </h2>
         </SidebarHeaderRow>
       </SidebarHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-5 flex flex-col">
+      <SidebarContent className="workbench-sidebar-list pb-5">
         {props.spaceClient && props.spaceLocation && props.onSpaceNavigate ? (
           <CloudSpaceNavigation
             client={props.spaceClient}
@@ -163,7 +166,7 @@ export function CloudContextSidebar(props: {
             ))}
           </>
         )}
-      </div>
+      </SidebarContent>
     </Sidebar>
   );
 }

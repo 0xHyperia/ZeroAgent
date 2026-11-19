@@ -41,6 +41,20 @@ test("a closed workspace keeps the original chat view and does not load account 
   assert.equal(app.calls.filter(({ path }) => path.startsWith("/api/web-chat/")).length, 0);
 });
 
+test("a closed workspace lets its header change the client's theme", async (t) => {
+  const themes = [];
+  const app = await mount(t, {
+    newDraft: true,
+    realSidebar: true,
+    workspaceAvailability: { available: false, catalog: { version: 0, packages: [] } },
+    onThemeChange: (theme) => themes.push(theme),
+  });
+  await app.click('[data-theme-toggle]');
+  assert.deepEqual(themes, ["light"]);
+  assert.equal(app.composer.isSubmissionDisabled, true);
+  assert.equal(app.calls.some(({ path }) => path.startsWith("/api/web-chat/")), false);
+});
+
 test("a closed desktop cloud view lets the native device menu return to this computer", async (t) => {
   let header;
   let windowControls;
@@ -109,7 +123,7 @@ const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFa
 const artifactSnapshot=record=>({type:"artifact_reference",version_id:record.id,name:record.name,mime:record.mime,size:record.size,family_id:record.family_id,number:record.number,sha256:record.sha256});
 const fixtureTranslation = { t: key => key, useLocale: () => ({ locale: "zh-CN", t: key => key }) };
 
-async function mount(t, { initialURL, initialHistoryConversation, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,initialStreamStatus=200,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,initialActiveRunFailure=false,revisionHarness=false,readerHarness=false,realSidebar=false,realHistorySidebar=false,environments=[],readerWidth, pendingProjectRead, modelPreferencesOffline = false, workspaceAvailability, desktopCloudHost } = {}) {
+async function mount(t, { initialURL, initialHistoryConversation, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,initialStreamStatus=200,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,initialActiveRunFailure=false,revisionHarness=false,readerHarness=false,realSidebar=false,realHistorySidebar=false,environments=[],readerWidth, pendingProjectRead, modelPreferencesOffline = false, workspaceAvailability, desktopCloudHost, onThemeChange } = {}) {
   let env;
   let uuid = 0;
   let draft = initialDraftText;
@@ -507,10 +521,12 @@ async function mount(t, { initialURL, initialHistoryConversation, initialRun = n
       "@liveagent/ui/components/IconSet":new Proxy({}, {get:()=>()=>null}),
     }:{}),
     "@liveagent/ui/application/ApplicationView": { ApplicationView: (props) => props.chat.content },
-    "@liveagent/ui/application/AppWorkbenchChrome": {
-      AppHeaderFrame: (props) => env.React.createElement("div", { className: props.className }, props.children),
-      AppWorkbenchChrome: (props) => env.React.createElement("header", { "data-app-workbench-chrome": "" }, props.navigationActions, props.leadingActions, props.preThemeActions, props.trailingActions, props.windowControls),
-    },
+    ...(!onThemeChange ? {
+      "@liveagent/ui/application/AppWorkbenchChrome": {
+        AppHeaderFrame: (props) => env.React.createElement("div", { className: props.className }, props.children),
+        AppWorkbenchChrome: (props) => env.React.createElement("header", { "data-app-workbench-chrome": "" }, props.navigationActions, props.leadingActions, props.preThemeActions, props.trailingActions, props.windowControls),
+      },
+    } : {}),
     "@/components/cloudchat/CloudContextSidebar": { CloudContextSidebar: props => env.React.createElement('aside',{'data-context-destination':'library'},env.React.createElement('button',{onClick:()=>props.onOpenResource('files')},'文件')) },
     "@liveagent/ui/components/AppErrorBoundary": { AppErrorBoundary: (props) => props.children },
     ...(realHistorySidebar ? {
@@ -607,7 +623,7 @@ async function mount(t, { initialURL, initialHistoryConversation, initialRun = n
   const render = async () => env.act(async () => {
     root.render(env.React.createElement(SidebarProvider, null, env.React.createElement(CloudChatPage, {
       user, workspaceAvailability, desktopCloudHost, onUserChange: () => undefined, environments, selection: null, settings,
-      setSettings: () => undefined, settingsSaveState: "saved", onSwitch: async () => undefined, onLogout: () => undefined,
+      setSettings: (update) => onThemeChange?.(update(settings).theme), settingsSaveState: "saved", onSwitch: async () => undefined, onLogout: () => undefined,
     })));
     await tick();
   });
