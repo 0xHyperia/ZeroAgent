@@ -367,6 +367,8 @@
         "crates/agent-gui/src-tauri/src/services/account_session/desktop_remote.rs",
         "scripts/prepare-desktop-remote.mjs",
         "crates/agent-gateway/internal/protocol/pbws/controller_selection.go",
+        "crates/agent-gateway/internal/protocol/pbws/browser_conn.go",
+        "crates/agent-gateway/internal/kbrain/queue_attachments.go",
         "crates/agent-ui/src/styles/design-system.css",
         "crates/agent-ui/src/application/WorkbenchNavigationRail.tsx",
         "crates/agent-ui/src/components/ui/status-notice.tsx"
@@ -374,6 +376,10 @@
       "tests": [
         "crates/agent-gateway/web/test/execution-targets.test.mjs",
         "crates/agent-gateway/web/test/device-conversation-reconnect.test.mjs",
+        "crates/agent-gateway/test/websocket/v2_hello_order_test.go",
+        "crates/agent-gateway/internal/transport/wscore/authorization_test.go",
+        "crates/agent-gateway/internal/kbrain/queue_attachments_test.go",
+        "crates/agent-gateway/test/webui/clipboard-files.test.mjs",
         "crates/agent-gateway/internal/server/device_image_test.go",
         "crates/agent-gateway/internal/session/tunnel_state_test.go",
         "crates/agent-gateway/test/tunnel/tunnel_e2e_test.go",
@@ -432,6 +438,7 @@
       ],
       "entrypoints": [
         "crates/agent-gui/src/lib/kbrain/turn.ts",
+        "crates/agent-gui/src/lib/kbrain/client.ts",
         "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
         "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
         "crates/agent-gui/src-tauri/src/commands/integration/mcp_oauth.rs",
@@ -450,6 +457,8 @@
       ],
       "tests": [
         "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
+        "crates/agent-gui/test/providers/kbrain-turn.test.mjs",
+        "crates/agent-gui/test/chat/goal-bar-refresh.test.mjs",
         "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
         "crates/agent-gui/test/backend/cargo-smoke.test.mjs",
         "crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs",
@@ -494,11 +503,15 @@
         "crates/agent-gui/src-tauri/src/commands/history/chat_history/migration.rs",
         "crates/agent-gui/src/lib/kbrain/sessionSync.ts",
         "crates/agent-gui/src/lib/kbrain/sidebarSync.ts",
+        "crates/agent-ui/src/lib/sidebar/store.ts",
+        "crates/agent-ui/src/lib/transcript-find/transcriptFind.ts",
         "crates/agent-gateway/internal/session/manager_history_sync.go"
       ],
       "tests": [
         "crates/agent-gui/test/providers/kbrain-history.test.mjs",
         "crates/agent-gateway/web/test/sidebar-store.test.mjs",
+        "crates/agent-gui/test/chat/sidebar-store.test.mjs",
+        "crates/agent-gui/test/chat/find-in-conversation.test.mjs",
         "crates/agent-gui/test/chat/zeroagent-backend-profile.test.mjs",
         "crates/agent-gui/test/providers/kbrain-manual-history-import.test.mjs",
         "crates/agent-gui/test/providers/kbrain-history-migration.test.mjs",

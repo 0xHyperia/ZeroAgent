@@ -1,0 +1,311 @@
+{
+  "release": "v2.0.27",
+  "previous_upstream": "2c0476ac5a3e7e0ab852fce42bf307062e5b7c07",
+  "upstream_commit": "f8cc0d97e42beb840d7555e56cb88eac0125d952",
+  "zeroagent_baseline": "19f3513ce2fed95d8c20d6069f01aca2de28fdd6",
+  "merge_base": "2c0476ac5a3e7e0ab852fce42bf307062e5b7c07",
+  "text_conflicts": 3,
+  "counts": {
+    "adopt": 14,
+    "adapt": 15,
+    "reject": 8
+  },
+  "entries": [
+    {
+      "path": ".github/pr-assets/1-sidebar-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": ".github/pr-assets/3-updater-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": ".github/pr-assets/5-find-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": ".github/pr-assets/6-clipboard-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": ".github/pr-assets/7-virtual-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": ".github/pr-assets/agent-ack-before-after.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": ".github/pr-assets/agent-goal-before-after.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": ".github/pr-assets/agent-queue-before-after.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "上游 PR 演示截图保留于发布祖先，ZeroAgent 的验证以本地构建结果为准。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/backend_queue.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "编辑队列按条目解析已持久化附件及当前设备上传引用，保留会话映射、队列版本和保存顺序。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/backend_queue_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "编辑队列按条目解析已持久化附件及当前设备上传引用，保留会话映射、队列版本和保存顺序。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/queue.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "编辑队列按条目解析已持久化附件及当前设备上传引用，保留会话映射、队列版本和保存顺序。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/queue_attachments.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "编辑队列按条目解析已持久化附件及当前设备上传引用，保留会话映射、队列版本和保存顺序。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/queue_attachments_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "编辑队列按条目解析已持久化附件及当前设备上传引用，保留会话映射、队列版本和保存顺序。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/relay.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "编辑队列按条目解析已持久化附件及当前设备上传引用，保留会话映射、队列版本和保存顺序。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_conn.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "先注册设备事件订阅，再用共享写入守卫同步发送 hello，随后启动写泵。保留原账户绑定及租约复验。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/transport/wscore/conn.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "先注册设备事件订阅，再用共享写入守卫同步发送 hello，随后启动写泵。保留原账户绑定及租约复验。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/transport/wscore/conn_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "先注册设备事件订阅，再用共享写入守卫同步发送 hello，随后启动写泵。保留原账户绑定及租约复验。"
+    },
+    {
+      "path": "crates/agent-gateway/test/websocket/v2_hello_order_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "先注册设备事件订阅，再用共享写入守卫同步发送 hello，随后启动写泵。保留原账户绑定及租约复验。"
+    },
+    {
+      "path": "crates/agent-gateway/test/webui/clipboard-files.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "浏览器及内嵌设备 WebUI 保留同名同时间戳的独立 File，沿用原上传入口。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/clipboardFiles.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "浏览器及内嵌设备 WebUI 保留同名同时间戳的独立 File，沿用原上传入口。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/app/update.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从桌面安装回执读取实际安装结果，保留 ZeroAgent 更新通道、清单来源和签名验证。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/appUpdates.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "更新已撤下或仅支持手动下载时保持可用状态，不上报安装完成。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/client.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留 Native 配置读回执，普通发送和目标 set/resume 仅按原请求编号只读恢复已接受运行。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/goalSettle.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "针对同一会话的异步目标读回，保留后来收到的事件或操作状态。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/kbrain/turn.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "保留 Native 配置读回执，普通发送和目标 set/resume 仅按原请求编号只读恢复已接受运行。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/composer/KBrainGoalBarHost.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "针对同一会话的异步目标读回，保留后来收到的事件或操作状态。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/TranscriptList.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "采用按行顺序更新的虚拟列表键函数，保留 ZeroAgent 待回复占位的独立键。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/transcript/rowModel.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用行键快照，只在虚拟行身份或顺序变化时替换键查找。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/find-in-conversation.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "保留可见代码与 Unicode 字符的原始位置，复用共享查找逻辑。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/goal-bar-refresh.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "针对同一会话的异步目标读回，保留后来收到的事件或操作状态。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-goal-settle.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "针对同一会话的异步目标读回，保留后来收到的事件或操作状态。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/sidebar-store.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "完整快照以服务端总数判断完整性，删除之后丢弃旧页，保留原账号与设备范围。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/transcript-row-model.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用行键快照，只在虚拟行身份或顺序变化时替换键查找。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/kbrain-turn.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "保留 Native 配置读回执，普通发送和目标 set/resume 仅按原请求编号只读恢复已接受运行。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/app-updates.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "更新已撤下或仅支持手动下载时保持可用状态，不上报安装完成。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sidebar/store.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "完整快照以服务端总数判断完整性，删除之后丢弃旧页，保留原账号与设备范围。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/transcript-find/transcriptFind.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "保留可见代码与 Unicode 字符的原始位置，复用共享查找逻辑。"
+    }
+  ]
+}

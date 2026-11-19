@@ -1137,12 +1137,22 @@
       ]
     },
     {
+      "glob": "crates/agent-gateway/internal/kbrain/{backend_queue,queue,queue_attachments,relay}.go",
+      "ownership": "adapted",
+      "risk": "high",
+      "checks": [
+        "队列编辑仅从同一条目及当前设备上传存储解析附件，按保存顺序及大小限制生成内容",
+        "保持原会话授权、持久队列版本、撤销编辑及原请求标识"
+      ]
+    },
+    {
       "glob": "crates/agent-gateway/internal/protocol/pbws/**",
       "ownership": "adapted",
       "risk": "critical",
       "checks": [
         "当前controller会话/租约/设备/已发布工作区在入站及实际写新用户帧前复核",
-        "Desktop主体固定期限、刷新同账号租约且终端按键不重复外部Me"
+        "Desktop主体固定期限、刷新同账号租约且终端按键不重复外部Me",
+        "先注册事件订阅，再通过受保护写入发送 hello，最后启动写泵及心跳"
       ]
     },
     {
@@ -1151,7 +1161,7 @@
       "risk": "critical",
       "checks": [
         "共享写泵BeforeWrite无回调时保持上游行为",
-        "排队帧在退出/撤销后不写出，普通与race回归"
+        "同步握手帧和排队帧在授权到期或撤销后均不写出，普通与race回归"
       ]
     },
     {

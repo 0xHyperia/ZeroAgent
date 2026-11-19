@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+func TestWriteSyncRechecksAuthorization(t *testing.T) {
+	conn := NewConn(nil, Config{BeforeWrite: func() bool { return false }})
+	defer conn.Close()
+	conn.writeOverride = func(Frame) error {
+		t.Fatal("hello was written after authorization expired")
+		return nil
+	}
+	if err := conn.WriteSync(Frame{Class: FrameResponse, Kind: "hello", MessageType: 2}); err == nil {
+		t.Fatal("WriteSync accepted an expired authorization")
+	}
+}
+
 func TestWriterRechecksAuthorizationAfterQueueing(t *testing.T) {
 	var allowed atomic.Bool
 	allowed.Store(true)

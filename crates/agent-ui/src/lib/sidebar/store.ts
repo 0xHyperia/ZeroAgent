@@ -379,6 +379,10 @@ export function createSidebarStore(
       ),
     });
   };
+  const recordDeletion = (id: string) => {
+    if (workspaceDeletedIds.size >= 1024) invalidateWorkspaceRequests();
+    workspaceDeletedIds.set(id, ++workspaceDeleteVersion);
+  };
   const refreshWorkspaceHistory = () => {
     void refreshPinnedHistory();
     for (const state of snapshot.workspaceHistory.values())
@@ -718,8 +722,7 @@ export function createSidebarStore(
       }
       case "delete": {
         if (!event.authoritative) {
-          if (workspaceDeletedIds.size >= 1024) invalidateWorkspaceRequests();
-          workspaceDeletedIds.set(event.conversationId, ++workspaceDeleteVersion);
+          recordDeletion(event.conversationId);
         }
         if (byId.has(event.conversationId)) {
           byId = new Map(byId);
@@ -823,6 +826,7 @@ export function createSidebarStore(
     const seq = requestSeq;
     const generation = ++listGeneration;
     const upsertSeqAtRequest = localUpsertSeq;
+    const deleteVersion = workspaceDeleteVersion;
     // Release the current-generation pagination gate immediately. Its
     // transport promise may still settle later, but the generation checks
     // make that result inert and a fresh page-2 request need not wait for it.
@@ -856,7 +860,13 @@ export function createSidebarStore(
       if (seq !== requestSeq || generation !== listGeneration || startCount === 0) {
         return;
       }
-      const authoritativeItems = filterConversationsForScope(page.items, requestScope);
+      if (deleteVersion !== workspaceDeleteVersion) {
+        queuedListRequest = { authoritative: true };
+        return;
+      }
+      const authoritativeItems = filterConversationsForScope(page.items, requestScope).filter(
+        (item) => snapshot.mutations.get(item.id) !== "delete",
+      );
       // Upserts this response already covers are settled by it either way.
       for (const [id, upsertSeq] of localUpsertSeqById) {
         if (upsertSeq <= upsertSeqAtRequest) localUpsertSeqById.delete(id);
@@ -864,7 +874,7 @@ export function createSidebarStore(
       const reconciled = reconcileSidebarConversations(snapshot.conversations, authoritativeItems, {
         retainConversationIds: retainedConversationIds(upsertSeqAtRequest),
         preserveUpdatedAtConversationIds: activePositionLockIds(),
-        authoritativeComplete: page.items.length < pageSize,
+        authoritativeComplete: page.items.length < pageSize || page.items.length >= page.totalCount,
       });
       byId = new Map(byId);
       const reconciledIds = new Set<string>();
@@ -1083,15 +1093,22 @@ export function createSidebarStore(
     const generation = listGeneration;
     const requestScope = scope;
     const pageNumber = loadedPageCount + 1;
+    const deleteVersion = workspaceDeleteVersion;
     commit({ isLoadingMore: true });
     try {
       const page = await backend.listConversations(pageNumber, pageSize, requestScope);
       if (seq !== requestSeq || generation !== listGeneration || startCount === 0) {
         return;
       }
+      if (deleteVersion !== workspaceDeleteVersion) {
+        // Deletion can shift every later offset, even when the deleted row
+        // isn't in this page. Re-read the first page and its authoritative count.
+        await fetchFirstPage(true);
+        return;
+      }
       let next = snapshot.conversations;
       for (const item of filterConversationsForScope(page.items, requestScope)) {
-        next = reconcileMergePageItem(next, item);
+        if (snapshot.mutations.get(item.id) !== "delete") next = reconcileMergePageItem(next, item);
       }
       byId = new Map(byId);
       for (const item of next) {
@@ -1352,6 +1369,7 @@ export function createSidebarStore(
         },
       });
       if (removed) {
+        recordDeletion(id);
         void refreshWorkdirs("delete");
       }
       return removed;
@@ -1399,7 +1417,7 @@ export function createSidebarStore(
 
     removeLocal: (conversationId) => {
       localUpsertSeqById.delete(conversationId);
-      workspaceDeletedIds.set(conversationId, ++workspaceDeleteVersion);
+      recordDeletion(conversationId);
       if (!byId.has(conversationId)) {
         return;
       }

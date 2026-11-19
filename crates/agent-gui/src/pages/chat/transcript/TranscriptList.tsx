@@ -204,7 +204,11 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   // 手动压缩空闲态只置 isCompactionRunning、不置 isSending，仍要显示「正在
   // 压缩」live tail：把它并入可见性 gate（只影响 live tail 是否显示，不改动
   // 其他 isSending 语义）。
-  const { rows, liveStartIndex } = useMemo(
+  const {
+    rows,
+    liveStartIndex,
+    getRowKey: getTranscriptRowKey,
+  } = useMemo(
     () => rowModel.build(historyItems, { ...liveState, isSending, isCompactionRunning }),
     [rowModel, historyItems, liveState, isSending, isCompactionRunning],
   );
@@ -228,9 +232,11 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     const hasNext = index < rowList.length - 1 || Boolean(pendingReplyRef.current);
     return row.estimate + (hasNext ? row.gapAfter : 0);
   }, []);
+  const pendingReplyKey = pendingReply?.key;
   const getRowKey = useCallback(
-    (index: number) => rowsRef.current[index]?.key ?? pendingReplyRef.current?.key ?? index,
-    [],
+    (index: number) =>
+      index === rows.length && pendingReplyKey ? pendingReplyKey : getTranscriptRowKey(index),
+    [getTranscriptRowKey, pendingReplyKey, rows.length],
   );
   const getRenderCost = useCallback((index: number) => rowsRef.current[index]?.renderCost, []);
   const extractVirtualRange = useCallback(

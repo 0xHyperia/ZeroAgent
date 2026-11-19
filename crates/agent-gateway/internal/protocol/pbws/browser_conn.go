@@ -258,23 +258,38 @@ func (c *browserConn) handshake() bool {
 		return false
 	}
 
-	// Write hello before starting any producer. History recovery and heartbeats
-	// use the priority control queue and could otherwise overtake a queued hello.
-	if err := writeDirectMessage(c.conn, c.srv.writeTimeout(), &gatewayv2.WebServerFrame{
+	c.core.SetAuthorized()
+	// 握手前的读超时刻意未刷新；成功后立即续期。
+	c.core.TouchInboundActivity()
+
+	// 先订阅，再同步写出 hello 应答，最后才启动写泵与心跳：
+	// - 订阅必须早于应答到达客户端，否则客户端收到应答后立刻触发的广播会落在订阅之前而丢失；
+	// - 应答必须先于其它任何帧写出。入队做不到：应答走数据队列，心跳与恢复状态走控制
+	//   队列，写泵在两条都就绪的队列之间随机取帧——K-brain 历史同步的状态帧正好在首次
+	//   握手前后广播，会抢在认证应答之前到达。写泵尚未启动时，订阅产生的帧只会排队。
+	c.startEventForwarders()
+	reply, err := proto.Marshal(&gatewayv2.WebServerFrame{
 		RequestId: frame.GetRequestId(),
 		Payload: &gatewayv2.WebServerFrame_Hello{
 			Hello: c.srv.serverHello(true, "", "", browserReadLimit),
 		},
-	}); err != nil {
+	})
+	if err == nil {
+		err = c.core.WriteSync(wscore.Frame{
+			Class:       wscore.FrameResponse,
+			RequestID:   frame.GetRequestId(),
+			Kind:        "hello",
+			MessageType: websocket.BinaryMessage,
+			Data:        reply,
+		})
+	}
+	if err != nil {
+		// Close 关掉 done，已启动的转发器随之退出并清理订阅。
 		c.core.Close()
 		return false
 	}
-	c.core.SetAuthorized()
-	// 握手前的读超时刻意未刷新；成功后立即续期。
-	c.core.TouchInboundActivity()
 	c.core.StartWriteLoop()
 	c.core.StartHeartbeat(c.buildHeartbeatPing)
-	c.startEventForwarders()
 	c.replaySnapshots()
 	return true
 }
