@@ -138,7 +138,7 @@ test("release overlay uses the configured updater key without changing the sourc
 
 test("Gateway Docker releases pass normalized versions and reserve latest for stable tags", () => {
   const workflow = readFileSync(path.join(repoRoot, ".github/workflows/gateway-docker.yml"), "utf8");
-  const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8");
+  const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8").replace(/[ \t]*\\\r?\n[ \t]*/g, " ");
 
   assert.match(workflow, /id: version[\s\S]*prepare-app-version-from-tag\.mjs/);
   assert.match(workflow, /--github-env "\$GITHUB_ENV" --github-output "\$GITHUB_OUTPUT"/);
@@ -147,5 +147,5 @@ test("Gateway Docker releases pass normalized versions and reserve latest for st
   assert.match(workflow, /ZEROAGENT_APP_VERSION=\$\{\{ needs\.quality-gate\.outputs\.app_version \}\}/);
   assert.match(workflow, /value=latest,enable=\$\{\{ needs\.quality-gate\.outputs\.is_prerelease == 'false' \}\}/);
   assert.match(dockerfile, /^ARG ZEROAGENT_APP_VERSION\r?$/m);
-  assert.match(dockerfile, /^RUN ZEROAGENT_APP_VERSION="\$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent\/gateway-webui build\r?$/m);
+  assert.match(dockerfile, /^RUN(?: --\S+)* ZEROAGENT_APP_VERSION="\$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent\/gateway-webui build\r?$/m);
 });
