@@ -1,6 +1,10 @@
 import { ApplicationRail } from "@liveagent/ui/application/ApplicationRail";
 import { ApplicationView } from "@liveagent/ui/application/ApplicationView";
-import { AppHeaderFrame, AppWorkbenchChrome } from "@liveagent/ui/application/AppWorkbenchChrome";
+import {
+  AppHeaderFrame,
+  AppWorkbenchChrome,
+  type RenderWorkbenchPageHeader,
+} from "@liveagent/ui/application/AppWorkbenchChrome";
 import { BrandMark } from "@liveagent/ui/application/BrandMark";
 import { SettingsWorkspace } from "@liveagent/ui/application/SettingsWorkspace";
 import { useUnsavedChangesPrompt } from "@liveagent/ui/application/useUnsavedChangesPrompt";
@@ -32,6 +36,8 @@ import type { DocumentRevisionComment } from "@liveagent/ui/components/resource-
 import { ResourceThumbnail } from "@liveagent/ui/components/resource-preview/ResourcePreview";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import { toast } from "@liveagent/ui/components/ui/toast-manager";
+import { Toaster } from "@liveagent/ui/components/ui/toaster";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { CLOUD_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
 import type {
@@ -86,6 +92,7 @@ import {
   type CSSProperties,
   lazy,
   Suspense,
+  type SyntheticEvent,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -178,7 +185,10 @@ import {
   prepareDeviceSkillMention,
 } from "@/lib/cloudExtensions";
 import { cloudGenerationSettings } from "@/lib/cloudGenerationSettings";
-import type { CloudTaskConversationSelection } from "@/lib/cloudSchedules";
+import {
+  type CloudTaskConversationSelection,
+  createCloudSchedulesClient,
+} from "@/lib/cloudSchedules";
 import { siteRevisionText } from "@/lib/cloudSiteRevision";
 import {
   CLOUD_SPACE_HOME,
@@ -188,6 +198,12 @@ import {
   createCloudSpaceClient,
 } from "@/lib/cloudSpace";
 import { readCloudSpaceReturnLocation } from "@/lib/cloudSpaceBrowseState";
+import {
+  ClosedCloudWorkspaceContext,
+  type CloudWorkspaceAvailability,
+  closedCloudLocation,
+  closedCloudRequest,
+} from "@/lib/cloudWorkspaceAvailability";
 import type { DesktopCloudHost, DesktopTaskConversation } from "@/lib/desktopRemoteHost";
 import { readCloudChatLocation, useCloudChatHistory } from "@/lib/useCloudChatHistory";
 import { sendBrowserWorkspaceHandoff } from "@/lib/workspaceHandoff";
@@ -391,6 +407,7 @@ type PendingResearchConfirmation = {
   submit: (research: CloudChatPublicResearch) => void;
 };
 type Props = {
+  workspaceAvailability?: CloudWorkspaceAvailability;
   user: RelayUser;
   onUserChange: (user: RelayUser) => void;
   environments: ExecutionEnvironment[];
@@ -413,6 +430,35 @@ const ExtensionsWorkspace = lazy(() =>
   })),
 );
 const EMPTY_PATHS = new Set<string>();
+const CLOSED_CLOUD_NAVIGATION = [
+  "[data-cloud-view-navigation]",
+  "[data-rail-item]",
+  "[data-sidebar='trigger']",
+  "[data-cloud-sidebar-open]",
+  "[data-app-header-navigation]",
+  "[data-settings-nav-id]",
+  "[data-workbench-settings]",
+  "[data-conversation-execution-location]",
+  "[data-slot='dialog-close']",
+  "[data-slot='dialog-close-button']",
+  ".gateway-sidebar-backdrop",
+  ".account-user-menu-trigger",
+  ".cloud-account-menu",
+  ".cloud-mode-switch",
+  ".cloud-space-navigation nav .cloud-sidebar-destination",
+].join(",");
+
+function blockClosedCloudAction(event: SyntheticEvent) {
+  if (!(event.target instanceof Element) || event.target.closest(CLOSED_CLOUD_NAVIGATION)) return;
+  if (
+    !event.target.closest(
+      "button, a[href], input, select, textarea, form, [contenteditable], [role='button'], [role='menuitem'], [role='tab'], [role='switch']",
+    )
+  )
+    return;
+  event.preventDefault();
+  event.stopPropagation();
+}
 function CloudConversationMain({
   mount,
   ...props
@@ -494,6 +540,7 @@ function attachmentKind(attachment: { mime: string }): PendingUploadedFile["kind
 }
 
 export function CloudChatPage({
+  workspaceAvailability,
   user,
   onUserChange,
   environments,
@@ -509,6 +556,27 @@ export function CloudChatPage({
   embeddedTaskConversation,
   desktopAccountLayout,
 }: Props) {
+  const cloudClosed = workspaceAvailability?.available === false;
+  const requestCloud = cloudClosed ? closedCloudRequest : accountFetch;
+  const announceClosedWorkspace = useEffectEvent(() =>
+    toast.warning(
+      settings.locale === "en-US" ? "The cloud workspace is not open yet" : "云端工作区暂未开放",
+      {
+        appearance: "notice",
+        position: "bottom-center",
+        description:
+          settings.locale === "en-US"
+            ? "You can browse extensions or switch to an authorized computer to continue working."
+            : "可以浏览插件和技能，也可以切换到已授权的电脑继续工作。",
+      },
+    ),
+  );
+  const showClosedWorkspaceNotice = cloudClosed && workbenchActive;
+  useEffect(() => {
+    if (!showClosedWorkspaceNotice) return;
+    const id = announceClosedWorkspace();
+    return () => toast.dismiss(id);
+  }, [showClosedWorkspaceNotice]);
   const embeddedTaskId = embeddedTaskConversation?.id;
   const embeddedTaskRun = embeddedTaskConversation?.runId;
   const embeddedTaskJump = embeddedTaskConversation?.jump;
@@ -537,7 +605,9 @@ export function CloudChatPage({
           route: { page: "chat", id: embeddedTaskId } satisfies CloudChatRoute,
           conversation: embeddedTaskId,
         }
-      : readCloudChatLocation(user.id),
+      : cloudClosed
+        ? closedCloudLocation(readCloudChatLocation(user.id))
+        : readCloudChatLocation(user.id),
   );
   const [workspaceHandoff, setWorkspaceHandoff] = useState<{
     owner: number;
@@ -561,7 +631,7 @@ export function CloudChatPage({
   const [accountStats, setAccountStats] = useState<RelayDashboardStats | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [conversationsLoading, setConversationsLoading] = useState(true);
+  const [conversationsLoading, setConversationsLoading] = useState(!cloudClosed);
   const [conversationsLoadingMore, setConversationsLoadingMore] = useState(false);
   const [conversationsHasMore, setConversationsHasMore] = useState(false);
   const [conversationsError, setConversationsError] = useState("");
@@ -632,8 +702,9 @@ export function CloudChatPage({
     initialRoute.page === "extensions" ? initialRoute.location : DEFAULT_EXTENSION_LOCATION,
   );
   const extensionsAdapter = useMemo(
-    () => createCloudExtensionsAdapter(`cloud:${user.id}`),
-    [user.id],
+    () =>
+      createCloudExtensionsAdapter(`cloud:${user.id}${cloudClosed ? ":closed" : ""}`, requestCloud),
+    [cloudClosed, requestCloud, user.id],
   );
   const [extensions, setExtensions] = useState<{
     owner: number;
@@ -642,7 +713,11 @@ export function CloudChatPage({
     error: string;
   }>({ owner: user.id, catalog: null, loading: true, error: "" });
   const [extensionRefresh, setExtensionRefresh] = useState(0);
-  const extensionCatalog = extensions.owner === user.id ? extensions.catalog : null;
+  const extensionCatalog = cloudClosed
+    ? workspaceAvailability.catalog
+    : extensions.owner === user.id
+      ? extensions.catalog
+      : null;
   const enabledCloudSkills = useMemo(
     () => cloudComposerSkills(extensionCatalog, settings.locale),
     [extensionCatalog, settings.locale],
@@ -661,6 +736,7 @@ export function CloudChatPage({
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: extensionRefresh is an explicit catalog reconciliation request.
   useEffect(() => {
+    if (cloudClosed) return;
     const controller = new AbortController();
     setExtensions((old) => ({
       owner: user.id,
@@ -692,7 +768,7 @@ export function CloudChatPage({
       controller.abort();
       window.removeEventListener(ACCOUNT_CHANGED_EVENT, retire);
     };
-  }, [user.id, extensionsAdapter, extensionRefresh]);
+  }, [cloudClosed, user.id, extensionsAdapter, extensionRefresh]);
   const [workspaceView, setWorkspaceView] = useState<"chat" | "library">(
     initialRoute.page === "library" ? "library" : "chat",
   );
@@ -705,7 +781,9 @@ export function CloudChatPage({
   const [spaceLocation, setSpaceLocation] = useState<CloudSpaceLocation>(() =>
     initialRoute.page === "library"
       ? initialRoute.location
-      : readCloudSpaceReturnLocation(spaceReturnOwner),
+      : cloudClosed
+        ? CLOUD_SPACE_HOME
+        : readCloudSpaceReturnLocation(spaceReturnOwner),
   );
   const [spaceRevision, setSpaceRevision] = useState(0);
   const [spaceVisited, setSpaceVisited] = useState(initialRoute.page === "library");
@@ -787,7 +865,7 @@ export function CloudChatPage({
   const runRecoveryFocus = useRef<{ view: ConversationView; button: HTMLButtonElement } | null>(
     null,
   );
-  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(!cloudClosed);
   const [historyBefore, setHistoryBefore] = useState("");
   const [historyAfter, setHistoryAfter] = useState("");
   const [historyHasAfter, setHistoryHasAfter] = useState(false);
@@ -837,7 +915,7 @@ export function CloudChatPage({
     message?: Message;
     error?: string;
   } | null>(null);
-  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsLoading, setModelsLoading] = useState(!cloudClosed);
   const [modelCatalogFailed, setModelCatalogFailed] = useState(false);
   const [webSettingsOwner, setWebSettingsOwner] = useState<number | null>(null);
   const webSettingsLoaded = webSettingsOwner === user.id;
@@ -982,12 +1060,12 @@ export function CloudChatPage({
   const conversationsEpochRef = useRef(0);
   const conversationsAbortRef = useRef<AbortController | null>(null);
   const metadataClient = useMemo(
-    () => createCloudChatMetadataClient(accountFetch, captureAccountRequestGuard),
-    [],
+    () => createCloudChatMetadataClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
   );
   const conversationClient = useMemo(
-    () => createCloudChatConversationsClient(accountFetch, captureAccountRequestGuard),
-    [],
+    () => createCloudChatConversationsClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
   );
   const conversationSearchAdapter = useMemo(
     () =>
@@ -997,41 +1075,74 @@ export function CloudChatPage({
     [conversationClient],
   );
   const modelLimitsClient = useMemo(
-    () => createCloudChatModelLimitsClient(accountFetch, captureAccountRequestGuard),
-    [],
+    () => createCloudChatModelLimitsClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
   );
   const modelPreparationAbortRef = useRef<AbortController | null>(null);
-  const runsClient = useMemo(() => createCloudChatRunsClient(accountFetch), []);
+  const runsClient = useMemo(() => createCloudChatRunsClient(requestCloud), [requestCloud]);
   const queueClient = useMemo(
-    () => createCloudChatQueueClient(accountFetch, captureAccountRequestGuard),
-    [],
+    () => createCloudChatQueueClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
   );
   const savedDraftClient = useMemo(
-    () => createCloudChatSavedDraftsClient(accountFetch, captureAccountRequestGuard),
-    [],
+    () => createCloudChatSavedDraftsClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
   );
-  const filesClient = useMemo(
-    () => createCloudChatFilesClient(accountFetch, captureAccountRequestGuard),
-    [],
-  );
-  const spaceClient = useMemo(
-    () => createCloudSpaceClient(accountFetch, captureAccountRequestGuard),
-    [],
-  );
+  const filesClient = useMemo(() => {
+    const client = createCloudChatFilesClient(requestCloud, captureAccountRequestGuard);
+    if (!cloudClosed) return client;
+    return { ...client, list: async () => ({ files: [], nextCursor: "" }) };
+  }, [cloudClosed, requestCloud]);
+  const spaceClient = useMemo(() => {
+    const client = createCloudSpaceClient(requestCloud, captureAccountRequestGuard);
+    if (!cloudClosed) return client;
+    return {
+      ...client,
+      list: async () => ({
+        items: [],
+        total: 0,
+        next_offset: -1,
+        next_cursor: "",
+        folders: [],
+        pinned: [],
+        usage: {
+          used_bytes: 0,
+          limit_bytes: 0,
+          file_bytes: 0,
+          artifact_bytes: 0,
+          file_limit_bytes: 0,
+          artifact_limit_bytes: 0,
+          file_count: 0,
+          artifact_version_count: 0,
+          trash_bytes: 0,
+          file_limit_count: 0,
+          artifact_limit_count: 0,
+        },
+      }),
+    };
+  }, [cloudClosed, requestCloud]);
   const branchesClient = useMemo(
-    () => createCloudChatBranchesClient(accountFetch, captureAccountRequestGuard),
-    [],
+    () => createCloudChatBranchesClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
   );
-  const projectsClient = useMemo(
-    () => createCloudChatProjectsClient(accountFetch, captureAccountRequestGuard),
-    [],
-  );
+  const projectsClient = useMemo(() => {
+    const client = createCloudChatProjectsClient(requestCloud, captureAccountRequestGuard);
+    if (!cloudClosed) return client;
+    return { ...client, listProjects: async () => ({ items: [], next_before_id: "" }) };
+  }, [cloudClosed, requestCloud]);
   const sourcesClient = useMemo(
-    () => createCloudChatSourcesClient(accountFetch, captureAccountRequestGuard),
-    [],
+    () => createCloudChatSourcesClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
   );
   const artifactsClient = useMemo(
-    () => createCloudChatArtifactsClient(accountFetch, captureAccountRequestGuard),
+    () => createCloudChatArtifactsClient(requestCloud, captureAccountRequestGuard),
+    [requestCloud],
+  );
+  const closedSchedules = useMemo(
+    () => ({
+      ...createCloudSchedulesClient(closedCloudRequest),
+      list: async () => ({ tasks: [], enabled: false }),
+    }),
     [],
   );
   const branchAbortRef = useRef<AbortController | null>(null);
@@ -1073,8 +1184,8 @@ export function CloudChatPage({
     };
   }, [isCurrentView]);
   const historyClient = useMemo(
-    () => createCloudChatHistoryClient(accountFetch, captureWorkGuard),
-    [captureWorkGuard],
+    () => createCloudChatHistoryClient(requestCloud, captureWorkGuard),
+    [captureWorkGuard, requestCloud],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision invalidates the server-owned project association after a panel mutation.
   useEffect(() => {
@@ -1491,11 +1602,13 @@ export function CloudChatPage({
   const { replaceNext: replaceNextCloudRoute, returnFromSettings } = useCloudChatHistory({
     owner: user.id,
     active:
+      !(cloudClosed && desktopCloudHost) &&
       !embeddedTask &&
       workbenchActive &&
       viewRef.current.userId === user.id &&
       !accountInvalidatedRef.current,
-    listen: !embeddedTask,
+    listen: !embeddedTask && !(cloudClosed && desktopCloudHost),
+    rememberBrowseLocation: !cloudClosed,
     route: cloudRoute,
     conversation: contentConversation,
     apply: applyCloudLocation,
@@ -1753,6 +1866,7 @@ export function CloudChatPage({
   }
 
   const refreshModels = useCallback(async () => {
+    if (cloudClosed) return;
     const owner = ownerRef.current;
     if (
       !mountedRef.current ||
@@ -1802,7 +1916,7 @@ export function CloudChatPage({
     }
     modelReadRequest.current = null;
     setModelsLoading(false);
-  }, []);
+  }, [cloudClosed]);
 
   // Re-entering the native account workspace refreshes its model catalog for the same account.
   // biome-ignore lint/correctness/useExhaustiveDependencies: account ownership explicitly restarts the read.
@@ -1812,6 +1926,7 @@ export function CloudChatPage({
 
   const saveWebSettings = useCallback(
     async (nextModel: string, nextReasoning: ReasoningLevel, nextProviderKeyId = providerKeyId) => {
+      if (cloudClosed) return;
       const normalizedModel = nextModel.trim();
       if (!normalizedModel) return;
       await webChatRequest<{ settings: WebSettings }>("/api/web-settings", {
@@ -1823,10 +1938,11 @@ export function CloudChatPage({
         }),
       });
     },
-    [providerKeyId],
+    [cloudClosed, providerKeyId],
   );
 
   useEffect(() => {
+    if (cloudClosed) return;
     let cancelled = false;
     const current = () =>
       !cancelled &&
@@ -1843,12 +1959,13 @@ export function CloudChatPage({
     return () => {
       cancelled = true;
     };
-  }, [user.id]);
+  }, [cloudClosed, user.id]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes reload the catalog without replacing the run subscriber callback.
   useEffect(() => {
+    if (cloudClosed) return;
     void refreshConversations().catch(() => undefined);
-  }, [refreshConversations, user.id]);
+  }, [cloudClosed, refreshConversations, user.id]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry explicitly refreshes canonical metadata without navigating or creating a record.
   useEffect(() => {
@@ -2028,7 +2145,7 @@ export function CloudChatPage({
   );
 
   const pendingQueue = useCloudChatQueueController({
-    userId: accountInvalidatedRef.current ? 0 : user.id,
+    userId: cloudClosed || accountInvalidatedRef.current ? 0 : user.id,
     conversationId,
     client: queueClient,
     activeRun,
@@ -2181,7 +2298,7 @@ export function CloudChatPage({
   }
 
   const savedDraft = useCloudSavedDraft({
-    ownerId: accountInvalidatedRef.current ? null : user.id,
+    ownerId: cloudClosed || accountInvalidatedRef.current ? null : user.id,
     scope: conversationId,
     client: savedDraftClient,
     captureSnapshot: captureSavedSnapshot,
@@ -3433,7 +3550,7 @@ export function CloudChatPage({
     imageEdit?: ConversationImageEdit,
     onAccepted?: (run: CloudChatRun) => void,
   ) {
-    if (historyLoading || historyRestoreFailed || currentRunDiscovery) return;
+    if (cloudClosed || historyLoading || historyRestoreFailed || currentRunDiscovery) return;
     if (dispatchPreparationRef.current) return;
     if (historySelection) {
       returnToLatestMessages();
@@ -4032,6 +4149,7 @@ export function CloudChatPage({
         : "每条消息最多引用 8 个文件或成果，请先移除附件。"
       : "";
   const composerLocked =
+    cloudClosed ||
     pendingQueue.busy ||
     pendingQueue.loading ||
     Boolean(pendingQueue.unknown) ||
@@ -4050,6 +4168,7 @@ export function CloudChatPage({
   const workbenchSwitchBusy =
     streaming || uploadingFiles || resolvingResources || preparingExecution;
   async function switchWorkbench(environment: ExecutionEnvironment, workspace: ExecutionWorkspace) {
+    if (cloudClosed) return onSwitch?.(environment, workspace);
     const view = viewRef.current;
     if (!onSwitch || workbenchSwitchBusy || !isCurrentView(view)) return;
     const draft = captureComposerDraft();
@@ -4296,7 +4415,8 @@ export function CloudChatPage({
     setWorkPanel(null);
     setWorkspaceView("chat");
   }
-  function applyCloudLocation({ route, conversation }: ReturnType<typeof readCloudChatLocation>) {
+  function applyCloudLocation(location: ReturnType<typeof readCloudChatLocation>) {
+    const { route, conversation } = cloudClosed ? closedCloudLocation(location) : location;
     if (
       route.page === "settings" &&
       conversation === contentConversation &&
@@ -4532,6 +4652,7 @@ export function CloudChatPage({
     messageId?: string,
     source?: { reader?: NonNullable<typeof artifactPanel>; isCurrent: () => boolean },
   ) {
+    if (cloudClosed) return;
     projectNavigation.request(() => {
       if (source && !source.isCurrent()) return;
       clearResources();
@@ -4554,7 +4675,7 @@ export function CloudChatPage({
     });
   }
   useEffect(() => {
-    if (!workbenchActive || embeddedTask) return;
+    if (cloudClosed || !workbenchActive || embeddedTask) return;
     const keydown = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -4574,7 +4695,7 @@ export function CloudChatPage({
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [embeddedTask, workbenchActive]);
+  }, [cloudClosed, embeddedTask, workbenchActive]);
   function openResource(
     resource: "files" | "artifacts" | "projects" | "memory",
     page = false,
@@ -4874,7 +4995,11 @@ export function CloudChatPage({
       setAccountSettingsOpen(false);
       setCustomize({ owner: user.id, open: true, visited: true });
       if (pin) sidebar.setOpen(true);
-      if (packageId) {
+      if (cloudClosed) {
+        setExtensionLocation((current) =>
+          current.route.page === "skills" ? current : DEFAULT_EXTENSION_LOCATION,
+        );
+      } else if (packageId) {
         const pkg = extensionCatalog?.packages.find((item) => item.id === packageId);
         const reader =
           !draft && (pkg?.kind === "skill" || readerPin)
@@ -5893,7 +6018,7 @@ export function CloudChatPage({
       todayTokens={accountStats?.today_tokens}
       avatarUrl={user.avatar_url}
       online
-      onRefreshAccount={refreshRelayAccount}
+      onRefreshAccount={cloudClosed ? async () => undefined : refreshRelayAccount}
       onDismissNavigation={() => {
         if (sidebar.isMobile) setSidebarOpen(false);
       }}
@@ -5915,6 +6040,7 @@ export function CloudChatPage({
             size="icon"
             title={zhRail ? "关闭边栏" : "Close sidebar"}
             aria-label={zhRail ? "关闭边栏" : "Close sidebar"}
+            data-cloud-view-navigation=""
             onClick={() => setSidebarOpen(false)}
           >
             <PanelLeft className="size-5" />
@@ -6000,6 +6126,7 @@ export function CloudChatPage({
                   <button
                     type="button"
                     className="cloud-sidebar-destination"
+                    data-cloud-view-navigation=""
                     aria-current={workspaceView === "library" ? "page" : undefined}
                     onClick={() => navigateSpace(spaceLocation)}
                   >
@@ -6046,7 +6173,7 @@ export function CloudChatPage({
             loadMoreMode="scroll"
             errorMessage={conversationsError || null}
             actionErrorMessage={error || null}
-            sectionsDisabled={accountInvalidatedRef.current}
+            sectionsDisabled={cloudClosed || accountInvalidatedRef.current}
             renamingId={renamingId}
             renameDraft={renameDraft}
             isOpen={contextDestination === "chat" && (sidebarOpen || sidebarPreview.open)}
@@ -6147,8 +6274,58 @@ export function CloudChatPage({
     !accountSettingsOpen &&
     !scheduledConversation &&
     !workingInSpace;
+  const desktopHeaderSlot = (
+    <div
+      ref={desktopCloudHost?.onHeaderTarget}
+      data-desktop-host-slot="header"
+      data-cloud-view-navigation=""
+      className="flex h-full shrink-0 items-center"
+    />
+  );
+  const desktopWindowSlot = (
+    <div
+      ref={desktopCloudHost?.onWindowControlsTarget}
+      data-desktop-host-slot="window"
+      data-cloud-view-navigation=""
+      className="flex h-full shrink-0 items-center"
+    />
+  );
+  const executionSwitcher = !desktopCloudHost && onSwitch && (
+    <ExecutionEnvironmentSwitcher
+      environments={environments}
+      retryDirectory={retryEnvironmentDirectory}
+      onManageDevices={() => openComposerSettings("account")}
+      selection={selection}
+      mobileSheet={sidebar.isMobile}
+      disabled={workbenchSwitchBusy}
+      onSwitch={switchWorkbench}
+    />
+  );
+  const toggleWorkbenchTheme = () =>
+    setSettings((current) => ({ ...current, theme: getNextTheme(current.theme) }));
+  const renderWorkbenchHeader: RenderWorkbenchPageHeader = ({ title, actions }) => (
+    <AppWorkbenchChrome
+      mobile={mobileConversationHeader}
+      className={desktopCloudWindow ? "desktop-cloud-header" : undefined}
+      leadingActions={
+        <>
+          {desktopCloudWindow && desktopHeaderSlot}
+          {title}
+        </>
+      }
+      preThemeActions={executionSwitcher}
+      trailingActions={actions}
+      windowControls={desktopCloudWindow && desktopWindowSlot}
+      settings={settings}
+      sidebarOpen={sidebarOpen}
+      onOpenSidebar={() => setSidebarOpen(true)}
+      onOpenSettings={openComposerSettings}
+      onToggleTheme={toggleWorkbenchTheme}
+    />
+  );
   return (
     <AppErrorBoundary>
+      {showClosedWorkspaceNotice && <Toaster />}
       <CloudDraftConflictDialog
         open={
           draftConflictOpen &&
@@ -6164,6 +6341,17 @@ export function CloudChatPage({
       />
       <FileDropBoundary
         className={`${embeddedWorkbench || desktopCloudWindow ? "gateway-shell relative flex size-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background text-foreground" : GATEWAY_SHELL_CLASS} cloud-chat-shell`}
+        onClickCapture={cloudClosed ? blockClosedCloudAction : undefined}
+        onPointerDownCapture={cloudClosed ? blockClosedCloudAction : undefined}
+        onContextMenuCapture={cloudClosed ? blockClosedCloudAction : undefined}
+        onSubmitCapture={cloudClosed ? blockClosedCloudAction : undefined}
+        onKeyDownCapture={
+          cloudClosed
+            ? (event) => {
+                if (event.key !== "Tab" && event.key !== "Escape") blockClosedCloudAction(event);
+              }
+            : undefined
+        }
         data-embedded-task={embeddedTask || undefined}
         data-embedded-account={embeddedAccount || undefined}
         data-desktop-cloud-window={desktopCloudWindow || undefined}
@@ -6173,6 +6361,7 @@ export function CloudChatPage({
         data-workspace-view={workspaceView}
         coverage={embeddedWorkbench || scheduleRoute ? "local" : "viewport"}
         active={
+          !cloudClosed &&
           workbenchActive &&
           chatWorkspaceVisible &&
           (!scheduleRoute || taskConversationVisible) &&
@@ -6295,6 +6484,7 @@ export function CloudChatPage({
                         size="icon"
                         aria-label="打开边栏"
                         title="打开边栏"
+                        data-cloud-view-navigation=""
                         onClick={() => setSidebarOpen(true)}
                       >
                         <PanelLeft className="size-5" />
@@ -6334,13 +6524,7 @@ export function CloudChatPage({
                       }
                       leadingActions={
                         <>
-                          {desktopCloudChrome && (
-                            <div
-                              ref={desktopCloudHost?.onHeaderTarget}
-                              data-desktop-host-slot="header"
-                              className="flex h-full shrink-0 items-center"
-                            />
-                          )}
+                          {desktopCloudChrome && desktopHeaderSlot}
                           {sidebar.isMobile &&
                           workspaceView === "chat" &&
                           !canSwitchPresentation ? (
@@ -6438,7 +6622,12 @@ export function CloudChatPage({
                             ) : null}
                           </>
                         ) : (
-                          <Button variant="ghost" size="sm" onClick={closeResources}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-cloud-view-navigation=""
+                            onClick={closeResources}
+                          >
                             返回对话
                           </Button>
                         )
@@ -6446,35 +6635,10 @@ export function CloudChatPage({
                       settings={settings}
                       sidebarOpen={sidebarOpen}
                       onOpenSettings={openComposerSettings}
-                      onToggleTheme={() =>
-                        setSettings((current) => ({
-                          ...current,
-                          theme: getNextTheme(current.theme),
-                        }))
-                      }
+                      onToggleTheme={toggleWorkbenchTheme}
                       onOpenSidebar={() => setSidebarOpen(true)}
-                      windowControls={
-                        desktopCloudChrome && (
-                          <div
-                            ref={desktopCloudHost?.onWindowControlsTarget}
-                            data-desktop-host-slot="window"
-                            className="flex h-full shrink-0 items-center"
-                          />
-                        )
-                      }
-                      preThemeActions={
-                        !desktopCloudHost && onSwitch && workspaceView === "chat" ? (
-                          <ExecutionEnvironmentSwitcher
-                            environments={environments}
-                            retryDirectory={retryEnvironmentDirectory}
-                            onManageDevices={() => openComposerSettings("account")}
-                            selection={selection}
-                            mobileSheet={sidebar.isMobile}
-                            disabled={workbenchSwitchBusy}
-                            onSwitch={switchWorkbench}
-                          />
-                        ) : null
-                      }
+                      windowControls={desktopCloudChrome && desktopWindowSlot}
+                      preThemeActions={workspaceView === "chat" ? executionSwitcher : null}
                     />
                   )
                 }
@@ -6731,9 +6895,10 @@ export function CloudChatPage({
                                 isSending={streaming}
                                 isUploadingFiles={uploadingFiles}
                                 isSubmissionDisabled={
-                                  modelSubmissionBlocked || !!currentRunDiscovery
+                                  cloudClosed || modelSubmissionBlocked || !!currentRunDiscovery
                                 }
                                 isInputDisabled={
+                                  cloudClosed ||
                                   projectContextBusy ||
                                   conversationMutations.get(conversationId) === "move" ||
                                   resolvingResources ||
@@ -7127,6 +7292,7 @@ export function CloudChatPage({
                       >
                         <CloudSpacePage
                           key={spaceReturnOwner}
+                          readOnly={cloudClosed}
                           browseOwner={spaceReturnOwner}
                           client={spaceClient}
                           files={filesClient}
@@ -7565,9 +7731,10 @@ export function CloudChatPage({
                 <ExtensionsWorkspace
                   key={user.id}
                   adapter={extensionsAdapter}
+                  readOnly={cloudClosed}
                   catalog={extensionCatalog}
                   location={
-                    previewCustomize && !customizeOpen
+                    !cloudClosed && previewCustomize && !customizeOpen
                       ? readCloudExtensionReturnLocation(spaceReturnOwner)
                       : extensionLocation
                   }
@@ -7581,9 +7748,18 @@ export function CloudChatPage({
                         setCustomize({ owner: user.id, open: true, visited: true });
                         setExtensionLocation(location);
                       });
-                    } else setExtensionLocation(location);
+                    } else {
+                      setExtensionLocation(location);
+                      if (customizeOpen && sidebar.isMobile) setSidebarOpen(false);
+                    }
                   }}
                   sharedSidebar
+                  mobileRail={
+                    workbenchActive && customizeOpen && sidebar.isMobile
+                      ? renderApplicationRail(true)
+                      : undefined
+                  }
+                  renderWorkbenchHeader={customizeOpen ? renderWorkbenchHeader : undefined}
                   sidebarTarget={
                     // The mobile Sidebar uses a portal outside the hidden workspace canvas.
                     workbenchActive && (customizeOpen || previewCustomize)
@@ -7593,7 +7769,7 @@ export function CloudChatPage({
                   sidebarOnly={!customizeOpen}
                   previewOpen={desktopAccountLayout?.sidebarPreview ?? previewCustomize}
                   onPinSidebar={desktopAccountLayout?.onPinSidebar ?? pinSidebarPreview}
-                  loading={extensions.loading}
+                  loading={!cloudClosed && extensions.loading}
                   error={extensions.error}
                   onCatalog={(catalog) =>
                     setExtensions({ owner: user.id, catalog, loading: false, error: "" })
@@ -7628,6 +7804,7 @@ export function CloudChatPage({
                 key={user.id}
                 owner={user.id}
                 route={scheduleRoute ?? taskPreviewRoute}
+                schedules={cloudClosed ? closedSchedules : undefined}
                 onNavigate={(next) => {
                   if (scheduleRoute) {
                     const sameRun = sameTaskRun(scheduleRoute, next);
@@ -7643,6 +7820,9 @@ export function CloudChatPage({
                 previewOpen={previewTasks}
                 onPinSidebar={pinSidebarPreview}
                 sidebarOnly={!scheduleRoute}
+                renderWorkbenchHeader={
+                  scheduleRoute && !customizeOpen ? renderWorkbenchHeader : undefined
+                }
                 hideSidebar={sidebarPreview.open && !previewTasks}
                 onOpenConversation={navigateConversation}
                 onSelectConversation={(selection) => {
@@ -7697,46 +7877,48 @@ export function CloudChatPage({
           ) : null}
           {accountSettingsOpen && !customizeOpen ? (
             <SettingsWorkspace navigation="external" className="cloud-settings-page flex-1">
-              <SettingsPage
-                presentation="page"
-                settings={settings}
-                setSettings={setSettings}
-                saveState={settingsSaveState}
-                onOpenModelPreferences={openModelPreferences}
-                backLabel={translate("settings.backToWorkbench", settings.locale)}
-                onBack={() => {
-                  restoreSettingsFocus.current = true;
-                  if (!returnFromSettings()) {
-                    replaceNextCloudRoute.current = true;
-                    setAccountSettingsOpen(false);
-                  }
-                }}
-                initialSection={settingsSection}
-                onSectionChange={(section) => {
-                  const target = cloudSettingsSection(section);
-                  if (target) setActiveSettingsSection(target);
-                }}
-                mobileDetail={settingsDetail}
-                onMobileDetailChange={setSettingsDetail}
-                hiddenSections={[
-                  "skills",
-                  "mcp",
-                  "systemTools",
-                  "stt",
-                  "agents",
-                  "ssh",
-                  "memory",
-                  "hooks",
-                  "cron",
-                  "remote",
-                ]}
-                relayUser={user}
-                relayStats={accountStats}
-                onRelayUserChange={onUserChange}
-                onRelayStatsChange={setAccountStats}
-                runtimeKind="web_chat"
-                sttSettingsService={disabledSttSettingsService}
-              />
+              <ClosedCloudWorkspaceContext.Provider value={cloudClosed}>
+                <SettingsPage
+                  presentation="page"
+                  settings={settings}
+                  setSettings={setSettings}
+                  saveState={settingsSaveState}
+                  onOpenModelPreferences={openModelPreferences}
+                  backLabel={translate("settings.backToWorkbench", settings.locale)}
+                  onBack={() => {
+                    restoreSettingsFocus.current = true;
+                    if (!returnFromSettings()) {
+                      replaceNextCloudRoute.current = true;
+                      setAccountSettingsOpen(false);
+                    }
+                  }}
+                  initialSection={settingsSection}
+                  onSectionChange={(section) => {
+                    const target = cloudSettingsSection(section);
+                    if (target) setActiveSettingsSection(target);
+                  }}
+                  mobileDetail={settingsDetail}
+                  onMobileDetailChange={setSettingsDetail}
+                  hiddenSections={[
+                    "skills",
+                    "mcp",
+                    "systemTools",
+                    "stt",
+                    "agents",
+                    "ssh",
+                    "memory",
+                    "hooks",
+                    "cron",
+                    "remote",
+                  ]}
+                  relayUser={user}
+                  relayStats={accountStats}
+                  onRelayUserChange={onUserChange}
+                  onRelayStatsChange={setAccountStats}
+                  runtimeKind="web_chat"
+                  sttSettingsService={disabledSttSettingsService}
+                />
+              </ClosedCloudWorkspaceContext.Provider>
             </SettingsWorkspace>
           ) : null}
         </WorkbenchShell>
@@ -7868,7 +8050,7 @@ export function CloudChatPage({
           />
         ) : null}
         {projectNavigation.dialog}
-        {!desktopCloudHost && (
+        {!cloudClosed && !desktopCloudHost && (
           <FirstRunOnboarding
             userId={user.id}
             onSyncKeys={async (keys, groups) => {

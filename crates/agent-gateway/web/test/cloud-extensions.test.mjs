@@ -111,7 +111,7 @@ async function mount(t,overrides={}) {
  const {ExtensionsWorkspace}=env.loadModule('@liveagent/ui/features/extensions/ExtensionsWorkspace.tsx');
  const {LocaleContext}=env.loadModule('@liveagent/ui/i18n/LocaleContext.tsx');
  const {t:translate}=env.loadModule('@liveagent/ui/i18n/index.ts');
- let props={adapter,openPackage:overrides.openPackage,location:overrides.location,onNavigate:overrides.location?location=>{props={...props,location};renderWorkspace();}:undefined,onConfigureImages:overrides.onConfigureImages,onTryOnDevice:overrides.onTryOnDevice,catalog:overrides.catalog===undefined?catalog:overrides.catalog,loading:false,error:overrides.error??'',onRefresh(){calls.push({refresh:true});},onBack:overrides.onBack??(()=>{}),onTry(...args){calls.push({try:args});return overrides.onTry?.(...args)??'accepted';},onCatalog(next){props={...props,catalog:next};renderWorkspace();}};
+ let props={adapter,readOnly:overrides.readOnly,openPackage:overrides.openPackage,location:overrides.location,onNavigate:overrides.location?location=>{props={...props,location};renderWorkspace();}:undefined,onConfigureImages:overrides.onConfigureImages,onTryOnDevice:overrides.onTryOnDevice,catalog:overrides.catalog===undefined?catalog:overrides.catalog,loading:false,error:overrides.error??'',onRefresh(){calls.push({refresh:true});},onBack:overrides.onBack??(()=>{}),onTry(...args){calls.push({try:args});return overrides.onTry?.(...args)??'accepted';},onCatalog(next){props={...props,catalog:next};renderWorkspace();}};
  const locale=overrides.locale??'zh-CN';
  const renderWorkspace=()=>root.render(env.React.createElement(LocaleContext.Provider,{value:{locale,t:key=>translate(key,locale)}},env.React.createElement(ExtensionsWorkspace,props)));
  const render=()=>env.act(async()=>{renderWorkspace();await tick();});
@@ -132,6 +132,43 @@ test('directory, actual source reading and explicit try use the same selected id
  assert.match(currentFile().textContent,/notes\.mdreferences\//);
  await app.click('技能正文');assert.match(document.querySelector('[role="dialog"]').textContent,/# Private workflow/);
  await app.click('在对话中使用');assert.equal(app.calls[0].try[0].id,'abc');assert.equal(app.calls[0].try[1].entry,'SKILL.md');
+});
+
+test("the read-only catalog supports filtering and opens only public overviews", async (t) => {
+ const publicSkill = {
+  ...pkg, id: "public-skill", visibility: "public", owned: false, description: "A public skill description",
+ };
+ const publicPlugin = {
+  ...pkg, id: "public-plugin", name: "planning-tools", kind: "plugin",
+  visibility: "public", owned: false, overview: "A public plugin overview",
+ };
+ let reads = 0;
+ const app = await mount(t, {
+  readOnly: true,
+  catalog: { version: 1, packages: [publicSkill, publicPlugin] },
+  location: { route: { page: "skills" }, reader: { id: publicSkill.id } },
+  read: async () => {
+   reads++;
+   return { revision, version: 4 };
+  },
+ });
+ const row = (entry) => document.querySelector(`[data-extension-open="${entry.id}"]`);
+ assert.equal(document.querySelector('[role="dialog"]'), null);
+ await app.fill("搜索技能", "unmatched");
+ assert.equal(row(publicSkill), null);
+ await app.fill("搜索技能", "weekly");
+ await app.click("安装状态");
+ await app.click("已安装");
+ assert.ok(row(publicSkill));
+ await app.env.act(async () => row(publicSkill).click());
+ assert.match(document.querySelector('[role="dialog"]').textContent, /A public skill description/);
+ assert.doesNotMatch(document.querySelector('[role="dialog"]').textContent, /Private workflow/);
+ await app.env.act(async () => document.querySelector('[data-slot="dialog-close-button"]').click());
+ await app.click("插件");
+ await app.env.act(async () => row(publicPlugin).click());
+ assert.match(document.querySelector('[role="dialog"]').textContent, /A public plugin overview/);
+ assert.equal(reads, 0);
+ assert.deepEqual(app.calls, []);
 });
 
 test('a rejected use action preserves the open file and focus until the conversation accepts it', async t => {

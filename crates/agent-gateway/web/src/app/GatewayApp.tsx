@@ -59,6 +59,7 @@ import {
 } from "react";
 import type { TrustedGatewayImageIdentity } from "@/agent-ui-adapters/imageStudio";
 import { createGatewayWorkspaceProjectRootClient } from "@/agent-ui-adapters/workspaceProjectRoots";
+import { GatewayCloudWorkspace } from "@/components/GatewayCloudWorkspace";
 import type { GatewayTranscriptNavHandle } from "@/components/GatewayTranscript";
 import { ACCOUNT_CHANGED_EVENT, ACCOUNT_SESSION_STORAGE_KEY } from "@/lib/accountRequest";
 import { pushWorkbenchLocation } from "@/lib/browserMobileBack";
@@ -3419,20 +3420,28 @@ function useGatewayAppController() {
   if (selection?.runtime_kind === "web_chat") {
     return (
       <LocaleContext.Provider value={localeContextValue}>
-        <CloudChatPage
-          user={relayUser ?? accountUser}
-          onUserChange={acceptRelayUser}
-          environments={environments}
-          retryEnvironmentDirectory={
-            environmentDirectoryUnavailable ? () => reloadEnvironments(true) : undefined
-          }
-          selection={selection}
-          settings={settings}
-          setSettings={setSettings}
-          settingsSaveState={settingsSaveState}
-          onSwitch={switchExecutionTarget}
-          onLogout={handleLogout}
-        />
+        <GatewayCloudWorkspace
+          key={(relayUser ?? accountUser)?.id}
+          loading={<SettingsSyncLoading locale={settings.locale} />}
+        >
+          {(workspaceAvailability) => (
+            <CloudChatPage
+              workspaceAvailability={workspaceAvailability}
+              user={relayUser ?? accountUser}
+              onUserChange={acceptRelayUser}
+              environments={environments}
+              retryEnvironmentDirectory={
+                environmentDirectoryUnavailable ? () => reloadEnvironments(true) : undefined
+              }
+              selection={selection}
+              settings={settings}
+              setSettings={setSettings}
+              settingsSaveState={settingsSaveState}
+              onSwitch={switchExecutionTarget}
+              onLogout={handleLogout}
+            />
+          )}
+        </GatewayCloudWorkspace>
       </LocaleContext.Provider>
     );
   }

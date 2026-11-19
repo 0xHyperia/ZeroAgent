@@ -196,7 +196,10 @@ fn cloud_path(method: &str, path: &str) -> bool {
                 (method, path),
                 (
                     "GET",
-                    "/api/auth/me" | "/api/environments" | "/api/web-settings"
+                    "/api/auth/me"
+                        | "/api/environments"
+                        | "/api/web-settings"
+                        | "/api/workbench/availability"
                 ) | ("PATCH", "/api/web-settings")
             ))
 }

@@ -48,6 +48,7 @@ func TestDesktopCloudUsesExistingBearerWithoutExchange(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
 	service := NewService(store, NewUSAClientWithHTTPClient(platform.URL, platform.Client(), ""), time.Hour, time.Hour)
+	service.EnableCloudWorkspace()
 	mux := http.NewServeMux()
 	NewHTTPHandler(service, true).Register(mux)
 	call := func(method, path, bearer, cookie, owner string) *httptest.ResponseRecorder {

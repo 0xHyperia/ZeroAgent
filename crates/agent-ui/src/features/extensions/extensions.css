@@ -68,7 +68,8 @@
   font-size: 12px;
   color: hsl(var(--muted-foreground));
 }
-.za-extensions-mobile-nav {
+.za-extensions-mobile-nav,
+.za-extensions-mobile-nav-tabs {
   display: none;
 }
 .za-extensions-content {
@@ -307,6 +308,11 @@
     align-items: center;
     padding: 8px 12px;
     border-bottom: 1px solid hsl(var(--border));
+  }
+  .za-extensions-mobile-nav-tabs {
+    display: flex;
+    gap: 6px;
+    align-items: center;
   }
   .za-extensions-mobile-nav button {
     min-width: 44px;
@@ -732,7 +738,7 @@
   }
 }
 @media (max-width: 720px) {
-  .za-extensions-workspace button:not([role="switch"]),
+  .za-extensions-workspace button:not([role="switch"], [data-app-workbench-chrome] *),
   .za-skill-reader button,
   .za-skill-editor button {
     min-width: 44px;

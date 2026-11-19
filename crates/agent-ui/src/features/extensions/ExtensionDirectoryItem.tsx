@@ -10,10 +10,12 @@ export function ExtensionDirectoryItem({
   item,
   onOpen,
   children,
+  summaryOnly,
 }: {
   item: ExtensionPackage;
   onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
+  summaryOnly?: boolean;
 }) {
   const { locale } = useLocale();
   const name = extensionDisplayName(item, locale);
@@ -23,6 +25,8 @@ export function ExtensionDirectoryItem({
       <button
         type="button"
         data-extension-open={item.id}
+        data-cloud-view-navigation={summaryOnly ? "" : undefined}
+        aria-haspopup={summaryOnly ? "dialog" : undefined}
         className="za-extension-row-main"
         onClick={onOpen}
       >

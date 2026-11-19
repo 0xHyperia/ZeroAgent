@@ -445,7 +445,7 @@ html[data-zeroagent-platform="android"]
 .cloud-chat-shell[data-desktop-cloud-window] {
   --desktop-cloud-header-height: var(--app-header-height, 48px);
 }
-.cloud-chat-shell[data-desktop-cloud-window] .gateway-cloud-main .desktop-cloud-header {
+.cloud-chat-shell[data-desktop-cloud-window] .desktop-cloud-header {
   --app-header-height: var(--desktop-cloud-header-height);
 }
 .desktop-cloud-header > header {

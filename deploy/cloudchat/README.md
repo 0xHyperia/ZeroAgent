@@ -42,6 +42,8 @@ SDK 只监听共享网络命名空间中的 127.0.0.1:17843，不公开端口；
 
 ## 持久性与恢复
 
+`ZEROAGENT_CLOUD_WORKSPACE_ENABLED` 默认 `false`。公开环境保持关闭，生产基础 Compose 可单独运行设备远程控制。内部验证使用云端 Compose overlay 时，在 Compose 插值环境显式设为 `true`，并保留下面的云端依赖配置。Gateway 停用云端时保留现有数据，云端调度、解析和站点服务也停止启动。
+
 `ZEROAGENT_CLOUD_FILE_PARSER_ENABLED` 默认 `true`；设为 `false` 仅停止启动后台 Office/PDF 文件解析 worker，保留 Executor 连接和用户主动发起的工作区工具，非法布尔值拒绝启动。
 
 Gateway 的执行并发、总任务时限、模型轮数与工具调用数可通过独立 Cloud 环境变量调整，

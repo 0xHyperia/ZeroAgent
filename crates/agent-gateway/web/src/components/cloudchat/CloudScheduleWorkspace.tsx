@@ -1,3 +1,4 @@
+import type { RenderWorkbenchPageHeader } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { mountWorkbenchLayout } from "@liveagent/ui/application/workbenchLayoutPortal";
 import { ConversationStarter } from "@liveagent/ui/components/chat/ConversationStarter";
 import {
@@ -274,6 +275,7 @@ export function CloudScheduleWorkspace({
   sidebarOnly,
   hideSidebar,
   hostSidebarTrigger,
+  renderWorkbenchHeader,
 }: {
   owner: number;
   route: Route;
@@ -321,6 +323,7 @@ export function CloudScheduleWorkspace({
   sidebarOnly?: boolean;
   hideSidebar?: boolean;
   hostSidebarTrigger?: boolean;
+  renderWorkbenchHeader?: RenderWorkbenchPageHeader;
 }) {
   const text: Text = (zh, en) => (locale === "zh-CN" ? zh : en);
   const { isMobile, open, openMobile, setOpenMobile } = useSidebar();
@@ -2205,170 +2208,172 @@ export function CloudScheduleWorkspace({
       <ListFilter className="size-4" />
     </TooltipButton>
   );
+  const renderTaskListHeader = (focusable: boolean, inWorkbench: boolean) => {
+    const actions = (
+      <>
+        {isMobile ? (
+          <Dialog>
+            <DialogTrigger render={filterTrigger(focusable)} />
+            <DialogContent
+              layout="bottom-sheet-mobile"
+              showCloseButton
+              closeLabel={text("关闭", "Close")}
+            >
+              <DialogHeader>
+                <DialogTitle>{filterLabel}</DialogTitle>
+                <DialogDescription>
+                  {text("按状态或执行位置查看任务。", "Find tasks by status or execution target.")}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogBody className="space-y-3">
+                <fieldset className="space-y-1">
+                  <legend className="text-sm text-muted-foreground">
+                    {text("状态", "Status")}
+                  </legend>
+                  {taskStatuses.map((status) => (
+                    <label
+                      key={status}
+                      htmlFor={`task-filter-${status}`}
+                      className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm"
+                    >
+                      {labels[status]}
+                      <Checkbox
+                        id={`task-filter-${status}`}
+                        checked={groups.includes(status)}
+                        onCheckedChange={() => toggleStatus(status)}
+                      />
+                    </label>
+                  ))}
+                </fieldset>
+                <Select value={scope ?? "all"} onValueChange={chooseScope}>
+                  <SelectTrigger
+                    className="min-h-11"
+                    aria-label={text("筛选执行位置", "Filter by target")}
+                  >
+                    <SelectValue>{scopedTargetLabel ?? targets[0].label}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {targets.map(({ id, label }) => (
+                      <SelectItem key={id} value={id}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </DialogBody>
+              <DialogFooter>
+                <DialogActions>
+                  <DialogClose render={<Button />}>{text("完成", "Done")}</DialogClose>
+                </DialogActions>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger render={filterTrigger(focusable)} />
+            <DropdownMenuContent align="end" variant="soft" className="sidebar-context-menu">
+              <DropdownMenuLabel>{text("状态", "Status")}</DropdownMenuLabel>
+              {taskStatuses.map((status) => (
+                <DropdownMenuCheckboxItem
+                  key={status}
+                  checked={groups.includes(status)}
+                  closeOnClick={false}
+                  onCheckedChange={() => toggleStatus(status)}
+                >
+                  {labels[status]}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{text("执行位置", "Runs on")}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={scope ?? "all"} onValueChange={chooseScope}>
+                {targets.map(({ id, label }) => (
+                  <DropdownMenuRadioItem key={id} value={id}>
+                    {label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <TooltipButton
+          ref={focusable ? searchButton : undefined}
+          variant="ghost"
+          size="icon-sm"
+          className={`${isMobile ? "size-11" : "size-8"} shrink-0 rounded-lg text-muted-foreground hover:text-foreground`}
+          title={searchLabel}
+          aria-label={searchLabel}
+          aria-expanded={searchOpen}
+          onClick={() => {
+            if (searchOpen) closeSearch();
+            else {
+              setSearchOpen(true);
+              requestAnimationFrame(() => searchInput.current?.focus());
+            }
+          }}
+        >
+          <Search className="size-4" />
+        </TooltipButton>
+        {inWorkbench ? null : isMobile ? (
+          <SidebarTrigger
+            showShortcut={false}
+            className="size-11 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
+            aria-label={
+              openMobile ? text("关闭边栏", "Close sidebar") : text("打开导航", "Open navigation")
+            }
+          >
+            {openMobile ? <X className="size-4" /> : <PanelLeft className="size-4" />}
+          </SidebarTrigger>
+        ) : (
+          <SidebarTrigger
+            showShortcut={!previewOpen}
+            className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
+            title={
+              previewOpen ? text("固定边栏", "Pin sidebar") : text("收起边栏", "Collapse sidebar")
+            }
+            aria-label={
+              previewOpen ? text("固定边栏", "Pin sidebar") : text("收起边栏", "Collapse sidebar")
+            }
+            onClick={(event) => {
+              if (previewOpen && onPinSidebar) {
+                event.preventDefault();
+                onPinSidebar();
+              }
+            }}
+          />
+        )}
+      </>
+    );
+    const title = (
+      <h1 className="min-w-0 truncate text-base font-semibold leading-6">
+        {text("定时任务", "Scheduled tasks")}
+      </h1>
+    );
+    return inWorkbench && renderWorkbenchHeader ? (
+      renderWorkbenchHeader({ title, actions })
+    ) : (
+      <SidebarHeaderRow actions={actions}>
+        {!isMobile && (
+          <TooltipButton
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
+            title={text("返回工作台", "Back to workbench")}
+            aria-label={text("返回工作台", "Back to workbench")}
+            data-cloud-view-navigation=""
+            onClick={onBack}
+          >
+            <ArrowLeft className="size-4" />
+          </TooltipButton>
+        )}
+        {title}
+      </SidebarHeaderRow>
+    );
+  };
   const renderSidebarContents = (focusable: boolean, showCreate = true, mobileList = false) => (
     <>
+      {mobileList && renderWorkbenchHeader && renderTaskListHeader(focusable, true)}
       <SidebarHeader className="shrink-0 px-3 pb-2 pt-2.5">
-        <SidebarHeaderRow
-          actions={
-            <>
-              {isMobile ? (
-                <Dialog>
-                  <DialogTrigger render={filterTrigger(focusable)} />
-                  <DialogContent
-                    layout="bottom-sheet-mobile"
-                    showCloseButton
-                    closeLabel={text("关闭", "Close")}
-                  >
-                    <DialogHeader>
-                      <DialogTitle>{filterLabel}</DialogTitle>
-                      <DialogDescription>
-                        {text(
-                          "按状态或执行位置查看任务。",
-                          "Find tasks by status or execution target.",
-                        )}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogBody className="space-y-3">
-                      <fieldset className="space-y-1">
-                        <legend className="text-sm text-muted-foreground">
-                          {text("状态", "Status")}
-                        </legend>
-                        {taskStatuses.map((status) => (
-                          <label
-                            key={status}
-                            htmlFor={`task-filter-${status}`}
-                            className="flex min-h-11 items-center justify-between gap-3 rounded-lg px-2 text-sm"
-                          >
-                            {labels[status]}
-                            <Checkbox
-                              id={`task-filter-${status}`}
-                              checked={groups.includes(status)}
-                              onCheckedChange={() => toggleStatus(status)}
-                            />
-                          </label>
-                        ))}
-                      </fieldset>
-                      <Select value={scope ?? "all"} onValueChange={chooseScope}>
-                        <SelectTrigger
-                          className="min-h-11"
-                          aria-label={text("筛选执行位置", "Filter by target")}
-                        >
-                          <SelectValue>{scopedTargetLabel ?? targets[0].label}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {targets.map(({ id, label }) => (
-                            <SelectItem key={id} value={id}>
-                              {label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </DialogBody>
-                    <DialogFooter>
-                      <DialogActions>
-                        <DialogClose render={<Button />}>{text("完成", "Done")}</DialogClose>
-                      </DialogActions>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              ) : (
-                <DropdownMenu>
-                  <DropdownMenuTrigger render={filterTrigger(focusable)} />
-                  <DropdownMenuContent align="end" variant="soft" className="sidebar-context-menu">
-                    <DropdownMenuLabel>{text("状态", "Status")}</DropdownMenuLabel>
-                    {taskStatuses.map((status) => (
-                      <DropdownMenuCheckboxItem
-                        key={status}
-                        checked={groups.includes(status)}
-                        closeOnClick={false}
-                        onCheckedChange={() => toggleStatus(status)}
-                      >
-                        {labels[status]}
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel>{text("执行位置", "Runs on")}</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup value={scope ?? "all"} onValueChange={chooseScope}>
-                      {targets.map(({ id, label }) => (
-                        <DropdownMenuRadioItem key={id} value={id}>
-                          {label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-              <TooltipButton
-                ref={focusable ? searchButton : undefined}
-                variant="ghost"
-                size="icon-sm"
-                className={`${isMobile ? "size-11" : "size-8"} shrink-0 rounded-lg text-muted-foreground hover:text-foreground`}
-                title={searchLabel}
-                aria-label={searchLabel}
-                aria-expanded={searchOpen}
-                onClick={() => {
-                  if (searchOpen) closeSearch();
-                  else {
-                    setSearchOpen(true);
-                    requestAnimationFrame(() => searchInput.current?.focus());
-                  }
-                }}
-              >
-                <Search className="size-4" />
-              </TooltipButton>
-              {isMobile ? (
-                <SidebarTrigger
-                  showShortcut={false}
-                  className="size-11 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-                  aria-label={
-                    openMobile
-                      ? text("关闭边栏", "Close sidebar")
-                      : text("打开导航", "Open navigation")
-                  }
-                >
-                  {openMobile ? <X className="size-4" /> : <PanelLeft className="size-4" />}
-                </SidebarTrigger>
-              ) : (
-                <SidebarTrigger
-                  showShortcut={!previewOpen}
-                  className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-                  title={
-                    previewOpen
-                      ? text("固定边栏", "Pin sidebar")
-                      : text("收起边栏", "Collapse sidebar")
-                  }
-                  aria-label={
-                    previewOpen
-                      ? text("固定边栏", "Pin sidebar")
-                      : text("收起边栏", "Collapse sidebar")
-                  }
-                  onClick={(event) => {
-                    if (previewOpen && onPinSidebar) {
-                      event.preventDefault();
-                      onPinSidebar();
-                    }
-                  }}
-                />
-              )}
-            </>
-          }
-        >
-          {!isMobile && (
-            <TooltipButton
-              variant="ghost"
-              size="icon-sm"
-              className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-              title={text("返回工作台", "Back to workbench")}
-              aria-label={text("返回工作台", "Back to workbench")}
-              onClick={onBack}
-            >
-              <ArrowLeft className="size-4" />
-            </TooltipButton>
-          )}
-          <h1 className="min-w-0 truncate text-base font-semibold leading-6">
-            {text("定时任务", "Scheduled tasks")}
-          </h1>
-        </SidebarHeaderRow>
+        {!(mobileList && renderWorkbenchHeader) && renderTaskListHeader(focusable, false)}
         {searchOpen && (
           <SidebarInput
             ref={focusable ? searchInput : undefined}
@@ -2662,7 +2667,8 @@ export function CloudScheduleWorkspace({
       target={text("云端", "Cloud")}
       planStatus={labels[status(task)]}
       text={text}
-      leading={showSidebarTrigger ? <SidebarTrigger /> : undefined}
+      leading={showSidebarTrigger && !renderWorkbenchHeader ? <SidebarTrigger /> : undefined}
+      renderWorkbenchHeader={renderWorkbenchHeader}
       onBack={isMobile ? backToList : undefined}
       menu={cloudTaskMenu(task, Boolean(liveConversationId))}
       onShare={() => void copyTaskLink("cloud", task.id)}
@@ -2695,11 +2701,13 @@ export function CloudScheduleWorkspace({
         <div
           className={`@container min-h-0 min-w-0 flex-1 flex-col ${liveConversationId || deviceConversationId ? "overflow-hidden" : "overflow-auto"} ${showMobileListOnly ? "hidden" : "flex"}`}
         >
-          {showSidebarTrigger && !(task && schedules) && (
+          {(!isMobile || route.id) && renderWorkbenchHeader && !(task && schedules) ? (
+            renderWorkbenchHeader({})
+          ) : showSidebarTrigger && !(task && schedules) ? (
             <div className="px-3 pt-2">
               <SidebarTrigger />
             </div>
-          )}
+          ) : null}
           {error && !editor ? (
             <div className="mx-auto w-full max-w-3xl px-4 pt-4">
               <StatusNotice
@@ -3916,6 +3924,7 @@ function TaskDetailHeader({
   planStatus,
   text,
   leading,
+  renderWorkbenchHeader,
   onBack,
   menu,
   onShare,
@@ -3927,79 +3936,98 @@ function TaskDetailHeader({
   planStatus: string;
   text: Text;
   leading?: ReactNode;
+  renderWorkbenchHeader?: RenderWorkbenchPageHeader;
   onBack?: () => void;
   menu: ReactNode;
   onShare?: () => void;
   children: ReactNode;
 }) {
   const actions = text("任务操作", "Task actions");
+  const back = onBack && (
+    <TooltipButton
+      variant="ghost"
+      size="icon"
+      className="size-11"
+      title={text("返回任务", "Back to tasks")}
+      aria-label={text("返回任务", "Back to tasks")}
+      onClick={onBack}
+    >
+      <ArrowLeft className="size-4" />
+    </TooltipButton>
+  );
+  const title = (
+    <div className="min-w-0 flex-1">
+      <h2
+        ref={titleRef}
+        tabIndex={titleRef ? -1 : undefined}
+        className="truncate text-sm font-semibold leading-5"
+        title={name}
+      >
+        {name}
+      </h2>
+      <p className="sr-only">
+        <span className="truncate" title={target}>
+          {target}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span className="shrink-0">{planStatus}</span>
+      </p>
+    </div>
+  );
+  const taskActions = (
+    <div className="flex shrink-0 items-center gap-1">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <TooltipButton
+              variant="ghost"
+              size="icon"
+              title={actions}
+              aria-label={actions}
+              className="max-md:size-11"
+            >
+              <MoreHorizontal className="size-4" />
+            </TooltipButton>
+          }
+        />
+        <DropdownMenuContent align="end" variant="soft">
+          {menu}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {onShare && (
+        <TooltipButton
+          variant="ghost"
+          size="sm"
+          title={text("分享", "Share")}
+          aria-label={text("分享", "Share")}
+          className="max-md:min-h-11"
+          onClick={onShare}
+        >
+          <Share2 className="size-4" />
+          {text("分享", "Share")}
+        </TooltipButton>
+      )}
+      {children}
+    </div>
+  );
+  if (renderWorkbenchHeader) {
+    return renderWorkbenchHeader({
+      title: (
+        <>
+          {back}
+          {title}
+        </>
+      ),
+      actions: taskActions,
+    });
+  }
   return (
     <header className="sticky top-0 z-10 shrink-0 bg-background">
       <div className="flex min-h-12 w-full min-w-0 items-center gap-2 px-3 py-1.5 md:px-4">
         {leading}
-        {onBack && (
-          <TooltipButton
-            variant="ghost"
-            size="icon"
-            className="size-11"
-            title={text("返回任务", "Back to tasks")}
-            aria-label={text("返回任务", "Back to tasks")}
-            onClick={onBack}
-          >
-            <ArrowLeft className="size-4" />
-          </TooltipButton>
-        )}
-        <div className="min-w-0 flex-1">
-          <h2
-            ref={titleRef}
-            tabIndex={titleRef ? -1 : undefined}
-            className="truncate text-sm font-semibold leading-5"
-            title={name}
-          >
-            {name}
-          </h2>
-          <p className="sr-only">
-            <span className="truncate" title={target}>
-              {target}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span className="shrink-0">{planStatus}</span>
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <TooltipButton
-                  variant="ghost"
-                  size="icon"
-                  title={actions}
-                  aria-label={actions}
-                  className="max-md:size-11"
-                >
-                  <MoreHorizontal className="size-4" />
-                </TooltipButton>
-              }
-            />
-            <DropdownMenuContent align="end" variant="soft">
-              {menu}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {onShare && (
-            <TooltipButton
-              variant="ghost"
-              size="sm"
-              title={text("分享", "Share")}
-              aria-label={text("分享", "Share")}
-              className="max-md:min-h-11"
-              onClick={onShare}
-            >
-              <Share2 className="size-4" />
-              {text("分享", "Share")}
-            </TooltipButton>
-          )}
-          {children}
-        </div>
+        {back}
+        {title}
+        {taskActions}
       </div>
     </header>
   );

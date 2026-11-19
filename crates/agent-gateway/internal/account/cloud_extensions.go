@@ -208,12 +208,16 @@ func cloudExtensionBuiltin(id string) bool {
 }
 
 func builtinCloudExtensions() []CloudExtension {
-	current := declaredBuiltinCloudExtensions("skills", cloudNativeWorkflowRevision)
+	return loadBuiltinCloudExtensions(false)
+}
+
+func loadBuiltinCloudExtensions(catalogOnly bool) []CloudExtension {
+	current := readBuiltinCloudExtensions("skills", cloudNativeWorkflowRevision, []string{"product-design", "imagegen", "plugin-creator", "skill-creator"}, catalogOnly)
 	for i := range current {
-		workflow := cloudNativeWorkflow(current[i].ID, current[i].Kind, current[i].Revisions[0])
+		workflow := cloudNativeWorkflow(current[i].ID, current[i].Kind, current[i].Revisions[0], catalogOnly)
 		current[i].Revisions = []CloudExtensionRevision{workflow}
 	}
-	fileSkills := readBuiltinCloudExtensions("skills", 1, cloudFileSkillIDs)
+	fileSkills := readBuiltinCloudExtensions("skills", 1, cloudFileSkillIDs, catalogOnly)
 	for i := range fileSkills {
 		revision := &fileSkills[i].Revisions[0]
 		revision.Skills[0].DisplayName = revision.Name
@@ -249,8 +253,12 @@ func retiredCloudFileSkill(id string) bool {
 	return false
 }
 func cloudExtensionCards(doc *CloudExtensions) []cloudExtensionCard {
+	return cloudExtensionCardsFor(effectiveCloudExtensions(doc))
+}
+
+func cloudExtensionCardsFor(packages []CloudExtension) []cloudExtensionCard {
 	result := []cloudExtensionCard{}
-	for _, p := range effectiveCloudExtensions(doc) {
+	for _, p := range packages {
 		if len(p.Revisions) == 0 {
 			continue
 		}

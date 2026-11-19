@@ -10,6 +10,90 @@ const alternateConversation="a1000000-0000-4000-8000-000000000002";
 const branchConversation=index=>`b1000000-0000-4000-8000-${String(index).padStart(12,"0")}`;
 const fixtureUUID=index=>`c1000000-0000-4000-8000-${String(index).padStart(12,"0")}`;
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+test("a closed workspace keeps the original chat view and does not load account cloud data", async (t) => {
+  const app = await mount(t, {
+    initialURL: `/c/${defaultConversation}?file=${defaultConversation}`,
+    workspaceAvailability: { available: false, catalog: { version: 0, packages: [] } },
+  });
+  assert.ok(app.host.querySelector(".cloud-chat-shell"));
+  assert.ok(app.host.querySelector(".cloud-chat-welcome"));
+  const notice = /云端工作区暂未开放|The cloud workspace is not open yet/;
+  await app.env.waitFor(
+    () => notice.test(app.host.querySelector('[data-toast-position="bottom-center"]')?.textContent ?? ""),
+    "cloud entry notification",
+  );
+  assert.doesNotMatch(app.host.querySelector(".cloud-chat-shell").textContent, notice);
+  assert.doesNotMatch(app.host.textContent, /开始使用 ZeroAgent|Get started with ZeroAgent/);
+  const chat = app.host.querySelector('.cloud-mode-switch [data-segment="chat"]');
+  const work = app.host.querySelector('.cloud-mode-switch [data-segment="work"]');
+  await app.click('.cloud-mode-switch [data-segment="chat"]');
+  assert.equal(chat.getAttribute("aria-pressed"), "true");
+  assert.equal(app.composer.expandedInput, false);
+  await app.env.act(async () => {
+    chat.focus();
+    chat.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+  });
+  assert.equal(work.getAttribute("aria-pressed"), "true");
+  assert.equal(document.activeElement, work);
+  assert.equal(app.composer.expandedInput, true);
+  assert.equal(app.composer.isInputDisabled, true);
+  assert.equal(app.composer.isSubmissionDisabled, true);
+  assert.equal(app.calls.filter(({ path }) => path.startsWith("/api/web-chat/")).length, 0);
+});
+
+test("a closed desktop cloud view lets the native device menu return to this computer", async (t) => {
+  let header;
+  let windowControls;
+  const app = await mount(t, {
+    newDraft: true,
+    realSidebar: true,
+    workspaceAvailability: { available: false, catalog: { version: 0, packages: [] } },
+    desktopCloudHost: {
+      onHeaderTarget: (element) => { header = element; },
+      onWindowControlsTarget: (element) => { windowControls = element; },
+    },
+  });
+  const { loadModule, React, act, createRoot, waitFor } = app.env;
+  const { DesktopExecutionSwitcher } = loadModule(fileURLToPath(new URL(
+    "../../../agent-gui/src/components/DesktopExecutionSwitcher.tsx", import.meta.url,
+  )));
+  assert.ok(header?.closest(".cloud-chat-shell"));
+  assert.ok(windowControls?.closest(".cloud-chat-shell"));
+  const nativeHeader = createRoot(header);
+  const nativeWindow = createRoot(windowControls);
+  const local = { runtime_kind: "device_agent", device_id: "local", name: "此电脑", online: true, workspaces: [] };
+  const switches = [];
+  let windowClicks = 0;
+  try {
+    await act(async () => {
+      nativeHeader.render(React.createElement(DesktopExecutionSwitcher, {
+        environments: [local], localDeviceId: local.device_id, selectedDeviceId: local.device_id,
+        cloudSelected: true, onSwitch: async (target) => { switches.push(target.device_id); },
+      }));
+      nativeWindow.render(React.createElement("button", { onClick: () => { windowClicks++; } }, "Minimize"));
+    });
+    await app.click('[data-desktop-host-slot="window"] button');
+    assert.equal(windowClicks, 1);
+    await app.click('[data-desktop-host-slot="header"] button[aria-expanded]');
+    const localChoice = () => [...document.querySelectorAll('[role="menuitem"]')]
+      .find((item) => /此电脑|This computer/.test(item.textContent));
+    await waitFor(localChoice, "native device menu opens inside the closed workspace");
+    await act(async () => localChoice().click());
+    assert.deepEqual(switches, [local.device_id]);
+    assert.equal(app.calls.some(({ path }) => path.startsWith("/api/web-chat/")), false);
+  } finally {
+    await act(async () => { nativeHeader.unmount(); nativeWindow.unmount(); });
+  }
+
+  const chrome = () => header?.closest("[data-app-workbench-chrome]");
+  await app.click('[data-rail-item="customize"]');
+  await waitFor(() => chrome()?.closest('[data-testid="extensions-workspace"]'), "device menu uses the workbench header in customization", 8000);
+  assert.equal(chrome(), windowControls.closest("[data-app-workbench-chrome]"));
+  await app.click('[data-rail-item="cron-hub"]');
+  await waitFor(() => chrome()?.closest("section[aria-label]"), "device menu uses the workbench header in scheduled tasks");
+  assert.equal(chrome(), windowControls.closest("[data-app-workbench-chrome]"));
+  assert.equal(app.host.querySelectorAll('[data-desktop-host-slot="header"]').length, 1);
+});
 const snapshot = (overrides = {}) => ({
   id: "run-a", conversation_id: defaultConversation, client_request_id: "client-a", model: "test-model",
   state: "running", user_message_id: "user-a", assistant_message_id: "assistant-a",
@@ -25,7 +109,7 @@ const artifactRecord=(overrides={})=>({id:artifactVersionID,family_id:artifactFa
 const artifactSnapshot=record=>({type:"artifact_reference",version_id:record.id,name:record.name,mime:record.mime,size:record.size,family_id:record.family_id,number:record.number,sha256:record.sha256});
 const fixtureTranslation = { t: key => key, useLocale: () => ({ locale: "zh-CN", t: key => key }) };
 
-async function mount(t, { initialURL, initialHistoryConversation, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,initialStreamStatus=200,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,initialActiveRunFailure=false,revisionHarness=false,readerHarness=false,realSidebar=false,realHistorySidebar=false,environments=[],readerWidth, pendingProjectRead, modelPreferencesOffline = false } = {}) {
+async function mount(t, { initialURL, initialHistoryConversation, initialRun = null, uncertain = false, delayedCancel = false, initialProviderKeyId = 1, fileMode=false, initialFiles=[], delayedUpload=false, initialMessages=null, uncertainBranch=false,delayedBranch=false,initialArtifacts=[],delayedArtifact=false,modelSettings=[],initialReasoning="medium",queueFull=false,delayedQueueFull=false,fullMessages=[],delayedHistory=false,delayedMessage=false,messageStatus=200,streamLimit=false,initialStreamStatus=200,realModelControls=false,conversationPages=null,delayedConversations=false,delayedRunHead=false,initialModelLimits=null,delayedModelLimits=false,unknownModelLimitSave=false,realTranscript=false,newDraft=false,mobileLayout=false,delayedSubmit=false,initialPending=[],initialSavedDrafts=[],initialDraftText="新的问题",searchResults=null,initialHistoryFailure=false,initialActiveRunFailure=false,revisionHarness=false,readerHarness=false,realSidebar=false,realHistorySidebar=false,environments=[],readerWidth, pendingProjectRead, modelPreferencesOffline = false, workspaceAvailability, desktopCloudHost } = {}) {
   let env;
   let uuid = 0;
   let draft = initialDraftText;
@@ -425,7 +509,7 @@ async function mount(t, { initialURL, initialHistoryConversation, initialRun = n
     "@liveagent/ui/application/ApplicationView": { ApplicationView: (props) => props.chat.content },
     "@liveagent/ui/application/AppWorkbenchChrome": {
       AppHeaderFrame: (props) => env.React.createElement("div", { className: props.className }, props.children),
-      AppWorkbenchChrome: (props) => env.React.createElement("header", null, props.navigationActions, props.leadingActions, props.trailingActions),
+      AppWorkbenchChrome: (props) => env.React.createElement("header", { "data-app-workbench-chrome": "" }, props.navigationActions, props.leadingActions, props.preThemeActions, props.trailingActions, props.windowControls),
     },
     "@/components/cloudchat/CloudContextSidebar": { CloudContextSidebar: props => env.React.createElement('aside',{'data-context-destination':'library'},env.React.createElement('button',{onClick:()=>props.onOpenResource('files')},'文件')) },
     "@liveagent/ui/components/AppErrorBoundary": { AppErrorBoundary: (props) => props.children },
@@ -522,7 +606,7 @@ async function mount(t, { initialURL, initialHistoryConversation, initialRun = n
   let user = { id: 1, email: "account-a@example.test" };
   const render = async () => env.act(async () => {
     root.render(env.React.createElement(SidebarProvider, null, env.React.createElement(CloudChatPage, {
-      user, onUserChange: () => undefined, environments, selection: null, settings,
+      user, workspaceAvailability, desktopCloudHost, onUserChange: () => undefined, environments, selection: null, settings,
       setSettings: () => undefined, settingsSaveState: "saved", onSwitch: async () => undefined, onLogout: () => undefined,
     })));
     await tick();

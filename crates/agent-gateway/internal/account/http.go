@@ -29,9 +29,25 @@ func NewHTTPHandler(service *Service, cookieSecure bool, publicOrigin ...string)
 }
 
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
-	h.registerWebChat(mux)
 	h.registerManagedWebKeys(mux)
-	h.registerCloudSchedules(mux)
+	availability := map[string]any{"cloud_workspace_available": h.service.cloudWorkspaceEnabled}
+	if !h.service.cloudWorkspaceEnabled {
+		availability["built_in_extensions"] = map[string]any{
+			"version": 0, "packages": cloudExtensionCardsFor(loadBuiltinCloudExtensions(true)),
+		}
+	}
+	mux.HandleFunc("GET /api/workbench/availability", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, availability)
+	})
+	if h.service.cloudWorkspaceEnabled {
+		h.registerWebChat(mux)
+		h.registerCloudSchedules(mux)
+	} else {
+		for _, pattern := range []string{"/api/web-chat", "/api/web-chat/", "/api/web-settings"} {
+			mux.HandleFunc(pattern, rejectCloudWorkspace)
+		}
+	}
 	mux.HandleFunc("GET /api/auth/settings", h.publicSettings)
 	mux.HandleFunc("POST /api/auth/send-verify-code", h.sendVerifyCode)
 	mux.HandleFunc("POST /api/auth/register", h.registerAccount)
@@ -61,6 +77,11 @@ func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/desktop/conversation-routes", h.withDesktopSession(h.conversationRoutes))
 	mux.HandleFunc("POST /api/desktop/execution-target/select", h.withDesktopSession(h.selectTarget))
 	mux.HandleFunc("POST /api/desktop/handoff", h.withDesktopSession(h.createDesktopHandoff))
+}
+
+func rejectCloudWorkspace(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeError(w, cloudWorkspaceUnavailable())
 }
 
 func (h *HTTPHandler) startOAuth(w http.ResponseWriter, r *http.Request) {

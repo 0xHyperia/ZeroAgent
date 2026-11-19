@@ -192,6 +192,7 @@ func cloudFileHTTPStorageContract(t *testing.T, objects *objectstore.S3Store, cf
 	ctx := context.Background()
 	metadata := account.NewMemoryStore()
 	service := account.NewService(metadata, nil, time.Hour, time.Hour)
+	service.EnableCloudWorkspace()
 	t.Cleanup(service.CloseCloudRuns)
 	if service.SetCloudObjectStore(objects) != nil {
 		t.Fatal("configure real storage for production file HTTP handler")

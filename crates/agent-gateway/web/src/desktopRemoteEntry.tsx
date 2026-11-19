@@ -79,6 +79,7 @@ function EmbeddedCloud({
       >
         <AppErrorBoundary>
           <CloudChatPage
+            workspaceAvailability={host.workspaceAvailability}
             user={user}
             onUserChange={(next) => {
               setUser(next);

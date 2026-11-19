@@ -220,15 +220,21 @@
     },
     {
       "id": "cloud-web-chat",
-      "name": "Cloud Chat 网页对话",
+      "name": "Cloud Chat 云端工作区（公开版本默认关闭）",
       "status": "active",
       "owner": "zeroagent",
       "surfaces": [
+        "desktop",
+        "android",
         "webui",
         "gateway"
       ],
       "entrypoints": [
         "crates/agent-gateway/web/src/pages/CloudChatPage.tsx",
+        "crates/agent-gateway/web/src/components/GatewayCloudWorkspace.tsx",
+        "crates/agent-gui/src/pages/DesktopCloudWorkbench.tsx",
+        "crates/agent-gateway/internal/account/http.go",
+        "crates/agent-gateway/cmd/gateway/main.go",
         "crates/agent-gateway/internal/server/http.go",
         "crates/agent-gateway/internal/account/cloud_run_runtime.go",
         "crates/agent-gateway/internal/account/cloud_run_http.go",

@@ -627,7 +627,11 @@ function useBrowserGatewaySession(historyShareToken: string | null, enabled: boo
         return selection;
       }
       const epoch = ++sessionEpochRef.current;
-      let next = await selectExecutionTarget(environment, workspace);
+      let next =
+        environment.runtime_kind === "web_chat"
+          ? defaultCloudSelection([environment], true)
+          : await selectExecutionTarget(environment, workspace);
+      if (!next) return null;
       if (options?.prepareDeviceDraft && epoch === sessionEpochRef.current) {
         const deviceDraftWorkspace = await options.prepareDeviceDraft(next);
         next = { ...next, device_draft_workspace: deviceDraftWorkspace };

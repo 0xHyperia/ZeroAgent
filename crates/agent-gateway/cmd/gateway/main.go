@@ -55,6 +55,19 @@ func cloudFileParserEnabled(getenv func(string) string) (bool, error) {
 	return enabled, nil
 }
 
+func cloudWorkspaceEnabled(getenv func(string) string) (bool, error) {
+	const name = "ZEROAGENT_CLOUD_WORKSPACE_ENABLED"
+	value := strings.TrimSpace(getenv(name))
+	if value == "" {
+		return false, nil
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return enabled, nil
+}
+
 func main() {
 	observability.SetupLogging()
 	cfg := config.Load()
@@ -93,11 +106,20 @@ func main() {
 		slog.Warn("DATABASE_URL and REDIS_URL are not configured; account sessions and devices use in-memory development storage")
 	}
 	accountService := account.NewService(accountStore, usaClient, cfg.WebSessionTTL, cfg.SelectionLeaseTTL)
+	cloudEnabled := false
+	if !managedDesktop {
+		var err error
+		cloudEnabled, err = cloudWorkspaceEnabled(os.Getenv)
+		if err != nil {
+			fatal("invalid cloud workspace configuration", "err", err)
+		}
+	}
 	runContext, stopRuns := context.WithCancel(context.Background())
 	defer stopRuns()
 	var waitMaintenance func()
 	var siteConfig *cloudsite.Config
-	if !managedDesktop {
+	if cloudEnabled {
+		accountService.EnableCloudWorkspace()
 		runtimeConfig, runtimeConfigErr := account.CloudRuntimeConfigFromEnv()
 		if runtimeConfigErr != nil {
 			fatal("invalid cloud runtime configuration", "err", runtimeConfigErr)

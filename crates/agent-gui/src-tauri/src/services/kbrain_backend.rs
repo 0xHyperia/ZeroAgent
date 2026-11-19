@@ -1469,6 +1469,7 @@ impl KBrainBackendState {
         manager.is_running().then(|| manager.connection())
     }
 
+    #[cfg(desktop)]
     pub(crate) fn remote_image_connection(
         self: &Arc<Self>,
         owner: i64,

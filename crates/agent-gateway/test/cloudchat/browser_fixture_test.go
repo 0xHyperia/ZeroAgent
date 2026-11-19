@@ -123,6 +123,7 @@ func TestCloudChatBrowserFixture(t *testing.T) {
 		}
 	}
 	accounts := account.NewService(store, account.NewUSAClientWithHTTPClient(usa.URL, usa.Client()), time.Hour, time.Hour)
+	accounts.EnableCloudWorkspace()
 	defer accounts.CloseCloudRuns()
 	previewStorage := browserPreviewStorage(t, evidence)
 	if err := accounts.SetCloudObjectStore(previewStorage); err != nil {

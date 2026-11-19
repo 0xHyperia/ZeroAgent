@@ -352,6 +352,7 @@ func testCloudProjectContract(t *testing.T, factory func(*testing.T) cloudProjec
 func TestCloudProjectMemoryHTTPAccountAndCAS(t *testing.T) {
 	store := NewMemoryStore()
 	service := NewService(store, nil, time.Hour, time.Hour)
+	service.EnableCloudWorkspace()
 	session := &Session{ID: "project-http-cookie", UserID: 7, AccessToken: "fixture-token", AccessExpiresAt: time.Now().Add(time.Hour), SessionExpiresAt: time.Now().Add(time.Hour)}
 	if err := store.PutSession(context.Background(), session); err != nil {
 		t.Fatal(err)

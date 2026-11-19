@@ -66,6 +66,7 @@ func newCloudReplayFixture(t *testing.T, postgres bool) *cloudReplayFixture {
 	}))
 	t.Cleanup(platform.Close)
 	f.service = NewService(base.store, NewUSAClientWithHTTPClient(platform.URL, platform.Client()), time.Hour, time.Hour)
+	f.service.EnableCloudWorkspace()
 	t.Cleanup(f.service.CloseCloudRuns)
 	f.session = f.newSession(t, 7)
 	return f

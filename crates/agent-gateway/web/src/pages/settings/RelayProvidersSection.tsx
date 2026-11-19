@@ -2,9 +2,10 @@ import { CheckCircle2 } from "@liveagent/ui/components/IconSet";
 import { ManagedProvidersView } from "@liveagent/ui/pages/settings/ManagedProvidersView";
 import { ProviderModal } from "@liveagent/ui/pages/settings/ProviderModal";
 import { ProviderSettingsDialog } from "@liveagent/ui/pages/settings/ProvidersSection";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { RelayKeyCopyDialog } from "@/components/relay/RelayKeyCopyDialog";
 import { captureAccountRequestGuard } from "@/lib/accountRequest";
+import { ClosedCloudWorkspaceContext } from "@/lib/cloudWorkspaceAvailability";
 import { getDesktopRemoteHost, requireCurrentDesktopRemoteHost } from "@/lib/desktopRemoteHost";
 import {
   createRelayApiKeys,
@@ -43,6 +44,7 @@ export function RelayProvidersSection({
   cloudChatMode = false,
   onOpenModelPreferences,
 }: SettingsSectionProps & { cloudChatMode?: boolean; onOpenModelPreferences?: () => void }) {
+  const cloudClosed = useContext(ClosedCloudWorkspaceContext);
   const [user, setUser] = useState<RelayUser | null>(null);
   const [keys, setKeys] = useState<RelayApiKey[]>([]);
   const [groups, setGroups] = useState<RelayGroup[]>([]);
@@ -52,7 +54,7 @@ export function RelayProvidersSection({
   const editingProvider = settings.customProviders.find(
     (provider) => provider.id === editingProviderId,
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cloudClosed);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -71,6 +73,7 @@ export function RelayProvidersSection({
   );
 
   const loadData = useCallback(async () => {
+    if (cloudClosed) return;
     setLoading(true);
     setError("");
     try {
@@ -94,7 +97,7 @@ export function RelayProvidersSection({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cloudClosed]);
 
   useEffect(() => void loadData(), [loadData]);
 

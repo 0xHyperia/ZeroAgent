@@ -69,6 +69,8 @@
 
 ## 发布与运维
 
+- 公开版本默认关闭云端工作区。桌面、Web 和 Android 沿用原有页面和设备选择，进入时提示暂未开放。内置插件和技能可搜索、筛选和浏览公开简介，完整内容和云端操作停用。已授权设备照常可控。Gateway 拒绝云端页面对应的接口和执行租约，停止启动云端任务、解析和站点服务。代码、账户资料及任务记录保留，测试环境可显式开放。详见 [ADR 0080](decisions/0080-cloud-workspace-release-availability.md)。
+
 - `0xHyperia/ZeroAgent` 持有完整 Release。桌面安装包和 Android APK 只在 beta 与正式标签下
   同步到 `USA-Zero/ZeroAgent`。alpha、rc 和其他预发布标签仅在源码仓库发布。
   公开分发不得附带源码归档或内部运维信息。

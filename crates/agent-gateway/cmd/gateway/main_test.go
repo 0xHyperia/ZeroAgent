@@ -1,10 +1,34 @@
 package main
 
 import (
-	"github.com/liveagent/agent-gateway/internal/config"
 	"strings"
 	"testing"
+
+	"github.com/liveagent/agent-gateway/internal/config"
 )
+
+func TestCloudWorkspaceRequiresExplicitOptIn(t *testing.T) {
+	for _, test := range []struct {
+		value   string
+		want    bool
+		wantErr bool
+	}{
+		{value: ""},
+		{value: "false"},
+		{value: "true", want: true},
+		{value: "invalid", wantErr: true},
+	} {
+		enabled, err := cloudWorkspaceEnabled(func(name string) string {
+			if name != "ZEROAGENT_CLOUD_WORKSPACE_ENABLED" {
+				t.Fatalf("unexpected environment dependency: %s", name)
+			}
+			return test.value
+		})
+		if enabled != test.want || (err != nil) != test.wantErr {
+			t.Errorf("setting %q: enabled=%v, err=%v", test.value, enabled, err)
+		}
+	}
+}
 
 func TestCloudFileParserConfigurationDefaultsAndExplicitControl(t *testing.T) {
 	for _, test := range []struct {

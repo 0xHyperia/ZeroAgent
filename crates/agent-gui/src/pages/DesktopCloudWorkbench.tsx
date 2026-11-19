@@ -2,6 +2,7 @@ import { AppHeaderFrame } from "@liveagent/ui/application/AppWorkbenchChrome";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { readCloudWorkspaceAvailability } from "@/lib/cloudWorkspaceAvailability";
 import type { DesktopCloudHost } from "@/lib/desktopRemoteHost";
 import { isMacOsTauri } from "../components/MacOsTitleBarSpacer";
 import { WindowsTitleBar } from "../components/WindowsTitleBar";
@@ -63,8 +64,6 @@ export function DesktopCloudWorkbench(props: Props) {
     setHeaderTarget(null);
     setWindowTarget(null);
     void (async () => {
-      const prepared = await loadDesktopRemoteRuntime();
-      if (controller.signal.aborted) return;
       const { host, dispose } = await openDesktopCloudHost(
         {
           onLogout: () => latest.current.onLogout(),
@@ -75,10 +74,18 @@ export function DesktopCloudWorkbench(props: Props) {
       );
       retire = dispose;
       if (host.accountUser.id !== accountId) throw new Error("Cloud workbench account changed");
+      const workspaceAvailability = await readCloudWorkspaceAvailability(
+        host.request,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      const prepared = await loadDesktopRemoteRuntime();
+      if (controller.signal.aborted) return;
       removeStyles = await attachDesktopRemoteStyles(prepared.styles, controller.signal);
       if (controller.signal.aborted || !container.current) return;
       mounted.current = prepared.factory.createDesktopRemoteRuntime().mount(container.current, {
         ...host,
+        workspaceAvailability,
         initialActive: latest.current.active,
         nativeTitlebarInset: isMacOsTauri(),
         onHeaderTarget: (target) => {

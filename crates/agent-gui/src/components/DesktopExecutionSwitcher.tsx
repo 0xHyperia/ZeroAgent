@@ -110,7 +110,11 @@ export function DesktopExecutionSwitcher({
           <span className="truncate text-xs max-[640px]:hidden">{label}</span>
           <ChevronDown className="size-3.5 shrink-0 max-[640px]:hidden" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-60 max-w-[calc(100vw-1rem)]">
+        <DropdownMenuContent
+          align="start"
+          className="w-60 max-w-[calc(100vw-1rem)]"
+          data-cloud-view-navigation=""
+        >
           {environments.map((environment) => {
             const selected = !cloudSelected && environment.device_id === selectedDeviceId;
             return (
@@ -164,6 +168,7 @@ export function DesktopExecutionSwitcher({
             className="max-w-[380px] p-5"
             closeDisabled={busy}
             closeLabel={text("关闭", "Close")}
+            data-cloud-view-navigation=""
             showCloseButton
           >
             <div className="flex items-start gap-3">

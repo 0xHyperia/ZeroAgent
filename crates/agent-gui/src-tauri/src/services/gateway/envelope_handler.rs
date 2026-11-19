@@ -103,7 +103,22 @@ impl GatewayController {
             }
             Some(proto::gateway_envelope::Payload::TunnelFrame(frame)) => {
                 if frame.stream_id.starts_with("image-") {
+                    #[cfg(desktop)]
                     return self.device_images.handle(self, frame);
+                    #[cfg(not(desktop))]
+                    return self
+                        .send_agent_envelope(proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::TunnelFrame(
+                                proto::TunnelFrame {
+                                    stream_id: frame.stream_id,
+                                    kind: proto::TunnelFrameKind::Error as i32,
+                                    ..Default::default()
+                                },
+                            )),
+                        })
+                        .await;
                 }
                 if frame.stream_id.starts_with("private-") {
                     #[cfg(windows)]

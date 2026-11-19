@@ -636,6 +636,7 @@ pub async fn mobile_gateway_request(
         .map_err(|_| "mobile gateway state is unavailable")?
         .owner()?;
     let url = request_url(&owner.origin, &request.path)?;
+    let cache_request = url.path() != "/api/workbench/availability";
     let mut builder = state.client.request(method.clone(), url);
     for (name, value) in &request.headers {
         if let (Ok(name), Ok(value)) = (
@@ -662,7 +663,7 @@ pub async fn mobile_gateway_request(
                 .lock()
                 .map_err(|_| "mobile gateway state is unavailable")?;
             session.require_owner(&owner)?;
-            if method == Method::GET {
+            if cache_request && method == Method::GET {
                 if let Some(cached) = session.cached(&owner, &key)? {
                     return Ok(cached);
                 }
@@ -673,7 +674,7 @@ pub async fn mobile_gateway_request(
     collect_gateway_response(
         response,
         &request.path,
-        Some((&method, &key)),
+        cache_request.then_some((&method, key.as_str())),
         &owner,
         &state,
     )

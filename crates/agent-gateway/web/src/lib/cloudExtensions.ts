@@ -118,9 +118,9 @@ class ExtensionRequestRejected extends Error {
     super(message);
   }
 }
-async function request(path: string, init?: RequestInit) {
+async function request(transport: typeof accountFetch, path: string, init?: RequestInit) {
   const guard = captureAccountRequestGuard();
-  const response = await accountFetch(`/api/web-chat/extensions${path}`, {
+  const response = await transport(`/api/web-chat/extensions${path}`, {
     credentials: "include",
     ...init,
   });
@@ -150,7 +150,11 @@ async function request(path: string, init?: RequestInit) {
   }
   return result;
 }
-export function createCloudExtensionsAdapter(scope: string): ExtensionsAdapter {
+export function createCloudExtensionsAdapter(
+  scope: string,
+  transport = accountFetch,
+): ExtensionsAdapter {
+  const send = (path: string, init?: RequestInit) => request(transport, path, init);
   let writeUnconfirmed = false;
   let generation = 0;
   let writing = false;
@@ -161,7 +165,7 @@ export function createCloudExtensionsAdapter(scope: string): ExtensionsAdapter {
     generation++;
     try {
       return parseExtensionCatalog(
-        await request(path, {
+        await send(path, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -183,13 +187,13 @@ export function createCloudExtensionsAdapter(scope: string): ExtensionsAdapter {
     },
     async list(signal) {
       const readingGeneration = generation;
-      const catalog = parseExtensionCatalog(await request("", { signal }));
+      const catalog = parseExtensionCatalog(await send("", { signal }));
       if (readingGeneration === generation && !writing) writeUnconfirmed = false;
       return catalog;
     },
     async read(id, signal, revision) {
       const query = revision === undefined ? "" : `?revision=${revision}`;
-      const value = await request(`/${encodeURIComponent(id)}${query}`, { signal }).catch(
+      const value = await send(`/${encodeURIComponent(id)}${query}`, { signal }).catch(
         (cause: unknown) => {
           if (
             cause instanceof ExtensionRequestRejected &&
@@ -205,7 +209,7 @@ export function createCloudExtensionsAdapter(scope: string): ExtensionsAdapter {
       return { revision: value.revision, version: value.version as number };
     },
     async readDraft(id, signal) {
-      const value = await request(`/drafts/${encodeURIComponent(id)}`, { signal });
+      const value = await send(`/drafts/${encodeURIComponent(id)}`, { signal });
       if (
         !record(value) ||
         (value.kind !== "plugin" && value.kind !== "skill") ||

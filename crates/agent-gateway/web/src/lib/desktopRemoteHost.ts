@@ -6,6 +6,7 @@ import type {
 import type { WorkbenchNavigationPortal } from "@liveagent/ui/application/workbenchNavigationPortal";
 import type { AppSettings } from "@liveagent/ui/lib/settings/types";
 import type { CloudChatPresentationResource } from "./cloudChatPresentation";
+import type { CloudWorkspaceAvailability } from "./cloudWorkspaceAvailability";
 import type { CloudTaskReaderRoute } from "./cloudChatRoute";
 import type { CloudTaskConversationSelection } from "./cloudSchedules";
 import type { ExecutionEnvironment, ExecutionSelection } from "./executionTargets";
@@ -23,6 +24,7 @@ export type DesktopAccountLayout = WorkbenchAccountLayout;
 
 export type DesktopCloudHost = {
   kind: "cloud";
+  workspaceAvailability?: CloudWorkspaceAvailability;
   accountScope: string;
   gatewayOrigin: string;
   accountUser: RelayUser;

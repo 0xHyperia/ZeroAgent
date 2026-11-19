@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { RenderWorkbenchPageHeader } from "../../application/AppWorkbenchChrome";
 import {
   type CSSProperties,
   type MouseEvent,
@@ -214,6 +215,7 @@ function ExtensionsNavigationFrame({
   shared,
   title,
   preview,
+  mobileRail,
   sidebarLayout,
   children,
   target,
@@ -221,6 +223,7 @@ function ExtensionsNavigationFrame({
   shared?: boolean;
   title: string;
   preview?: boolean;
+  mobileRail?: ReactNode;
   sidebarLayout: ReturnType<typeof useSidebarWidthLayout>;
   children: ReactNode;
   target?: HTMLElement | null;
@@ -231,6 +234,7 @@ function ExtensionsNavigationFrame({
         <Sidebar
           label={title}
           previewOpen={preview}
+          mobileRail={mobileRail}
           className="bg-background"
           data-sidebar-preview-region=""
         >
@@ -269,6 +273,7 @@ function ExtensionsMobileSidebarTrigger() {
 }
 
 type ExtensionsWorkspaceProps = {
+  readOnly?: boolean;
   adapter: ExtensionsAdapter;
   catalog: ExtensionCatalog | null;
   loading: boolean;
@@ -285,11 +290,13 @@ type ExtensionsWorkspaceProps = {
   location?: ExtensionWorkspaceLocation;
   onNavigate?: (location: ExtensionWorkspaceLocation) => void;
   sharedSidebar?: boolean;
+  mobileRail?: ReactNode;
   /** undefined keeps the browser layout; null leaves sidebar navigation to the host. */
   sidebarTarget?: HTMLElement | null;
   sidebarOnly?: boolean;
   previewOpen?: boolean;
   onPinSidebar?: () => void;
+  renderWorkbenchHeader?: RenderWorkbenchPageHeader;
 };
 
 export function ExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
@@ -445,6 +452,10 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
   }, [hasCatalog, isDirectoryPage, props.loading, props.sidebarOnly, scrollRoute]);
   const [installedSearchOpen, setInstalledSearchOpen] = useState(false);
   const [installedQuery, setInstalledQuery] = useState("");
+  const [publicOverviewId, setPublicOverviewId] = useState<string>();
+  const publicOverview = props.readOnly
+    ? catalog?.packages.find((item) => item.id === publicOverviewId && item.visibility === "public")
+    : undefined;
   const installedSearchInput = useRef<HTMLInputElement>(null);
   const installedSearchButton = useRef<HTMLButtonElement>(null);
   const sourceOptions = [
@@ -452,7 +463,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
     ["personal", copy("个人", "Personal")],
   ] as const;
   const [localSelection, setLocalSelection] = useState<SkillSelection | null>(null);
-  const reader = props.location?.reader;
+  const reader = props.readOnly ? undefined : props.location?.reader;
   const readerPackage = reader && catalog?.packages.find((item) => item.id === reader.id);
   const archivedSkill =
     reader?.revision && reader.skillName
@@ -581,6 +592,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
     });
   };
   const openReader = (selection: SkillSelection, element: HTMLButtonElement) => {
+    if (props.readOnly) return;
     readerOpener.current = {
       element,
       route: scrollRoute,
@@ -630,7 +642,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
   const trialStatusId = useId();
   const upload = useRef<HTMLInputElement>(null);
   const editorDirty = useRef(false);
-  const writeBlocked = busy || !!adapter.writeUnconfirmed || props.loading;
+  const writeBlocked = props.readOnly || busy || !!adapter.writeUnconfirmed || props.loading;
   const removalName = remove ? extensionDisplayName(remove, locale) : "";
   const removalEntry = remove && catalog?.packages.find((item) => item.id === remove.id);
   const removalNeedsCheck =
@@ -760,6 +772,10 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
     }
   }, [busy, originalReader, pkg?.installed]);
   const navigate = (next: Route, force = false, readerReturn?: ReaderManagementReturn) => {
+    if (props.readOnly && next.page !== "plugins" && next.page !== "skills") {
+      if (next.page === "plugin") setPublicOverviewId(next.id);
+      return;
+    }
     if (!force && route.page === "editor" && editorDirty.current) {
       setPendingRoute({ route: next });
       return;
@@ -1020,6 +1036,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
             sidebar ? (
               <SidebarMenuAction
                 type="button"
+                disabled={props.readOnly}
                 showOnHover
                 aria-label={copy(
                   `已安装插件 ${label}的操作`,
@@ -1030,6 +1047,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
               <Button
                 variant="ghost"
                 size="icon"
+                disabled={props.readOnly}
                 aria-label={copy(`${actionLabel}的操作`, `Actions for ${actionLabel}`)}
                 title={copy("更多", "More")}
               />
@@ -1120,6 +1138,119 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
       }
     />
   ) : null;
+  const directoryTabs = (
+    <div className="za-extensions-mobile-nav-tabs">
+      <Button
+        variant={route.page === "plugins" ? "secondary" : "ghost"}
+        data-cloud-view-navigation=""
+        onClick={() => navigate({ page: "plugins" })}
+      >
+        {copy("插件", "Plugins")}
+      </Button>
+      <Button
+        variant={route.page === "skills" ? "secondary" : "ghost"}
+        data-cloud-view-navigation=""
+        onClick={() => navigate({ page: "skills" })}
+      >
+        {copy("技能", "Skills")}
+      </Button>
+    </div>
+  );
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      title={backLabel}
+      aria-label={backLabel}
+      data-cloud-view-navigation=""
+      onClick={props.onBack}
+    >
+      <ArrowLeft className="size-4" />
+    </Button>
+  );
+  const closeSidebarLabel = props.mobileRail ? copy("关闭边栏", "Close sidebar") : undefined;
+  const sidebarHeader = (
+    <SidebarHeader className="px-3 pb-2 pt-2.5">
+      <SidebarHeaderRow
+        actions={
+          <>
+            <Button
+              ref={installedSearchButton}
+              data-cloud-view-navigation=""
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground"
+              title={installedSearchLabel}
+              aria-label={installedSearchLabel}
+              aria-expanded={installedSearchOpen}
+              onClick={() => {
+                if (installedSearchOpen) closeInstalledSearch();
+                else {
+                  setInstalledSearchOpen(true);
+                  requestAnimationFrame(() => installedSearchInput.current?.focus());
+                }
+              }}
+            >
+              <Search className="size-4" />
+            </Button>
+            {props.sharedSidebar && (
+              <SidebarTrigger
+                showShortcut={!props.previewOpen && !props.mobileRail}
+                title={closeSidebarLabel}
+                aria-label={
+                  closeSidebarLabel ??
+                  (props.previewOpen ? copy("固定边栏", "Pin sidebar") : undefined)
+                }
+                className="text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  if (props.previewOpen) {
+                    event.preventDefault();
+                    props.onPinSidebar?.();
+                  }
+                }}
+              >
+                {props.mobileRail ? <X className="size-4" /> : undefined}
+              </SidebarTrigger>
+            )}
+          </>
+        }
+      >
+        {!props.mobileRail && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={backLabel}
+            aria-label={backLabel}
+            data-cloud-view-navigation=""
+            onClick={props.onBack}
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
+        )}
+        <h2 className="min-w-0 flex-1 truncate text-[17px] font-semibold leading-6">
+          {customizeLabel}
+        </h2>
+      </SidebarHeaderRow>
+      {installedSearchOpen && (
+        <Input
+          ref={installedSearchInput}
+          data-cloud-view-navigation=""
+          className="mt-2 h-8"
+          type="search"
+          aria-label={copy("筛选已安装的插件", "Filter installed plugins")}
+          placeholder={installedSearchLabel}
+          value={installedQuery}
+          onChange={(event) => setInstalledQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            closeInstalledSearch();
+          }}
+        />
+      )}
+    </SidebarHeader>
+  );
   return (
     <div
       ref={host}
@@ -1138,78 +1269,12 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
           target={props.sidebarTarget}
           title={customizeLabel}
           preview={props.previewOpen}
+          mobileRail={props.mobileRail}
         >
-          <ScrollArea className="h-full">
+          {props.mobileRail && sidebarHeader}
+          <ScrollArea className={props.mobileRail ? "min-h-0 flex-1" : "h-full"}>
             <aside>
-              <SidebarHeader className="px-3 pb-2 pt-2.5">
-                <SidebarHeaderRow
-                  actions={
-                    <>
-                      <Button
-                        ref={installedSearchButton}
-                        variant="ghost"
-                        size="icon-sm"
-                        title={installedSearchLabel}
-                        aria-label={installedSearchLabel}
-                        aria-expanded={installedSearchOpen}
-                        onClick={() => {
-                          if (installedSearchOpen) closeInstalledSearch();
-                          else {
-                            setInstalledSearchOpen(true);
-                            requestAnimationFrame(() => installedSearchInput.current?.focus());
-                          }
-                        }}
-                      >
-                        <Search className="size-4" />
-                      </Button>
-                      {props.sharedSidebar && (
-                        <SidebarTrigger
-                          showShortcut={!props.previewOpen}
-                          aria-label={
-                            props.previewOpen ? copy("固定边栏", "Pin sidebar") : undefined
-                          }
-                          onClick={(event) => {
-                            if (props.previewOpen) {
-                              event.preventDefault();
-                              props.onPinSidebar?.();
-                            }
-                          }}
-                        />
-                      )}
-                    </>
-                  }
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    title={backLabel}
-                    aria-label={backLabel}
-                    onClick={props.onBack}
-                  >
-                    <ArrowLeft className="size-4" />
-                  </Button>
-                  <h2 className="min-w-0 flex-1 truncate text-[17px] font-semibold leading-6">
-                    {customizeLabel}
-                  </h2>
-                </SidebarHeaderRow>
-                {installedSearchOpen && (
-                  <Input
-                    ref={installedSearchInput}
-                    className="mt-2 h-8"
-                    type="search"
-                    aria-label={copy("筛选已安装的插件", "Filter installed plugins")}
-                    placeholder={installedSearchLabel}
-                    value={installedQuery}
-                    onChange={(event) => setInstalledQuery(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      closeInstalledSearch();
-                    }}
-                  />
-                )}
-              </SidebarHeader>
+              {!props.mobileRail && sidebarHeader}
               <SidebarContent className="overflow-visible pb-3">
                 <SidebarGroup className="px-3">
                   <nav aria-label={customizeLabel}>
@@ -1220,6 +1285,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                           className="za-extension-nav sidebar-list-row min-h-9 rounded-lg"
                           isActive={pluginDirectoryActive}
                           aria-current={pluginDirectoryActive ? "page" : undefined}
+                          data-cloud-view-navigation=""
                           onClick={() => navigate({ page: "plugins" })}
                         >
                           <span className="flex size-5 shrink-0 items-center justify-center">
@@ -1234,6 +1300,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                           className="za-extension-nav sidebar-list-row min-h-9 rounded-lg"
                           isActive={skillDirectoryActive}
                           aria-current={skillDirectoryActive ? "page" : undefined}
+                          data-cloud-view-navigation=""
                           onClick={() => navigate({ page: "skills" })}
                         >
                           <span className="flex size-5 shrink-0 items-center justify-center">
@@ -1258,6 +1325,8 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                         <SidebarMenuItem key={item.id}>
                           <SidebarMenuButton
                             type="button"
+                            data-cloud-view-navigation={props.readOnly ? "" : undefined}
+                            aria-haspopup={props.readOnly ? "dialog" : undefined}
                             className="za-extension-nav sidebar-list-row min-h-9 rounded-lg pr-8"
                             isActive={pkg?.id === item.id}
                             aria-current={pkg?.id === item.id ? "page" : undefined}
@@ -1307,50 +1376,39 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
         {props.sharedSidebar &&
         props.sidebarTarget === undefined &&
         !props.sidebarOnly &&
+        !props.renderWorkbenchHeader &&
         route.page !== "editor" ? (
           <ExtensionsSidebarOpener />
         ) : null}
-        <div className="za-extensions-mobile-nav">
-          {props.onOpenDeviceSettings && (
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
-                {deviceScope}
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {deviceEntries.map(({ id, name, icon: Icon }) => (
-                  <DropdownMenuItem key={id} onClick={() => props.onOpenDeviceSettings?.(id)}>
-                    <Icon className="size-4" />
-                    {name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            title={backLabel}
-            aria-label={backLabel}
-            onClick={props.onBack}
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-          {props.sharedSidebar && props.sidebarTarget === undefined && route.page !== "editor" ? (
-            <ExtensionsMobileSidebarTrigger />
-          ) : null}
-          <Button
-            variant={route.page === "plugins" ? "secondary" : "ghost"}
-            onClick={() => navigate({ page: "plugins" })}
-          >
-            {copy("插件", "Plugins")}
-          </Button>
-          <Button
-            variant={route.page === "skills" ? "secondary" : "ghost"}
-            onClick={() => navigate({ page: "skills" })}
-          >
-            {copy("技能", "Skills")}
-          </Button>
-        </div>
+        {props.renderWorkbenchHeader ? (
+          props.renderWorkbenchHeader({
+            title: directoryTabs,
+            actions: <div className="za-extensions-mobile-nav-tabs">{backButton}</div>,
+          })
+        ) : (
+          <div className="za-extensions-mobile-nav">
+            {props.onOpenDeviceSettings && (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+                  {deviceScope}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {deviceEntries.map(({ id, name, icon: Icon }) => (
+                    <DropdownMenuItem key={id} onClick={() => props.onOpenDeviceSettings?.(id)}>
+                      <Icon className="size-4" />
+                      {name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {backButton}
+            {props.sharedSidebar && props.sidebarTarget === undefined && route.page !== "editor" ? (
+              <ExtensionsMobileSidebarTrigger />
+            ) : null}
+            {directoryTabs}
+          </div>
+        )}
         {pkg && (route.page === "plugin" || route.page === "manage") && (
           <nav
             className="za-extension-breadcrumb"
@@ -1460,6 +1518,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                       <Search className="size-4" />
                       <Input
                         id={searchId}
+                        data-cloud-view-navigation=""
                         aria-label={searchLabel}
                         placeholder={searchLabel}
                         maxLength={maxDirectoryQueryLength}
@@ -1473,6 +1532,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                       <Button
                         variant="outline"
                         className="za-extension-manage-installed rounded-full"
+                        data-cloud-view-navigation=""
                         aria-label={copy("管理已安装插件", "Manage installed plugins")}
                         title={copy("管理已安装插件", "Manage installed plugins")}
                         onClick={() =>
@@ -1568,6 +1628,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                     <div className="za-extension-filters">
                       <TabsList
                         variant="plain"
+                        data-cloud-view-navigation=""
                         activateOnFocus
                         aria-label={copy("内容来源", "Source")}
                         className="za-extension-source-tabs"
@@ -1585,6 +1646,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                               ref={installationFilter}
                               variant="ghost"
                               size="sm"
+                              data-cloud-view-navigation=""
                               className="rounded-full"
                               aria-label={copy("安装状态", "Installation status")}
                               aria-describedby={installationValueId}
@@ -1600,7 +1662,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                           </span>
                           <ChevronDown className="size-3" />
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" data-cloud-view-navigation="">
                           <DropdownMenuRadioGroup
                             value={installation}
                             onValueChange={(value) => {
@@ -1645,7 +1707,12 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                                     <ExtensionDirectoryItem
                                       key={item.id}
                                       item={item}
+                                      summaryOnly={props.readOnly}
                                       onOpen={(event) => {
+                                        if (props.readOnly) {
+                                          setPublicOverviewId(item.id);
+                                          return;
+                                        }
                                         if (item.kind === "skill") {
                                           openReader(
                                             { pkg: item, skill: item.skills[0] },
@@ -1752,6 +1819,7 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
                                 {searchRecovery && (
                                   <Button
                                     variant="outline"
+                                    data-cloud-view-navigation=""
                                     className="h-auto min-h-11 max-w-full whitespace-normal rounded-full text-center"
                                     onClick={(event) => {
                                       searchRecoveryFocus.current = event.currentTarget;
@@ -2256,7 +2324,34 @@ function ScopedExtensionsWorkspace(props: ExtensionsWorkspaceProps) {
           </DialogContent>
         </Dialog>
       )}
-      {readerTarget && (
+      {publicOverview && (
+        <Dialog open onOpenChange={(open) => !open && setPublicOverviewId(undefined)}>
+          <DialogContent
+            className="w-[calc(100%-2rem)] max-w-md p-6"
+            showCloseButton
+            closeLabel={copy("关闭", "Close")}
+          >
+            <ExtensionMark id={publicOverview.id} />
+            <DialogTitle className="mt-3">
+              {extensionDisplayName(publicOverview, locale)}
+            </DialogTitle>
+            <DialogDescription className="mt-2 whitespace-pre-wrap">
+              {publicOverview.kind === "plugin"
+                ? extensionOverview(publicOverview, locale)
+                : extensionDescription(publicOverview, locale)}
+            </DialogDescription>
+            <StatusNotice
+              compact
+              className="mt-3"
+              message={copy(
+                "云端工作区开放后可查看完整内容。",
+                "Full content will be available when the cloud workspace opens.",
+              )}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+      {readerTarget && !props.readOnly && (
         <SkillReader
           key={`${adapter.scope}:${readerTarget.id}:${readerTarget.revision ?? ""}:${readerTarget.skillName ?? ""}`}
           adapter={adapter}
@@ -2563,9 +2658,9 @@ function SkillReader({
       : undefined;
   const selectedSkill =
     loadedSkill ?? (pinnedRevision && pinnedRevision !== pkg?.version ? undefined : skill);
-  const skillDisabled = pkg?.kind === "plugin" && pkg.disabled_skills?.some(
-    (name) => name === skillName || name === selectedSkill?.name,
-  );
+  const skillDisabled =
+    pkg?.kind === "plugin" &&
+    pkg.disabled_skills?.some((name) => name === skillName || name === selectedSkill?.name);
   const disabledReason =
     catalogAvailable && pkg?.installed && (!pkg.enabled || skillDisabled)
       ? !pkg.enabled && pkg.kind === "plugin"

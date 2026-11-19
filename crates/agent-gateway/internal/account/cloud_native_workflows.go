@@ -18,7 +18,7 @@ type cloudWorkflowPresentation struct {
 	Examples []string
 }
 
-func cloudNativeWorkflow(id, kind string, base CloudExtensionRevision) CloudExtensionRevision {
+func cloudNativeWorkflow(id, kind string, base CloudExtensionRevision, catalogOnly bool) CloudExtensionRevision {
 	type presentation struct {
 		name, description, overview string
 		examples                    []string
@@ -45,7 +45,7 @@ func cloudNativeWorkflow(id, kind string, base CloudExtensionRevision) CloudExte
 	next.Native = &cloudWorkflowPresentation{Overview: info.overview, Examples: info.examples}
 	next.Files = maps.Clone(base.Files)
 	next.Skills = append([]CloudExtensionSkill(nil), base.Skills...)
-	overlayCloudNativeFiles(next.Files, "skills-native/"+id)
+	overlayCloudNativeFiles(next.Files, "skills-native/"+id, catalogOnly)
 	for i := range next.Skills {
 		skill := &next.Skills[i]
 		_, skill.Description = cloudSkillFrontmatter(next.Files[skill.Entry])
@@ -66,10 +66,13 @@ func cloudNativeWorkflow(id, kind string, base CloudExtensionRevision) CloudExte
 	return next
 }
 
-func overlayCloudNativeFiles(files map[string]string, root string) {
+func overlayCloudNativeFiles(files map[string]string, root string, catalogOnly bool) {
 	err := fs.WalkDir(cloudNativeWorkflows, root, func(name string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
+		}
+		if catalogOnly && entry.Name() != "SKILL.md" {
+			return nil
 		}
 		raw, err := cloudNativeWorkflows.ReadFile(name)
 		if err == nil {

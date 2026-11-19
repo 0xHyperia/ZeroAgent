@@ -43,6 +43,7 @@ func TestDeviceSkillSnapshotUsesDesktopAccountAndSameRevisionAsCloud(t *testing.
 	defer platform.Close()
 	store := NewMemoryStore()
 	service := NewService(store, NewUSAClientWithHTTPClient(platform.URL, platform.Client(), ""), time.Hour, time.Hour)
+	service.EnableCloudWorkspace()
 	mux := http.NewServeMux()
 	NewHTTPHandler(service, true).Register(mux)
 	ctx := context.Background()

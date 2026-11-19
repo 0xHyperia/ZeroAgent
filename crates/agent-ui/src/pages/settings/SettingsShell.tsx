@@ -203,6 +203,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
               >
                 <button
                   type="button"
+                  data-cloud-view-navigation=""
                   onClick={onBack}
                   aria-keyshortcuts="Escape"
                   className={cn(
@@ -228,6 +229,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                     className={web ? "max-[820px]:hidden" : undefined}
                     title={props.backLabel ?? t("settings.backToChatHint")}
                     aria-label={props.backLabel ?? t("settings.backToChat")}
+                    data-cloud-view-navigation=""
                     onClick={onBack}
                     aria-keyshortcuts="Escape"
                   >
@@ -238,6 +240,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
               ) : (
                 <button
                   type="button"
+                  data-cloud-view-navigation=""
                   onClick={onBack}
                   aria-keyshortcuts="Escape"
                   title={props.backLabel ?? t("settings.backToChatHint")}

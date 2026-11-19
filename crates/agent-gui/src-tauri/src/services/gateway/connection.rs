@@ -105,7 +105,7 @@ pub(crate) struct GatewayOutboundSender {
 }
 
 impl GatewayOutboundSender {
-    #[cfg(windows)]
+    #[cfg(desktop)]
     pub(super) async fn closed(&self) {
         self.lane.tx.closed().await;
     }

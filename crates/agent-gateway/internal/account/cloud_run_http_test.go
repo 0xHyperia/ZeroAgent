@@ -47,6 +47,7 @@ func newCloudHTTPFixtureWithPlatform(t *testing.T, generate, platform http.Handl
 	}))
 	t.Cleanup(usa.Close)
 	fixture.service = NewService(fixture.store, NewUSAClientWithHTTPClient(usa.URL, usa.Client()), time.Hour, time.Hour)
+	fixture.service.EnableCloudWorkspace()
 	t.Cleanup(fixture.service.CloseCloudRuns)
 	for _, session := range []*Session{
 		{ID: "synthetic-browser-cookie", UserID: 1, AccessToken: "synthetic-access-token", RefreshToken: "synthetic-refresh-token", AccessExpiresAt: time.Now().Add(time.Hour), SessionExpiresAt: time.Now().Add(time.Hour)},

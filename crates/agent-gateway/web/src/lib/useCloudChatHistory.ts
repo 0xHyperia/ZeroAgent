@@ -102,6 +102,7 @@ export function useCloudChatHistory({
   owner,
   active,
   listen = true,
+  rememberBrowseLocation = true,
   route,
   conversation,
   apply,
@@ -111,6 +112,7 @@ export function useCloudChatHistory({
   owner: number;
   active: boolean;
   listen?: boolean;
+  rememberBrowseLocation?: boolean;
   route: CloudChatRoute;
   conversation: string;
   apply: (location: ReturnType<typeof readCloudChatLocation>) => void;
@@ -185,7 +187,7 @@ export function useCloudChatHistory({
     ) {
       write(push ? "pushState" : "replaceState", entry, href);
     }
-    if (!sameOwner || previous.href !== href) {
+    if (rememberBrowseLocation && (!sameOwner || previous.href !== href)) {
       const host = getDesktopCloudHost();
       if (!host || (host.accountUser.id === owner && host.isCurrent())) {
         const browseOwner = host?.accountScope ?? owner;

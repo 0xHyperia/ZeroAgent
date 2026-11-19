@@ -65,6 +65,7 @@ func TestHTTPRefreshRejectsStaleAccountBeforeTokenUse(t *testing.T) {
 	platform := newRotatingAccountServer(t)
 	session := seedRefreshingSession(t, fixture)
 	service := NewService(fixture.store, platform.client(), time.Hour, time.Hour)
+	service.EnableCloudWorkspace()
 	mux := http.NewServeMux()
 	NewHTTPHandler(service, true).Register(mux)
 	for _, crossSite := range []bool{false, true} {

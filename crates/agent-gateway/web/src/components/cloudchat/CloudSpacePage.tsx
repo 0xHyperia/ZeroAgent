@@ -131,7 +131,8 @@ export function CloudSpaceCapacity({
 }) {
   const { locale } = useLocale();
   const zh = locale === "zh-CN";
-  const ratio = Math.min(100, (usage.used_bytes / usage.limit_bytes) * 100);
+  const ratio =
+    usage.limit_bytes > 0 ? Math.min(100, (usage.used_bytes / usage.limit_bytes) * 100) : 0;
   const Root = onClick ? "button" : "div";
   const used = cloudSpaceSize(usage.used_bytes);
   const total = cloudSpaceSize(usage.limit_bytes);
@@ -218,6 +219,7 @@ function SpaceSkeleton({ append = false }: { append?: boolean }) {
   );
 }
 type Props = {
+  readOnly?: boolean;
   browseOwner: number | string;
   client: CloudSpaceClient;
   files: CloudChatFilesClient;
@@ -1357,7 +1359,7 @@ export function CloudSpacePage(props: Props) {
     view === "grid" && !siteView && folders.length
       ? ["folders", ...folders, ...(documents.length ? ["files" as const, ...documents] : [])]
       : items;
-  const uploadBlocked = working || unconfirmed || Boolean(uploadCheck);
+  const uploadBlocked = props.readOnly || working || unconfirmed || Boolean(uploadCheck);
   const uploadNotStarted = (count: number) =>
     count > 0
       ? text(
@@ -1471,7 +1473,7 @@ export function CloudSpacePage(props: Props) {
           {siteView && props.onCreateWork ? (
             <Button
               className="cloud-space-create"
-              disabled={working || unconfirmed || !props.canReference}
+              disabled={props.readOnly || working || unconfirmed || !props.canReference}
               onClick={() => {
                 setWorkKind("site");
                 openEditor("work", []);
@@ -1483,7 +1485,12 @@ export function CloudSpacePage(props: Props) {
           ) : (
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button className="cloud-space-create" disabled={working || unconfirmed} />}
+                render={
+                  <Button
+                    className="cloud-space-create"
+                    disabled={props.readOnly || working || unconfirmed}
+                  />
+                }
               >
                 <Plus className="size-4" />
                 {text("用 AI 创建", "Create with AI")}

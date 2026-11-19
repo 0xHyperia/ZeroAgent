@@ -310,7 +310,7 @@ export function ConversationExecutionLocation({
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetTrigger render={trigger}>{triggerContent}</SheetTrigger>
-        <SheetPopup side="bottom" data-browser-back-surface="" className="za-mobile-choice-sheet" closeLabel={zh ? "关闭" : "Close"}>
+        <SheetPopup side="bottom" data-cloud-view-navigation="" data-browser-back-surface="" className="za-mobile-choice-sheet" closeLabel={zh ? "关闭" : "Close"}>
           <SheetHeader className="px-5 pb-2 pt-6 pr-16">
             <SheetTitle>{zh ? "选择设备" : "Choose a device"}</SheetTitle>
           </SheetHeader>
@@ -322,7 +322,7 @@ export function ConversationExecutionLocation({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger render={trigger}>{triggerContent}</DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64 max-w-[calc(100vw-1rem)]" align="start">{entries}</DropdownMenuContent>
+      <DropdownMenuContent data-cloud-view-navigation="" className="w-64 max-w-[calc(100vw-1rem)]" align="start">{entries}</DropdownMenuContent>
     </DropdownMenu>
   );
 }

@@ -146,11 +146,7 @@ func parseCloudRevisionManifest(files map[string]string, validate func(CloudExte
 
 var cloudFileSkillIDs = []string{"documents", "pdf", "spreadsheet", "presentations"}
 
-func declaredBuiltinCloudExtensions(root string, number int64) []CloudExtension {
-	return readBuiltinCloudExtensions(root, number, []string{"product-design", "imagegen", "plugin-creator", "skill-creator"})
-}
-
-func readBuiltinCloudExtensions(root string, number int64, ids []string) []CloudExtension {
+func readBuiltinCloudExtensions(root string, number int64, ids []string, catalogOnly bool) []CloudExtension {
 	result := []CloudExtension{}
 	for _, id := range ids {
 		files := map[string]string{}
@@ -160,9 +156,13 @@ func readBuiltinCloudExtensions(root string, number int64, ids []string) []Cloud
 			if err != nil || entry.IsDir() {
 				return err
 			}
+			relative := strings.TrimPrefix(name, prefix)
+			if catalogOnly && relative != "plugin.json" && relative != ".codex-plugin/plugin.json" && path.Base(relative) != "SKILL.md" {
+				return nil
+			}
 			body, err := cloudBuiltinSkills.ReadFile(name)
 			if err == nil && (!fileSkill || utf8.Valid(body) && !strings.ContainsRune(string(body), 0)) {
-				files[strings.TrimPrefix(name, prefix)] = string(body)
+				files[relative] = string(body)
 			}
 			return err
 		})

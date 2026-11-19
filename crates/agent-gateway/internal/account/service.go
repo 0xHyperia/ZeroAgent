@@ -35,6 +35,7 @@ type Service struct {
 	cloudRuntimeMu        sync.Mutex
 	cloudRuntime          *cloudRunRuntime
 	cloudRuntimeConfig    CloudRuntimeConfig
+	cloudWorkspaceEnabled bool
 	cloudSchedulesEnabled bool
 	cloudViewerMu         sync.Mutex
 	cloudViewers          map[int64]int
@@ -370,6 +371,19 @@ func (s *Service) ReleaseDeviceSessionPresence(
 	return s.store.ReleaseDeviceSessionPresence(ctx, deviceID, sessionID, s.now().UTC())
 }
 
+// EnableCloudWorkspace configures availability before the Gateway begins serving requests.
+func (s *Service) EnableCloudWorkspace() {
+	s.cloudWorkspaceEnabled = true
+}
+
+func cloudWorkspaceUnavailable() *APIError {
+	return &APIError{
+		Status:  http.StatusForbidden,
+		Message: "cloud workspace is not open",
+		Reason:  "CLOUD_WORKSPACE_UNAVAILABLE",
+	}
+}
+
 func (s *Service) ValidateSelection(ctx context.Context, controllerSessionID, leaseID string) (*Session, *SelectionLease, error) {
 	if strings.HasPrefix(strings.TrimSpace(controllerSessionID), desktopCloudAccessPrefix) {
 		return nil, nil, sessionMissingError()
@@ -381,6 +395,9 @@ func (s *Service) ValidateSelection(ctx context.Context, controllerSessionID, le
 	lease, err := s.store.GetSelectionLease(ctx, strings.TrimSpace(leaseID))
 	if err != nil || lease.UserID != session.UserID || lease.ControllerID != session.ID {
 		return nil, nil, &APIError{Status: http.StatusUnauthorized, Message: "selection lease is invalid or expired"}
+	}
+	if lease.RuntimeKind == RuntimeKindWebChat && !s.cloudWorkspaceEnabled {
+		return nil, nil, cloudWorkspaceUnavailable()
 	}
 	if lease.AgentID == "" {
 		lease.AgentID = canonicalAgentID(lease.DeviceID)
@@ -497,11 +514,15 @@ func (s *Service) Environments(ctx context.Context, userID int64, desktop bool, 
 	}
 	environments := make([]Environment, 0, len(devices)+1)
 	if !desktop {
+		capabilities := []string{}
+		if s.cloudWorkspaceEnabled {
+			capabilities = []string{"chat", "reasoning", "attachments", "model_native"}
+		}
 		environments = append(environments, Environment{
 			RuntimeKind: RuntimeKindWebChat, Name: "云端对话", Online: true,
 			Workspaces:        []Workspace{{ID: CloudWorkspaceID, Name: "云端对话"}},
 			TargetFingerprint: TargetFingerprint(RuntimeKindWebChat, "", CloudWorkspaceID),
-			Capabilities:      []string{"chat", "reasoning", "attachments", "model_native"},
+			Capabilities:      capabilities,
 		})
 	}
 	for _, device := range devices {
@@ -549,6 +570,9 @@ func (s *Service) SelectTarget(ctx context.Context, session *Session, input Sele
 	}
 	switch input.RuntimeKind {
 	case RuntimeKindWebChat:
+		if !s.cloudWorkspaceEnabled {
+			return nil, cloudWorkspaceUnavailable()
+		}
 		if input.DeviceID != "" || input.WorkspaceID != CloudWorkspaceID || input.Scope != SelectionScopeWorkspace {
 			return nil, &APIError{Status: http.StatusBadRequest, Message: "invalid web chat workspace"}
 		}

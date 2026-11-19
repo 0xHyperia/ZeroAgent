@@ -8,6 +8,11 @@ type AppWorkbenchChromeProps = ChatHeaderProps & {
   className?: string;
 };
 
+export type RenderWorkbenchPageHeader = (slots: {
+  title?: ReactNode;
+  actions?: ReactNode;
+}) => ReactNode;
+
 export function AppHeaderFrame({
   children,
   sidebarOpen = false,
