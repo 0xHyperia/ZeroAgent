@@ -285,6 +285,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
               )}
             >
               {visibleGroups.map(([groupKey, definitions], groupIndex) => (
+                // biome-ignore lint/a11y/useSemanticElements: The labelled navigation group uses display: contents in the compact layout.
                 <div
                   key={groupKey}
                   role="group"

@@ -41,7 +41,12 @@ function locationText(location: ExecutionLocation) {
   return [location.name, location.workspace].filter(Boolean).join(" · ");
 }
 
-function LocationAction({ sheet, closeOnClick, children, ...props }: {
+function LocationAction({
+  sheet,
+  closeOnClick,
+  children,
+  ...props
+}: {
   sheet: boolean;
   closeOnClick?: boolean;
   className: string;
@@ -52,10 +57,18 @@ function LocationAction({ sheet, closeOnClick, children, ...props }: {
   children: ReactNode;
 }) {
   if (!sheet) {
-    return <DropdownMenuItem closeOnClick={closeOnClick} {...props}>{children}</DropdownMenuItem>;
+    return (
+      <DropdownMenuItem closeOnClick={closeOnClick} {...props}>
+        {children}
+      </DropdownMenuItem>
+    );
   }
   return (
-    <Button variant="ghost" {...props} className={`h-auto w-full justify-start whitespace-normal rounded-xl px-3 text-left ${props.className}`}>
+    <Button
+      variant="ghost"
+      {...props}
+      className={`h-auto w-full justify-start whitespace-normal rounded-xl px-3 text-left ${props.className}`}
+    >
       {children}
     </Button>
   );
@@ -94,8 +107,16 @@ export function ConversationExecutionLocation({
   const content = (
     <>
       <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-      <span className={showDeviceType ? "flex min-w-0 flex-col items-start gap-0.5 leading-tight" : "min-w-0 truncate"}>
-        {showDeviceType && <span className="font-medium text-foreground">{zh ? "远程设备" : "Remote device"}</span>}
+      <span
+        className={
+          showDeviceType
+            ? "flex min-w-0 flex-col items-start gap-0.5 leading-tight"
+            : "min-w-0 truncate"
+        }
+      >
+        {showDeviceType && (
+          <span className="font-medium text-foreground">{zh ? "远程设备" : "Remote device"}</span>
+        )}
         <span className="max-w-full truncate">{current.name}</span>
       </span>
       {current.workspace && (
@@ -180,137 +201,159 @@ export function ConversationExecutionLocation({
   const actionHeight = mobileSheet ? "min-h-11" : "min-h-9";
   const trigger = (
     <Button
-            data-conversation-execution-location="workbench"
-            variant="ghost"
-            className={`shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground ${mobileSheet
-              ? compact ? "h-11 min-w-11 max-w-44" : "h-11 min-w-11 max-w-28 max-[380px]:max-w-24"
-              : "h-8 min-w-0 max-w-44 max-[640px]:max-w-28"}`}
-            title={switchLabel}
-            aria-label={switchLabel}
-            disabled={disabled}
+      data-conversation-execution-location="workbench"
+      variant="ghost"
+      className={`shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground ${
+        mobileSheet
+          ? compact
+            ? "h-11 min-w-11 max-w-44"
+            : "h-11 min-w-11 max-w-28 max-[380px]:max-w-24"
+          : "h-8 min-w-0 max-w-44 max-[640px]:max-w-28"
+      }`}
+      title={switchLabel}
+      aria-label={switchLabel}
+      disabled={disabled}
     />
   );
-  const triggerContent = <>{content}<ChevronDown aria-hidden="true" className="size-3 shrink-0" /></>;
+  const triggerContent = (
+    <>
+      {content}
+      <ChevronDown aria-hidden="true" className="size-3 shrink-0" />
+    </>
+  );
   const entries = (
     <>
-        {retryDirectory && (
-          <>
-            <p role="status" className="px-2.5 py-2 text-xs text-muted-foreground">
-              {refreshing
-                ? zh
-                  ? "正在加载设备…"
-                  : "Loading devices…"
-                : zh
-                  ? "暂时无法加载设备。"
-                  : "Couldn't load devices."}
+      {retryDirectory && (
+        <>
+          <p role="status" className="px-2.5 py-2 text-xs text-muted-foreground">
+            {refreshing
+              ? zh
+                ? "正在加载设备…"
+                : "Loading devices…"
+              : zh
+                ? "暂时无法加载设备。"
+                : "Couldn't load devices."}
+          </p>
+          <LocationAction
+            sheet={mobileSheet}
+            className={actionHeight}
+            closeOnClick={false}
+            disabled={refreshing || pending !== undefined}
+            onClick={() => {
+              setRefreshing(true);
+              void retryDirectory()
+                .catch(() => undefined)
+                .finally(() => setRefreshing(false));
+            }}
+          >
+            {zh ? "重新加载设备" : "Reload devices"}
+          </LocationAction>
+          {choices?.length ? <DropdownMenuSeparator /> : null}
+        </>
+      )}
+      {failure && (
+        <div className="sticky top-0 z-10 bg-popover">
+          <div role={pending ? "status" : "alert"} className="space-y-1 px-2.5 py-2 text-xs">
+            <p
+              className="line-clamp-2 break-words font-medium text-foreground"
+              title={failure.name}
+            >
+              {failure.name}
             </p>
-            <LocationAction sheet={mobileSheet}
-              className={actionHeight}
-              closeOnClick={false}
-              disabled={refreshing || pending !== undefined}
-              onClick={() => {
-                setRefreshing(true);
-                void retryDirectory()
-                  .catch(() => undefined)
-                  .finally(() => setRefreshing(false));
-              }}
-            >
-              {zh ? "重新加载设备" : "Reload devices"}
-            </LocationAction>
-            {choices?.length ? <DropdownMenuSeparator /> : null}
-          </>
-        )}
-        {failure && (
-          <div className="sticky top-0 z-10 bg-popover">
-            <div role={pending ? "status" : "alert"} className="space-y-1 px-2.5 py-2 text-xs">
-              <p
-                className="line-clamp-2 break-words font-medium text-foreground"
-                title={failure.name}
-              >
-                {failure.name}
-              </p>
-              {pending ? (
-                <p className="text-muted-foreground">{zh ? "正在连接…" : "Connecting…"}</p>
-              ) : (
-                <>
-                  <p className="line-clamp-3 break-words text-destructive" title={failure.message}>
-                    {failure.message}
-                  </p>
-                  {retryHint && <p className="text-muted-foreground">{retryHint}</p>}
-                </>
-              )}
-            </div>
-            {canRetry && originalChoice && (
-              <LocationAction sheet={mobileSheet}
-                className={actionHeight}
-                closeOnClick={false}
-                disabled={disabled || pending !== undefined}
-                aria-label={zh ? `重试 ${failure.name}` : `Retry ${failure.name}`}
-                onClick={() => void choose(originalChoice)}
-              >
-                {zh ? "重试" : "Retry"}
-              </LocationAction>
+            {pending ? (
+              <p className="text-muted-foreground">{zh ? "正在连接…" : "Connecting…"}</p>
+            ) : (
+              <>
+                <p className="line-clamp-3 break-words text-destructive" title={failure.message}>
+                  {failure.message}
+                </p>
+                {retryHint && <p className="text-muted-foreground">{retryHint}</p>}
+              </>
             )}
-            <DropdownMenuSeparator />
           </div>
-        )}
-        {choices?.map((choice) => {
-          const ChoiceIcon = icons[choice.kind];
-          return (
-            <LocationAction sheet={mobileSheet}
-              key={choice.id}
-              closeOnClick={false}
-              disabled={choice.offline || !!choice.unavailable || pending !== undefined}
-              aria-current={choice.selected || undefined}
-              className={mobileSheet ? "min-h-12 py-2 gap-3" : "min-h-9 gap-2"}
-              onClick={() => void choose(choice)}
-            >
-              <ChoiceIcon aria-hidden="true" className="size-4 shrink-0" />
-              <span
-                className={mobileSheet ? "min-w-0 flex-1 break-words" : "min-w-0 flex-1 truncate"}
-                title={locationText(choice)}
-              >
-                {locationText(choice)}
-              </span>
-              {(choice.offline || choice.unavailable) && (
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {choice.offline ? (zh ? "离线" : "Offline") : choice.unavailable}
-                </span>
-              )}
-              {pending === choice.id ? (
-                <Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin" />
-              ) : (
-                choice.selected && <Check aria-hidden="true" className="size-4 shrink-0" />
-              )}
-            </LocationAction>
-          );
-        })}
-        {onManageDevices && (
-          <>
-            <DropdownMenuSeparator />
-            {!retryDirectory && !choices?.some((choice) => choice.kind === "device") && (
-              <p className="px-2.5 py-2 text-xs text-muted-foreground">
-                {zh
-                  ? "登录 ZeroAgent 桌面端后，设备会出现在这里。"
-                  : "Sign in to ZeroAgent on your desktop to see the device here."}
-              </p>
-            )}
-            <LocationAction sheet={mobileSheet}
+          {canRetry && originalChoice && (
+            <LocationAction
+              sheet={mobileSheet}
               className={actionHeight}
-              disabled={pending !== undefined}
-              onClick={() => { onOpenChange(false); onManageDevices(); }}
+              closeOnClick={false}
+              disabled={disabled || pending !== undefined}
+              aria-label={zh ? `重试 ${failure.name}` : `Retry ${failure.name}`}
+              onClick={() => void choose(originalChoice)}
             >
-              {zh ? "管理设备" : "Manage devices"}
+              {zh ? "重试" : "Retry"}
             </LocationAction>
-          </>
-        )}
+          )}
+          <DropdownMenuSeparator />
+        </div>
+      )}
+      {choices?.map((choice) => {
+        const ChoiceIcon = icons[choice.kind];
+        return (
+          <LocationAction
+            sheet={mobileSheet}
+            key={choice.id}
+            closeOnClick={false}
+            disabled={choice.offline || !!choice.unavailable || pending !== undefined}
+            aria-current={choice.selected || undefined}
+            className={mobileSheet ? "min-h-12 py-2 gap-3" : "min-h-9 gap-2"}
+            onClick={() => void choose(choice)}
+          >
+            <ChoiceIcon aria-hidden="true" className="size-4 shrink-0" />
+            <span
+              className={mobileSheet ? "min-w-0 flex-1 break-words" : "min-w-0 flex-1 truncate"}
+              title={locationText(choice)}
+            >
+              {locationText(choice)}
+            </span>
+            {(choice.offline || choice.unavailable) && (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {choice.offline ? (zh ? "离线" : "Offline") : choice.unavailable}
+              </span>
+            )}
+            {pending === choice.id ? (
+              <Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin" />
+            ) : (
+              choice.selected && <Check aria-hidden="true" className="size-4 shrink-0" />
+            )}
+          </LocationAction>
+        );
+      })}
+      {onManageDevices && (
+        <>
+          <DropdownMenuSeparator />
+          {!retryDirectory && !choices?.some((choice) => choice.kind === "device") && (
+            <p className="px-2.5 py-2 text-xs text-muted-foreground">
+              {zh
+                ? "登录 ZeroAgent 桌面端后，设备会出现在这里。"
+                : "Sign in to ZeroAgent on your desktop to see the device here."}
+            </p>
+          )}
+          <LocationAction
+            sheet={mobileSheet}
+            className={actionHeight}
+            disabled={pending !== undefined}
+            onClick={() => {
+              onOpenChange(false);
+              onManageDevices();
+            }}
+          >
+            {zh ? "管理设备" : "Manage devices"}
+          </LocationAction>
+        </>
+      )}
     </>
   );
   if (mobileSheet) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetTrigger render={trigger}>{triggerContent}</SheetTrigger>
-        <SheetPopup side="bottom" data-cloud-view-navigation="" data-browser-back-surface="" className="za-mobile-choice-sheet" closeLabel={zh ? "关闭" : "Close"}>
+        <SheetPopup
+          side="bottom"
+          data-cloud-view-navigation=""
+          data-browser-back-surface=""
+          className="za-mobile-choice-sheet"
+          closeLabel={zh ? "关闭" : "Close"}
+        >
           <SheetHeader className="px-5 pb-2 pt-6 pr-16">
             <SheetTitle>{zh ? "选择设备" : "Choose a device"}</SheetTitle>
           </SheetHeader>
@@ -322,7 +365,13 @@ export function ConversationExecutionLocation({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger render={trigger}>{triggerContent}</DropdownMenuTrigger>
-      <DropdownMenuContent data-cloud-view-navigation="" className="w-64 max-w-[calc(100vw-1rem)]" align="start">{entries}</DropdownMenuContent>
+      <DropdownMenuContent
+        data-cloud-view-navigation=""
+        className="w-64 max-w-[calc(100vw-1rem)]"
+        align="start"
+      >
+        {entries}
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }

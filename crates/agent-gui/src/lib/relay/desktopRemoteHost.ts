@@ -153,7 +153,13 @@ function streamDeviceImageEvents(
       }
     };
     void call("account_remote_image_events", {
-      request: { sessionHandle, bridgeId, path, cursor: headers.get("last-event-id") ?? "0", streamId },
+      request: {
+        sessionHandle,
+        bridgeId,
+        path,
+        cursor: headers.get("last-event-id") ?? "0",
+        streamId,
+      },
       events,
     }).catch(fail);
   });
@@ -369,15 +375,25 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
           response = jsonResponse(value, init?.method === "DELETE" ? 204 : 200);
         } else {
           const request = new Request(url.href, { ...init, signal: undefined });
-          if (/^\/api\/image\/jobs\/[^/]+\/events$/.test(url.pathname) && request.method === "GET") {
+          if (
+            /^\/api\/image\/jobs\/[^/]+\/events$/.test(url.pathname) &&
+            request.method === "GET"
+          ) {
             return streamDeviceImageEvents(
-              call, session.sessionHandle, bridgeId, `${url.pathname}${url.search}`,
-              request.headers, requireCurrent, init?.signal,
+              call,
+              session.sessionHandle,
+              bridgeId,
+              `${url.pathname}${url.search}`,
+              request.headers,
+              requireCurrent,
+              init?.signal,
             );
           }
           const headers: Record<string, string> = {};
           for (const name of [
-            "content-type", "authorization", "x-zeroagent-workspace-path",
+            "content-type",
+            "authorization",
+            "x-zeroagent-workspace-path",
             ...(url.pathname.startsWith("/api/image/") ? ["accept", "idempotency-key"] : []),
           ]) {
             const value = request.headers.get(name);
@@ -400,7 +416,8 @@ export async function createDesktopRemoteHost(input: HostInput, dependencies: De
           });
           response = new Response(
             request.method === "HEAD" || result.status === 204 || result.status === 304
-              ? null : bytes(result.bodyBase64),
+              ? null
+              : bytes(result.bodyBase64),
             {
               status: result.status,
               headers: result.headers,

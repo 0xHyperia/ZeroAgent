@@ -55,28 +55,48 @@ export async function fetchDeviceImageIdentity(
     redirect: "error",
   });
   if (!response.ok) {
-    const code = response.status === 401 ? "IMAGE_AUTH_REQUIRED"
-      : response.status === 403 ? "IMAGE_FORBIDDEN"
-        : response.status === 503 ? "IMAGE_REMOTE_UPGRADE_REQUIRED" : "IMAGE_BACKEND_UNAVAILABLE";
+    const code =
+      response.status === 401
+        ? "IMAGE_AUTH_REQUIRED"
+        : response.status === 403
+          ? "IMAGE_FORBIDDEN"
+          : response.status === 503
+            ? "IMAGE_REMOTE_UPGRADE_REQUIRED"
+            : "IMAGE_BACKEND_UNAVAILABLE";
     throw new ImageClientError(code, response.status);
   }
   const value = await response.json();
-  if (value?.mode !== "device" || value.backendId !== selectedBackend ||
-      typeof value.ownerId !== "string" || !/^[1-9]\d*$/.test(value.ownerId)) {
+  if (
+    value?.mode !== "device" ||
+    value.backendId !== selectedBackend ||
+    typeof value.ownerId !== "string" ||
+    !/^[1-9]\d*$/.test(value.ownerId)
+  ) {
     throw new ImageClientError("IMAGE_PROTOCOL_ERROR");
   }
-  return { mode: "device", ownerId: value.ownerId, backendId: selectedBackend, gatewayOrigin: origin, accessToken: token };
+  return {
+    mode: "device",
+    ownerId: value.ownerId,
+    backendId: selectedBackend,
+    gatewayOrigin: origin,
+    accessToken: token,
+  };
 }
 
 export function useGatewayImageIdentity(token: string, supplied?: TrustedGatewayImageIdentity) {
   const [attempt, setAttempt] = useState(0);
   const [active, setActive] = useState<{
-    token: string; attempt: number; identity?: TrustedGatewayImageIdentity; error?: unknown;
+    token: string;
+    attempt: number;
+    identity?: TrustedGatewayImageIdentity;
+    error?: unknown;
   }>();
   useEffect(() => {
     if (supplied || !token.trim()) return;
     const controller = new AbortController();
-    const fetch = token.startsWith("selection.") ? fetchDeviceImageIdentity : fetchSingleUserImageIdentity;
+    const fetch = token.startsWith("selection.")
+      ? fetchDeviceImageIdentity
+      : fetchSingleUserImageIdentity;
     void fetch(gatewayOrigin(), token, controller.signal)
       .then((identity) => {
         if (!controller.signal.aborted) setActive({ token, attempt, identity });

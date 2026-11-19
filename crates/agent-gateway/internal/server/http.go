@@ -68,10 +68,9 @@ func NewHTTPServerWithReadiness(
 	rootMux.HandleFunc("GET /image-proxy", handler.ImageProxy(cfg.RequestTimeout))
 	rootMux.HandleFunc("GET /api/public/history-shares/{token}", publicHistoryShare(cfg, sm))
 	rootMux.Handle("GET /api/public/model-catalog", handler.NewModelCatalogProxy(cfg.ModelCatalogURL, cfg.RequestTimeout))
-	unavailableImages := http.Handler(&handler.ImageGateway{})
-	imageAPI := unavailableImages
+	var imageAPI http.Handler
 	if accounts == nil {
-		imageAPI = auth.HTTPMiddleware(cfg.Token, unavailableImages)
+		imageAPI = auth.HTTPMiddleware(cfg.Token, &handler.ImageGateway{})
 	} else {
 		imageAPI = protectedAPIHandler(cfg, sm, accounts)
 	}
