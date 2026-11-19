@@ -468,13 +468,17 @@ function WorkspaceFileTabPane({
     projectPathKey,
   } = options;
   const viewId = JSON.stringify([scope, tab.id]);
+  const [rangePreviewPath, setRangePreviewPath] = useState<string>();
+  const showingTextRange = rangePreviewPath === request.path;
   const previewKind = getWorkspacePreviewKind(request.path);
-  const canPreview = previewKind !== null;
+  const canPreview = previewKind !== null || showingTextRange;
   const isEditablePreview = isWorkspaceEditablePreviewPath(request.path);
-  const canEdit = !request.stagedAttachment && (!canPreview || isEditablePreview);
+  const canEdit =
+    !showingTextRange && !request.stagedAttachment && (!canPreview || isEditablePreview);
   const workspacePath = workspaceImageRelativePathForCopy(request.workdir, request.path);
   const liveMarkdown =
     previewKind === "markdown" &&
+    !showingTextRange &&
     !request.remote &&
     !request.stagedAttachment &&
     !!workspacePath &&
@@ -522,8 +526,8 @@ function WorkspaceFileTabPane({
   const [switching, setSwitching] = useState(false);
   const [previewRevision, setPreviewRevision] = useState(0);
   const previewRequest = useMemo(
-    () => ({ ...request, id: request.id + previewRevision }),
-    [request, previewRevision],
+    () => ({ ...request, id: request.id + previewRevision, textRange: showingTextRange }),
+    [request, previewRevision, showingTextRange],
   );
   const close = () => resources.requestCloseFile(tab.id);
   const openMode = async (next: WorkspaceFileMode) => {
@@ -742,7 +746,10 @@ function WorkspaceFileTabPane({
               openRequest={request}
               closeRequestId={tab.closeRequestId}
               onDirtyChange={(dirty) => resources.setFileDirty(tab.id, dirty, scope)}
-              onPreviewFile={() => void openMode("preview")}
+              onPreviewFile={(file) => {
+                if (file.textRange) setRangePreviewPath(file.path);
+                void openMode("preview");
+              }}
               onInsertCodeMention={onInsertCodeMention}
               onHide={close}
               onClose={() => resources.close(tab.id, scope)}

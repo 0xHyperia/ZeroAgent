@@ -12,7 +12,7 @@ index 93f1b04..eaa07e1 100644
  	// SSHManager is 1 where the native SSHManager tool runs SSH/SFTP for the
  	// hosts stored with GET/PUT /v1/settings/ssh.
  	SSHManager int `json:"ssh_manager"`
-@@ -155,31 +156,32 @@ func (s *Server) health() healthResponse {
+@@ -158,32 +159,33 @@ func (s *Server) health() healthResponse {
  		InstanceID:         s.instance.get(),
  		CapabilityRevision: capabilityRevision(),
  		Capabilities: healthCapabilities{
@@ -41,6 +41,7 @@ index 93f1b04..eaa07e1 100644
 -			MemoryOrganizerSettings: 1,
 -			SessionExternalRuns:     1,
 -			WebSearchFallback:       1,
+-			UsageStats:              1,
 +			SessionChanges:             2,
 +			SessionQueue:               1,
 +			ComputerSessionApproval:    1,
@@ -67,6 +68,7 @@ index 93f1b04..eaa07e1 100644
 +			MemoryOrganizerSettings:    1,
 +			SessionExternalRuns:        1,
 +			WebSearchFallback:          1,
++			UsageStats:                 1,
  		},
  		HostBridge: s.hostBridge.status(),
  	}

@@ -50,6 +50,7 @@ import {
   zoomImageViewerAtPoint,
 } from "@liveagent/ui/components/workspace-editor/workspaceImageViewer";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import type { SftpClient } from "@liveagent/ui/lib/sftp/types";
 import { copyTextToClipboard as copySharedTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
@@ -86,7 +87,14 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { TooltipButton } from "../ui/tooltip-button";
+import { WorkspaceTextRangePreview } from "./WorkspaceTextRangePreview";
+import type { EditorRemoteSource } from "./workspaceEditorFileIo";
 import type { WorkspaceHTMLLink } from "./workspaceHtmlDocument";
+import {
+  readWorkspaceTextRange,
+  WORKSPACE_EDITABLE_TEXT_MAX_BYTES,
+  type WorkspaceTextRange,
+} from "./workspaceTextRange";
 
 const WorkspaceHTMLPreview = lazy(() => import("./WorkspaceHTMLPreview"));
 const HTML_DOCUMENT = /\.html?$/i;
@@ -99,6 +107,8 @@ export type WorkspaceFilePreviewOpenRequest = {
   imagePaths?: string[];
   returnFocusTo?: HTMLElement;
   stagedAttachment?: { conversationId: string; path: string };
+  remote?: EditorRemoteSource;
+  textRange?: boolean;
 };
 
 type ReadWorkspacePreviewResponse = {
@@ -125,6 +135,7 @@ export type WorkspaceDocumentRevision = {
 
 export type WorkspaceFilePreviewOverlayProps = {
   openRequest: WorkspaceFilePreviewOpenRequest | null;
+  sftpClient?: SftpClient;
   isOpen: boolean;
   onOpenEditor: (request: WorkspaceFilePreviewOpenRequest) => void;
   onRequestClose: () => void;
@@ -323,7 +334,7 @@ function getPreviewIcon(kind: WorkspacePreviewKind): FileTypeIconComponent {
 }
 
 export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayProps) {
-  const { openRequest, isOpen, onOpenEditor, onRequestClose, onClose, reader } = props;
+  const { openRequest, isOpen, onOpenEditor, onRequestClose, onClose, reader, sftpClient } = props;
   const { t, locale } = useLocale();
   const closeAnimationTimeoutRef = useRef<number | null>(null);
   const loadSequenceRef = useRef(0);
@@ -332,6 +343,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
   const currentProps = useRef(props);
   currentProps.current = props;
   const [preview, setPreview] = useState<LoadedPreview | null>(null);
+  const [textRange, setTextRange] = useState<{ sequence: number; page: WorkspaceTextRange }>();
   const { onTabPreviewChange } = props;
   useLayoutEffect(() => {
     onTabPreviewChange?.(
@@ -355,6 +367,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
   const [revisionStop, setRevisionStop] = useState<() => boolean | Promise<boolean>>();
   const [stopState, setStopState] = useState<"stopping" | "failed" | null>(null);
   const revisionWatch = useRef<AbortController | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reset annotation progress when the reader changes file or closes.
   useEffect(() => {
     setRevisionStatus(null);
     setRevisionStop(undefined);
@@ -425,10 +438,19 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
       setLoading(true);
       setError(null);
       setActiveRequest(request);
+      setTextRange(undefined);
       if (!keepCurrentImagePreview && !keepPrevious) {
         replacePreview(null);
       }
       try {
+        if (!request.stagedAttachment && (request.textRange || request.remote)) {
+          const page = await readWorkspaceTextRange(request, 0, sftpClient);
+          if (loadSequenceRef.current !== sequence || !currentProps.current.isOpen) return;
+          if (!page) throw new Error(t("workspaceFilePreview.openFailed"));
+          replacePreview(null);
+          setTextRange({ sequence, page });
+          return true;
+        }
         const response = request.stagedAttachment
           ? await invokeFs<ReadWorkspacePreviewResponse>("fs_read_conversation_attachment", {
               conversation_id: request.stagedAttachment.conversationId,
@@ -479,7 +501,7 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
         }
       }
     },
-    [replacePreview, t],
+    [replacePreview, sftpClient, t],
   );
 
   useEffect(() => {
@@ -507,10 +529,14 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
   const canOpenEditor = Boolean(
     activePreviewRequest &&
       !activePreviewRequest.stagedAttachment &&
+      (!textRange || textRange.page.sizeBytes <= WORKSPACE_EDITABLE_TEXT_MAX_BYTES) &&
       isWorkspaceEditablePreviewPath(activePath),
   );
   const canOpenExternal = Boolean(
-    supportsExternalWorkspaceOpen && activePreviewRequest && activePath,
+    supportsExternalWorkspaceOpen &&
+      activePreviewRequest &&
+      !activePreviewRequest.remote &&
+      activePath,
   );
   const showHeaderOpenExternal = canOpenExternal && !canOpenEditor && kind !== "image";
 
@@ -657,29 +683,40 @@ export function WorkspaceFilePreviewOverlay(props: WorkspaceFilePreviewOverlayPr
           }
         }
       : undefined;
-  const previewBody = currentPreview && (
-    <PreviewBody
-      preview={currentPreview}
-      workdir={activePreviewRequest?.workdir ?? ""}
-      activePath={activePath}
-      imagePaths={imagePaths}
-      imageTransitionDirection={imageTransitionDirection}
-      isSwitchingImage={loading && currentPreview.kind === "image"}
-      stagedAttachment={Boolean(activePreviewRequest?.stagedAttachment)}
-      canOpenImageInSystemViewer={canOpenExternal && !activePreviewRequest?.stagedAttachment}
-      onOpenImageInSystemViewer={() => void openExternal()}
-      onOpenImagePath={openImagePath}
-      onActionError={setError}
-      reader={reader}
-      tabbed={props.tabbed && !activePreviewRequest?.stagedAttachment}
-      onOpenHTMLLink={props.onOpenHTMLLink}
-      readingViewId={props.readingViewId}
-      markdownSelectionActions={props.markdownSelectionActions}
-      assertCurrent={() => assertCurrent(currentPreview)}
-      onDownload={canDownload ? () => downloadPreview(currentPreview) : undefined}
-      onRequestRevision={requestRevision}
-    />
-  );
+  const previewBody =
+    textRange && activePreviewRequest ? (
+      <WorkspaceTextRangePreview
+        key={textRange.sequence}
+        initialPage={textRange.page}
+        wordWrap
+        editable={canOpenEditor}
+        readPage={(offset) => readWorkspaceTextRange(activePreviewRequest, offset, sftpClient)}
+      />
+    ) : (
+      currentPreview && (
+        <PreviewBody
+          preview={currentPreview}
+          workdir={activePreviewRequest?.workdir ?? ""}
+          activePath={activePath}
+          imagePaths={imagePaths}
+          imageTransitionDirection={imageTransitionDirection}
+          isSwitchingImage={loading && currentPreview.kind === "image"}
+          stagedAttachment={Boolean(activePreviewRequest?.stagedAttachment)}
+          canOpenImageInSystemViewer={canOpenExternal && !activePreviewRequest?.stagedAttachment}
+          onOpenImageInSystemViewer={() => void openExternal()}
+          onOpenImagePath={openImagePath}
+          onActionError={setError}
+          reader={reader}
+          tabbed={props.tabbed && !activePreviewRequest?.stagedAttachment}
+          onOpenHTMLLink={props.onOpenHTMLLink}
+          readingViewId={props.readingViewId}
+          markdownSelectionActions={props.markdownSelectionActions}
+          assertCurrent={() => assertCurrent(currentPreview)}
+          onDownload={canDownload ? () => downloadPreview(currentPreview) : undefined}
+          onRequestRevision={requestRevision}
+        />
+      )
+    );
 
   if (reader) {
     if (!isOpen || !activePreviewRequest) return null;

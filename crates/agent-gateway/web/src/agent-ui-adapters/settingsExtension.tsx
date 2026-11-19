@@ -186,12 +186,12 @@ function permissionRuleFromWire(rule: WirePermissionRule): PermissionRule {
   };
 }
 
-const permissionRulesClient = () => getGatewayWebSocketClient(loadToken().trim());
+const gatewayClient = () => getGatewayWebSocketClient(loadToken().trim());
 
 // Settings → 权限 on the WebUI: the desktop (or a direct K-brain target) answers through
 // the Gateway; an old desktop is refused by the Gateway with an "update ZeroAgent" message.
 computerSettingsAdapter.listPermissionRules = async ({ workspace }) => {
-  const list = await permissionRulesClient().permissionRules<{
+  const list = await gatewayClient().permissionRules<{
     project_root?: string;
     rules?: WirePermissionRule[];
   }>("list", workspace ? { workspace } : {});
@@ -202,10 +202,16 @@ computerSettingsAdapter.listPermissionRules = async ({ workspace }) => {
 };
 computerSettingsAdapter.addPermissionRule = async (input) =>
   permissionRuleFromWire(
-    await permissionRulesClient().permissionRules<WirePermissionRule>("add", { ...input }),
+    await gatewayClient().permissionRules<WirePermissionRule>("add", { ...input }),
   );
 computerSettingsAdapter.deletePermissionRule = async (ref) => {
-  await permissionRulesClient().permissionRules("delete", { ...ref });
+  await gatewayClient().permissionRules("delete", { ...ref });
 };
+
+// Settings → 用量统计 on the WebUI, read-only through the Gateway. The desktop (or a
+// direct K-brain target) answers `available: false` for a K-brain without the capability;
+// the Gateway checks the selected device's usage-statistics capability.
+computerSettingsAdapter.getUsageStats = (query) =>
+  gatewayClient().usageStats({ days: query.days, timezone: query.timezone });
 
 export const settingsHostAdapter = { isKbrain: true as const, kbrain: computerSettingsAdapter };

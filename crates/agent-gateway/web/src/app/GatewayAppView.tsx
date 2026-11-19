@@ -201,12 +201,10 @@ export function GatewayAppView({
   const desktopSettingsTarget = useWorkbenchNavigationTarget(desktopHost?.settingsNavigation);
   const [settingsRailTarget, setSettingsRailTarget] = useState<HTMLDivElement | null>(null);
   const navigationTarget = desktopSettingsTarget ?? settingsRailTarget;
-  const imageDeviceUnsupported = isEmbeddedMobileRuntime() && viewModel.imageStudioToken.startsWith("selection.");
+  const imageDeviceUnsupported =
+    isEmbeddedMobileRuntime() && viewModel.imageStudioToken.startsWith("selection.");
   const imageDeviceToken = imageDeviceUnsupported ? "" : viewModel.imageStudioToken;
-  const identity = useGatewayImageIdentity(
-    imageDeviceToken,
-    imageStudioIdentity,
-  );
+  const identity = useGatewayImageIdentity(imageDeviceToken, imageStudioIdentity);
   const imageStudio = useWebImageStudioHost(
     imageDeviceToken,
     identity.identity,
@@ -228,7 +226,14 @@ export function GatewayAppView({
       else if (identity.identity) retryImageHost();
       else retryImageIdentity();
     }
-  }, [identity.identity, imageDeviceOnline, imageDeviceToken, imageStudio.host, retryImageHost, retryImageIdentity]);
+  }, [
+    identity.identity,
+    imageDeviceOnline,
+    imageDeviceToken,
+    imageStudio.host,
+    retryImageHost,
+    retryImageIdentity,
+  ]);
   const chatFrameRef = useRef<HTMLDivElement | null>(null);
   useWindowFileDropGuard();
 
@@ -2220,15 +2225,23 @@ export function GatewayAppView({
                           </h1>
                           <p role="status" className="max-w-lg text-sm text-muted-foreground">
                             {imageDeviceUnsupported
-                              ? translate("imageStudio.gateway.mobileDeviceUnavailable", settings.locale)
+                              ? translate(
+                                  "imageStudio.gateway.mobileDeviceUnavailable",
+                                  settings.locale,
+                                )
                               : identity.pending
-                              ? translate("imageStudio.connecting", settings.locale)
-                              : identity.error
-                                ? gatewayImageErrorNotice(identity.error, (key) => translate(key, settings.locale))
-                                : imageStudio.unavailable}
+                                ? translate("imageStudio.connecting", settings.locale)
+                                : identity.error
+                                  ? gatewayImageErrorNotice(identity.error, (key) =>
+                                      translate(key, settings.locale),
+                                    )
+                                  : imageStudio.unavailable}
                           </p>
                           {imageDeviceToken && !identity.pending && (
-                            <Button variant="outline" onClick={identity.identity ? imageStudio.retry : identity.retry}>
+                            <Button
+                              variant="outline"
+                              onClick={identity.identity ? imageStudio.retry : identity.retry}
+                            >
                               {translate("imageStudio.retryConnect", settings.locale)}
                             </Button>
                           )}
@@ -2240,8 +2253,10 @@ export function GatewayAppView({
                           imageStudio.host && {
                             ...imageStudio.host,
                             reconnectVersion: imageReconnect,
-                            onOpenSettings: identity.identity?.mode === "device"
-                              ? undefined : () => openSettings("image-studio"),
+                            onOpenSettings:
+                              identity.identity?.mode === "device"
+                                ? undefined
+                                : () => openSettings("image-studio"),
                           }
                         }
                         settings={settings}
@@ -2945,13 +2960,22 @@ export function GatewayAppView({
                       ? () => selectNavigation("cron-hub", sidebar.isMobile)
                       : undefined
                   }
-                  imageClient={identity.identity?.mode === "device" ? undefined : imageStudio.host?.client}
+                  imageClient={
+                    identity.identity?.mode === "device" ? undefined : imageStudio.host?.client
+                  }
                   registerLeaveGuard={viewModel.registerSettingsLeaveGuard}
                   settings={{
                     ...settings,
                     system: { ...settings.system, workspaceProjects },
                   }}
-                  settingsHost={settingsHostAdapter}
+                  settingsHost={{
+                    ...settingsHostAdapter,
+                    usageScope: JSON.stringify([
+                      taskOwner,
+                      taskDeviceId,
+                      selection?.target_fingerprint,
+                    ]),
+                  }}
                   setSettings={setSettings}
                   saveState={settingsSaveState}
                   onBack={closeSettings}

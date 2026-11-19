@@ -1432,7 +1432,7 @@ export default function App() {
                     onRelayUserChange={acceptRelayUser}
                     onRelayStatsChange={setRelayStats}
                     settings={settings}
-                    settingsHost={settingsHostAdapter}
+                    settingsHost={{ ...settingsHostAdapter, usageScope: relayUserId }}
                     onOpenModelPreferences={() => setModelPreferencesOpen(true)}
                     onOpenScheduledTasks={
                       localExecutionSelected && !cloudSelected && isTauriHost()

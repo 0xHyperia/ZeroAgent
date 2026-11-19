@@ -79,6 +79,7 @@ message GatewayEnvelope {
     HistoryResyncRequest history_resync = 110;
     PermissionRulesRequest permission_rules = 111;
     WorkspaceHandoffRequest workspace_handoff = 112;
+    UsageStatsRequest usage_stats = 113;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -174,6 +175,7 @@ message AgentEnvelope {
     HistorySyncSnapshot history_sync_snapshot = 118;
     PermissionRulesResponse permission_rules_resp = 119;
     WorkspaceHandoffResponse workspace_handoff_resp = 120;
+    UsageStatsResponse usage_stats_resp = 121;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -581,6 +583,7 @@ message SftpRequest {
   uint64 expected_mtime = 17;
   uint64 expected_size_bytes = 18;
   bool create_parent_dirs = 19;
+  string expected_content_hash = 20;
 }
 
 message SftpEntry {
@@ -618,6 +621,7 @@ message SftpResponse {
   uint64 bytes_read = 9;
   uint64 size_bytes = 10;
   bool truncated = 11;
+  string content_hash = 13;
 }
 
 message SftpEvent {
@@ -1387,6 +1391,22 @@ message PermissionRulesResponse {
   string result_json = 1;
 }
 
+// 设置 → 用量统计：K-brain 跨会话的 token 用量（GET /v1/usage/stats，capability usage_stats）。
+// 只读；桌面端或直连 K-brain 的网关只转发 days 和 tz 两个查询参数。
+message UsageStatsRequest {
+  // 统计最近多少天（含今天），1-1100（与 K-brain 一致）；0 取默认 371。
+  int32 days = 1;
+  // IANA 时区名（浏览器的 resolvedOptions().timeZone），按它划分日期；空串由 K-brain 用本机时区。
+  string timezone = 2;
+}
+
+message UsageStatsResponse {
+  // K-brain 的应答 JSON 原样返回（generatedAt/timezone/days/totals/summary/daily/models）。
+  // unsupported 为 true 时为空：K-brain 没有 capabilities.usage_stats，设置页显示“需更新”。
+  string result_json = 1;
+  bool unsupported = 2;
+}
+
 message FsRoot {
   string id = 1;
   string path = 2;
@@ -1452,6 +1472,7 @@ message FsListResponse {
 message FsReadEditableTextRequest {
   string workdir = 1;
   string path = 2;
+  optional uint64 preview_offset = 3;
 }
 
 message FsReadEditableTextResponse {
@@ -1461,6 +1482,8 @@ message FsReadEditableTextResponse {
   string content_hash = 4;
   uint64 size_bytes = 5;
   uint64 total_lines = 6;
+  optional uint64 preview_offset = 7;
+  optional uint64 preview_next_offset = 8;
 }
 
 message FsReadWorkspaceImageRequest {

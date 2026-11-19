@@ -26,6 +26,10 @@ import {
   formatFileMentionToken,
   formatMarkdownReferenceDestination,
 } from "@liveagent/ui/lib/chat/mentionReferences";
+import {
+  buildComposerQuoteInsertion,
+  normalizeQuoteText,
+} from "@liveagent/ui/lib/chat/transcriptQuote";
 import { formatWorkspaceExcerpt } from "@liveagent/ui/lib/chat/workspaceExcerpt";
 import { extensionReferencePresentation } from "@liveagent/ui/lib/extensions/presentation";
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
@@ -98,6 +102,7 @@ import {
   type MentionComposerSkill,
   type MentionComposerSkillMention,
   type MentionContext,
+  QUOTE_TEXT_ATTR,
   SKILL_MENTION_BASE_DIR_ATTR,
   SKILL_MENTION_DESCRIPTION_ATTR,
   SKILL_MENTION_FILE_ATTR,
@@ -189,12 +194,13 @@ export function injectMentionBoundarySpaces(
   const out: MentionComposerDraftSegment[] = [];
   for (const segment of segments) {
     const prev = out[out.length - 1];
-    if (prev != null && prev.type !== "text") {
-      if (segment.type !== "text" || !/^\s/.test(segment.text)) {
-        pushTextSegment(out, " ");
+    // Quote boundaries are added when the draft is serialized.
+    if (prev && prev.type !== "quote" && segment.type !== "quote") {
+      if (prev.type !== "text") {
+        if (segment.type !== "text" || !/^\s/.test(segment.text)) pushTextSegment(out, " ");
+      } else if (segment.type !== "text" && !/\s$/.test(prev.text)) {
+        prev.text += " ";
       }
-    } else if (prev?.type === "text" && segment.type !== "text" && !/\s$/.test(prev.text)) {
-      prev.text += " ";
     }
     if (segment.type === "text") {
       pushTextSegment(out, segment.text);
@@ -252,6 +258,12 @@ export function collectDraftSegments(
         const commit = commitMentionFromElement(el);
         if (commit) {
           childParts.push({ type: "commitMention", commit });
+          childIsLogical = true;
+        }
+      } else if (el.hasAttribute(QUOTE_TEXT_ATTR)) {
+        const text = el.getAttribute(QUOTE_TEXT_ATTR) ?? "";
+        if (text) {
+          childParts.push({ type: "quote", text });
           childIsLogical = true;
         }
       } else if (el.hasAttribute(SKILL_MENTION_NAME_ATTR)) {
@@ -330,23 +342,29 @@ export function serializeChildren(
   return serializeDraftSegments(serializeChildrenToSegments(parent, largePastes));
 }
 
+function serializeDraftSegment(segment: Exclude<MentionComposerDraftSegment, { type: "quote" }>) {
+  if (segment.type === "fileMention") return formatFileMentionToken(segment.reference);
+  if (segment.type === "largePaste") return segment.paste.text;
+  if (segment.type === "skillMention") return formatSkillMentionToken(segment.skill);
+  if (segment.type === "appMention") return formatAppMentionToken(segment.app);
+  if (segment.type === "commitMention") return formatCommitMentionToken(segment.commit);
+  if (segment.type === "gitFileMention") return formatGitFileMentionToken(segment.file);
+  if (segment.type === "conversationMention")
+    return formatConversationMentionToken(segment.conversation);
+  if (segment.type === "codeMention") return formatCodeMentionToken(segment.reference);
+  if (segment.type === "workspaceExcerpt") return formatWorkspaceExcerpt(segment.excerpt);
+  return segment.text;
+}
+
 export function serializeDraftSegments(segments: MentionComposerDraftSegment[]) {
-  return segments
-    .map((segment) => {
-      if (segment.type === "fileMention") return formatFileMentionToken(segment.reference);
-      if (segment.type === "largePaste") return segment.paste.text;
-      if (segment.type === "skillMention") return formatSkillMentionToken(segment.skill);
-      if (segment.type === "appMention") return formatAppMentionToken(segment.app);
-      if (segment.type === "commitMention") return formatCommitMentionToken(segment.commit);
-      if (segment.type === "gitFileMention") return formatGitFileMentionToken(segment.file);
-      if (segment.type === "conversationMention") {
-        return formatConversationMentionToken(segment.conversation);
-      }
-      if (segment.type === "codeMention") return formatCodeMentionToken(segment.reference);
-      if (segment.type === "workspaceExcerpt") return formatWorkspaceExcerpt(segment.excerpt);
-      return segment.text;
-    })
-    .join("");
+  let text = "";
+  for (const segment of segments) {
+    text +=
+      segment.type === "quote"
+        ? buildComposerQuoteInsertion(text, segment.text)
+        : serializeDraftSegment(segment);
+  }
+  return text;
 }
 
 export function editorTextIsEmpty(editor: HTMLElement) {
@@ -908,6 +926,10 @@ export function normalizeComposerClipboardSegment(
   if (type === "text") {
     return { type, text: normalizeLogicalLineEndings(clipboardString(segment, "text")) };
   }
+  if (type === "quote") {
+    const text = normalizeQuoteText(clipboardString(segment, "text"));
+    return text ? { type, text } : null;
+  }
   if (type === "fileMention") {
     const rawReference = clipboardRecord(segment.reference);
     if (!rawReference) return null;
@@ -1196,6 +1218,7 @@ export function isComposerChipElement(node: Node | null): node is HTMLElement {
     node instanceof HTMLElement &&
     (node.hasAttribute(MENTION_TAG_ATTR) ||
       node.hasAttribute(SKILL_MENTION_NAME_ATTR) ||
+      node.hasAttribute(QUOTE_TEXT_ATTR) ||
       node.hasAttribute(APP_MENTION_NAME_ATTR) ||
       node.hasAttribute(COMMIT_MENTION_SHA_ATTR) ||
       node.hasAttribute(CONVERSATION_MENTION_ID_ATTR) ||
@@ -1601,6 +1624,25 @@ export function insertMentionChip(ctx: MentionContext, path: string, kind: "file
   insertMentionChipElement(ctx, chip);
 }
 
+export function createQuoteChip(raw: string) {
+  const text = normalizeQuoteText(raw);
+  if (!text) return null;
+
+  const chip = document.createElement("span");
+  chip.setAttribute(QUOTE_TEXT_ATTR, text);
+  chip.contentEditable = "false";
+  chip.className = `${mentionChipClassName("quote", { selectable: false })} max-w-[min(15rem,calc(100%_-_0.25rem))]`;
+
+  const icon = createMentionIcon(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 6H3m18 6H8m9 6H8M3 12v6"/></svg>',
+  );
+  const preview = document.createElement("span");
+  preview.className = "min-w-0 truncate";
+  preview.textContent = text.trim().replace(/\s+/gu, " ");
+  chip.append(icon, preview);
+  return chip;
+}
+
 export function createSkillMentionChip(skill: MentionComposerSkillMention) {
   const chip = document.createElement("span");
   chip.setAttribute(SKILL_MENTION_NAME_ATTR, skill.name);
@@ -1822,6 +1864,9 @@ export function createComposerSegmentNode(
   if (segment.type === "largePaste") {
     largePastes.set(segment.paste.id, segment.paste);
     return createLargePasteChip(segment.paste);
+  }
+  if (segment.type === "quote") {
+    return createQuoteChip(segment.text);
   }
   if (segment.type === "skillMention") {
     return createSkillMentionChip(segment.skill);

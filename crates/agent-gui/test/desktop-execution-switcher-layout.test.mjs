@@ -8,7 +8,7 @@ const switcherSource = readFileSync(
 );
 
 test("desktop execution menu opens below the trigger with compact left alignment", () => {
-  assert.match(switcherSource, /<DropdownMenuContent align="start"/);
+  assert.match(switcherSource, /<DropdownMenuContent\b[^>]*\balign="start"/);
   assert.match(switcherSource, /max-w-\[calc\(100vw-1rem\)\]/);
 });
 

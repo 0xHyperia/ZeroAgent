@@ -14,7 +14,7 @@ import {
   redactSettingsForWebStorage,
 } from "@liveagent/ui/lib/settings/sync";
 import { applyFontFamilies } from "@liveagent/ui/lib/shared/fontFamily";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Locale, t } from "@/i18n/config";
 import { gatewayOrigin } from "@/lib/desktopRemoteHost";
 import type { GatewayWebSocketClientLike } from "@/lib/gatewaySocket";
@@ -101,6 +101,16 @@ export function useGatewaySettingsSync(params: {
   activeAgentId: string;
 }) {
   const { token, api, activeAgentId } = params;
+  // Queued saves and their callbacks belong to the device that originated them.
+  const saveScope = useMemo(() => ({ api, token, activeAgentId }), [api, token, activeAgentId]);
+  const saveScopeRef = useRef<typeof saveScope | null>(saveScope);
+  saveScopeRef.current = saveScope;
+  useEffect(() => {
+    saveScopeRef.current = saveScope;
+    return () => {
+      if (saveScopeRef.current === saveScope) saveScopeRef.current = null;
+    };
+  }, [saveScope]);
   const [settings, setSettingsState] = useState<AppSettings>(() => loadWebSettings(loadToken()));
   const [settingsSyncReady, setSettingsSyncReady] = useState(() => token.trim() === "");
   const [settledSettingsTarget, setSettledSettingsTarget] =
@@ -110,6 +120,7 @@ export function useGatewaySettingsSync(params: {
     status: "saved",
   });
   const settingsSaveSequenceRef = useRef(0);
+  const settingsSnapshotEpoch = useRef(0);
   const settingsSaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const saveLineage = useRef(new GatewaySettingsSaveLineage());
   const backendPromptResourcesRef = useRef(false);
@@ -178,25 +189,34 @@ export function useGatewaySettingsSync(params: {
 
   const queueSettingsSave = useCallback(
     (prev: AppSettings, next: AppSettings, fallback: string, syncGateway: boolean) => {
+      const isCurrentScope = () => saveScopeRef.current === saveScope;
+      if (!isCurrentScope()) return;
       const saveSequence = ++settingsSaveSequenceRef.current;
       setSettingsSaveState({ status: "saving" });
       const redactedNext = redactSettingsForWebStorage(next);
       settingsSaveChainRef.current = settingsSaveChainRef.current
         .catch(() => undefined)
         .then(() => {
-          persistWebSettings(redactedNext);
+          if (isCurrentScope()) persistWebSettings(redactedNext);
         })
         .then(async () => {
-          const target = JSON.stringify([activeAgentId, token]);
+          if (!isCurrentScope()) return;
+          const target = JSON.stringify([saveScope.activeAgentId, saveScope.token]);
           const gatewayUpdate =
             syncGateway && api ? saveLineage.current.prepare(prev, next, target) : null;
           if (gatewayUpdate && backendPromptResourcesRef.current) {
             projectPromptSettingsUpdate(gatewayUpdate, prev, next);
           }
           if (gatewayUpdate && Object.keys(gatewayUpdate).length > 0) {
+            const snapshotEpoch = settingsSnapshotEpoch.current;
             const receipt = await api?.updateSettings(gatewayUpdate);
+            if (!isCurrentScope()) return;
             saveLineage.current.accept(prev, next, target, receipt);
-            if (receipt?.snapshot && settingsSaveSequenceRef.current === saveSequence) {
+            if (
+              receipt?.snapshot &&
+              settingsSaveSequenceRef.current === saveSequence &&
+              settingsSnapshotEpoch.current === snapshotEpoch
+            ) {
               const committed = redactSettingsForWebStorage(
                 resolveAppWorkspaceProjects(
                   applyGatewaySettingsSyncPayload(settingsRef.current, receipt.snapshot),
@@ -210,19 +230,27 @@ export function useGatewaySettingsSync(params: {
           }
         })
         .then((warning) => {
-          if (settingsSaveSequenceRef.current === saveSequence) {
+          if (isCurrentScope() && settingsSaveSequenceRef.current === saveSequence) {
             setSettingsSaveState(
               warning ? { status: "error", message: warning } : { status: "saved" },
             );
           }
         })
         .catch(async (error) => {
+          if (!isCurrentScope()) return;
           saveLineage.current.clear();
           console.error("Failed to persist gateway settings", error);
           if (syncGateway && api) {
+            const snapshotEpoch = settingsSnapshotEpoch.current;
             await api
               .getSettings()
               .then((payload) => {
+                if (
+                  !isCurrentScope() ||
+                  settingsSaveSequenceRef.current !== saveSequence ||
+                  settingsSnapshotEpoch.current !== snapshotEpoch
+                )
+                  return;
                 const current = settingsRef.current;
                 const refreshed = redactSettingsForWebStorage(
                   resolveAppWorkspaceProjects(applyGatewaySettingsSyncPayload(current, payload)),
@@ -233,7 +261,7 @@ export function useGatewaySettingsSync(params: {
               })
               .catch(() => undefined);
           }
-          if (settingsSaveSequenceRef.current === saveSequence) {
+          if (isCurrentScope() && settingsSaveSequenceRef.current === saveSequence) {
             setSettingsSaveState({
               status: "error",
               message: getGatewaySettingsErrorMessage(error, fallback, settingsRef.current.locale),
@@ -241,7 +269,7 @@ export function useGatewaySettingsSync(params: {
           }
         });
     },
-    [api, activeAgentId, token],
+    [api, saveScope],
   );
 
   const applyGatewaySettings = useCallback((payload: GatewaySettingsSyncUpdatePayload) => {
@@ -309,6 +337,11 @@ export function useGatewaySettingsSync(params: {
       settingsRef.current = next;
       setSettingsState(next);
     }
+    // A slow old device must not block saves to the new device.
+    settingsSaveChainRef.current = Promise.resolve();
+    settingsSaveSequenceRef.current += 1;
+    setSettingsSaveState({ status: "saved" });
+    saveLineage.current.clear();
     if (!api) {
       setSettingsSyncReady(token.trim() === "");
       setSettledSettingsTarget(null);
@@ -322,12 +355,12 @@ export function useGatewaySettingsSync(params: {
     // Best-effort: the desktop may be offline; the settings-sync push
     // populates the store once it connects.
     void initAutomation().catch(() => undefined);
-    const liveSyncEpochRef = { current: 0 };
+    const initialSnapshotEpoch = settingsSnapshotEpoch.current;
     const applySyncedSettings = (payload: GatewaySettingsSyncUpdatePayload) => {
       if (cancelled) {
         return;
       }
-      liveSyncEpochRef.current += 1;
+      settingsSnapshotEpoch.current += 1;
       applyGatewaySettings(payload);
       setSettingsSyncError(null);
     };
@@ -338,7 +371,7 @@ export function useGatewaySettingsSync(params: {
       .then((payload) => {
         if (!cancelled) {
           // A live WS push that arrived while GET was in flight is newer.
-          if (liveSyncEpochRef.current === 0) {
+          if (settingsSnapshotEpoch.current === initialSnapshotEpoch) {
             applySyncedSettings(payload);
           }
         }

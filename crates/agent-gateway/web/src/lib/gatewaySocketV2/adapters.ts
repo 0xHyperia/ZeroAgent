@@ -99,6 +99,7 @@ import {
   TrajectoryFetchRequestSchema,
   TunnelMutationSchema,
   UploadedImagePreviewRequestSchema,
+  UsageStatsRequestSchema,
   WorkspaceRootGrantDraftSchema,
   WorkspaceRootGrantsRequestSchema,
 } from "@/lib/proto/gen/proto/v2/gateway_pb";
@@ -115,6 +116,7 @@ import type {
 } from "@/lib/proto/gen/proto/v2/gateway_ws_pb";
 import {
   AgentListRequestSchema,
+  AgentRequestChunkSchema,
   ChatActivitiesRequestSchema,
   ChatPrepareRequestSchema,
   ChatSubscribeRequestSchema,
@@ -288,6 +290,81 @@ export function encodeRequestFrame(
   }
   frame.agentId = normalizedAgentId;
   return wireBytes(toBinary(WebClientFrameSchema, frame));
+}
+
+export const MAX_TEXT_SAVE_BYTES = 16 * 1024 * 1024;
+export const MAX_TEXT_SAVE_FRAME_BYTES = 1024 * 1024;
+const MAX_TEXT_SAVE_METADATA_BYTES = 64 * 1024;
+const TEXT_SAVE_CHUNK_BYTES = MAX_TEXT_SAVE_FRAME_BYTES - MAX_TEXT_SAVE_METADATA_BYTES - 1024;
+
+export type TextSaveTransfer = {
+  frames: Iterable<WireBytes>;
+  cancel?: WireBytes;
+};
+
+// Encode byte chunks rather than slicing JS strings: a multi-byte code point may
+// cross a chunk boundary and is validated only after complete reassembly.
+export function prepareTextSaveTransfer(
+  requestId: string,
+  type: "fs.write_text" | "sftp.write_text",
+  payload: unknown,
+  agentId: string,
+): TextSaveTransfer {
+  const body = rec(payload);
+  const content = str(body.content);
+  if (content.length > MAX_TEXT_SAVE_BYTES) {
+    throw new Error("Text save exceeds 16 MiB size limit");
+  }
+  const bytes = new TextEncoder().encode(content);
+  if (bytes.byteLength > MAX_TEXT_SAVE_BYTES) {
+    throw new Error("Text save exceeds 16 MiB size limit");
+  }
+  const request = buildAgentRequest(type, { ...body, content: "" });
+  if (toBinary(GatewayEnvelopeSchema, request).byteLength > MAX_TEXT_SAVE_METADATA_BYTES) {
+    throw new Error("Text save metadata exceeds 64 KiB size limit");
+  }
+  if (!agentId.trim() || agentId.length > 256 || requestId.length > 256) {
+    throw new Error("Text save requires bounded request_id and agent_id");
+  }
+  if (bytes.byteLength <= MAX_TEXT_SAVE_FRAME_BYTES) {
+    const frame = encodeRequestFrame(requestId, type, payload, agentId);
+    if (frame.byteLength <= MAX_TEXT_SAVE_FRAME_BYTES) {
+      return { frames: [frame] };
+    }
+  }
+  const encodeChunk = (offset: number, data: Uint8Array, cancel = false): WireBytes => {
+    const frame = wireBytes(
+      toBinary(
+        WebClientFrameSchema,
+        create(WebClientFrameSchema, {
+          requestId,
+          agentId,
+          payload: {
+            case: "agentRequestChunk",
+            value: create(AgentRequestChunkSchema, {
+              request: offset === 0 && !cancel ? request : undefined,
+              totalBytes: BigInt(bytes.byteLength),
+              offset: BigInt(offset),
+              data,
+              cancel,
+            }),
+          },
+        }),
+      ),
+    );
+    if (frame.byteLength > MAX_TEXT_SAVE_FRAME_BYTES) {
+      throw new Error("Text save chunk exceeds 1 MiB frame limit");
+    }
+    return frame;
+  };
+  return {
+    frames: (function* () {
+      for (let offset = 0; offset < bytes.byteLength; offset += TEXT_SAVE_CHUNK_BYTES) {
+        yield encodeChunk(offset, bytes.subarray(offset, offset + TEXT_SAVE_CHUNK_BYTES));
+      }
+    })(),
+    cancel: encodeChunk(0, new Uint8Array(), true),
+  };
 }
 
 function buildRequestFrame(requestId: string, type: string, payload: unknown): WebClientFrame {
@@ -553,6 +630,7 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
         strictUtf8: bool(body.strict_utf8),
         expectedMtime: toI64(body.expected_mtime),
         expectedSizeBytes: toI64(body.expected_size_bytes),
+        expectedContentHash: str(body.expected_content_hash),
         createParentDirs: bool(body.create_parent_dirs),
       }),
     };
@@ -877,6 +955,15 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
           inputJson: JSON.stringify(permissionRulesInput(body)),
         }),
       };
+    // 设置 → 用量统计：只读，天数与浏览器时区由网关和桌面端再校验。
+    case "usage.stats":
+      return {
+        case: "usageStats",
+        value: create(UsageStatsRequestSchema, {
+          days: n32(body.days),
+          timezone: trimStr(body.timezone),
+        }),
+      };
     case "files.preview":
       return {
         case: "uploadedImagePreview",
@@ -1050,6 +1137,7 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
         value: create(FsReadEditableTextRequestSchema, {
           workdir: trimStr(body.workdir),
           path: trimStr(body.path),
+          previewOffset: body.preview_offset === undefined ? undefined : toU64(body.preview_offset),
         }),
       };
     case "fs.read_workspace_image":
@@ -1639,6 +1727,12 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
         contentHash: payload.value.contentHash,
         sizeBytes: num(payload.value.sizeBytes),
         totalLines: num(payload.value.totalLines),
+        ...(payload.value.previewOffset === undefined
+          ? {}
+          : { previewOffset: num(payload.value.previewOffset) }),
+        ...(payload.value.previewNextOffset === undefined
+          ? {}
+          : { previewNextOffset: num(payload.value.previewNextOffset) }),
       };
     case "fsReadWorkspaceImageResp":
       return {
@@ -1700,6 +1794,10 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
       return unmarshalJsonPayload(payload.value.resultJson);
     case "permissionRulesResp":
       return unmarshalJsonPayload(payload.value.resultJson);
+    case "usageStatsResp":
+      return payload.value.unsupported
+        ? { available: false }
+        : { available: true, stats: unmarshalJsonPayload(payload.value.resultJson) };
     case "sftpResponse":
       return sftpResponsePayload(payload.value);
     case "chatQueueResp":
@@ -2156,6 +2254,7 @@ function sftpResponsePayload(resp: SftpResponse): J {
     content: resp.content,
     offset: num(resp.offset),
     bytesRead: num(resp.bytesRead),
+    ...(resp.contentHash ? { contentHash: resp.contentHash } : {}),
     bytes_read: num(resp.bytesRead),
     sizeBytes: num(resp.sizeBytes),
     size_bytes: num(resp.sizeBytes),

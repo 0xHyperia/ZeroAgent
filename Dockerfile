@@ -23,7 +23,9 @@ COPY crates/agent-gateway/web crates/agent-gateway/web
 COPY scripts/vite-resource-preview-assets.mjs scripts/vite-resource-preview-assets.d.mts scripts/
 COPY docs/licenses/duke-sheets-MIT.txt docs/licenses/
 ARG ZEROAGENT_APP_VERSION
-RUN ZEROAGENT_APP_VERSION="$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent/gateway-webui build
+# The bundled public catalog imports the canonical plugin metadata at build time.
+RUN --mount=type=bind,source=crates/agent-gateway/internal/account/skills,target=/src/crates/agent-gateway/internal/account/skills \
+    ZEROAGENT_APP_VERSION="$ZEROAGENT_APP_VERSION" pnpm --filter @liveagent/gateway-webui build
 
 FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS gateway-builder
 

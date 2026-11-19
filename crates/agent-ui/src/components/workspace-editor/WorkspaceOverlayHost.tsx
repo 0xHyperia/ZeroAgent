@@ -7,7 +7,6 @@ import { ConversationReaderPanel } from "@liveagent/ui/components/resource-previ
 import { PreviewIdentityContext } from "@liveagent/ui/components/resource-preview/PreviewChrome";
 import { PreviewLoading } from "@liveagent/ui/components/resource-preview/PreviewFeedback";
 import type { useWorkspaceOverlays } from "@liveagent/ui/components/workspace-editor/useWorkspaceOverlays";
-import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
 import type {
   WorkspaceFilePreviewOpenRequest,
   WorkspaceFilePreviewOverlayProps,
@@ -57,7 +56,7 @@ type WorkspaceOverlayHostProps = {
   theme: EffectiveTheme;
   workspaceViewScope: string;
   workspaceEditors: ReturnType<typeof useWorkspaceOverlays>["workspaceEditors"];
-  onWorkspaceEditorPreviewFile: (request: WorkspaceCodeEditorOpenRequest) => void;
+  onWorkspaceEditorPreviewFile: (request: WorkspaceFilePreviewOpenRequest) => void;
   onWorkspaceEditorInsertCodeMention?: (reference: CodeMentionReference) => void;
   onWorkspaceEditorHide: (scope: string, requestId: number) => void;
   onWorkspaceEditorClose: (scope: string, requestId: number) => void;
@@ -248,6 +247,7 @@ export function WorkspaceOverlayHost(props: WorkspaceOverlayHostProps) {
         >
           <WorkspaceFilePreviewOverlay
             openRequest={workspaceFilePreviewOpenRequest}
+            sftpClient={sftpClient ?? undefined}
             isOpen={workspaceFilePreviewOpen}
             onOpenEditor={onWorkspaceFilePreviewOpenEditor}
             onRequestClose={onWorkspaceFilePreviewRequestClose}

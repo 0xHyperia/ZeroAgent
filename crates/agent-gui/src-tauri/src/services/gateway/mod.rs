@@ -56,6 +56,7 @@ mod envelope_handler;
 mod history_sync;
 mod kbrain_history;
 pub(crate) mod kbrain_memory;
+mod kbrain_usage_stats;
 mod managed_process;
 mod settings_sync;
 mod sftp;

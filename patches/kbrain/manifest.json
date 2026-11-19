@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Stack-Cairn/K-brain",
-  "sourceRevision": "2fe44051fd30c91e9ae1abd6317f043239ec05f9",
+  "sourceRevision": "3dfb4ca69aa6da5c2411d3b49139f2dadaf8eec0",
   "protocol": "kbrain.agent.v1",
   "capabilities": [
     "zeroagent.mcp-credentials.v1",
@@ -80,7 +80,7 @@
     },
     {
       "file": "0019-scope-desktop-host-tools.patch",
-      "sha256": "297fbe98f632a07e8162287a2ca44c68b7b6d526b30bd8f3481e35e6a8023fb3"
+      "sha256": "f78b3cc9d673a46d71f5e1ef205a0ef6d628d612de6f7ebcc0beb4ab97c77616"
     },
     {
       "file": "0020-file-skill-selection.patch",

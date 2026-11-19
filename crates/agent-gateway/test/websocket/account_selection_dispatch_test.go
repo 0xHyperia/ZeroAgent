@@ -145,12 +145,40 @@ func TestAccountControllerRevalidatesBeforeDispatch(t *testing.T) {
 			sendWrite := func(id string) {
 				sendProtoFrame(t, conn, &gatewayv2.WebClientFrame{RequestId: id, AgentId: fixture.device.ID, Payload: &gatewayv2.WebClientFrame_AgentRequest{AgentRequest: &gatewayv2.GatewayEnvelope{Payload: &gatewayv2.GatewayEnvelope_FsWriteText{FsWriteText: &gatewayv2.FsWriteTextRequest{Workdir: "/workspace/project", Path: "synthetic.txt", Content: "synthetic"}}}}})
 			}
+			sendChunk := func(id string, offset uint64, content string, request *gatewayv2.GatewayEnvelope) {
+				sendProtoFrame(t, conn, &gatewayv2.WebClientFrame{
+					RequestId: id,
+					AgentId:   fixture.device.ID,
+					Payload: &gatewayv2.WebClientFrame_AgentRequestChunk{AgentRequestChunk: &gatewayv2.AgentRequestChunk{
+						TotalBytes: 9, Offset: offset, Data: []byte(content), Request: request,
+					}},
+				})
+			}
 			sendWrite("valid")
 			if readOutboundEnvelope(t, agent).GetFsWriteText() == nil {
 				t.Fatal("valid write was not forwarded")
 			}
-			fixture.invalidate(t, kind)
-			sendWrite("invalid")
+			if kind == "lease-expiry" {
+				sendChunk("pending", 0, "syn", &gatewayv2.GatewayEnvelope{
+					Payload: &gatewayv2.GatewayEnvelope_FsWriteText{FsWriteText: &gatewayv2.FsWriteTextRequest{
+						Workdir: "/workspace/project", Path: "synthetic.txt",
+					}},
+				})
+				for {
+					frame := receiveWebFrameRaw(t, conn)
+					if frame.GetRequestId() == "pending" {
+						if frame.GetAck() == nil {
+							t.Fatalf("expected a chunk acknowledgement: %v", frame)
+						}
+						break
+					}
+				}
+				fixture.invalidate(t, kind)
+				sendChunk("pending", 3, "thetic", nil)
+			} else {
+				fixture.invalidate(t, kind)
+				sendWrite("invalid")
+			}
 			requireControllerSocketClosed(t, conn)
 			select {
 			case forwarded := <-agent.Outbound():

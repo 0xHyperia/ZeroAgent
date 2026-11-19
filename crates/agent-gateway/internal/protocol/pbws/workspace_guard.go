@@ -141,6 +141,10 @@ func (c *browserConn) vetWorkspaceAgentRequest(env *gatewayv2.GatewayEnvelope) e
 		return nil
 	}
 	switch payload := env.GetPayload().(type) {
+	case *gatewayv2.GatewayEnvelope_UsageStats:
+		if c.selectionScope != account.SelectionScopeDevice {
+			return errors.New("usage statistics require a device selection")
+		}
 	case *gatewayv2.GatewayEnvelope_ChatFileOpen:
 		// Historical attachment cards may come from parsed user text. Reading
 		// the account's staging area requires a device-level selection.

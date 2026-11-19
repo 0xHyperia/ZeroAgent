@@ -50,6 +50,7 @@ import type {
   TerminalSshLatency,
 } from "@liveagent/ui/lib/terminal/types";
 import type { TunnelCreateInput, TunnelUpdateInput } from "@liveagent/ui/lib/tunnels/constants";
+import type { UsageStatsAnswer } from "@liveagent/ui/lib/usage/usageStats";
 import type { HistoryMessageRef } from "@/lib/chat/conversationState";
 import type {
   ChatCommandAccepted,
@@ -728,6 +729,7 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     projectPathKey: string;
     workdir: string;
     path: string;
+    offset?: number;
     maxBytes?: number;
     strictUtf8?: boolean;
   }): Promise<SftpReadTextResponse> {
@@ -737,6 +739,7 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
         project_path_key: params.projectPathKey,
         workdir: params.workdir,
         remote_path: params.path,
+        offset: params.offset ?? 0,
         max_bytes: params.maxBytes ?? 0,
         strict_utf8: params.strictUtf8 ?? false,
       }),
@@ -751,6 +754,7 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     content: string;
     expectedMtime?: number;
     expectedSizeBytes?: number;
+    expectedContentHash?: string;
   }): Promise<SftpActionResponse> {
     return normalizeSftpActionResponse(
       await this.request<RawSftpResponse>("sftp.write_text", {
@@ -763,6 +767,7 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
         create_parent_dirs: false,
         expected_mtime: params.expectedMtime ?? 0,
         expected_size_bytes: params.expectedSizeBytes ?? 0,
+        expected_content_hash: params.expectedContentHash,
       }),
     );
   }
@@ -1203,7 +1208,10 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
   async updateSettings(
     payload: GatewaySettingsSyncUpdatePayload,
   ): Promise<GatewaySettingsUpdateReceipt | undefined> {
-    const response = await this.request<GatewaySettingsUpdateResponse>("settings.update", payload);
+    const scope = this.captureActiveAgentScope();
+    const response = await this.request<GatewaySettingsUpdateResponse>("settings.update", payload, {
+      isCurrentAgent: scope,
+    });
     if (response?.accepted === false) {
       const message = response.message?.trim() || "Gateway settings update rejected";
       if (message === "configuration_changed")
@@ -1365,6 +1373,14 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
       : this.request<T>(type, input);
   }
 
+  /** 设置 → 用量统计：K-brain 的跨会话 token 用量（只读，重连后可重发）。K-brain 不支持时
+   *  返回 `{ available: false }`。 */
+  async usageStats(query: { days: number; timezone: string }): Promise<UsageStatsAnswer> {
+    return this.requestWithRecovery<UsageStatsAnswer>("usage.stats", query, {
+      isCurrentAgent: this.captureActiveAgentScope(),
+    });
+  }
+
   async listFsRoots(): Promise<FsRootsResponse> {
     return this.requestWithRecovery<FsRootsResponse>("fs.roots", {});
   }
@@ -1492,10 +1508,15 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     });
   }
 
-  async readEditableTextFile(workdir: string, path: string): Promise<FsReadEditableTextResponse> {
+  async readEditableTextFile(
+    workdir: string,
+    path: string,
+    previewOffset?: number,
+  ): Promise<FsReadEditableTextResponse> {
     return this.request<FsReadEditableTextResponse>("fs.read_editable_text", {
       workdir,
       path,
+      preview_offset: previewOffset,
     });
   }
 

@@ -558,12 +558,16 @@ export function normalizeChatRuntimeControlsForProvider(
     nativeWebSearchEnabled:
       controls.nativeWebSearchEnabled &&
       (params.webSearchFallbackAvailable ||
-        (params.nativeWebSearchSupported ??
-          (!params.providerId ||
-            providerSupportsNativeWebSearch(
+        (params.providerId
+          ? providerSupportsNativeWebSearch(
               params.providerId,
               resolveProviderApi(params.providerId, params.requestFormat),
-            )))),
+              {
+                modelId: params.modelId,
+                nativeWebSearchSupported: params.nativeWebSearchSupported,
+              },
+            )
+          : (params.nativeWebSearchSupported ?? true))),
   };
 }
 

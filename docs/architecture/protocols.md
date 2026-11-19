@@ -204,6 +204,7 @@ Git 面板与文件树不再轮询：桌面端 `workspace_watch` 服务（notify
 | Memory 管理 | `MemoryManageRequest` | `services/gateway_bridge.rs` 的 `handle_memory_manage`：记忆命令交给 K-brain `/v1/memory/manage`，`history_shared_list`、`chat_history_search` 在桌面端本地处理 |
 | Cron 管理 | `CronManageRequest` | `commands/automation/cron.rs`、`services/automation/*`、settings cron 表 |
 | 权限规则（设置 → 权限） | `PermissionRulesRequest`（action `list`/`add`/`delete`，需桌面端声明 `PERMISSION_RULES_V1`） | `services/gateway_bridge.rs` 的 `handle_permission_rules`：只转发 workspace/rule/effect/scope/id，交给 K-brain `/v1/permissions/rules`；直连 K-brain 时由 Gateway `internal/kbrain/permission_rules.go` 转发 |
+| 用量统计（设置 → 用量统计） | `UsageStatsRequest`（113，days 1–1100、IANA 时区，需桌面端声明 `ZEROAGENT_USAGE_STATS_V1`），回 `UsageStatsResponse`（121，`result_json` 或 `unsupported`） | 只读转发 `GET /v1/usage/stats`。设备引擎不支持时返回 `unsupported`。工作区交接保留原编号 112 和 120。 |
 
 ## 恢复与去重机制
 

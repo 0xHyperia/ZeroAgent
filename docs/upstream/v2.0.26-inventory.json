@@ -1,0 +1,904 @@
+{
+  "release": "v2.0.26",
+  "previous_upstream": "d874b4360761d1534f15dd920ab5e912b68dc9b0",
+  "upstream_commit": "2c0476ac5a3e7e0ab852fce42bf307062e5b7c07",
+  "zeroagent_baseline": "d3a934536f7110d87c9e95409f6c71751f15ca62",
+  "merge_base": "d874b4360761d1534f15dd920ab5e912b68dc9b0",
+  "text_conflicts": 30,
+  "counts": {
+    "reject": 7,
+    "adapt": 63,
+    "adopt": 38,
+    "replace": 3
+  },
+  "entries": [
+    {
+      "path": ".github/pr-assets/issue-1304-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "回归演示图片留在上游提交历史，ZeroAgent 验证记录使用合并后的结果。"
+    },
+    {
+      "path": ".github/pr-assets/issue-1307-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "回归演示图片留在上游提交历史，ZeroAgent 验证记录使用合并后的结果。"
+    },
+    {
+      "path": ".github/pr-assets/issue-1308-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "回归演示图片留在上游提交历史，ZeroAgent 验证记录使用合并后的结果。"
+    },
+    {
+      "path": ".github/pr-assets/issue-1309-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "回归演示图片留在上游提交历史，ZeroAgent 验证记录使用合并后的结果。"
+    },
+    {
+      "path": ".github/pr-assets/issue-1310-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "回归演示图片留在上游提交历史，ZeroAgent 验证记录使用合并后的结果。"
+    },
+    {
+      "path": ".github/pr-assets/issue-1311-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "回归演示图片留在上游提交历史，ZeroAgent 验证记录使用合并后的结果。"
+    },
+    {
+      "path": ".github/pr-assets/issue-1312-regression.png",
+      "upstream_change": "A",
+      "decision": "reject",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "回归演示图片留在上游提交历史，ZeroAgent 验证记录使用合并后的结果。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/import_directory.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/import_directory_multipart.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/import_directory_multipart_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/upload.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/handler/upload_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/client.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/filesystem.go",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/filesystem_large_test.go",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/usage_stats.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/kbrain/usage_stats_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/capabilities.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway.pb.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/proto/v2/gateway_ws.pb.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_conn.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_events.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_relay.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_text_save.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_text_save_integration_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/browser_text_save_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/guard.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/guard_test.go",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/internal/protocol/pbws/usage_stats_test.go",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway.proto",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/proto/v2/gateway_ws.proto",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/agent-ui-adapters/settingsExtension.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "固定设备切换期间的原始请求作用域，保护版本化回执与缓存，接线设备用量统计。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "固定设备切换期间的原始请求作用域，保护版本化回执与缓存，接线设备用量统计。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocket.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketRpc.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "固定设备切换期间的原始请求作用域，保护版本化回执与缓存，接线设备用量统计。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketShared.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketTransport.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "固定设备切换期间的原始请求作用域，保护版本化回执与缓存，接线设备用量统计。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/gatewaySocketV2/adapters.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_pb.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_ws_pb.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/pages/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/web/src/shims/tauriCore.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-echo-agent-switch.test.mjs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "已有版本化设置回执与设备作用域替代旧广播回声机制。由回执、目标绑定和配置版本专项验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-echo.test.mjs",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "已有版本化设置回执与设备作用域替代旧广播回声机制。由回执、目标绑定和配置版本专项验证。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-settings-sync-errors.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "固定设备切换期间的原始请求作用域，保护版本化回执与缓存，接线设备用量统计。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/gateway-v2-adapters.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/text-save-transfer.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/text-save-transport.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "复用有界分块和限流，最终写入继续检查目标设备、租约、工作区和文件版本。目录导入继续识别设备客户端的表单字段。"
+    },
+    {
+      "path": "crates/agent-gateway/web/test/usage-stats-settings.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "固定设备切换期间的原始请求作用域，保护版本化回执与缓存，接线设备用量统计。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/runtime/sftp.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/commands/workspace/fs.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/sftp.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/sftp/text_io_tests.rs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/runtime/terminal/ssh_channel.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/envelope_handler.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/kbrain_usage_stats.rs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/mod.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/sftp.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway/ws_transport.rs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留工作区交接的现有线编号和能力声明，为用量统计分配独立编号及能力，重生成协议。"
+    },
+    {
+      "path": "crates/agent-gui/src-tauri/src/services/gateway_bridge.rs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/providers/runtime/providerRuntimeConfig.ts",
+      "upstream_change": "M",
+      "decision": "replace",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "保留各执行设备显式传入后备联网可用性，运行配置继续共用更新后的能力判断。"
+    },
+    {
+      "path": "crates/agent-gui/src/lib/sftp/tauriSftpClient.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/chat/components/ConversationStatsBarHost.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/src/pages/settings/types.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/test/chat/transcript-quote-selection.test.mjs",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用引用胶囊与序列化，保留文件选区、技能引用、草稿和 ZeroAgent 的剪贴板约定。"
+    },
+    {
+      "path": "crates/agent-gui/test/providers/deepseek-web-search.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "根据所选模型判断原生联网能力，后备联网继续取当前设备的显式配置。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/usage-stats-section.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/test/settings/usage-stats.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/test/trajectory/conversation-stats-hook-adversarial.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/test/trajectory/conversation-stats-hook.test.mjs",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-gui/test/workspace-editor/workspace-code-editor-overlay.test.mjs",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "保留 ZeroAgent 阅读器和按会话挂载的编辑标签，接入分段预览、Monaco 轻量化和保存并发保护。"
+    },
+    {
+      "path": "crates/agent-gui/test/workspace-editor/workspace-text-range.test.mjs",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/IconSet.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposer.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "采用引用胶囊与序列化，保留文件选区、技能引用、草稿和 ZeroAgent 的剪贴板约定。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposerInternals.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "采用引用胶囊与序列化，保留文件选区、技能引用、草稿和 ZeroAgent 的剪贴板约定。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/MentionComposerModel.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "采用引用胶囊与序列化，保留文件选区、技能引用、草稿和 ZeroAgent 的剪贴板约定。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/chat/mentionChipStyles.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceCodeEditorOverlay.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "保留 ZeroAgent 阅读器和按会话挂载的编辑标签，接入分段预览、Monaco 轻量化和保存并发保护。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceFilePreviewOverlay.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "保留 ZeroAgent 阅读器和按会话挂载的编辑标签，接入分段预览、Monaco 轻量化和保存并发保护。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceOverlayHost.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "保留 ZeroAgent 阅读器和按会话挂载的编辑标签，接入分段预览、Monaco 轻量化和保存并发保护。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceSftpPanel.tsx",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/WorkspaceTextRangePreview.tsx",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/useWorkspaceOverlays.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "保留 ZeroAgent 阅读器和按会话挂载的编辑标签，接入分段预览、Monaco 轻量化和保存并发保护。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/workspaceEditorFileIo.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/components/workspace-editor/workspaceTextRange.ts",
+      "upstream_change": "A",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSCommon.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNCommon.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/composerDraft.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "采用引用胶囊与序列化，保留文件选区、技能引用、草稿和 ZeroAgent 的剪贴板约定。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/chat/transcriptQuote.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/catalog.generated.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/models/modelOptions.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "根据所选模型判断原生联网能力，后备联网继续取当前设备的显式配置。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/providers/providerCapabilities.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "根据所选模型判断原生联网能力，后备联网继续取当前设备的显式配置。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/settings/index.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "upstream_owned",
+      "notes": "根据所选模型判断原生联网能力，后备联网继续取当前设备的显式配置。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sftp/normalization.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/sftp/types.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/trajectory/useConversationStats.ts",
+      "upstream_change": "M",
+      "decision": "adopt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "采用上游实现或配套回归，仍从 ZeroAgent 当前宿主和授权入口使用。"
+    },
+    {
+      "path": "crates/agent-ui/src/lib/usage/usageStats.ts",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "upstream_owned",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/SettingsPage.tsx",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/UsageStatsSection.tsx",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/kbrainSettingsAdapter.ts",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": true,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/usage/UsageHeatmap.tsx",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/usage/UsageMetricCards.tsx",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/usage/UsageModelChart.tsx",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/usage/UsageTrendChart.tsx",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "crates/agent-ui/src/pages/settings/usage/usageUi.tsx",
+      "upstream_change": "A",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "从当前设备或本机账户读取引擎用量，复用上游图表、语言和测试，沿用原账户及设备会话绑定。"
+    },
+    {
+      "path": "docs/architecture/protocols.md",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "说明新增统计线协议及与 ZeroAgent 工作区交接的兼容关系。"
+    },
+    {
+      "path": "scripts/release/kbrain.lock.json",
+      "upstream_change": "M",
+      "decision": "adapt",
+      "text_conflict": false,
+      "ownership": "adapted",
+      "notes": "固定 v0.107.37，更新 ZeroAgent 补丁基线和哈希，保留宿主桥及启动校验。"
+    }
+  ]
+}

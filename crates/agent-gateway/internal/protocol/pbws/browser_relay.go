@@ -186,6 +186,17 @@ func (c *browserConn) handleKBrainPermissionRules(requestID, agentID string, req
 	c.sendKBrainResponse(requestID, agentID, &gatewayv2.AgentEnvelope{Payload: &gatewayv2.AgentEnvelope_PermissionRulesResp{PermissionRulesResp: response}})
 }
 
+func (c *browserConn) handleKBrainUsageStats(requestID, agentID string, request *gatewayv2.UsageStatsRequest) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.srv.requestTimeout())
+	defer cancel()
+	response, err := c.srv.kbrainRelay.UsageStats(ctx, request)
+	if err != nil {
+		_ = c.sendLocalError(requestID, errorMessage(err))
+		return
+	}
+	c.sendKBrainResponse(requestID, agentID, &gatewayv2.AgentEnvelope{Payload: &gatewayv2.AgentEnvelope_UsageStatsResp{UsageStatsResp: response}})
+}
+
 func (c *browserConn) handleKBrainChatQueue(requestID, agentID string, request *gatewayv2.ChatQueueRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.srv.requestTimeout())
 	defer cancel()
@@ -201,10 +212,16 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 		_ = c.sendLocalError(requestID, "request id is required")
 		return
 	}
+	if err := c.vetWorkspaceAgentRequest(env); err != nil {
+		c.finishTextSaveRequest(env)
+		_ = c.sendLocalError(requestID, err.Error())
+		return
+	}
 	if c.srv.kbrainRelay != nil && agentID == c.srv.kbrainTargetID {
 		ctx, cancel := context.WithTimeout(context.Background(), c.srv.requestTimeout())
 		defer cancel()
 		if response, handled, err := c.srv.kbrainRelay.Filesystem(ctx, env); handled {
+			c.finishTextSaveRequest(env)
 			if err != nil {
 				_ = c.sendLocalError(requestID, errorMessage(err))
 				return
@@ -307,6 +324,14 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 			c.handleKBrainPermissionRules(requestID, agentID, permissionRules)
 			return
 		}
+		if usageStats := env.GetUsageStats(); usageStats != nil {
+			if err := vetUsageStats(usageStats); err != nil {
+				_ = c.sendLocalError(requestID, err.Error())
+				return
+			}
+			c.handleKBrainUsageStats(requestID, agentID, usageStats)
+			return
+		}
 		if historyList := env.GetHistoryList(); historyList != nil {
 			c.handleKBrainHistoryList(requestID, agentID, historyList)
 			return
@@ -373,14 +398,10 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 	}
 	view := c.sm.AgentView(agentID)
 	if err := vetAgentRequest(view, env); err != nil {
+		c.finishTextSaveRequest(env)
 		_ = c.sendLocalError(requestID, err.Error())
 		return
 	}
-	if err := c.vetWorkspaceAgentRequest(env); err != nil {
-		_ = c.sendLocalError(requestID, err.Error())
-		return
-	}
-
 	// 命名空间化：多标签页共享一个桌面端，透传 id 必须按连接隔离；回程剥离前缀还原。
 	agentRequestID := c.idPrefix + requestID
 	env.RequestId = agentRequestID
@@ -406,6 +427,7 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 		defer unwatch()
 	}
 	response, err := c.sm.AwaitUnaryResponse(ctx, agentID, agentRequestID, env)
+	c.finishTextSaveRequest(env)
 	if err != nil {
 		_ = c.sendLocalError(requestID, errorMessage(err))
 		return

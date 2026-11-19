@@ -5,6 +5,7 @@ import type { WorkspaceFilePreviewOpenRequest } from "./WorkspaceFilePreviewOver
 import type { SftpOpenFileRequest } from "./WorkspaceSftpPanel";
 import type { WorkspaceSshTerminalOpenRequest } from "./WorkspaceSshTerminalOverlay";
 import { isWorkspacePreviewPath } from "./workspaceImagePreview";
+import { WORKSPACE_EDITABLE_TEXT_MAX_BYTES } from "./workspaceTextRange";
 
 type UseWorkspaceOverlaysParams = {
   workspaceOwner: string;
@@ -191,18 +192,24 @@ export function useWorkspaceOverlays({
       if (!terminalProjectPath || !terminalProjectPathKey) return;
       if (request.side === "local") handleOpenWorkspaceFile(request.path);
       else {
-        openWorkspaceEditorFile({
+        const file = {
           projectPathKey: terminalProjectPathKey,
           workdir: terminalProjectPath,
           path: request.path,
           remote: { sessionId: session.id },
-        });
+        };
+        if ((request.sizeBytes ?? 0) > WORKSPACE_EDITABLE_TEXT_MAX_BYTES) {
+          openWorkspaceFilePreview({ ...file, textRange: true });
+        } else {
+          openWorkspaceEditorFile(file);
+        }
       }
       returnToSsh.current = { owner: workspaceOwner, scope: workspaceViewScope };
     },
     [
       handleOpenWorkspaceFile,
       openWorkspaceEditorFile,
+      openWorkspaceFilePreview,
       terminalProjectPath,
       terminalProjectPathKey,
       workspaceOwner,

@@ -21,6 +21,7 @@ import {
   Search,
   TextSelect,
   Undo2,
+  WrapText,
   X,
 } from "@liveagent/ui/components/IconSet";
 import {
@@ -66,6 +67,7 @@ import { createPortal } from "react-dom";
 import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTextGeneration";
 import type { MarkdownSelectionActions } from "../resource-preview/PreviewChrome";
 import { PreviewLoading } from "../resource-preview/PreviewFeedback";
+import type { WorkspaceFilePreviewOpenRequest } from "./WorkspaceFilePreviewOverlay";
 import WorkspaceMarkdownEditor, {
   type WorkspaceMarkdownEditorHandle,
 } from "./WorkspaceMarkdownEditor";
@@ -73,6 +75,7 @@ import {
   createRemoteSftpEditorFileIo,
   type EditorFileIo,
   type EditorRemoteSource,
+  isEditorFileTooLarge,
   localEditorFileIo,
 } from "./workspaceEditorFileIo";
 
@@ -90,15 +93,61 @@ export type WorkspaceCodeEditorOpenRequest = {
   remote?: EditorRemoteSource;
 };
 
-type EditorTabStatus = "ready" | "saving" | "conflict";
+type EditorTabStatus = "ready" | "saving" | "reloading" | "conflict";
+
+// Full text lives here only until this tab first acquires a Monaco model.
+// After that, the model (including its undo stack and BOM/EOL) owns the text.
+type EditorTabBuffer = {
+  initialContent: string | null;
+  savedVersionId: number | null;
+  lightweight: boolean;
+  savePromise: Promise<boolean> | null;
+  reloadToken: symbol | null;
+};
+
+const LARGE_EDITOR_BYTES = 1024 * 1024;
+const LARGE_EDITOR_LINES = 20_000;
+const LONG_EDITOR_LINE = 10_000;
+
+function needsLightweightEditor(content: string, sizeBytes: number, totalLines: number) {
+  if (sizeBytes >= LARGE_EDITOR_BYTES || totalLines >= LARGE_EDITOR_LINES) return true;
+  let lineLength = 0;
+  for (let index = 0; index < content.length; index += 1) {
+    const code = content.charCodeAt(index);
+    lineLength = code === 10 || code === 13 ? 0 : lineLength + 1;
+    if (lineLength >= LONG_EDITOR_LINE) return true;
+  }
+  return false;
+}
+
+function editorPerformanceOptions(lightweight: boolean): monaco.editor.IEditorOptions {
+  return {
+    minimap: { enabled: !lightweight },
+    folding: !lightweight,
+    glyphMargin: !lightweight,
+    fontLigatures: !lightweight,
+    renderWhitespace: "none",
+    renderLineHighlight: lightweight ? "none" : "line",
+    matchBrackets: lightweight ? "never" : "always",
+    occurrencesHighlight: lightweight ? "off" : "singleFile",
+    selectionHighlight: !lightweight,
+    colorDecorators: !lightweight,
+    stickyScroll: { enabled: !lightweight },
+    stopRenderingLineAfter: LONG_EDITOR_LINE,
+    // Keep find/replace available without automatically searching for a huge selection.
+    find: { seedSearchStringFromSelection: lightweight ? "never" : "always" },
+  };
+}
 
 type EditorTab = {
   key: string;
   projectPathKey: string;
   workdir: string;
   path: string;
-  content: string;
-  savedContent: string;
+  dirty: boolean;
+  content?: string;
+  savedContent?: string;
+  markdownVersion?: number;
   mtimeMs: number;
   contentHash: string;
   sizeBytes: number;
@@ -146,7 +195,7 @@ type WorkspaceCodeEditorOverlayProps = {
   onDirtyChange?: (dirty: boolean) => void;
   theme: "light" | "dark";
   sftpClient?: SftpClient;
-  onPreviewFile: (request: WorkspaceCodeEditorOpenRequest) => void;
+  onPreviewFile: (request: WorkspaceFilePreviewOpenRequest) => void;
   onInsertCodeMention?: (reference: CodeMentionReference) => void;
   onHide: () => void;
   onClose: () => void;
@@ -238,8 +287,14 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const markdownEditorRef = useRef<WorkspaceMarkdownEditorHandle>(null);
   const markdownSaveRef = useRef<(key: string) => Promise<boolean>>(async () => false);
-  const pendingSaves = useRef(new Map<string, { content: string; operation: Promise<boolean> }>());
   const modelsRef = useRef(new Map<string, monaco.editor.ITextModel>());
+  const buffersRef = useRef(new Map<string, EditorTabBuffer>());
+  const tabsRef = useRef<EditorTab[]>([]);
+  const openReadsRef = useRef(new Map<string, { request: WorkspaceCodeEditorOpenRequest }>());
+  const mountedRef = useRef(true);
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  const dialogActionRef = useRef(false);
   const viewStatesRef = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const editorModelKeyRef = useRef("");
   const linkedLocationKeyRef = useRef("");
@@ -248,7 +303,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   const closeRequestIdRef = useRef<number | null>(null);
   const openAnimationFrameRef = useRef<number | null>(null);
   const closeAnimationTimeoutRef = useRef<number | null>(null);
-  const initialThemeRef = useRef(theme);
+  const performanceModeRef = useRef<boolean | null>(null);
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeKey, setActiveKey] = useState("");
   const [openingPaths, setOpeningPaths] = useState<string[]>([]);
@@ -258,16 +313,36 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   const [isVisible, setIsVisible] = useState(false);
   const [markdownHistory, setMarkdownHistory] = useState({ canUndo: false, canRedo: false });
 
+  const [dialogSaving, setDialogSaving] = useState(false);
+  const [wordWrap, setWordWrap] = useState(false);
+
+  // Async I/O and Monaco events must observe edits immediately, before React renders.
+  const setEditorTabs = useCallback((updater: (current: EditorTab[]) => EditorTab[]) => {
+    const next = updater(tabsRef.current);
+    if (next === tabsRef.current) return;
+    tabsRef.current = next;
+    setTabs(next);
+  }, []);
+
+  const tabNeedsSave = useCallback((tab: EditorTab) => {
+    const buffer = buffersRef.current.get(tab.key);
+    const model = modelsRef.current.get(tab.key);
+    return (
+      Boolean(buffer?.savePromise) ||
+      (model && buffer ? model.getAlternativeVersionId() !== buffer.savedVersionId : tab.dirty)
+    );
+  }, []);
+
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.key === activeKey) ?? tabs[0] ?? null,
     [activeKey, tabs],
   );
+  const lightweightTab = Boolean(activeTab && buffersRef.current.get(activeTab.key)?.lightweight);
   const canPreviewActiveTab = Boolean(
-    activeTab && !activeTab.remote && isWorkspacePreviewPath(activeTab.path),
+    activeTab && (lightweightTab || (!activeTab.remote && isWorkspacePreviewPath(activeTab.path))),
   );
-  const dirtyTabs = useMemo(() => tabs.filter((tab) => tab.content !== tab.savedContent), [tabs]);
-  const hasDirtyTabs = dirtyTabs.length > 0;
   const isOpening = openingPaths.length > 0;
+  const hasDirtyTabs = tabs.some((tab) => tab.dirty);
 
   useEffect(() => {
     openAnimationFrameRef.current = window.requestAnimationFrame(() => {
@@ -300,21 +375,65 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
     }, EDITOR_OVERLAY_ANIMATION_MS);
   }, [onHide]);
 
-  const finishClose = useCallback(() => {
-    if (closeAnimationTimeoutRef.current !== null) {
-      window.clearTimeout(closeAnimationTimeoutRef.current);
-      closeAnimationTimeoutRef.current = null;
-    }
-    setIsVisible(false);
-    closeAnimationTimeoutRef.current = window.setTimeout(() => {
-      closeAnimationTimeoutRef.current = null;
-      onClose();
-    }, EDITOR_OVERLAY_ANIMATION_MS);
-  }, [onClose]);
+  const finishClose = useCallback(
+    (discard = false) => {
+      const discardedVersions = discard
+        ? new Map(
+            tabsRef.current.map((tab) => [
+              tab.key,
+              {
+                buffer: buffersRef.current.get(tab.key),
+                version: modelsRef.current.get(tab.key)?.getVersionId() ?? tab.markdownVersion,
+              },
+            ]),
+          )
+        : null;
+      if (closeAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(closeAnimationTimeoutRef.current);
+        closeAnimationTimeoutRef.current = null;
+      }
+      setIsVisible(false);
+      closeAnimationTimeoutRef.current = window.setTimeout(() => {
+        closeAnimationTimeoutRef.current = null;
+        // Keyboard edits can arrive during the exit animation, too.
+        if (
+          tabsRef.current.some((tab) => {
+            const buffer = buffersRef.current.get(tab.key);
+            const discarded = discardedVersions?.get(tab.key);
+            const editedAfterDiscard =
+              discardedVersions &&
+              (discarded?.buffer !== buffer ||
+                discarded?.version !==
+                  (modelsRef.current.get(tab.key)?.getVersionId() ?? tab.markdownVersion));
+            return buffer?.savePromise || editedAfterDiscard || (!discard && tabNeedsSave(tab));
+          })
+        ) {
+          setIsVisible(true);
+          setPendingDialog({ kind: "closeOverlay" });
+          return;
+        }
+        openReadsRef.current.clear();
+        onClose();
+      }, EDITOR_OVERLAY_ANIMATION_MS);
+    },
+    [onClose, tabNeedsSave],
+  );
 
-  const updateTab = useCallback((tabKey: string, updater: (tab: EditorTab) => EditorTab) => {
-    setTabs((current) => current.map((tab) => (tab.key === tabKey ? updater(tab) : tab)));
-  }, []);
+  const updateTab = useCallback(
+    (tabKey: string, updater: (tab: EditorTab) => EditorTab) => {
+      setEditorTabs((current) => {
+        let changed = false;
+        const next = current.map((tab) => {
+          if (tab.key !== tabKey) return tab;
+          const updated = updater(tab);
+          changed ||= updated !== tab;
+          return updated;
+        });
+        return changed ? next : current;
+      });
+    },
+    [setEditorTabs],
+  );
 
   const disposeModel = useCallback((tabKey: string) => {
     const model = modelsRef.current.get(tabKey);
@@ -329,6 +448,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       editorModelKeyRef.current = "";
     }
     viewStatesRef.current.delete(tabKey);
+    buffersRef.current.delete(tabKey);
   }, []);
 
   const ioForSource = useCallback(
@@ -348,28 +468,30 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   );
 
   const saveTab = useCallback(
-    (tabKey: string) => {
-      const tab = tabs.find((item) => item.key === tabKey);
-      const pending = pendingSaves.current.get(tabKey);
-      if (pending) {
-        return pending.content === tab?.content
-          ? pending.operation
-          : pending.operation.then(() => false);
+    async (tabKey: string): Promise<boolean> => {
+      const tab = tabsRef.current.find((item) => item.key === tabKey);
+      const buffer = buffersRef.current.get(tabKey);
+      if (!tab || !buffer) return false;
+      // A second save/close must await the actual write, even if undo has made
+      // the model look clean relative to the previous on-disk baseline.
+      if (buffer.savePromise) return buffer.savePromise;
+      if (buffer.reloadToken) return false;
+      if (!tabNeedsSave(tab)) return true;
+      if (tab.status === "conflict") {
+        setGlobalError(tab.error ?? t("workspaceEditor.conflictMessage"));
+        return false;
       }
-      if (!tab || tab.content === tab.savedContent) return Promise.resolve(true);
-      const save = async () => {
-        if (tab.status === "conflict") {
-          const message = tab.error ?? t("workspaceEditor.conflictMessage");
-          setGlobalError(message);
-          return false;
-        }
-
-        const contentToSave = tab.content;
-        updateTab(tabKey, (current) => ({
-          ...current,
-          status: "saving",
-          error: null,
-        }));
+      const model = modelsRef.current.get(tabKey);
+      if (!model && tab.content === undefined) return false;
+      // Separate subsequent typing from the saved undo state. Preserve BOM and
+      // Monaco's detected EOL when materializing the sole full-text snapshot.
+      model?.pushStackElement();
+      const savedVersionId = model?.getAlternativeVersionId() ?? null;
+      const contentToSave = model ? model.getValue(undefined, true) : (tab.content ?? "");
+      updateTab(tabKey, (current) => ({ ...current, status: "saving", error: null }));
+      const operation = (async () => {
+        // Install savePromise before calling a transport (including synchronous failures).
+        await Promise.resolve();
         try {
           const io = ioForSource(tab.projectPathKey, tab.remote);
           const result = await io.write({
@@ -380,49 +502,48 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
             expectedContentHash: tab.contentHash,
             expectedSizeBytes: tab.sizeBytes,
           });
+          if (!mountedRef.current || buffersRef.current.get(tabKey) !== buffer) return false;
           if (result.kind === "conflict") {
             const message = t("workspaceEditor.conflictMessage");
-            updateTab(tabKey, (current) => ({
-              ...current,
-              status: "conflict",
-              error: message,
-            }));
+            updateTab(tabKey, (current) => ({ ...current, status: "conflict", error: message }));
             setGlobalError(message);
             return false;
           }
+          buffer.savedVersionId = savedVersionId;
+          const current = tabsRef.current.find((item) => item.key === tabKey);
+          const dirty = model
+            ? model.getAlternativeVersionId() !== savedVersionId
+            : current?.content !== contentToSave;
           updateTab(tabKey, (current) => ({
             ...current,
-            savedContent: contentToSave,
+            dirty,
+            savedContent: model ? undefined : contentToSave,
             mtimeMs: result.mtimeMs,
             contentHash: result.contentHash,
-            totalLines:
-              result.totalLines !== null && current.content === contentToSave
-                ? result.totalLines
-                : current.totalLines,
             sizeBytes: result.sizeBytes,
             status: "ready",
             error: null,
           }));
           setGlobalError(null);
           onFileSaved?.();
-          return true;
+          // Callers may only close/reload when the saved snapshot is still current.
+          return !dirty;
         } catch (error) {
+          if (!mountedRef.current || buffersRef.current.get(tabKey) !== buffer) return false;
           const message = toMessage(error, t("workspaceEditor.saveFailed"));
-          updateTab(tabKey, (current) => ({
-            ...current,
-            status: "ready",
-            error: message,
-          }));
+          updateTab(tabKey, (current) => ({ ...current, status: "ready", error: message }));
           setGlobalError(message);
           return false;
+        } finally {
+          buffer.savePromise = null;
         }
-      };
-      const operation = save().finally(() => pendingSaves.current.delete(tabKey));
-      pendingSaves.current.set(tabKey, { content: tab.content, operation });
+      })();
+      buffer.savePromise = operation;
       return operation;
     },
-    [ioForSource, onFileSaved, t, tabs, updateTab],
+    [ioForSource, onFileSaved, t, tabNeedsSave, updateTab],
   );
+
   markdownSaveRef.current = saveTab;
   const markdownDirty =
     !!markdownMode &&
@@ -450,37 +571,45 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       },
       saveForModeChange: async () => {
         if (!activeTab) return true;
-        const model = modelsRef.current.get(activeTab.key);
         // A user may keep editing while the write is in flight. Stay in source
         // mode if the model moved past the version that was just saved.
         const markdown = markdownEditorRef.current;
-        if (model && model.getValue() !== activeTab.content) return false;
         if (markdown && markdown.getValue() !== activeTab.content) return false;
+        if (!(await saveTab(activeTab.key))) return false;
+        const current = tabsRef.current.find((tab) => tab.key === activeTab.key);
         return (
-          (await saveTab(activeTab.key)) &&
-          (!model || (!model.isDisposed() && model.getValue() === activeTab.content)) &&
+          !!current &&
+          !tabNeedsSave(current) &&
           (!markdown ||
-            (markdownEditorRef.current === markdown && markdown.getValue() === activeTab.content))
+            (markdownEditorRef.current === markdown && markdown.getValue() === current.content))
         );
       },
     }),
-    [activeTab, saveTab],
+    [activeTab, saveTab, tabNeedsSave],
   );
 
   const readTab = useCallback(
     async (request: WorkspaceCodeEditorOpenRequest) => {
       const key = editorTabKey(request.projectPathKey, request.path, request.remote);
-      const existing = tabs.find((tab) => tab.key === key);
+      const existing = tabsRef.current.find((tab) => tab.key === key);
       if (existing) {
         setActiveKey(key);
         setGlobalError(null);
         return;
       }
 
-      setOpeningPaths((current) => [
-        ...current.filter((item) => item !== request.path),
-        request.path,
-      ]);
+      const pending = openReadsRef.current.get(key);
+      if (pending) {
+        pending.request = request;
+        return;
+      }
+      const read = { request };
+      openReadsRef.current.set(key, read);
+      const isCurrent = () =>
+        mountedRef.current &&
+        openRequestIdRef.current === read.request.id &&
+        openReadsRef.current.get(key) === read;
+      setOpeningPaths((current) => [...current, key]);
       setGlobalError(null);
       try {
         const io = ioForSource(request.projectPathKey, request.remote);
@@ -488,13 +617,29 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
           workdir: request.workdir,
           path: request.path,
         });
+        if (!mountedRef.current || openReadsRef.current.get(key) !== read) return;
+        buffersRef.current.set(key, {
+          initialContent: markdownMode ? null : response.content,
+          savedVersionId: null,
+          lightweight: needsLightweightEditor(
+            response.content,
+            response.sizeBytes,
+            response.totalLines,
+          ),
+          savePromise: null,
+          reloadToken: null,
+        });
         const nextTab: EditorTab = {
           key,
           projectPathKey: request.projectPathKey,
           workdir: request.workdir,
           path: response.path,
-          content: response.content,
-          savedContent: response.content,
+          ...(markdownMode && {
+            content: response.content,
+            savedContent: response.content,
+            markdownVersion: 0,
+          }),
+          dirty: false,
           mtimeMs: response.mtimeMs,
           contentHash: response.contentHash,
           sizeBytes: response.sizeBytes,
@@ -504,66 +649,116 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
           error: null,
           remote: request.remote,
         };
-        setTabs((current) => {
-          if (current.some((tab) => tab.key === key)) return current;
-          return [...current, nextTab];
-        });
-        setActiveKey(key);
+        setEditorTabs((current) => [...current, nextTab]);
+        if (isCurrent()) setActiveKey(key);
       } catch (error) {
-        setGlobalError(toMessage(error, t("workspaceEditor.openFailed")));
+        if (isCurrent()) {
+          if (isEditorFileTooLarge(error)) {
+            if (isOpenRef.current) onPreviewFile({ ...read.request, textRange: true });
+            else openRequestIdRef.current = null;
+          } else {
+            setGlobalError(toMessage(error, t("workspaceEditor.openFailed")));
+          }
+        }
       } finally {
-        setOpeningPaths((current) => current.filter((item) => item !== request.path));
+        if (openReadsRef.current.get(key) === read) {
+          openReadsRef.current.delete(key);
+          setOpeningPaths((current) => current.filter((item) => item !== key));
+        }
       }
     },
-    [ioForSource, t, tabs],
+    [ioForSource, markdownMode, onPreviewFile, setEditorTabs, t],
   );
 
   const reloadTab = useCallback(
     async (tabKey: string) => {
-      const tab = tabs.find((item) => item.key === tabKey);
-      if (!tab) return false;
-      setOpeningPaths((current) => [...current.filter((item) => item !== tab.path), tab.path]);
+      const tab = tabsRef.current.find((item) => item.key === tabKey);
+      const buffer = buffersRef.current.get(tabKey);
+      if (!tab || !buffer || buffer.savePromise || buffer.reloadToken) return false;
+      const token = Symbol();
+      buffer.reloadToken = token;
+      // The monotonic ID catches edits even when they are subsequently undone.
+      const startModel = modelsRef.current.get(tabKey);
+      const startVersion = startModel?.getVersionId() ?? tab.markdownVersion;
+      setOpeningPaths((current) => [...current, tabKey]);
+      updateTab(tabKey, (current) => ({ ...current, status: "reloading" }));
       setGlobalError(null);
       try {
         const io = ioForSource(tab.projectPathKey, tab.remote);
-        const response = await io.read({
-          workdir: tab.workdir,
-          path: tab.path,
-        });
+        const response = await io.read({ workdir: tab.workdir, path: tab.path });
+        if (
+          !mountedRef.current ||
+          buffersRef.current.get(tabKey) !== buffer ||
+          buffer.reloadToken !== token
+        )
+          return false;
         const model = modelsRef.current.get(tabKey);
-        if (model && model.getValue() !== response.content) {
+        const changedDuringRead = startModel
+          ? !model || model !== startModel || model.getVersionId() !== startVersion
+          : model
+            ? model.getAlternativeVersionId() !== buffer.savedVersionId
+            : tabsRef.current.find((item) => item.key === tabKey)?.markdownVersion !== startVersion;
+        if (changedDuringRead) {
+          updateTab(tabKey, (current) => ({ ...current, status: tab.status }));
+          setPendingDialog({ kind: "reloadTab", tabKey });
+          return false;
+        }
+        buffer.lightweight = needsLightweightEditor(
+          response.content,
+          response.sizeBytes,
+          response.totalLines,
+        );
+        if (model) {
+          // An explicit reload resets the undo history and establishes a new baseline.
           model.setValue(response.content);
+          buffer.savedVersionId = model.getAlternativeVersionId();
+          buffer.initialContent = null;
+        } else if (tab.content === undefined) {
+          buffer.initialContent = response.content;
         }
         updateTab(tabKey, (current) => ({
           ...current,
           path: response.path,
-          content: response.content,
-          savedContent: response.content,
+          ...(current.content !== undefined && {
+            content: response.content,
+            savedContent: response.content,
+          }),
+          dirty: false,
           mtimeMs: response.mtimeMs,
           contentHash: response.contentHash,
           sizeBytes: response.sizeBytes,
-          totalLines: response.totalLines,
+          totalLines: model
+            ? model.getValueLength() === 0
+              ? 0
+              : model.getLineCount()
+            : response.totalLines,
           language: monaco.languageForPath(response.path),
           status: "ready",
           error: null,
         }));
         return true;
       } catch (error) {
+        if (!mountedRef.current || buffersRef.current.get(tabKey) !== buffer) return false;
         const message = toMessage(error, t("workspaceEditor.reloadFailed"));
-        updateTab(tabKey, (current) => ({ ...current, error: message }));
+        updateTab(tabKey, (current) => ({ ...current, status: tab.status, error: message }));
         setGlobalError(message);
         return false;
       } finally {
-        setOpeningPaths((current) => current.filter((item) => item !== tab.path));
+        if (buffersRef.current.get(tabKey) === buffer && buffer.reloadToken === token) {
+          buffer.reloadToken = null;
+          setOpeningPaths((current) => current.filter((item) => item !== tabKey));
+        }
       }
     },
-    [ioForSource, t, tabs, updateTab],
+    [ioForSource, t, updateTab],
   );
 
   const closeTabNow = useCallback(
     (tabKey: string) => {
+      if (buffersRef.current.get(tabKey)?.savePromise) return;
       disposeModel(tabKey);
-      setTabs((current) => {
+      setOpeningPaths((current) => current.filter((item) => item !== tabKey));
+      setEditorTabs((current) => {
         const index = current.findIndex((tab) => tab.key === tabKey);
         if (index < 0) return current;
         const next = current.filter((tab) => tab.key !== tabKey);
@@ -574,42 +769,47 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
         return next;
       });
     },
-    [disposeModel],
+    [disposeModel, setEditorTabs],
   );
 
   const requestCloseTab = useCallback(
     (tabKey: string) => {
-      const tab = tabs.find((item) => item.key === tabKey);
+      const tab = tabsRef.current.find((item) => item.key === tabKey);
       if (!tab) return;
-      if (tab.content !== tab.savedContent) {
+      if (tabNeedsSave(tab)) {
         setPendingDialog({ kind: "closeTab", tabKey });
         return;
       }
       closeTabNow(tabKey);
     },
-    [closeTabNow, tabs],
+    [closeTabNow, tabNeedsSave],
   );
 
   const requestReloadTab = useCallback(
     (tabKey: string) => {
-      const tab = tabs.find((item) => item.key === tabKey);
+      const tab = tabsRef.current.find((item) => item.key === tabKey);
       if (!tab) return;
-      if (tab.status !== "conflict" && tab.content !== tab.savedContent) {
+      if (
+        buffersRef.current.get(tabKey)?.savePromise ||
+        buffersRef.current.get(tabKey)?.reloadToken
+      )
+        return;
+      if (tab.status !== "conflict" && tabNeedsSave(tab)) {
         setPendingDialog({ kind: "reloadTab", tabKey });
         return;
       }
       void reloadTab(tabKey);
     },
-    [reloadTab, tabs],
+    [reloadTab, tabNeedsSave],
   );
 
   const requestCloseOverlay = useCallback(() => {
-    if (hasDirtyTabs) {
+    if (tabsRef.current.some(tabNeedsSave)) {
       setPendingDialog({ kind: "closeOverlay" });
       return;
     }
     finishClose();
-  }, [finishClose, hasDirtyTabs]);
+  }, [finishClose, tabNeedsSave]);
 
   const hideOverlay = useCallback(() => {
     if (finalCloseRequested) {
@@ -623,10 +823,15 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
 
   const discardDialogTarget = useCallback(() => {
     const dialog = pendingDialog;
+    if (!dialog || dialogActionRef.current) return;
+    const targets =
+      dialog.kind === "closeOverlay"
+        ? tabsRef.current
+        : tabsRef.current.filter((tab) => tab.key === dialog.tabKey);
+    if (targets.some((tab) => buffersRef.current.get(tab.key)?.savePromise)) return;
     setPendingDialog(null);
-    if (!dialog) return;
     if (dialog.kind === "closeOverlay") {
-      finishClose();
+      finishClose(true);
       return;
     }
     if (dialog.kind === "closeTab") {
@@ -638,27 +843,36 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
 
   const saveDialogTarget = useCallback(() => {
     const dialog = pendingDialog;
-    if (!dialog) return;
+    if (!dialog || dialogActionRef.current) return;
+    dialogActionRef.current = true;
+    setDialogSaving(true);
+    const requestId = openRequestIdRef.current;
     void (async () => {
-      if (dialog.kind === "closeOverlay") {
-        for (const tab of dirtyTabs) {
-          const saved = await saveTab(tab.key);
-          if (!saved) return;
+      try {
+        const targets =
+          dialog.kind === "closeOverlay"
+            ? tabsRef.current.filter(tabNeedsSave)
+            : tabsRef.current.filter((tab) => tab.key === dialog.tabKey);
+        for (const tab of targets) {
+          if (!(await saveTab(tab.key))) return;
+          if (openRequestIdRef.current !== requestId || !mountedRef.current) return;
         }
+        // An earlier tab can be edited while a later tab is saving.
+        const remaining =
+          dialog.kind === "closeOverlay"
+            ? tabsRef.current
+            : tabsRef.current.filter((tab) => tab.key === dialog.tabKey);
+        if (remaining.some(tabNeedsSave)) return;
         setPendingDialog(null);
-        finishClose();
-        return;
-      }
-      const saved = await saveTab(dialog.tabKey);
-      if (!saved) return;
-      setPendingDialog(null);
-      if (dialog.kind === "closeTab") {
-        closeTabNow(dialog.tabKey);
-      } else {
-        void reloadTab(dialog.tabKey);
+        if (dialog.kind === "closeOverlay") finishClose();
+        else if (dialog.kind === "closeTab") closeTabNow(dialog.tabKey);
+        else void reloadTab(dialog.tabKey);
+      } finally {
+        dialogActionRef.current = false;
+        if (mountedRef.current) setDialogSaving(false);
       }
     })();
-  }, [closeTabNow, dirtyTabs, finishClose, pendingDialog, reloadTab, saveTab]);
+  }, [closeTabNow, finishClose, pendingDialog, reloadTab, saveTab, tabNeedsSave]);
 
   const showFind = useCallback(() => {
     if (markdownEditorRef.current) {
@@ -789,12 +1003,12 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
   );
 
   useEffect(() => {
-    if (!openRequest || openRequestIdRef.current === openRequest.id) return;
+    if (!isOpen || !openRequest || openRequestIdRef.current === openRequest.id) return;
     openRequestIdRef.current = openRequest.id;
     cancelPendingClose();
     setIsVisible(true);
     void readTab(openRequest);
-  }, [cancelPendingClose, openRequest, readTab]);
+  }, [cancelPendingClose, isOpen, openRequest, readTab]);
 
   useEffect(() => {
     if (isOpen && closeAnimationTimeoutRef.current !== null) return;
@@ -823,31 +1037,53 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
     activeKeyRef.current = activeTab?.key ?? "";
   }, [activeTab?.key]);
 
+  const hasActiveTab = activeTab !== null && !markdownMode;
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || editorRef.current) return;
+    if (!hasActiveTab || !container || editorRef.current) return;
     enableWorkspaceSourceSyntax(monaco);
-    const editor = monaco.editor.create(container, {
+    editorRef.current = monaco.editor.create(container, {
       automaticLayout: true,
       fontSize: 13,
-      fontLigatures: true,
-      minimap: { enabled: true },
+      ...editorPerformanceOptions(false),
+      largeFileOptimizations: true,
+      "semanticHighlighting.enabled": true,
       model: null,
       contextmenu: false,
       scrollBeyondLastLine: false,
       smoothScrolling: true,
       tabSize: 2,
-      "semanticHighlighting.enabled": true,
-      theme: initialThemeRef.current === "dark" ? "vs-dark" : "vs",
+      theme: theme === "dark" ? "vs-dark" : "vs",
     });
-    editorRef.current = editor;
+    performanceModeRef.current = false;
+  }, [hasActiveTab, theme]);
+
+  useEffect(() => {
+    if (!hasActiveTab) return;
+    // Keep wrapping independent of lightweight options so tab switches and edits
+    // cannot reset the user's choice. These are view options; the model and its
+    // undo stack stay intact. Override2 also keeps "off" effective in a11y mode.
+    editorRef.current?.updateOptions({
+      wordWrap: wordWrap ? "on" : "off",
+      wordWrapOverride2: wordWrap ? "on" : "off",
+      wrappingStrategy: "simple",
+      // Monaco scans entire physical lines synchronously when wrapping. This
+      // bounds rendering per view line, not wrap computation; never lift it to -1.
+      stopRenderingLineAfter: LONG_EDITOR_LINE,
+    });
+  }, [hasActiveTab, wordWrap]);
+
+  useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      editor.dispose();
+      mountedRef.current = false;
+      openRequestIdRef.current = null;
+      openReadsRef.current.clear();
+      editorRef.current?.dispose();
       editorRef.current = null;
-      for (const model of modelsRef.current.values()) {
-        model.dispose();
-      }
+      for (const model of modelsRef.current.values()) model.dispose();
       modelsRef.current.clear();
+      buffersRef.current.clear();
       viewStatesRef.current.clear();
     };
   }, []);
@@ -868,28 +1104,81 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       viewStatesRef.current.set(previousKey, editor.saveViewState());
     }
 
+    const buffer = buffersRef.current.get(activeTab.key);
+    if (!buffer) return;
     let model = modelsRef.current.get(activeTab.key);
     if (!model) {
+      if (buffer.initialContent === null) return;
       model = monaco.editor.createModel(
-        activeTab.content,
-        activeTab.language,
+        buffer.initialContent,
+        buffer.lightweight ? "plaintext" : activeTab.language,
         editorModelUri(`${viewScope}\u0000${activeTab.key}`, activeTab.path),
       );
-      model.onDidChangeContent(() => {
-        const value = model?.getValue() ?? "";
-        const lineCount = model?.getLineCount() ?? 0;
-        setTabs((current) =>
-          current.map((tab) =>
-            tab.key === activeTab.key
-              ? { ...tab, content: value, totalLines: lineCount, error: null }
-              : tab,
-          ),
+      buffer.savedVersionId = model.getAlternativeVersionId();
+      buffer.initialContent = null;
+      const tabModel = model;
+      const tabKey = activeTab.key;
+      tabModel.onDidChangeContent((event) => {
+        if (buffersRef.current.get(tabKey) !== buffer) return;
+        const length = tabModel.getValueLength();
+        const lineCount = length === 0 ? 0 : tabModel.getLineCount();
+        if (!buffer.lightweight) {
+          let lightweight = length >= LARGE_EDITOR_BYTES || lineCount >= LARGE_EDITOR_LINES;
+          // Changes use pre-edit offsets. Translate them into the completed model
+          // before inspecting changed lines (replace-all/multicursor can move them).
+          const changes =
+            event.changes.length > 1
+              ? [...event.changes].sort((a, b) => a.rangeOffset - b.rangeOffset)
+              : event.changes;
+          let offsetDelta = 0;
+          for (const change of changes) {
+            if (lightweight) break;
+            const startOffset = change.rangeOffset + offsetDelta;
+            const firstLine = tabModel.getPositionAt(startOffset).lineNumber;
+            const lastLine = tabModel.getPositionAt(startOffset + change.text.length).lineNumber;
+            offsetDelta += change.text.length - change.rangeLength;
+            for (let line = firstLine; line <= lastLine; line += 1) {
+              if (tabModel.getLineLength(line) >= LONG_EDITOR_LINE) {
+                lightweight = true;
+                break;
+              }
+            }
+          }
+          if (lightweight) {
+            buffer.lightweight = true;
+            monaco.editor.setModelLanguage(tabModel, "plaintext");
+            if (editorRef.current?.getModel() === tabModel) {
+              editorRef.current.updateOptions(editorPerformanceOptions(true));
+              performanceModeRef.current = true;
+            }
+          }
+        }
+        const dirty = tabModel.getAlternativeVersionId() !== buffer.savedVersionId;
+        updateTab(tabKey, (tab) =>
+          tab.dirty === dirty && tab.totalLines === lineCount && !tab.error
+            ? tab
+            : {
+                ...tab,
+                dirty,
+                totalLines: lineCount,
+                error: tab.status === "conflict" ? tab.error : null,
+              },
         );
       });
       modelsRef.current.set(activeTab.key, model);
+      updateTab(activeTab.key, (tab) => ({
+        ...tab,
+        totalLines: tabModel.getValueLength() === 0 ? 0 : tabModel.getLineCount(),
+      }));
     }
-    if (model.getLanguageId() !== activeTab.language) {
-      monaco.editor.setModelLanguage(model, activeTab.language);
+    const language = buffer.lightweight ? "plaintext" : activeTab.language;
+    if (model.getLanguageId() !== language) {
+      monaco.editor.setModelLanguage(model, language);
+    }
+    // Updating options on attachment also restores normal features after a large tab.
+    if (performanceModeRef.current !== buffer.lightweight) {
+      editor.updateOptions(editorPerformanceOptions(buffer.lightweight));
+      performanceModeRef.current = buffer.lightweight;
     }
     if (editor.getModel() !== model) {
       editor.setModel(model);
@@ -900,7 +1189,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       if (isOpen) editor.focus();
     }
     editorModelKeyRef.current = activeTab.key;
-  }, [activeTab, isOpen, viewScope]);
+  }, [activeTab, isOpen, updateTab, viewScope]);
 
   const activeTabKey = activeTab?.key;
   useEffect(() => {
@@ -1013,9 +1302,9 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       <IconButton
         label={t("workspaceEditor.save")}
         disabled={
-          !activeTab ||
-          activeTab.content === activeTab.savedContent ||
+          !activeTab?.dirty ||
           activeTab.status === "saving" ||
+          activeTab.status === "reloading" ||
           activeTab.status === "conflict"
         }
         onClick={() => activeTab && void saveTab(activeTab.key)}
@@ -1038,6 +1327,16 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
           <Replace className="size-4" />
         </IconButton>
       )}
+      {!markdownMode && (
+        <IconButton
+          label={t("workspaceEditor.wordWrap")}
+          pressed={wordWrap}
+          disabled={!activeTab}
+          onClick={() => setWordWrap((current) => !current)}
+        >
+          <WrapText className="size-4" aria-hidden="true" />
+        </IconButton>
+      )}
       <RefreshButton
         variant="ghost"
         size="icon-sm"
@@ -1058,6 +1357,8 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
               projectPathKey: activeTab.projectPathKey,
               workdir: activeTab.workdir,
               path: activeTab.path,
+              remote: activeTab.remote,
+              textRange: lightweightTab,
             })
           }
         >
@@ -1119,7 +1420,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
           )}
         >
           {tabs.map((tab) => {
-            const dirty = tab.content !== tab.savedContent;
+            const dirty = tab.dirty;
             return (
               <div
                 key={tab.key}
@@ -1201,7 +1502,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
             <WorkspaceMarkdownEditor
               key={activeTab.key}
               handle={markdownEditorRef}
-              value={activeTab.content}
+              value={activeTab.content ?? ""}
               mode={markdownMode}
               active={isOpen}
               readOnly={false}
@@ -1215,6 +1516,8 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
                 updateTab(activeTab.key, (tab) => ({
                   ...tab,
                   content,
+                  dirty: content !== tab.savedContent,
+                  markdownVersion: (tab.markdownVersion ?? 0) + 1,
                   totalLines: content.split(/\r\n?|\n/).length,
                   error: tab.status === "conflict" ? tab.error : null,
                 }))
@@ -1339,7 +1642,12 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
             ? `${activeTab.remote ? `${t("workspaceEditor.remoteTabBadge")} · ` : ""}${activeTab.language} · ${activeTab.totalLines} ${t("workspaceEditor.lines")} · ${formatBytes(activeTab.sizeBytes)}`
             : ""}
         </span>
-        {activeTab?.content !== activeTab?.savedContent ? (
+        {lightweightTab ? (
+          <span className="min-w-0 truncate" title={t("workspaceEditor.largeFileModeDetails")}>
+            {t("workspaceEditor.largeFileMode")}
+          </span>
+        ) : null}
+        {activeTab?.dirty ? (
           <span className="shrink-0 text-primary">{t("workspaceEditor.unsaved")}</span>
         ) : null}
       </div>
@@ -1347,7 +1655,7 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
       <AlertDialog
         open={(showDialogs ?? isOpen) && pendingDialog !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingDialog(null);
+          if (!open && !dialogActionRef.current) setPendingDialog(null);
         }}
       >
         <AlertDialogContent className="max-w-md p-0">
@@ -1359,13 +1667,23 @@ export function WorkspaceCodeEditorOverlay(props: WorkspaceCodeEditorOverlayProp
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogActions className="max-sm:grid-cols-1">
-              <Button type="button" variant="outline" onClick={() => setPendingDialog(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={dialogSaving}
+                onClick={() => setPendingDialog(null)}
+              >
                 {t("workspaceEditor.cancel")}
               </Button>
-              <Button type="button" variant="outline" onClick={discardDialogTarget}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={dialogSaving}
+                onClick={discardDialogTarget}
+              >
                 {t("workspaceEditor.discard")}
               </Button>
-              <Button type="button" onClick={saveDialogTarget}>
+              <Button type="button" disabled={dialogSaving} onClick={saveDialogTarget}>
                 {pendingDialog?.kind === "closeOverlay"
                   ? t("workspaceEditor.saveAll")
                   : t("workspaceEditor.save")}
@@ -1413,19 +1731,22 @@ function ContextMenuSeparator() {
 function IconButton(props: {
   label: string;
   disabled?: boolean;
+  pressed?: boolean;
   children: ReactNode;
   onClick: () => void;
 }) {
-  const { label, disabled = false, children, onClick } = props;
+  const { label, disabled = false, pressed, children, onClick } = props;
   return (
     <button
       type="button"
       className={cn(
         "flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors",
         "hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
+        pressed && "bg-muted text-foreground",
       )}
       title={label}
       aria-label={label}
+      aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
     >

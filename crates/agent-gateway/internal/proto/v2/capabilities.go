@@ -30,3 +30,8 @@ const PermissionRulesV1Capability = "PERMISSION_RULES_V1"
 
 // WorkspaceHandoffPathV1Capability promises the device checks the confirmed path before any transfer.
 const WorkspaceHandoffPathV1Capability = "WORKSPACE_HANDOFF_PATH_V1"
+
+// UsageStatsV1Capability identifies desktop runtimes that handle the
+// usage_stats agent request (Settings → Usage: read-only token usage
+// aggregated by K-brain across sessions).
+const UsageStatsV1Capability = "ZEROAGENT_USAGE_STATS_V1"

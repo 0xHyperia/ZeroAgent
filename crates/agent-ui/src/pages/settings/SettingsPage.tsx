@@ -7,6 +7,7 @@ import {
   Brain,
   Cable,
   CalendarDays,
+  ChartColumn,
   Clock3,
   Cloud,
   Cpu,
@@ -34,6 +35,7 @@ import { SshSection } from "./SshSection";
 import { SttSection } from "./SttSection";
 import { SystemSettingsForm } from "./SystemSettingsForm";
 import { SystemToolsSection } from "./SystemToolsSection";
+import { UsageStatsSection } from "./UsageStatsSection";
 import { WebSearchSection } from "./WebSearchSection";
 
 const EMPTY_SERVICES = {};
@@ -124,6 +126,27 @@ export function SettingsPage(props: SettingsPageProps) {
         icon: <BookOpen className={extension.iconClassName} />,
         render: () => <AgentsSection settings={settings} setSettings={setSettings} />,
       },
+      // Only hosts that can reach K-brain's usage API get the page.
+      ...(props.settingsHost?.kbrain?.getUsageStats
+        ? [
+            {
+              id: "usage",
+              groupKey: "settings.groupGeneral",
+              groupOrder: 10,
+              order: 40,
+              labelKey: "settings.navUsage",
+              icon: <ChartColumn className={extension.iconClassName} />,
+              showSaveIndicator: false,
+              render: () =>
+                props.settingsHost?.kbrain ? (
+                  <UsageStatsSection
+                    key={props.settingsHost.usageScope}
+                    kbrain={props.settingsHost.kbrain}
+                  />
+                ) : null,
+            } satisfies SettingsSectionDefinition<void>,
+          ]
+        : []),
       ...(["skills", "mcp"] as const).map((id, index) => ({
         id,
         groupKey: "settings.groupResources",

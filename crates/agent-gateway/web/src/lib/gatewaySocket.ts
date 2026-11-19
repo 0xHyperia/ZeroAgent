@@ -253,6 +253,7 @@ export type GatewayWebSocketClientLike = {
     projectPathKey: string;
     workdir: string;
     path: string;
+    offset?: number;
     maxBytes?: number;
     strictUtf8?: boolean;
   }): Promise<SftpReadTextResponse>;
@@ -264,6 +265,7 @@ export type GatewayWebSocketClientLike = {
     content: string;
     expectedMtime?: number;
     expectedSizeBytes?: number;
+    expectedContentHash?: string;
   }): Promise<SftpActionResponse>;
   terminalShellOptions(): Promise<TerminalShellOptions>;
   listTerminals(
@@ -423,7 +425,11 @@ export type GatewayWebSocketClientLike = {
     expectedMtimeMs?: number;
     expectedContentHash?: string;
   }): Promise<FsWriteTextResponse>;
-  readEditableTextFile(workdir: string, path: string): Promise<FsReadEditableTextResponse>;
+  readEditableTextFile(
+    workdir: string,
+    path: string,
+    previewOffset?: number,
+  ): Promise<FsReadEditableTextResponse>;
   readWorkspaceImageFile(workdir: string, path: string): Promise<FsReadWorkspaceImageResponse>;
   openChatFile(params: {
     conversationId: string;
