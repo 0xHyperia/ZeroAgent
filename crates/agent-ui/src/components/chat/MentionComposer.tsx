@@ -37,6 +37,13 @@ import {
   runComposerCommand,
 } from "@liveagent/ui/lib/chat/composerCommands";
 import {
+  type ComposerComment,
+  type ComposerCommentInput,
+  createComposerComment,
+  removeComposerComment,
+  upsertComposerComment,
+} from "@liveagent/ui/lib/chat/composerComments";
+import {
   insertPlainTextWithUndo,
   normalizeLogicalLineEndings,
 } from "@liveagent/ui/lib/chat/composerText";
@@ -54,7 +61,7 @@ import {
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
-import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
+import { invokeFs, isFsBackendError } from "@liveagent/ui/lib/tools/fsBackend";
 import {
   type ClipboardEvent,
   type FocusEvent,
@@ -74,6 +81,7 @@ import {
 } from "react";
 import { readComposerSendShortcut, shouldSendOnEnter } from "../../lib/chat/sendShortcut";
 import { ComposerCommandPanel } from "./ComposerCommandPanel";
+import { ComposerCommentChips } from "./ComposerCommentChips";
 import { ComposerWorkspaceExcerpts } from "./ComposerWorkspaceExcerpts";
 import {
   CARET_ANCHOR_TEXT,
@@ -265,6 +273,8 @@ export const MentionComposer = memo(
     const suggestionListId = useId();
     const editorRef = useRef<HTMLDivElement>(null);
     const [workspaceExcerpts, setWorkspaceExcerpts] = useState<WorkspaceExcerpt[]>([]);
+    const [comments, setCommentsState] = useState<ComposerComment[]>([]);
+    const commentsRef = useRef<ComposerComment[]>([]);
     const workspaceExcerptsRef = useRef<WorkspaceExcerpt[]>([]);
     const replaceWorkspaceExcerpts = useCallback((excerpts: WorkspaceExcerpt[]) => {
       workspaceExcerptsRef.current = excerpts;
@@ -500,7 +510,15 @@ export const MentionComposer = memo(
     // Prefetch: send interception is synchronous and only knows loaded command names.
     useEffect(() => {
       refreshCommandCatalog();
-    }, [refreshCommandCatalog]);
+      const unsubscribe = commandHost?.subscribeCommandCatalog?.(() => {
+        setCommandCatalog([]);
+        refreshCommandCatalog();
+      });
+      return () => {
+        unsubscribe?.();
+        commandCatalogSeqRef.current += 1;
+      };
+    }, [commandHost, refreshCommandCatalog]);
 
     const setMentionMenuMode = useCallback((mode: MentionMenuMode) => {
       mentionMenuModeRef.current = mode;
@@ -587,17 +605,28 @@ export const MentionComposer = memo(
               mentionFetchRef.current = { ...mentionFetchRef.current, truncated: resp.truncated };
             }
           })
-          .catch(() => {
+          .catch((error: unknown) => {
             if (requestSeq !== mentionSessionRequestSeqRef.current) return;
             setMentionSessionEntries([]);
-            setMentionSessionError("Could not index files");
+            const code = isFsBackendError(error) ? error.code : undefined;
+            const unavailable =
+              code === "invalid_workdir" || code === "not_found" || code === "not_a_directory";
+            setMentionSessionError(
+              t(
+                unavailable
+                  ? "chat.composer.fileIndexMissingWorkspace"
+                  : code === "out_of_bounds" || code === "unsupported_target"
+                    ? "chat.composer.fileIndexUnavailable"
+                    : "chat.composer.fileIndexFailed",
+              ),
+            );
           })
           .finally(() => {
             if (requestSeq !== mentionSessionRequestSeqRef.current) return;
             setMentionSessionLoading(false);
           });
       },
-      [cancelMentionRefetch, normalizedWorkdir, refreshCommandCatalog],
+      [cancelMentionRefetch, normalizedWorkdir, refreshCommandCatalog, t],
     );
 
     const scheduleMentionRefetch = useCallback(
@@ -934,7 +963,9 @@ export const MentionComposer = memo(
       const el = editorRef.current;
       if (!el) return;
       applyEmptyState(
-        !workspaceExcerptsRef.current.length && editorTextIsEmpty(el),
+        !workspaceExcerptsRef.current.length &&
+          !commentsRef.current.length &&
+          editorTextIsEmpty(el),
         editorHasNoContent(el),
       );
     }, [applyEmptyState]);
@@ -945,6 +976,21 @@ export const MentionComposer = memo(
     const notifyUserEdit = useCallback(() => {
       editorRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
     }, []);
+
+    const replaceComments = useCallback((next: ComposerComment[]) => {
+      commentsRef.current = next;
+      setCommentsState(next);
+    }, []);
+
+    const updateComments = useCallback(
+      (next: ComposerComment[]) => {
+        if (next === commentsRef.current) return;
+        replaceComments(next);
+        refreshEmptyState();
+        notifyUserEdit();
+      },
+      [notifyUserEdit, refreshEmptyState, replaceComments],
+    );
 
     const clearTransientText = useCallback(
       (preserveLastText: boolean) => {
@@ -1005,6 +1051,7 @@ export const MentionComposer = memo(
       const segments = serializeChildrenToSegments(el, largePastesRef.current);
       for (const excerpt of workspaceExcerptsRef.current)
         segments.push({ type: "workspaceExcerpt", excerpt });
+      for (const comment of commentsRef.current) segments.push({ type: "comment", comment });
       const largePastes: MentionComposerLargePaste[] = [];
       const skillMentions: MentionComposerSkillMention[] = [];
       const appMentions: MentionComposerAppMention[] = [];
@@ -1040,7 +1087,11 @@ export const MentionComposer = memo(
         gitFileMentions,
         conversationMentions,
         codeMentions,
-        isEmpty: !workspaceExcerptsRef.current.length && editorTextIsEmpty(el),
+        comments: commentsRef.current.slice(),
+        isEmpty:
+          !workspaceExcerptsRef.current.length &&
+          !commentsRef.current.length &&
+          editorTextIsEmpty(el),
       };
     }, []);
 
@@ -1167,6 +1218,13 @@ export const MentionComposer = memo(
             segment.type === "workspaceExcerpt" ? [segment.excerpt] : [],
           ),
         );
+        let draftComments: ComposerComment[] = [];
+        for (const segment of draft.segments) {
+          const comment =
+            segment.type === "comment" ? createComposerComment(segment.comment) : null;
+          if (comment) draftComments = upsertComposerComment(draftComments, comment);
+        }
+        replaceComments(draftComments);
         largePastesRef.current.clear();
         closeCommitTooltip();
         closeComposerContextMenu();
@@ -1227,6 +1285,7 @@ export const MentionComposer = memo(
         currentConversationId,
         placeCaretAtEditorEnd,
         refreshEmptyState,
+        replaceComments,
         replaceWorkspaceExcerpts,
         resetPromptHistoryRecall,
       ],
@@ -1269,7 +1328,13 @@ export const MentionComposer = memo(
       if (!commandRecovery) return;
       setCommandPanel(commandRecovery.panel);
       const el = editorRef.current;
-      if (isDomEmpty && el && !workspaceExcerptsRef.current.length && editorTextIsEmpty(el)) {
+      if (
+        isDomEmpty &&
+        el &&
+        !workspaceExcerptsRef.current.length &&
+        !commentsRef.current.length &&
+        editorTextIsEmpty(el)
+      ) {
         applyDraft(commandRecovery.draft);
         clearCommandRecovery(currentConversationId ?? "");
       }
@@ -1281,7 +1346,8 @@ export const MentionComposer = memo(
         !el ||
         !commandHost ||
         commandHost.isDraftReserved?.() ||
-        workspaceExcerptsRef.current.length
+        workspaceExcerptsRef.current.length ||
+        commentsRef.current.length
       )
         return false;
       const draft = buildDraft();
@@ -1303,15 +1369,40 @@ export const MentionComposer = memo(
     useImperativeHandle(
       ref,
       () => ({
-        getText: () => buildDraft().text,
+        getText: () => {
+          const draft = buildDraft();
+          if (!draft.comments?.length) return draft.text;
+          return normalizeSerializedText(
+            serializeDraftSegments(draft.segments.filter((segment) => segment.type !== "comment")),
+          );
+        },
         getDraft: buildDraft,
         hasContent: () => {
           const el = editorRef.current;
-          return el != null && (workspaceExcerptsRef.current.length > 0 || !editorTextIsEmpty(el));
+          return (
+            el != null &&
+            (workspaceExcerptsRef.current.length > 0 ||
+              commentsRef.current.length > 0 ||
+              !editorTextIsEmpty(el))
+          );
         },
         setText: setEditorText,
         runCommandDraft,
         setDraft: applyDraft,
+        upsertComment: (input: ComposerCommentInput) => {
+          if (!editorRef.current || disabled) return null;
+          const comment = createComposerComment(input);
+          if (!comment) return null;
+          const next = upsertComposerComment(commentsRef.current, comment);
+          if (next === commentsRef.current) return null;
+          resetPromptHistoryRecall();
+          updateComments(next);
+          return comment.id;
+        },
+        removeComment: (id) => {
+          if (!disabled) updateComments(removeComposerComment(commentsRef.current, id));
+        },
+        getComments: () => commentsRef.current.slice(),
         insertWorkspaceExcerpt: (text, path, comment) => {
           if (!editorRef.current || disabled) return false;
           const excerpt = normalizeWorkspaceExcerpt({ id: createUuid(), text, path, comment });
@@ -1477,6 +1568,7 @@ export const MentionComposer = memo(
           resetPromptHistoryRecall();
           el.innerHTML = "";
           replaceWorkspaceExcerpts([]);
+          replaceComments([]);
           largePastesRef.current.clear();
           closeCommitTooltip();
           closeComposerContextMenu();
@@ -1487,9 +1579,21 @@ export const MentionComposer = memo(
           if (options?.restoreSelection) focusEditorAtSavedSelection();
           else editorRef.current?.focus();
         },
-        appendSegments: (segments: MentionComposerDraftSegment[]) => {
+        appendSegments: (incoming: MentionComposerDraftSegment[]) => {
           const el = editorRef.current;
-          if (!el || disabled || segments.length === 0) return false;
+          if (!el || disabled || incoming.length === 0) return false;
+          const segments: MentionComposerDraftSegment[] = [];
+          let nextComments = commentsRef.current;
+          for (const segment of incoming) {
+            if (segment.type !== "comment") segments.push(segment);
+            else {
+              const comment = createComposerComment(segment.comment);
+              if (comment) nextComments = upsertComposerComment(nextComments, comment);
+            }
+          }
+          const commentsAdded = nextComments !== commentsRef.current;
+          if (commentsAdded) updateComments(nextComments);
+          if (!segments.length) return commentsAdded;
           const existing = normalizeSerializedText(serializeChildren(el, largePastesRef.current));
           const separator = composerBlockSeparator(existing);
           const payload: MentionComposerDraftSegment[] = [
@@ -1518,10 +1622,12 @@ export const MentionComposer = memo(
         notifyUserEdit,
         placeCaretAtEditorEnd,
         refreshEmptyState,
+        replaceComments,
         replaceWorkspaceExcerpts,
         resetPromptHistoryRecall,
         runCommandDraft,
         setEditorText,
+        updateComments,
         disabled,
       ],
     );
@@ -2605,6 +2711,19 @@ export const MentionComposer = memo(
               replaceWorkspaceExcerpts(remaining);
               if (!remaining.length) focusEditorAtSavedSelection();
               notifyUserEdit();
+            }}
+          />
+        )}
+        {comments.length > 0 && (
+          <ComposerCommentChips
+            comments={comments}
+            disabled={disabled}
+            onUpdate={(comment) =>
+              updateComments(upsertComposerComment(commentsRef.current, comment))
+            }
+            onRemove={(id) => {
+              updateComments(removeComposerComment(commentsRef.current, id));
+              focusEditorAtSavedSelection();
             }}
           />
         )}

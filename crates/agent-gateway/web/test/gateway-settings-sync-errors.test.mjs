@@ -3,6 +3,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createWebModuleLoader } from "../../test/helpers/load-web-module.mjs";
+import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
 const loader = createWebModuleLoader({
   rootDir: fileURLToPath(new URL("../", import.meta.url)),
@@ -12,6 +13,74 @@ const i18n = loader.loadModule("src/i18n/config.ts");
 const settingsSync = loader.loadModule("src/app/hooks/useGatewaySettingsSync.ts");
 const settingsModule = loader.loadModule("src/lib/settings");
 const syncModule = loader.loadModule("@liveagent/ui/lib/settings/sync.ts");
+
+test("relay preferences persist locally and a later native target retains its original settings authority", async (t) => {
+  const env = await createWebDomTestEnv({
+    mocks: {
+      "@liveagent/ui/lib/automation/index": { initAutomation: async () => undefined },
+      "@liveagent/ui/lib/models/useThinkingLive": { useCatalogLiveVersion: () => 0 },
+      "@liveagent/ui/lib/monacoNls": { setPreferredMonacoNlsLocale() {} },
+    },
+  });
+  const { React, act, createRoot } = env;
+  const { useGatewaySettingsSync } = env.loadModule("src/app/hooks/useGatewaySettingsSync.ts");
+  const { loadWebSettings } = env.loadModule("src/lib/webSettings.ts");
+  const root = createRoot(document.createElement("div"));
+  t.after(async () => {
+    await act(async () => root.unmount());
+    env.cleanup();
+  });
+  const updates = [];
+  const api = (target, snapshot) => ({
+    subscribeSettings: () => () => undefined,
+    getSettings: async () => snapshot,
+    updateSettings: async (update) => { updates.push({ target, ...update }); },
+  });
+  const relay = api("relay", {
+    customProviders: [],
+    browserLocalSettings: ["locale", "theme", "system", "customSettings"],
+    locale: "en-US",
+  });
+  const desktop = api("desktop", {
+    settingsSyncProtocol: "zeroagent.settings-sync.v1",
+    configurationRevision: "config-1",
+    uiPreferencesRevision: "ui-1",
+    customProviders: [],
+    browserLocalSettings: ["locale", "theme"],
+    locale: "en-US",
+    theme: "light",
+  });
+  let current;
+  function Harness(props) {
+    current = useGatewaySettingsSync({ token: "fixture", ...props });
+    return null;
+  }
+  const render = (activeAgentId, api) => act(async () =>
+    root.render(React.createElement(Harness, { activeAgentId, api })));
+  await render("relay", relay);
+  assert.equal(current.settingsSyncTargetReady, true);
+  await act(async () => current.setSettings((prev) => ({ ...prev, locale: "zh-CN", theme: "dark" })));
+  assert.deepEqual(updates, []);
+  assert.equal(loadWebSettings("fixture").theme, "dark");
+  assert.equal(current.settingsSaveState.status, "saved");
+  await act(async () => current.setSettings((prev) => ({
+    ...prev, theme: "light", system: { ...prev.system, commandSafetyMode: "autoEdit" },
+  })));
+  assert.equal(updates.length, 1);
+  assert.ok(updates[0].system, "relay declarations cannot swallow security settings");
+  assert.equal(updates[0].theme, undefined);
+
+  await render("desktop", desktop);
+  assert.equal(current.settingsSyncTargetReady, true);
+  await act(async () => current.setSettings((prev) => ({ ...prev, theme: "dark" })));
+  assert.deepEqual(updates.at(-1), {
+    target: "desktop", settingsSyncProtocol: "zeroagent.settings-sync.v1",
+    configurationRevision: "config-1", uiPreferencesRevision: "ui-1", theme: "dark",
+  });
+  await render("relay", relay);
+  assert.equal(current.settings.theme, "light", "the Native snapshot cannot overwrite relay preferences");
+  assert.equal(current.settings.locale, "zh-CN");
+});
 
 test("project prompts round-trip without swallowing unrelated system changes", () => {
   const prev = settingsModule.normalizeSettings({});

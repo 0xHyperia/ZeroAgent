@@ -20,6 +20,7 @@ export function useGatewaySettingsOverlay(setSidebarOpen: Dispatch<SetStateActio
     resetOverlay();
   }, [resetOverlay]);
   const [settingsSection, setSettingsSection] = useState<SectionId>("system");
+  const [settingsAnchor, setSettingsAnchor] = useState<string>();
   const [settingsProviderId, setSettingsProviderId] = useState<string>();
   const leaveGuard = useRef<(() => boolean) | undefined>(undefined);
   const registerSettingsLeaveGuard = useCallback((guard: () => boolean) => {
@@ -35,13 +36,15 @@ export function useGatewaySettingsOverlay(setSidebarOpen: Dispatch<SetStateActio
   }, [closeSettingsOverlay]);
 
   const openSettings = useCallback(
-    (section: SectionId = "system", providerId?: string) => {
+    (section: SectionId = "system", providerId?: string, anchor?: string) => {
       if (section === "model-preferences" || section === "image-studio") {
         setModelPreferencesOpen(true);
         return;
       }
+      if (leaveGuard.current && !leaveGuard.current()) return;
       if (isMobileSidebarLayout()) setSidebarOpen(false);
       setSettingsSection(section);
+      setSettingsAnchor(anchor);
       setSettingsProviderId(section === "providers" ? providerId : undefined);
       openSettingsOverlay();
     },
@@ -59,6 +62,7 @@ export function useGatewaySettingsOverlay(setSidebarOpen: Dispatch<SetStateActio
     handleSettingsTransitionEnd: handleSettingsOverlayTransitionEnd,
     resetSettingsOverlay,
     settingsSection,
+    settingsAnchor,
     settingsProviderId,
   };
 }

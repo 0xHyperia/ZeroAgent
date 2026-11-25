@@ -31,6 +31,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 type ServerDraft = {
   id: string;
+  name: string;
   description: string;
   docsUrl: string;
   transport: McpServerConfig["transport"];
@@ -94,6 +95,7 @@ function suggestServerName(existing: string[]): string {
 function blankDraft(existingIds: string[]): ServerDraft {
   return {
     id: suggestServerName(existingIds),
+    name: "",
     description: "",
     docsUrl: "",
     transport: "stdio",
@@ -114,6 +116,7 @@ function draftFromServer(server: McpServerConfig): ServerDraft {
   const transport: McpServerConfig["transport"] = server.transport ?? "stdio";
   return {
     id: server.id,
+    name: server.name ?? "",
     description: server.description ?? "",
     docsUrl: server.docsUrl ?? "",
     transport,
@@ -135,6 +138,7 @@ function buildServerFromDraft(
   base: McpServerConfig | null,
   existingIds: string[],
   t: (key: string) => string,
+  allowDisplayName: boolean,
 ): McpServerConfig {
   const id = draft.id.trim();
   if (!id) {
@@ -143,6 +147,7 @@ function buildServerFromDraft(
   if (existingIds.includes(id)) {
     throw new Error(t("mcpHub.duplicateName"));
   }
+  const name = allowDisplayName ? draft.name.trim() || undefined : base?.name;
 
   const parsedTimeout = Number(draft.timeoutMs);
   const timeoutMs =
@@ -156,6 +161,7 @@ function buildServerFromDraft(
     return {
       ...(base ?? {}),
       id,
+      name,
       description: draft.description.trim() || undefined,
       docsUrl: draft.docsUrl.trim() || undefined,
       enabled: base?.enabled ?? true,
@@ -185,6 +191,7 @@ function buildServerFromDraft(
   return {
     ...(base ?? {}),
     id,
+    name,
     description: draft.description.trim() || undefined,
     docsUrl: draft.docsUrl.trim() || undefined,
     enabled: base?.enabled ?? true,
@@ -217,8 +224,9 @@ export function McpServerEditModal(props: {
   existingServers: McpServerConfig[];
   onClose: () => void;
   onSave: (server: McpServerConfig) => void;
+  allowDisplayName?: boolean;
 }) {
-  const { mode, initialServer, existingServers, onClose, onSave } = props;
+  const { mode, initialServer, existingServers, onClose, onSave, allowDisplayName = false } = props;
   const { t } = useLocale();
 
   const existingIdsExcludingCurrent = useMemo(() => {
@@ -247,7 +255,13 @@ export function McpServerEditModal(props: {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const server = buildServerFromDraft(draft, initialServer, existingIdsExcludingCurrent, t);
+      const server = buildServerFromDraft(
+        draft,
+        initialServer,
+        existingIdsExcludingCurrent,
+        t,
+        allowDisplayName,
+      );
       onSave(server);
       onClose();
     } catch (error) {
@@ -310,6 +324,24 @@ export function McpServerEditModal(props: {
                       {t("mcpHub.serverNameHint")}
                     </FormFieldDescription>
                   </FormField>
+                  {allowDisplayName ? (
+                    <FormField density="compact">
+                      <FormFieldLabel htmlFor="mcp-edit-display-name" size="compact">
+                        {t("mcpHub.serverDisplayName")}
+                      </FormFieldLabel>
+                      <Input
+                        variant="plain"
+                        id="mcp-edit-display-name"
+                        value={draft.name}
+                        placeholder={t("mcpHub.serverDisplayNamePlaceholder")}
+                        aria-describedby="mcp-edit-display-name-hint"
+                        onChange={(event) => updateDraft({ name: event.currentTarget.value })}
+                      />
+                      <FormFieldDescription id="mcp-edit-display-name-hint">
+                        {t("mcpHub.serverDisplayNameHint")}
+                      </FormFieldDescription>
+                    </FormField>
+                  ) : null}
                   <FormField density="compact">
                     <FormFieldLabel htmlFor="mcp-edit-transport" size="compact">
                       {t("mcpHub.transport")}

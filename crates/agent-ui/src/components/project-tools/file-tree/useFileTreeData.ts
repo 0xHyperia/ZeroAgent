@@ -9,6 +9,7 @@ import "@liveagent/ui/i18n/namespaces/projectTools";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invokeFs, isFsBackendError } from "../../../lib/tools/fsBackend";
+import { openInWorkspaceEditor } from "../../../lib/tools/workspaceEditors";
 import type { WorkspaceActivityClient } from "../../../lib/workspace-activity/types";
 import {
   applyFileTreeExternalRoots,
@@ -108,6 +109,7 @@ export type UseFileTreeDataResult = {
   renameEntry: (fromPath: string, name: string) => Promise<string>;
   deleteEntry: (path: string) => Promise<void>;
   openWorkspacePath: (path: string, mode: "open" | "reveal") => Promise<void>;
+  openTreePathInEditor: (path: string, editor: string) => Promise<void>;
   isExternalPath: (path: string) => boolean;
   getDisplayPath: (path: string) => string;
   search: FileTreeSearchState;
@@ -720,6 +722,15 @@ export function useFileTreeData(options: UseFileTreeDataOptions): UseFileTreeDat
     [resolveTreePath],
   );
 
+  const openTreePathInEditor = useCallback(
+    async (path: string, editor: string) => {
+      const target = resolveTreePath(path);
+      if (!target) throw new Error(t("projectTools.fileTree.readFailed"));
+      await openInWorkspaceEditor(target.workdir, target.fsPath, editor);
+    },
+    [resolveTreePath, t],
+  );
+
   const getDisplayPath = useCallback(
     (path: string) => {
       const target = resolveTreePath(path);
@@ -762,6 +773,7 @@ export function useFileTreeData(options: UseFileTreeDataOptions): UseFileTreeDat
     renameEntry,
     deleteEntry,
     openWorkspacePath,
+    openTreePathInEditor,
     isExternalPath,
     getDisplayPath,
     search,

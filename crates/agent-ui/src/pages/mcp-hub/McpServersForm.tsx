@@ -49,6 +49,8 @@ export function McpServersForm(props: McpServersFormProps) {
   const filtered = useMemo(() => {
     return rankFuzzySearchResults(servers, query, ({ server }) => [
       server.id,
+      server.name,
+      statuses?.get(server.id)?.label,
       server.description,
       server.docsUrl,
       server.command,
@@ -58,7 +60,7 @@ export function McpServersForm(props: McpServersFormProps) {
       ...Object.keys(server.env ?? {}),
       ...Object.keys(server.headers ?? {}),
     ]);
-  }, [query, servers]);
+  }, [query, servers, statuses]);
 
   return (
     <div className="h-full min-h-0 overflow-y-auto px-0.5 pb-4 pr-1 pt-1.5">

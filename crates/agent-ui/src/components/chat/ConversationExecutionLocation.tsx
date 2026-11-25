@@ -82,6 +82,8 @@ export function ConversationExecutionLocation({
   onManageDevices,
   compact = false,
   mobileSheet = false,
+  open: controlledOpen,
+  onOpenChange: changeControlledOpen,
 }: {
   current: ExecutionLocation;
   choices?: readonly ExecutionLocationChoice[];
@@ -90,11 +92,15 @@ export function ConversationExecutionLocation({
   onManageDevices?: () => void;
   compact?: boolean;
   mobileSheet?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { locale } = useLocale();
   const zh = locale === "zh-CN";
-  const [open, setOpen] = useState(false);
-  const openRef = useRef(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const openRef = useRef(open);
+  openRef.current = open;
   const [pending, setPending] = useState<string>();
   const pendingRef = useRef(false);
   const [failure, setFailure] = useState<FailedExecutionLocation>();
@@ -160,9 +166,7 @@ export function ConversationExecutionLocation({
   async function choose(choice: ExecutionLocationChoice) {
     if (disabled || choice.offline || choice.unavailable || pendingRef.current) return;
     if (!choice.choose) {
-      openRef.current = false;
-      setOpen(false);
-      setFailure(undefined);
+      onOpenChange(false);
       return;
     }
     pendingRef.current = true;
@@ -170,9 +174,7 @@ export function ConversationExecutionLocation({
     if (choice !== originalChoice) setFailure(undefined);
     try {
       await choice.choose();
-      openRef.current = false;
-      setOpen(false);
-      setFailure(undefined);
+      onOpenChange(false);
     } catch (cause) {
       if (!openRef.current) return;
       setFailure({
@@ -195,7 +197,8 @@ export function ConversationExecutionLocation({
 
   const onOpenChange = (next: boolean) => {
     openRef.current = next;
-    setOpen(next);
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    changeControlledOpen?.(next);
     if (!next) setFailure(undefined);
   };
   const actionHeight = mobileSheet ? "min-h-11" : "min-h-9";

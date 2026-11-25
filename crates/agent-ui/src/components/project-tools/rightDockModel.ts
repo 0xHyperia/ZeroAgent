@@ -8,6 +8,7 @@ import {
   rightDockToolKindForTabId,
   workspaceProjectPathKey,
 } from "@liveagent/app/lib/settings";
+import { RIGHT_DOCK_TERMINAL_LAUNCHER } from "../../lib/chat/workbenchCommands";
 import {
   applyDragInsertIndex,
   clampDragOffset,
@@ -183,6 +184,7 @@ export function resolveEffectiveActiveTabId(
   orderedVisibleTabIds: readonly string[],
   sessionsLoaded: boolean,
 ): string | null {
+  if (activeTabId === RIGHT_DOCK_TERMINAL_LAUNCHER) return null;
   if (activeTabId && orderedVisibleTabIds.includes(activeTabId)) return activeTabId;
   if (
     activeTabId &&

@@ -14,6 +14,7 @@ import { FileChangeBadge } from "@liveagent/ui/components/chat/FileChangeBadge";
 import { LazyCollapse } from "@liveagent/ui/components/chat/LazyCollapse";
 import { PlanModeCard } from "@liveagent/ui/components/chat/PlanModeCard";
 import { ToolScrollablePre, ToolSection } from "@liveagent/ui/components/chat/ToolSurfaces";
+import { DeviceToolSurfaces } from "@liveagent/ui/components/sandboxed-ui/DeviceUiTranscript";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
   ASK_USER_QUESTION_TOOL_NAME,
@@ -66,9 +67,9 @@ import {
   isSubagentCardToolCall,
   KBRAIN_SUBAGENT_TOOL_NAME,
 } from "./assistantBubbleUtils";
-import { PublicToolActivity } from "./PublicToolActivity";
 import { getConciseToolTarget } from "./conciseToolTarget";
 import { useMcpServerLabel } from "./McpServerLabelsContext";
+import { PublicToolActivity } from "./PublicToolActivity";
 import { SubagentControlToolCall, SubagentToolCall } from "./SubagentToolCard";
 import { ToolElicitations } from "./ToolElicitations";
 import { ToolPermissionMarker } from "./ToolPermissionMarker";
@@ -813,7 +814,14 @@ function ToolCallItemSwitch(props: ToolCallItemProps) {
       />
     );
   }
-  return <ToolCallItem {...props} />;
+  return (
+    <>
+      <ToolCallItem {...props} />
+      {props.item.toolResult && !props.item.toolResult.isError && !props.readOnly ? (
+        <DeviceToolSurfaces toolCallId={id} />
+      ) : null}
+    </>
+  );
 }
 
 export const MemoToolCallItem = memo(

@@ -82,3 +82,19 @@ test("a real multi-megabyte Cloud answer remains a bounded preview in the shared
  const preview=cloudMessageTranscriptPreview(complete),app=await mount(t,{assistant:row(`${preview.text}\n\n${preview.notice} [分段查看完整正文](cloud-messages/answer)`)});
  assert.ok(complete.length>2*1024*1024);assert.ok(app.host.textContent.length<6000);assert.equal(app.host.querySelector("[data-chat-work-trace]"),null);assert.match(finalProse(app.host)[0].textContent,/分段查看完整正文/);assert.ok(!app.host.textContent.includes("END"));
 });
+
+test("the Gateway transcript mounts the typed notice alongside a persisted partial reply", async (t) => {
+  const assistant = row("Kept partial reply");
+  assistant.rounds[0].meta = {
+    stopReason: "error",
+    errorMessage: "The model provider limited requests.",
+    errorDetail: { kind: "rate_limited", upstreamStatus: 429 },
+  };
+  const app = await mount(t, { assistant });
+  assert.equal(finalProse(app.host)[0].textContent, "Kept partial reply");
+  const notice = app.host.querySelector('[data-turn-error="rate_limit"]');
+  assert.ok(notice);
+  assert.equal(notice.getAttribute("role"), "alert");
+  await app.reload();
+  assert.equal(app.host.querySelectorAll('[data-turn-error="rate_limit"]').length, 1);
+});

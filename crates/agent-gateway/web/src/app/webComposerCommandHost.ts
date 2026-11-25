@@ -4,6 +4,10 @@ import {
   findModelOptionByName,
 } from "@liveagent/ui/lib/chat/composerCommands";
 import type { SharedModelOption } from "@liveagent/ui/lib/models/modelOptions";
+import {
+  type DevicePluginsClient,
+  subscribeDeviceTrust,
+} from "@liveagent/ui/lib/plugins/devicePlugins";
 import type { ChatRuntimeControls } from "@liveagent/ui/lib/settings/types";
 import { goalStateFromResponse, publishGoalState } from "../lib/chat/goalState";
 import type {
@@ -37,6 +41,7 @@ export type WebComposerCommandClient = {
 export function createWebComposerCommandHost(params: {
   t: (key: string) => string;
   client?: WebComposerCommandClient;
+  devicePlugins?: DevicePluginsClient;
   /** 当前对话 id；本地草稿对话（还没发过消息）返回 undefined。 */
   getConversationId: () => string | undefined;
   getWorkdir: () => string | undefined;
@@ -62,6 +67,10 @@ export function createWebComposerCommandHost(params: {
     };
   }
   if (!client) return host;
+  const { devicePlugins } = params;
+  if (devicePlugins) {
+    host.subscribeCommandCatalog = (onChange) => subscribeDeviceTrust(devicePlugins, onChange);
+  }
   const conversationId = () => {
     const id = params.getConversationId()?.trim();
     if (!id) throw new Error(t("chat.commands.needsConversation"));

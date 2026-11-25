@@ -19,14 +19,24 @@ import {
 export type ShortcutCommandId =
   | "commandPalette"
   | "searchConversations"
+  | "quickOpenFile"
+  | "navigateBack"
+  | "navigateForward"
   | "findInConversation"
   | "newConversation"
   | "previousConversation"
   | "nextConversation"
   | "focusComposer"
   | "openModelPicker"
+  | "cycleThinkingLevel"
   | "toggleSidebar"
   | "toggleRightPanel"
+  | "toggleTerminal"
+  | "closeActiveContext"
+  | "cycleTheme"
+  | "zoomIn"
+  | "zoomOut"
+  | "zoomReset"
   | "openSettings";
 
 export type ShortcutCommandGroup = "general" | "navigation" | "composer" | "view";
@@ -76,6 +86,26 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     defaultBinding: null,
   },
   {
+    id: "quickOpenFile",
+    group: "navigation",
+    labelKey: "shortcuts.command.quickOpenFile",
+    defaultBinding: "Mod+KeyP",
+  },
+  {
+    id: "navigateBack",
+    group: "navigation",
+    labelKey: "shortcuts.command.navigateBack",
+    defaultBinding: "Mod+BracketLeft",
+    paletteActionId: "navigate-back",
+  },
+  {
+    id: "navigateForward",
+    group: "navigation",
+    labelKey: "shortcuts.command.navigateForward",
+    defaultBinding: "Mod+BracketRight",
+    paletteActionId: "navigate-forward",
+  },
+  {
     id: "previousConversation",
     group: "navigation",
     labelKey: "shortcuts.command.previousConversation",
@@ -115,12 +145,69 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     paletteActionId: "toggle-sidebar",
   },
   {
+    id: "cycleThinkingLevel",
+    group: "composer",
+    labelKey: "shortcuts.command.cycleThinkingLevel",
+    defaultBinding: "Mod+Alt+KeyT",
+    paletteActionId: "cycle-thinking-level",
+  },
+  {
     id: "toggleRightPanel",
     group: "view",
     labelKey: "shortcuts.command.toggleRightPanel",
     defaultBinding: "Mod+Alt+KeyB",
     paletteActionId: "toggle-project-tools",
   },
+  {
+    id: "toggleTerminal",
+    group: "view",
+    labelKey: "shortcuts.command.toggleTerminal",
+    defaultBinding: "Mod+KeyJ",
+    paletteActionId: "toggle-terminal",
+  },
+  {
+    id: "closeActiveContext",
+    group: "view",
+    labelKey: "shortcuts.command.closeActiveContext",
+    defaultBinding: "Mod+Alt+KeyW",
+    paletteActionId: "close-active-context",
+  },
+  {
+    id: "cycleTheme",
+    group: "view",
+    labelKey: "shortcuts.command.cycleTheme",
+    defaultBinding: "Mod+Shift+KeyL",
+    paletteActionId: "toggle-theme",
+  },
+  {
+    id: "zoomIn",
+    group: "view",
+    labelKey: "shortcuts.command.zoomIn",
+    defaultBinding: "Mod+Equal",
+    paletteActionId: "zoom-in",
+  },
+  {
+    id: "zoomOut",
+    group: "view",
+    labelKey: "shortcuts.command.zoomOut",
+    defaultBinding: "Mod+Minus",
+    paletteActionId: "zoom-out",
+  },
+  {
+    id: "zoomReset",
+    group: "view",
+    labelKey: "shortcuts.command.zoomReset",
+    defaultBinding: "Mod+Digit0",
+    paletteActionId: "zoom-reset",
+  },
+];
+
+/** Standalone browsers keep their built-in zoom and page find. */
+export const BROWSER_UNSUPPORTED_SHORTCUTS: readonly ShortcutCommandId[] = [
+  "findInConversation",
+  "zoomIn",
+  "zoomOut",
+  "zoomReset",
 ];
 
 const COMMANDS_BY_ID = new Map(SHORTCUT_COMMANDS.map((command) => [command.id, command]));

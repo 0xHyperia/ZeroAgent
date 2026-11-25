@@ -80,6 +80,8 @@ message GatewayEnvelope {
     PermissionRulesRequest permission_rules = 111;
     WorkspaceHandoffRequest workspace_handoff = 112;
     UsageStatsRequest usage_stats = 113;
+    DevicePluginsRequest device_plugins = 114;
+    DeviceUiSurfaceRequest device_ui_surface = 115;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -176,6 +178,8 @@ message AgentEnvelope {
     PermissionRulesResponse permission_rules_resp = 119;
     WorkspaceHandoffResponse workspace_handoff_resp = 120;
     UsageStatsResponse usage_stats_resp = 121;
+    DevicePluginsResponse device_plugins_resp = 122;
+    DeviceUiSurfaceResponse device_ui_surface_resp = 123;
   }
 
   // Legacy tunnel control/frame payloads (pre-rewrite protocol) and the
@@ -1405,6 +1409,36 @@ message UsageStatsResponse {
   // unsupported 为 true 时为空：K-brain 没有 capabilities.usage_stats，设置页显示“需更新”。
   string result_json = 1;
   bool unsupported = 2;
+}
+
+message DevicePluginsRequest {
+  string action = 1;
+  string workdir = 2;
+  string plugin_id = 3;
+  string source_path = 4;
+  // Populated by the Gateway after authorizing the authenticated device selection.
+  int64 owner_id = 5;
+}
+
+message DevicePluginsResponse {
+  string snapshot_json = 1;
+}
+
+// Account-bound UI resources. Browser requests carry desktop conversation IDs,
+// never K-brain URLs, credentials or backend session identifiers.
+message DeviceUiSurfaceRequest {
+  string action = 1;
+  string workdir = 2;
+  string conversation_id = 3;
+  string resource_id = 4;
+  string plugin_id = 5;
+  string plugin_version = 6;
+  // Set by the authenticated Gateway. A controller may not supply this field.
+  int64 owner_id = 7;
+}
+
+message DeviceUiSurfaceResponse {
+  string result_json = 1;
 }
 
 message FsRoot {

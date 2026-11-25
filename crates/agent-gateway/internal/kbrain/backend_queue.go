@@ -363,21 +363,37 @@ func (r *Relay) watchBackendQueuedRun(binding backendQueueRun, cb Callbacks) {
 				r.emitTerminal(binding.GatewayRunID, binding.ConversationID, cb, "failed", "queue_recovery_required", "backend queue receipt is missing")
 				return
 			}
-			r.emitBackendQueue(cb, out)
-			if out.Receipt.State == "cancelled" || out.Receipt.State == "failed" || out.Receipt.State == "interrupted" {
-				status := out.Receipt.State
-				if status == "interrupted" {
-					status = "failed"
-				}
-				finish(status, out.Receipt.Error)
+			run := out.Receipt.Run
+			invalidRun := run != nil && (run.ConversationID != binding.SessionID || run.RunID == "" || run.AcceptedSeq < 1)
+			changedRun := run != nil && binding.Run != nil && (run.RunID != binding.Run.RunID || run.AcceptedSeq != binding.Run.AcceptedSeq)
+			if out.Snapshot.ConversationID != binding.SessionID ||
+				invalidRun || changedRun ||
+				(run == nil && out.Receipt.State == "interrupted") {
+				r.emitTerminal(binding.GatewayRunID, binding.ConversationID, cb, "failed", "queue_recovery_required", "invalid queued run identity")
 				return
 			}
-			if out.Receipt.Run != nil {
-				run := out.Receipt.Run
-				if run.ConversationID != binding.SessionID || run.RunID == "" || run.AcceptedSeq < 1 {
-					finish("failed", "invalid queued run identity")
+			r.emitBackendQueue(cb, out)
+			if out.Receipt.State == "interrupted" {
+				if cb.OnEvent != nil {
+					cb.OnEvent(binding.GatewayRunID, chatEvent(binding.ConversationID, gatewayv2.ChatEvent_TOKEN,
+						map[string]any{"text": "", "stopReason": "aborted", "cancelReason": "shutdown"}))
+				}
+				finish("cancelled", "")
+				return
+			}
+			// A dispatched run may reach its terminal state before this first read.
+			// Its canonical event stream still owns the partial reply and failure metadata.
+			if run == nil {
+				switch out.Receipt.State {
+				case "failed":
+					finish("failed", "The queued request could not start.")
+					return
+				case "cancelled":
+					finish("cancelled", "")
 					return
 				}
+			}
+			if run != nil {
 				if binding.Run == nil {
 					binding.Run = run
 					binding.LastSeq = run.AcceptedSeq - 1

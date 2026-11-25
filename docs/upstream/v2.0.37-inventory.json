@@ -7,11 +7,11 @@
   "merge_conflicts": 170,
   "text_conflicts": 150,
   "counts": {
-    "adapt": 192,
+    "adapt": 248,
     "reject": 411,
-    "defer": 110,
-    "partial": 198,
-    "adopt": 384
+    "defer": 87,
+    "partial": 183,
+    "adopt": 366
   },
   "entries": [
     {
@@ -3345,18 +3345,18 @@
     {
       "path": "crates/agent-gateway/internal/kbrain/events.go",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "Gateway 按类型处理跟随事件、停止和失败状态，并保持回执与设备归属。"
     },
     {
       "path": "crates/agent-gateway/internal/kbrain/events_test.go",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "验证工具权限拒绝与模型鉴权的区别，保护结构化的回合状态投影。"
     },
     {
       "path": "crates/agent-gateway/internal/kbrain/file_mentions.go",
@@ -3385,18 +3385,18 @@
     {
       "path": "crates/agent-gateway/internal/kbrain/history.go",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "历史使用与实时回合一致的结果分类，保留部分回复。"
     },
     {
       "path": "crates/agent-gateway/internal/kbrain/history_messages_test.go",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "验证脱敏后的失败状态、停止原因和部分回复。"
     },
     {
       "path": "crates/agent-gateway/internal/kbrain/mcp_settings_test.go",
@@ -3516,7 +3516,7 @@
       "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "合入可兼容的协议或 WebUI 变化，保留账户、设备与工作区授权。"
+      "notes": "传输错误沿用连接状态、现有草稿和设备回执流程。避免将断线写入消息。"
     },
     {
       "path": "crates/agent-gateway/test/webui/font-family.test.mjs",
@@ -3540,7 +3540,7 @@
       "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "合入可兼容的协议或 WebUI 变化，保留账户、设备与工作区授权。"
+      "notes": "在现有账户和分享入口完成认证判断后按需载入工作台。桌面嵌入入口沿用实例工厂。"
     },
     {
       "path": "crates/agent-gateway/test/webui/web-settings.test.mjs",
@@ -3553,10 +3553,10 @@
     {
       "path": "crates/agent-gateway/web/src/App.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "在现有账户和分享入口完成认证判断后按需载入工作台。桌面嵌入入口沿用实例工厂。"
     },
     {
       "path": "crates/agent-gateway/web/src/agent-ui-adapters/assistantStatus.ts",
@@ -3633,10 +3633,10 @@
     {
       "path": "crates/agent-gateway/web/src/app/GatewayApp.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/GatewayAppView.tsx",
@@ -3644,7 +3644,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "合入可兼容的协议或 WebUI 变化，保留账户、设备与工作区授权。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/GatewayChatStatusBanners.tsx",
@@ -3713,18 +3713,18 @@
     {
       "path": "crates/agent-gateway/web/src/app/hooks/useGatewaySettingsSync.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "浏览器本地保存语言和主题，设备运行、安全策略及其他设置按版本和授权同步。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/hooks/usePendingUploads.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留按账户、设备和会话隔离的草稿、附件与流恢复规则。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/lazySurfaces.tsx",
@@ -3748,7 +3748,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "合入可兼容的协议或 WebUI 变化，保留账户、设备与工作区授权。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gateway/web/src/app/workbench/useGatewayWorkbench.ts",
@@ -3764,7 +3764,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "合入可兼容的协议或 WebUI 变化，保留账户、设备与工作区授权。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gateway/web/src/components/RemotePathPickerModal.tsx",
@@ -3825,10 +3825,10 @@
     {
       "path": "crates/agent-gateway/web/src/lib/chat/stream/chatCommandPipeline.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保持已认证设备选择、设置作用域、断线回执和草稿恢复。完成跨账户与中途撤权验收后复评。"
+      "notes": "传输错误沿用连接状态、现有草稿和设备回执流程。避免将断线写入消息。"
     },
     {
       "path": "crates/agent-gateway/web/src/lib/chat/transcript/rows.ts",
@@ -3849,10 +3849,10 @@
     {
       "path": "crates/agent-gateway/web/src/lib/chat/transcript/turnReducer.ts",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "桌面与 Gateway 复用类型化错误和结束状态，保留已生成的部分回复。"
     },
     {
       "path": "crates/agent-gateway/web/src/lib/chatUi.ts",
@@ -4145,10 +4145,10 @@
     {
       "path": "crates/agent-gateway/web/test/turn-error-rows.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "桌面与 Gateway 复用类型化错误和结束状态，保留已生成的部分回复。"
     },
     {
       "path": "crates/agent-gateway/web/test/workbench-composer-input-state.test.mjs",
@@ -4305,10 +4305,10 @@
     {
       "path": "crates/agent-gui/e2e/wdio.conf.mjs",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "上游原生 E2E 的可执行文件和配置隔离变量与 ZeroAgent 不同。待改为隔离的 ZEROAGENT_DEV_HOME 及受管模型测试设备。"
+      "notes": "使用隔离的 Linux 原生登录前冒烟，已登录工作流测试继续随现有认证边界适配。"
     },
     {
       "path": "crates/agent-gui/index.html",
@@ -4436,7 +4436,7 @@
       "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "现有工作区打开应用增加 macOS 和 Linux 编辑器探测及行列跳转，目录入口继续验证。"
     },
     {
       "path": "crates/agent-gui/src-tauri/src/commands/app/mod.rs",
@@ -4500,7 +4500,7 @@
       "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "现有工作区打开应用增加 macOS 和 Linux 编辑器探测及行列跳转，目录入口继续验证。"
     },
     {
       "path": "crates/agent-gui/src-tauri/src/lib.rs",
@@ -4809,10 +4809,10 @@
     {
       "path": "crates/agent-gui/src/lib/kbrain/history.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "桌面与 Gateway 复用类型化错误和结束状态，保留已生成的部分回复。"
     },
     {
       "path": "crates/agent-gui/src/lib/kbrain/historyMigration.ts",
@@ -4841,10 +4841,10 @@
     {
       "path": "crates/agent-gui/src/lib/kbrain/mcpServerLabels.ts",
       "upstream_change": "A",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "在当前桌面账户和受管引擎范围读取可用的 MCP 服务标签，保留工具标识回退。"
     },
     {
       "path": "crates/agent-gui/src/lib/kbrain/mcpToolList.ts",
@@ -4889,10 +4889,10 @@
     {
       "path": "crates/agent-gui/src/lib/kbrain/turn.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "桌面与 Gateway 复用类型化错误和结束状态，保留已生成的部分回复。"
     },
     {
       "path": "crates/agent-gui/src/lib/kbrain/types.ts",
@@ -5052,7 +5052,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/components/AssistantBubble.tsx",
@@ -5105,10 +5105,10 @@
     {
       "path": "crates/agent-gui/src/pages/chat/hooks/usePendingUploads.ts",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留按账户、设备和会话隔离的草稿、附件与流恢复规则。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/index.ts",
@@ -5137,10 +5137,10 @@
     {
       "path": "crates/agent-gui/src/pages/chat/surfaces/ConversationPaneHost.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/AssistantActivityRow.tsx",
@@ -5161,26 +5161,26 @@
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/ChatTranscript.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/LiveAssistantActivityRow.tsx",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "独立实时回复行需覆盖副窗格、查找、历史回填和本地 Git 审查。"
+      "notes": "独立刷新活跃回复，延续 ZeroAgent 的查找、分栏状态和已有行标识。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/TranscriptList.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "独立刷新活跃回复，延续 ZeroAgent 的查找、分栏状态和已有行标识。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/rowModel.ts",
@@ -5201,10 +5201,10 @@
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/transcriptTypes.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/turns/runKBrainConversationTurn.ts",
@@ -5244,7 +5244,7 @@
       "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "诊断在桌面「关于」提供最小 JSON，沿用账户流程，完整诊断归档和自动引导延后。"
     },
     {
       "path": "crates/agent-gui/src/pages/settings/BackupSyncSection.tsx",
@@ -5361,10 +5361,10 @@
     {
       "path": "crates/agent-gui/test/chat/composer-comments.test.mjs",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "使用现有图片与文件批注和草稿上下文。待验证上游新交互在上传并发和设备切换中的行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gui/test/chat/composer-stt-lifecycle.test.mjs",
@@ -5457,10 +5457,10 @@
     {
       "path": "crates/agent-gui/test/chat/image-annotation-model.test.mjs",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "使用现有图片与文件批注和草稿上下文。待验证上游新交互在上传并发和设备切换中的行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
@@ -5785,10 +5785,10 @@
     {
       "path": "crates/agent-gui/test/chat/transcript-live-row-isolation.test.mjs",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "独立实时回复行需覆盖副窗格、查找、历史回填和本地 Git 审查。"
+      "notes": "独立刷新活跃回复，延续 ZeroAgent 的查找、分栏状态和已有行标识。"
     },
     {
       "path": "crates/agent-gui/test/chat/transcript-projection-memo.test.mjs",
@@ -6153,10 +6153,10 @@
     {
       "path": "crates/agent-gui/test/settings/permission-rules-registration.test.mjs",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "验证真实设置入口、点击打开、切换账号，以及无本机授权或缺少完整规则接口时入口不可见。"
     },
     {
       "path": "crates/agent-gui/test/settings/provider-copy-config.test.mjs",
@@ -6273,10 +6273,10 @@
     {
       "path": "crates/agent-gui/test/settings/usage-stats-section.test.mjs",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "测试夹具接入宿主设置锚点过滤契约，继续核对用量入口的宿主能力。"
     },
     {
       "path": "crates/agent-gui/test/settings/workspace-resource-settings.test.mjs",
@@ -6465,10 +6465,10 @@
     {
       "path": "crates/agent-ui/src/components/IconSet.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/Markdown.tsx",
@@ -6609,10 +6609,10 @@
     {
       "path": "crates/agent-ui/src/components/chat/ComposerAttachmentCard.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/ComposerCommandPanel.tsx",
@@ -6628,7 +6628,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/ComposerCommentEditor.tsx",
@@ -6636,7 +6636,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/ComposerGoalBar.tsx",
@@ -6692,7 +6692,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/EditableUserMessageBubble.tsx",
@@ -6788,23 +6788,23 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/MentionComposerInternals.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/MentionComposerModel.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/MentionComposerOverlays.tsx",
@@ -6817,10 +6817,10 @@
     {
       "path": "crates/agent-ui/src/components/chat/NavigationHistoryButtons.tsx",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/PlanModeCard.tsx",
@@ -6876,7 +6876,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/TranscriptFindBar.tsx",
@@ -6900,7 +6900,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/TurnErrorNotice.tsx",
@@ -6948,7 +6948,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "桌面和已授权设备项目设置通过设备插件引擎管理当前目录信任，统一确认操作。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/assistant-bubble/CompactionSeamRow.tsx",
@@ -6972,7 +6972,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "在当前桌面账户和受管引擎范围读取可用的 MCP 服务标签，保留工具标识回退。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/assistant-bubble/RoundContent.tsx",
@@ -7089,18 +7089,18 @@
     {
       "path": "crates/agent-ui/src/components/chat/image-annotation/ImageAnnotationDialog.tsx",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "使用现有图片与文件批注和草稿上下文。待验证上游新交互在上传并发和设备切换中的行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/image-annotation/useComposerImageAnnotation.tsx",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "使用现有图片与文件批注和草稿上下文。待验证上游新交互在上传并发和设备切换中的行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/processDisclosure.tsx",
@@ -7113,10 +7113,10 @@
     {
       "path": "crates/agent-ui/src/components/chat/useQuickOpenFiles.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
+      "notes": "采用文件索引线程和作用域规则，ZeroAgent 实现放在共享 lib/chat/useQuickOpenFiles.ts。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/workspace-project-settings/WorkspaceDirectorySettingsPanel.tsx",
@@ -7129,10 +7129,10 @@
     {
       "path": "crates/agent-ui/src/components/chat/workspace-project-settings/WorkspaceFolderTrustSection.tsx",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "桌面和已授权设备项目设置通过设备插件引擎管理当前目录信任，统一确认操作。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/workspace-project-settings/WorkspaceGeneralSettingsPanel.tsx",
@@ -7140,7 +7140,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "桌面和已授权设备项目设置通过设备插件引擎管理当前目录信任，统一确认操作。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/workspace-project-settings/WorkspaceResourceSettingsPanel.tsx",
@@ -7161,18 +7161,18 @@
     {
       "path": "crates/agent-ui/src/components/diagnostics/DiagnosticsExportDialog.tsx",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "保留 ZeroAgent 的首次登录和诊断边界。待连接到当前账户生命周期并验证导出范围。"
+      "notes": "诊断在桌面「关于」提供最小 JSON，沿用账户流程，完整诊断归档和自动引导延后。"
     },
     {
       "path": "crates/agent-ui/src/components/diagnostics/DiagnosticsExportHost.tsx",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "保留 ZeroAgent 的首次登录和诊断边界。待连接到当前账户生命周期并验证导出范围。"
+      "notes": "诊断在桌面「关于」提供最小 JSON，沿用账户流程，完整诊断归档和自动引导延后。"
     },
     {
       "path": "crates/agent-ui/src/components/editors/OpenInEditorMenuItems.tsx",
@@ -7817,10 +7817,10 @@
     {
       "path": "crates/agent-ui/src/components/ui/skip-link.tsx",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "启用共享的跳转输入框键盘操作，定位当前工作的输入框。"
     },
     {
       "path": "crates/agent-ui/src/components/ui/status-dot.tsx",
@@ -7977,10 +7977,10 @@
     {
       "path": "crates/agent-ui/src/contracts/workspaceFolderTrust.ts",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "本机保留受信任目录来源，远程仅投影当前授权范围内的信任状态。"
     },
     {
       "path": "crates/agent-ui/src/features/image-studio/AssetImage.tsx",
@@ -8257,10 +8257,10 @@
     {
       "path": "crates/agent-ui/src/i18n/namespaces/workspaceProject.ts",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "补充共享项目设置中的信任来源与继承状态。"
     },
     {
       "path": "crates/agent-ui/src/i18n/planningTranslations.ts",
@@ -8316,7 +8316,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/i18n/translations/enUSSettings.ts",
@@ -8412,7 +8412,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/i18n/translations/zhCNSettings.ts",
@@ -8425,10 +8425,10 @@
     {
       "path": "crates/agent-ui/src/i18n/workbenchTranslations.ts",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "翻译覆盖设备切换及离线后的授权设备选择入口。"
     },
     {
       "path": "crates/agent-ui/src/lib/browser/browserCookieImport.ts",
@@ -8497,18 +8497,18 @@
     {
       "path": "crates/agent-ui/src/lib/chat/commandPalette.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/commandPaletteActions.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/composerComments.ts",
@@ -8516,15 +8516,15 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/composerDraft.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/diffEngine.ts",
@@ -8545,34 +8545,34 @@
     {
       "path": "crates/agent-ui/src/lib/chat/fileQuickOpen.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/fileQuickOpen.worker.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/fileQuickOpenProtocol.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/fileQuickOpenSearch.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/htmlPreviews.ts",
@@ -8585,18 +8585,18 @@
     {
       "path": "crates/agent-ui/src/lib/chat/imageAnnotation/model.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "使用现有图片与文件批注和草稿上下文。待验证上游新交互在上传并发和设备切换中的行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/imageAnnotation/render.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "使用现有图片与文件批注和草稿上下文。待验证上游新交互在上传并发和设备切换中的行为。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/mcpApps.ts",
@@ -8692,15 +8692,15 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/turnError.ts",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "以允许字段类型化回合错误，区分停止、重启及提供方错误。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/uiMessages.ts",
@@ -8716,7 +8716,7 @@
       "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/useChatFileLinkNavigation.ts",
@@ -8737,10 +8737,10 @@
     {
       "path": "crates/agent-ui/src/lib/chat/workbenchCommands.ts",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "命令及设置锚点按当前设备、宿主能力和工作台焦点分派。"
     },
     {
       "path": "crates/agent-ui/src/lib/chat/workspaceRelativePath.ts",
@@ -8833,10 +8833,10 @@
     {
       "path": "crates/agent-ui/src/lib/navigation/navigationHistory.ts",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/onboarding/onboardingState.ts",
@@ -9065,10 +9065,10 @@
     {
       "path": "crates/agent-ui/src/lib/shared/diffHighlightGrammars.ts",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "桌面和独立 WebUI 按需加载现有完整语法，维护内嵌设备工作台的构建入口。"
     },
     {
       "path": "crates/agent-ui/src/lib/shared/fontFamily.ts",
@@ -9113,10 +9113,10 @@
     {
       "path": "crates/agent-ui/src/lib/shortcuts/shortcutCommands.ts",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "采用命令、文件、会话和历史导航能力，数据限定当前设备及工作区。"
     },
     {
       "path": "crates/agent-ui/src/lib/sidebar/reconcile.ts",
@@ -9244,7 +9244,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "设备工作台使用共享评论与附件标记，等待中的文件替换受现有账户、设备和会话约束。"
     },
     {
       "path": "crates/agent-ui/src/pages/chat/chatComposerBarUtils.ts",
@@ -9345,10 +9345,10 @@
     {
       "path": "crates/agent-ui/src/pages/mcp-hub/useMcpRuntimeStatus.ts",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "upstream_owned",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "沿用受管的本机状态读取接口，投影带界面及仅应用可用的工具数量。"
     },
     {
       "path": "crates/agent-ui/src/pages/planning/AgendaView.tsx",
@@ -9721,10 +9721,10 @@
     {
       "path": "crates/agent-ui/src/pages/settings/PermissionRulesSection.tsx",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "复用上游规则列表和持久化接口。切离当前账户或后端后，迟到写入回执不再刷新新账户。"
     },
     {
       "path": "crates/agent-ui/src/pages/settings/PlanningTimeZoneSetting.tsx",
@@ -9812,7 +9812,7 @@
       "decision": "adapt",
       "text_conflict": true,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "适配共享设置和权限规则入口。权限页仅向已登录的桌面此电脑宿主开放。"
     },
     {
       "path": "crates/agent-ui/src/pages/settings/SettingsShell.tsx",
@@ -10201,10 +10201,10 @@
     {
       "path": "docs/testing/desktop-e2e.md",
       "upstream_change": "A",
-      "decision": "defer",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "上游原生 E2E 的可执行文件和配置隔离变量与 ZeroAgent 不同。待改为隔离的 ZEROAGENT_DEV_HOME 及受管模型测试设备。"
+      "notes": "使用隔离的 Linux 原生登录前冒烟，已登录工作流测试继续随现有认证边界适配。"
     },
     {
       "path": "knip.config.ts",
@@ -10241,10 +10241,10 @@
     {
       "path": "scripts/budgets/bundle-size.json",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "按 ZeroAgent 启动入口和工作台构建校验分块加载，使用本产品的性能预算。"
     },
     {
       "path": "scripts/budgets/design-token-baseline.json",
@@ -10284,7 +10284,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "按 ZeroAgent 启动入口和工作台构建校验分块加载，使用本产品的性能预算。"
     },
     {
       "path": "scripts/check-code-rules.test.mjs",
@@ -10324,7 +10324,7 @@
       "decision": "adopt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "按 ZeroAgent 启动入口和工作台构建校验分块加载，使用本产品的性能预算。"
     },
     {
       "path": "scripts/knip-loader-imports.mjs",
@@ -10337,10 +10337,10 @@
     {
       "path": "scripts/release/kbrain.lock.json",
       "upstream_change": "M",
-      "decision": "defer",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "继续使用经过验证的 v0.107.37 和 ZeroAgent 补丁。待 v0.107.46 通过 MCP 工具隔离补丁与受管账户验证。"
+      "notes": "切至精确 v0.107.46 和 Go 1.27.0，从源提交按顺序应用已验证补丁。"
     },
     {
       "path": "scripts/report-perf-scenarios.mjs",
@@ -10356,7 +10356,7 @@
       "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "按当前 ZeroAgent 工作区入口、依赖或验证命令调整。"
+      "notes": "按 ZeroAgent 启动入口和工作台构建校验分块加载，使用本产品的性能预算。"
     },
     {
       "path": "scripts/testing/session-sync-relay.mjs",

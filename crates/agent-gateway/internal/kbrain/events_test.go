@@ -28,6 +28,19 @@ func TestCanonicalEventsMapToGatewayVocabulary(t *testing.T) {
 	}
 }
 
+func TestRunPermissionDenialIsNotProviderAuthentication(t *testing.T) {
+	event, control, err := ToChatEvent(Event{
+		ConversationID: "c1", RunID: "r1", Type: "run.failed",
+		Payload: json.RawMessage(`{"error":"permission denied"}`),
+	})
+	if err != nil || event == nil || control == nil || !strings.Contains(event.Data, `"kind":"unknown"`) {
+		t.Fatalf("outcome=%+v control=%+v err=%v", event, control, err)
+	}
+	if strings.Contains(event.Data, "permission denied") || strings.Contains(control.Message, "authentication") {
+		t.Fatalf("unexpected run failure projection: %s, %s", event.Data, control.Message)
+	}
+}
+
 func TestRunProgressMapsToSharedStatus(t *testing.T) {
 	event, control, err := ToChatEvent(Event{ConversationID: "c1", Type: "run.progress", Payload: json.RawMessage(`{"stage":"waiting_model","elapsed_ms":12}`)})
 	if err != nil || control != nil || event == nil || event.Type != gatewayv2.ChatEvent_TOOL_STATUS {

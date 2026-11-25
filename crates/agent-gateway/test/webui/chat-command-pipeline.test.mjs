@@ -59,6 +59,22 @@ function transcriptTexts(store) {
   return store.getSnapshot().rows.map((row) => rowText(row));
 }
 
+test("a disconnected submission does not leave an assistant error in the transcript", async () => {
+  const { pipeline, stores, outcomes } = createHarness();
+  const outcome = await pipeline.submit({
+    conversationId: "conv-offline",
+    clientRequestId: "client-offline",
+    message: "keep my draft",
+    submit: async () => {
+      throw new Error("Gateway WebSocket is not connected");
+    },
+  });
+  assert.equal(outcome.kind, "failed");
+  assert.equal(pipeline.hasPending("conv-offline"), false);
+  assert.equal(outcomes.failed.length, 1);
+  assert.deepEqual(transcriptTexts(stores.get("conv-offline")), []);
+});
+
 test("a draft follow-up waits for canonical conversation binding", async () => {
   const { pipeline } = createHarness();
   let acceptCommand;

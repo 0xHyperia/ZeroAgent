@@ -14,6 +14,8 @@ export function ExecutionEnvironmentSwitcher({
   onManageDevices,
   compact,
   mobileSheet,
+  open,
+  onOpenChange,
   onSwitch,
 }: {
   environments: ExecutionEnvironment[];
@@ -23,6 +25,8 @@ export function ExecutionEnvironmentSwitcher({
   onManageDevices?: () => void;
   compact?: boolean;
   mobileSheet?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   onSwitch: (environment: ExecutionEnvironment, workspace: ExecutionWorkspace) => Promise<unknown>;
 }) {
   const { locale } = useLocale();
@@ -45,6 +49,8 @@ export function ExecutionEnvironmentSwitcher({
       onManageDevices={onManageDevices}
       compact={compact}
       mobileSheet={mobileSheet}
+      open={open}
+      onOpenChange={onOpenChange}
       choices={environments.map((environment) => ({
         id: environment.device_id ?? "cloud",
         deviceId: environment.device_id,

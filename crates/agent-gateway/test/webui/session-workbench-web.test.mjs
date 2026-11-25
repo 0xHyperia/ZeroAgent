@@ -123,6 +123,12 @@ test("retained device panes ignore window shortcuts outside the active chat surf
   const env = await createWebDomTestEnv();
   const { act, createRoot, React } = env;
   const { useGatewayWorkbench } = env.loadModule("src/app/workbench/useGatewayWorkbench.ts");
+  const { useWorkbenchCommandPalette } = env.loadModule(
+    "@liveagent/ui/lib/chat/useWorkbenchCommandPalette.ts",
+  );
+  const { writeShortcutOverrides } = env.loadModule(
+    "@liveagent/ui/lib/shortcuts/shortcutCommands.ts",
+  );
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   t.after(async () => {
@@ -162,6 +168,23 @@ test("retained device panes ignore window shortcuts outside the active chat surf
         setDisplayedConversationId(id);
       },
     });
+    useWorkbenchCommandPalette({
+      scopeKey: "authorized-device",
+      visible: !chatHidden && !chatInert,
+      activeView: "chat",
+      conversationId: displayedConversationId,
+      isDraft: false,
+      hasConversation: () => true,
+      openConversation: noOp,
+      visibleHubs: {},
+      openHub: noOp,
+      actions: {
+        t: (key) => key,
+        onCloseActiveContext: Object.keys(controller.workbench.layout.panes).length > 1
+          ? () => controller.requestClosePane(controller.workbench.layoutRef.current.focusedPaneId)
+          : undefined,
+      },
+    });
     return React.createElement(
       React.Fragment,
       null,
@@ -180,9 +203,10 @@ test("retained device panes ignore window shortcuts outside the active chat surf
     );
   }
   const render = (props = {}) => act(() => root.render(React.createElement(View, props)));
-  const closeShortcut = async (target) => {
+  const closeShortcut = async (target, key = "w") => {
     const event = new KeyboardEvent("keydown", {
-      key: "w",
+      key,
+      code: `Key${key.toUpperCase()}`,
       ctrlKey: true,
       altKey: true,
       bubbles: true,
@@ -219,7 +243,10 @@ test("retained device panes ignore window shortcuts outside the active chat surf
   assert.equal(draft.value, "Keep this device draft");
   assert.equal(draft.selectionStart, 5);
   assert.equal(controller.workbench.layout.focusedPaneId, secondPaneId);
-  assert.equal(await closeShortcut(draft), true);
+  writeShortcutOverrides({ closeActiveContext: "Mod+Alt+KeyX" });
+  assert.equal(await closeShortcut(draft), false);
+  assert.equal(controller.workbench.layout, beforeNavigation);
+  assert.equal(await closeShortcut(draft, "x"), true);
   assert.deepEqual(Object.keys(controller.workbench.layout.panes), [firstPaneId]);
   assert.deepEqual(selected, ["conv-b", "conv-a"]);
 });

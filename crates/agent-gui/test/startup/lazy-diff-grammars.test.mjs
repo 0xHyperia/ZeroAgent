@@ -37,3 +37,21 @@ test("the transform starts the diff highlighter without grammars and exposes a l
   assert.match(result.code, new RegExp(`Symbol\\.for\\("${DIFF_HIGHLIGHT_GRAMMARS_KEY.replace(/\./g, "\\.")}"\\)`));
   assert.match(result.code, /import\(".*all\.js"\)/);
 });
+
+test("the embedded device workbench avoids the native host's grammar loader", async (context) => {
+  const { loadDiffHighlightGrammars } = createTsModuleLoader().loadModule(
+    "../agent-ui/src/lib/shared/diffHighlightGrammars.ts",
+  );
+  const loaderKey = Symbol.for(DIFF_HIGHLIGHT_GRAMMARS_KEY);
+  const hostLoader = context.mock.fn(async () => {});
+  globalThis[loaderKey] = hostLoader;
+  context.after(() => {
+    delete globalThis[loaderKey];
+    delete globalThis.__ZEROAGENT_EMBEDDED_DESKTOP__;
+  });
+
+  await loadDiffHighlightGrammars();
+  globalThis.__ZEROAGENT_EMBEDDED_DESKTOP__ = true;
+  await loadDiffHighlightGrammars();
+  assert.equal(hostLoader.mock.callCount(), 1);
+});

@@ -14,7 +14,11 @@ import {
 } from "@liveagent/ui/lib/chat/hostedSearch";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { CompactionSeam } from "@liveagent/ui/lib/chat/replyContinuity";
-import { isKBrainErrorMessageId, readTurnErrorDetail } from "@liveagent/ui/lib/chat/turnError";
+import {
+  isKBrainErrorMessageId,
+  projectKBrainTurnFailure,
+  readTurnErrorDetail,
+} from "@liveagent/ui/lib/chat/turnError";
 import {
   getUserMessageAttachments,
   getUserMessageDisplayText,
@@ -845,13 +849,15 @@ export function parseHistoryMessagesJson(raw: string): ChatEntry[] {
         api: message.api,
         stopReason: failed ? "error" : message.stopReason,
         // A reply cut off by a failure keeps its text; the failure rides along.
-        errorMessage: failed
-          ? allBlocks.map((block) => (block.type === "text" ? block.text : "")).join("") ||
-            "Request failed"
-          : message.stopReason === "error"
-            ? message.errorMessage
-            : undefined,
+        errorMessage: message.stopReason === "error" ? message.errorMessage : undefined,
         errorDetail: message.errorDetail,
+        ...(failed
+          ? projectKBrainTurnFailure(
+              message.errorDetail,
+              message.errorMessage ??
+                allBlocks.map((block) => (block.type === "text" ? block.text : "")).join(""),
+            )
+          : {}),
         cancelReason: message.cancelReason,
         usage: message.usage,
       });

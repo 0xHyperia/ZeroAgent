@@ -1,7 +1,9 @@
 import { Archive, Info, Keyboard, Shield } from "@liveagent/ui/components/IconSet";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
+import { settingsSectionLabel } from "@liveagent/ui/lib/settings/settingsSearchIndex";
 import type { ReactNode } from "react";
 import { isMacOsTauri, MacOsTitleBarSpacer } from "../components/MacOsTitleBarSpacer";
+import { isTauriHost, supportsNativeWorkspaceEditors } from "../lib/host";
 import { LegacyHistoryImportSettings } from "../lib/kbrain/LegacyHistoryImportSettings";
 import { AboutSection } from "../pages/settings/AboutSection";
 import { AccountSection } from "../pages/settings/AccountSection";
@@ -15,6 +17,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
   iconClassName: string;
   slots: UiExtensionSlots;
   sections: SettingsSectionDefinition<void>[];
+  excludedSearchAnchors: readonly string[];
   renderProviders: (options: {
     initialProviderId?: string;
     onInitialProviderHandled: () => void;
@@ -33,6 +36,10 @@ export function createSettingsExtension(props: SettingsPageProps): {
   } = props;
   return {
     surface: "desktop",
+    excludedSearchAnchors: [
+      ...(isTauriHost() ? [] : ["desktop-setup-guide", "run-completion-sound"]),
+      ...(supportsNativeWorkspaceEditors() ? [] : ["preferred-workspace-editor"]),
+    ],
     iconClassName: "size-3.5",
     slots: {
       sidebarLeading: isMacOsTauri() ? (
@@ -53,7 +60,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupKey: "settings.groupGeneral",
         groupOrder: 10,
         order: 5,
-        labelKey: "settings.navAccount",
+        labelKey: settingsSectionLabel("account"),
         icon: <Shield className="h-3.5 w-3.5" />,
         render: () => (
           <AccountSection
@@ -70,7 +77,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupKey: "settings.groupOther",
         groupOrder: 50,
         order: 10,
-        labelKey: "settings.navShortcuts",
+        labelKey: settingsSectionLabel("shortcuts"),
         icon: <Keyboard className="size-3.5" />,
         render: () => <GlobalShortcutsSection />,
       },
@@ -79,7 +86,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupKey: "settings.groupOther",
         groupOrder: 50,
         order: 15,
-        labelKey: "settings.navBackup",
+        labelKey: settingsSectionLabel("backup"),
         icon: <Archive className="size-3.5" />,
         render: () => (
           <>
@@ -97,7 +104,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupKey: "settings.groupOther",
         groupOrder: 50,
         order: 20,
-        labelKey: "settings.navAbout",
+        labelKey: settingsSectionLabel("about"),
         icon: <Info className="size-3.5" />,
         render: () => (
           <AboutSection
@@ -105,6 +112,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
             setSettings={setSettings}
             appUpdate={appUpdate}
             releaseAnnouncement={releaseAnnouncement}
+            onOpenSetupGuide={props.onOpenSetupGuide}
           />
         ),
       },

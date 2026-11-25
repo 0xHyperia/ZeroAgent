@@ -77,6 +77,7 @@ export type ConversationPaneBinding = {
   changedFilesActions: ChangedFilesActions;
   checkpointRewind: ConversationPaneCheckpointRewind;
   isConversationRunning: boolean;
+  htmlPreviews?: boolean;
   scheduledRun?: ScheduledConversationRun;
   fileDrop: ConversationPaneFileDropState;
   /** 轨迹视图（只读分析），按会话实例独立绑定。 */

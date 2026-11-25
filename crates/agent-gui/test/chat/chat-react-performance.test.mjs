@@ -20,6 +20,9 @@ mocks["./ConversationSurface"] = { ConversationSurface: () => { surfaceRenders++
 mocks["@liveagent/ui/components/resource-preview/DeviceConversationImageSurface"] = {
   DeviceConversationImageSurface: ({ children }) => children,
 };
+mocks["@liveagent/ui/components/sandboxed-ui/DeviceUiTranscript"] = {
+  DeviceUiTranscript: ({ children }) => children,
+};
 const env = await createDomTestEnv({ mocks });
 const { React, act, createRoot } = env;
 const { useHasConversationReply } = env.loadModule("src/pages/chat/hooks/useHasConversationReply.ts");

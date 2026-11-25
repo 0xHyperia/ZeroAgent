@@ -11,6 +11,10 @@ export function isTauriHost(): boolean {
   return runtimeWindow.__TAURI__ !== undefined || runtimeWindow.__TAURI_INTERNALS__ !== undefined;
 }
 
+export function supportsNativeWorkspaceEditors(): boolean {
+  return isTauriHost() && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 export function isKBrainBackendEnabled(): boolean {
   return true;
 }

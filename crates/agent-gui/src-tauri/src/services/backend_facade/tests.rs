@@ -476,6 +476,37 @@ async fn raw_mcp_calls_are_blocked_without_blocking_session_execution_or_discove
 }
 
 #[tokio::test]
+async fn plugin_folder_trust_and_mcp_app_routes_require_the_device_host() {
+    let fixture = Fixture::new().await;
+    let public = fixture.public();
+    for path in [
+        "/v1/plugins",
+        "/v1/plugins/fixture/tools/call",
+        "/v1/%2570lugins/install",
+        "/v1/plugins%2ffixture/enable",
+        "/v1/plugin-assets/fixture/index.html",
+        "/v1/sessions/fixture/mcp-ui",
+        "/v1/sessions/fixture/mcp-ui/results/fixture",
+        "/v1/sessions/fixture/previews",
+        "/v1/sessions/fixture/%2570reviews/0123456789abcdef",
+        "/v1/trust",
+        "/v1/%2574rust",
+    ] {
+        for method in [Method::GET, Method::POST, Method::DELETE, Method::OPTIONS] {
+            let response = fixture
+                .client
+                .request(method, format!("{}{path}", public.base_url))
+                .bearer_auth(&public.token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+    }
+    assert!(fixture.state.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn large_binary_upload_download_and_range_headers_are_preserved() {
     let fixture = Fixture::new().await;
     let public = fixture.public();

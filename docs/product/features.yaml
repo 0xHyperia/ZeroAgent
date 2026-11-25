@@ -129,6 +129,7 @@
         "crates/agent-gui/src-tauri/src/services/account_session/gateway.rs",
         "crates/agent-gui/src/lib/relay/nativeSession.ts",
         "crates/agent-gui/src/lib/relay/nativeGatewaySocket.ts",
+        "crates/agent-gui/src/components/onboarding/FirstRunOnboarding.tsx",
         "crates/agent-gui/src-tauri/src/services/backend_facade.rs"
       ],
       "tests": [
@@ -137,6 +138,7 @@
         "crates/agent-gui/test/providers/relay-password-verification.test.mjs",
         "crates/agent-gateway/web/test/relay-password-verification.test.mjs",
         "crates/agent-gateway/web/test/onboarding-login-regressions.test.mjs",
+        "crates/agent-gui/test/settings/desktop-setup-guide.test.mjs",
         "crates/agent-gateway/web/test/account-session-ownership.test.mjs",
         "crates/agent-gateway/web/test/relay-client.test.mjs",
         "crates/agent-gateway/web/test/account-request.test.mjs",
@@ -441,6 +443,8 @@
         "crates/agent-gui/src/lib/kbrain/client.ts",
         "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
         "crates/agent-gui/src-tauri/src/services/backend_facade.rs",
+        "crates/agent-ui/src/pages/settings/PermissionRulesSection.tsx",
+        "crates/agent-gui/src/agent-ui-adapters/kbrainSettings.ts",
         "crates/agent-gui/src-tauri/src/commands/integration/mcp_oauth.rs",
         "crates/agent-gui/src-tauri/src/services/mcp_oauth/mod.rs",
         "crates/agent-gui/src-tauri/src/services/mcp_oauth/store.rs",
@@ -457,6 +461,8 @@
       ],
       "tests": [
         "crates/agent-gui/test/chat/kbrain-conversation-turn.test.mjs",
+        "crates/agent-gui/test/settings/permission-rules-registration.test.mjs",
+        "crates/agent-gui/test/settings/permission-rules.test.mjs",
         "crates/agent-gui/test/providers/kbrain-turn.test.mjs",
         "crates/agent-gui/test/chat/goal-bar-refresh.test.mjs",
         "crates/agent-gui/src-tauri/src/services/kbrain_backend.rs",
@@ -476,7 +482,7 @@
         "crates/agent-gui/src-tauri/src/services/kbrain_backend/mcp_oauth_sse_fixture.rs",
         "crates/agent-gui/src-tauri/src/commands/config/settings/gateway_skills_tests.rs"
       ],
-      "security": "Go 保持唯一 Agent/MCP 执行器，标准审批与工具策略不向 Cloud Chat 开放。公开连接仅含 Native 代理能力，真实后端令牌不序列化给 renderer，profile 失效取消传输。MCP 凭据桥限制 profile、目标、版本和启用状态，真实令牌由 Native 持有、刷新并脱敏；私有 runtime 管理协议与额外端点兼容退出。保留官方 SDK 标准 SSE 最小接线及已复现的取消/进程树回收修复。补丁绑定精确源码和构建来源；完整应用、真实账号设备、支持端与发布验收尚未完成。 beta21远程Skills复用Go资源和Native公开配置入口，实际读取ETag绑定写入，拒绝无版本、陈旧及跨工作区版本，不再分派到旧Native SkillsManager。",
+      "security": "Go 保持唯一 Agent/MCP 执行器，标准审批与工具策略不向 Cloud Chat 开放。桌面此电脑可管理当前账户引擎的所有项目或指定项目规则，切换账户或设备后丢弃旧页面回执，受管远程设备不开放规则管理。公开连接仅含 Native 代理能力，真实后端令牌不序列化给 renderer，profile 失效取消传输。MCP 凭据桥限制 profile、目标、版本和启用状态，真实令牌由 Native 持有、刷新并脱敏；私有 runtime 管理协议与额外端点兼容退出。保留官方 SDK 标准 SSE 最小接线及已复现的取消/进程树回收修复。补丁绑定精确源码和构建来源；完整应用、真实账号设备、支持端与发布验收尚未完成。 beta21远程Skills复用Go资源和Native公开配置入口，实际读取ETag绑定写入，拒绝无版本、陈旧及跨工作区版本，不再分派到旧Native SkillsManager。",
       "upstream_relation": "adapt"
     },
     {
@@ -777,6 +783,32 @@
         "crates/agent-gateway/internal/account/cloud_extension_manifest_test.go"
       ],
       "security": "ADR0068/0069：插件与独立技能分离，公开/个人和安装状态分别筛选；服务端判定归属，公开内容拒绝编辑与下载，卸载保留内容并支持重装。界面不设版本管理；账户 CAS、有界 UTF-8 包、不可变修订、稳定引用与执行快照保留。ADR0071按包主入口提及，内部新发布保留旧指令，包内技能遵循同一固定发布；剪贴板保留合法旧引用，拒绝未来发布及其他包。技能不授予本机或连接权限；未知写入先只读核对，切号拒绝迟到回填。第三方 MCP/OAuth、设备 Hub 统一与原生验收尚未完成。ADR0073：按本机定义组织显式 manifest 技能入口和辅助文件；产品设计不含创建技能，生图与创建技能独立。归档白名单保留改名和移出成员的旧固定引用，不注册为当前候选。设备显式固定引用经当前 profile 的 Native 私有读取口和桌面 bearer 核对账户与启用状态，只将支持的有界文本放入 K-brain 用户级快照。设备存储、安装、工具权限和审批仍由原运行时管理。",
+      "upstream_relation": "adapt"
+    },
+    {
+      "id": "device-plugins",
+      "name": "设备 K-brain 插件、工作区信任和只读成果预览",
+      "status": "active",
+      "owner": "shared",
+      "surfaces": ["desktop", "webui", "gateway", "android"],
+      "entrypoints": [
+        "crates/agent-ui/src/pages/settings/DevicePluginsSection.tsx",
+        "crates/agent-ui/src/lib/plugins/useDevicePluginList.ts",
+        "crates/agent-ui/src/components/sandboxed-ui/DeviceUiTranscript.tsx",
+        "crates/agent-ui/src/components/project-tools/RightDockPluginPanels.tsx",
+        "crates/agent-gui/src-tauri/src/services/device_plugins.rs",
+        "crates/agent-gui/src-tauri/src/services/device_ui_surface.rs",
+        "crates/agent-gateway/internal/protocol/pbws/workspace_guard.go",
+        "crates/agent-gateway/proto/v2/gateway.proto"
+      ],
+      "tests": [
+        "crates/agent-gui/test/settings/device-plugins.test.mjs",
+        "crates/agent-gui/src-tauri/src/services/backend_facade/tests.rs",
+        "crates/agent-gateway/internal/protocol/pbws/workspace_guard_test.go",
+        "crates/agent-gateway/internal/protocol/pbws/guard_test.go",
+        "crates/agent-gateway/test/websocket/account_selection_dispatch_test.go"
+      ],
+      "security": "设备插件由当前账户的 K-brain 执行器管理。远程请求绑定当前账号设备租约与已发布项目，Gateway 注入经验证的账户标识，Native 复核账户、活动后端及规范路径。安装需明确选择并由后端有界复制，禁止越过项目读取或透传后台令牌和插件资产地址。写入回执未知时只读核对。HTML、插件面板和 MCP 结果预览仅使用当前会话或插件授权的有界内容，关闭脚本和网络。账户扩展、启用状态和固定历史引用沿用现有协议。",
       "upstream_relation": "adapt"
     },
     {

@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import Icons from "unplugin-icons/vite";
 import { resourcePreviewAssets } from "../../../scripts/vite-resource-preview-assets.mjs";
+import { lazyDiffHighlightGrammars } from "../../agent-ui/build/lazyDiffGrammars";
 
 const DEFAULT_PROXY_API = "http://127.0.0.1:50052";
 const packageJson = JSON.parse(
@@ -23,7 +24,14 @@ function resolveProxyTarget() {
 export default defineConfig(({ mode }) => ({
   base: mode === "embedded-desktop" ? "/remote-device/" : "/",
   publicDir: mode === "embedded-desktop" ? false : "public",
-  plugins: [react(), Icons({ compiler: "jsx", jsx: "react" }), resourcePreviewAssets()],
+  plugins: [
+    react(),
+    Icons({ compiler: "jsx", jsx: "react" }),
+    resourcePreviewAssets(),
+    // This loader is global to one app. The embedded factory keeps its
+    // highlighter local to each independently mounted device workbench.
+    ...(mode === "embedded-desktop" ? [] : [lazyDiffHighlightGrammars()]),
+  ],
   resolve: {
     dedupe: ["react", "react-dom"],
     alias: {
@@ -78,8 +86,6 @@ export default defineConfig(({ mode }) => ({
     // `GatewayTerminalStreamHandle extends TerminalStreamBuffer` across chunks
     // and created a circular ESM cycle, crashing load with
     // "Class extends value undefined is not a constructor or null".
-    // `codeSplitting: false` (used by the GUI in #613) inlines every overlay
-    // into a ~23 MB main bundle, which is fine for Tauri but not for WebUI.
   },
   define: {
     // Vite library mode leaves this flag for consumers to replace. The
@@ -87,6 +93,7 @@ export default defineConfig(({ mode }) => ({
     ...(mode === "embedded-desktop"
       ? { "process.env.NODE_ENV": JSON.stringify("production") }
       : {}),
+    __ZEROAGENT_EMBEDDED_DESKTOP__: JSON.stringify(mode === "embedded-desktop"),
     __ZEROAGENT_EMBEDDED_MOBILE__: JSON.stringify(mode === "embedded-mobile"),
     __ZEROAGENT_APP_VERSION__: JSON.stringify(appVersion),
   },

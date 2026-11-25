@@ -9,6 +9,7 @@ import { Pin } from "@liveagent/ui/components/IconSet";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { Toaster } from "@liveagent/ui/components/ui/toaster";
 import { LocaleContext, t as translate, useLocaleContextValue } from "@liveagent/ui/i18n/index";
+import { modelTypesFor } from "@liveagent/ui/lib/models/modelTypes";
 import { loadThinkingLiveSupplement } from "@liveagent/ui/lib/models/thinkingLive";
 import { useCatalogLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { WEB_SEARCH_SETTINGS_CHANGED_EVENT } from "@liveagent/ui/lib/providers/webSearchFallback";
@@ -124,6 +125,9 @@ const DesktopScheduledTasks = lazy(async () => ({
 }));
 const SettingsPage = lazy(async () => ({
   default: (await import("@liveagent/ui/pages/settings/SettingsPage")).SettingsPage,
+}));
+const FirstRunOnboarding = lazy(async () => ({
+  default: (await import("./components/onboarding/FirstRunOnboarding")).FirstRunOnboarding,
 }));
 const CronPromptRunner = lazy(async () => ({
   default: (await import("./components/cron/CronPromptRunner")).CronPromptRunner,
@@ -261,7 +265,9 @@ export default function App() {
     handleSettingsOverlayTransitionEnd,
   } = useSettingsOverlay();
   const [modelPreferencesOpen, setModelPreferencesOpen] = useState(false);
+  const [setupGuideOwner, setSetupGuideOwner] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<SectionId>("system");
+  const [settingsAnchor, setSettingsAnchor] = useState<string>();
   const [settingsProviderId, setSettingsProviderId] = useState<string>();
   const [settingsReady, setSettingsReady] = useState(false);
   const [relayReady, setRelayReady] = useState(false);
@@ -332,6 +338,15 @@ export default function App() {
   const [settingsStalled, setSettingsStalled] = useState(false);
   const [backgroundHostsReady, setBackgroundHostsReady] = useState(false);
   const [settings, setSettingsState] = useState<AppSettings>(() => getBootAlignedDefaultSettings());
+  const hasSetupModel = useMemo(
+    () =>
+      settings.customProviders.some((provider) =>
+        provider.activeModels.some((model) =>
+          modelTypesFor(model, provider.models?.find((item) => item.id === model)).includes("text"),
+        ),
+      ),
+    [settings.customProviders],
+  );
   const handoffEnvironments = useMemo(() => {
     const [local] = buildLocalOnlyEnvironment(settings);
     return [
@@ -945,13 +960,14 @@ export default function App() {
     };
   }, []);
   const openSettings = useCallback(
-    (section: SectionId = "system", providerId?: string) => {
+    (section: SectionId = "system", providerId?: string, anchor?: string) => {
       if (section === "model-preferences" || section === "image-studio") {
         setModelPreferencesOpen(true);
         return;
       }
       if (settingsLeaveGuard.current && !settingsLeaveGuard.current()) return;
       setSettingsSection(section);
+      setSettingsAnchor(anchor);
       setSettingsProviderId(section === "providers" ? providerId : undefined);
       openSettingsOverlay();
       void reloadPersistedSettings().catch((error) => {
@@ -997,6 +1013,7 @@ export default function App() {
     [],
   );
   const scheduledTasksNavigation = useRef<(() => void) | null>(null);
+  const setupProjectPicker = useRef<(() => Promise<void>) | null>(null);
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const openSettingsRef = useRef(openSettings);
@@ -1209,6 +1226,7 @@ export default function App() {
     const selectDevice = () => {
       if (sessionEpoch !== executionSessionEpochRef.current) return;
       captureLocalDraft.current?.();
+      setSetupGuideOwner(null);
       setCloudControlOwner(null);
       setExecutionState((current) => selectDesktopExecutionState(current, environment));
       if (relayUser) {
@@ -1239,6 +1257,10 @@ export default function App() {
       (environment) => environment.device_id === selectedExecutionDeviceId,
     ) ?? null;
   const localExecutionSelected = selectedExecutionEnvironment?.device_id === localDeviceId;
+  const setupGuideAvailable = localExecutionSelected && !cloudSelected && isTauriHost();
+  const setupProjectName =
+    settings.system.workspaceProjects.find((project) => project.id === settings.system.activeWorkspaceProjectId)
+      ?.name ?? settings.system.workdir.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
   const selectedRemoteLease = selectedExecutionEnvironment
     ? remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)
     : undefined;
@@ -1253,6 +1275,7 @@ export default function App() {
           isTauriHost()
             ? () => {
                 captureLocalDraft.current?.();
+                setSetupGuideOwner(null);
                 setCloudMountedOwner(relayUser.id);
                 setCloudControlOwner(relayUser.id);
               }
@@ -1302,6 +1325,7 @@ export default function App() {
                   <ChatPage
                     settingsNavigation={settingsNavigation}
                     scheduledTasksNavigationRef={scheduledTasksNavigation}
+                    setupProjectPickerRef={setupProjectPicker}
                     active={!cloudSelected && localExecutionSelected}
                     relayUser={relayUser}
                     relayStats={relayStats}
@@ -1433,8 +1457,22 @@ export default function App() {
                     onRelayUserChange={acceptRelayUser}
                     onRelayStatsChange={setRelayStats}
                     settings={settings}
-                    settingsHost={{ ...settingsHostAdapter, usageScope: relayUserId }}
+                    settingsHost={{
+                      ...settingsHostAdapter,
+                      usageScope: relayUserId,
+                      permissionRulesScope:
+                        localExecutionSelected && !cloudSelected && isTauriHost()
+                          ? relayUserId
+                          : undefined,
+                      devicePlugins:
+                        localExecutionSelected && !cloudSelected && isTauriHost()
+                          ? settingsHostAdapter.devicePlugins
+                          : undefined,
+                    }}
                     onOpenModelPreferences={() => setModelPreferencesOpen(true)}
+                    onOpenSetupGuide={
+                      setupGuideAvailable ? () => setSetupGuideOwner(relayUser.id) : undefined
+                    }
                     onOpenScheduledTasks={
                       localExecutionSelected && !cloudSelected && isTauriHost()
                         ? () => scheduledTasksNavigation.current?.()
@@ -1446,6 +1484,7 @@ export default function App() {
                     saveState={settingsSaveState}
                     onBack={closeSettings}
                     initialSection={settingsSection}
+                    initialAnchor={settingsAnchor}
                     initialProviderId={settingsProviderId}
                     appUpdate={appUpdate}
                     releaseAnnouncement={releaseAnnouncement}
@@ -1482,6 +1521,25 @@ export default function App() {
             client={imageStudioHost?.client}
             onClose={() => setModelPreferencesOpen(false)}
           />
+        ) : null}
+        {setupGuideAvailable && backgroundHostsReady && (setupGuideOwner === relayUser.id || !hasSetupModel) ? (
+          <Suspense fallback={null}>
+            <FirstRunOnboarding
+              key={relayUser.id}
+              userId={relayUser.id}
+              autoOpen={!settingsOpen && !modelPreferencesOpen && !releaseAnnouncement.open && !hasSetupModel}
+              requested={setupGuideOwner === relayUser.id}
+              hasModel={hasSetupModel}
+              projectName={setupProjectName}
+              onClose={() => setSetupGuideOwner(null)}
+              onConfigureModels={() => openSettings("providers")}
+              onChooseProject={async () => {
+                const chooseProject = setupProjectPicker.current;
+                if (!chooseProject) throw new Error("Project picker unavailable");
+                await chooseProject();
+              }}
+            />
+          </Suspense>
         ) : null}
         <ReleaseAnnouncementDialog controller={releaseAnnouncement} />
         {restartConfirmDialog}

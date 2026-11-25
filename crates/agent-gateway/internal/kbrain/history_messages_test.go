@@ -2,6 +2,7 @@ package kbrain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -137,7 +138,7 @@ func TestHistoryMessagesJSONCarriesFailureAndCancelOutcome(t *testing.T) {
 		{"id":"u1","role":"user","content":[{"type":"text","text":"q"}]},
 		{"id":"m1","role":"assistant","content":[{"type":"text","text":"Here is the first part"}],"stop_reason":"error","error":"unexpected EOF","error_detail":{"kind":"connection_lost"}},
 		{"id":"u2","role":"user","content":[{"type":"text","text":"again"}]},
-		{"id":"assistant-error-r2","role":"assistant","content":[{"type":"text","text":"401 Unauthorized"}],"stop_reason":"error","error_detail":{"kind":"invalid_api_key","upstream_status":401,"provider_message":"Incorrect API key"}},
+		{"id":"assistant-error-r2","role":"assistant","content":[{"type":"text","text":"401 Unauthorized private provider details"}],"stop_reason":"error","error_detail":{"kind":"invalid_api_key","upstream_status":401,"provider_message":"Incorrect API key"}},
 		{"id":"u3","role":"user","content":[{"type":"text","text":"more"}]},
 		{"id":"assistant-stopped-r3","role":"assistant","stop_reason":"cancelled","cancel_reason":"shutdown"},
 		{"id":"m4","role":"assistant","content":[{"type":"text","text":"done"}]}
@@ -153,18 +154,18 @@ func TestHistoryMessagesJSONCarriesFailureAndCancelOutcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	partial := out[1]
-	if partial["stopReason"] != "error" || partial["errorMessage"] != "unexpected EOF" || len(partial["content"].([]any)) != 1 {
+	if partial["stopReason"] != "error" || partial["errorMessage"] != "Connection to the model was interrupted." || len(partial["content"].([]any)) != 1 {
 		t.Fatalf("partial reply = %v", partial)
 	}
 	if detail, _ := partial["errorDetail"].(map[string]any); detail["kind"] != "connection_lost" || len(detail) != 1 {
 		t.Fatalf("partial reply detail = %v", partial["errorDetail"])
 	}
 	failed, _ := out[3]["errorDetail"].(map[string]any)
-	if failed["kind"] != "invalid_api_key" || failed["upstreamStatus"] != float64(401) || failed["providerMessage"] != "Incorrect API key" {
+	if failed["kind"] != "invalid_api_key" || failed["upstreamStatus"] != float64(401) || len(failed) != 2 {
 		t.Fatalf("failed detail = %v", out[3])
 	}
-	if _, has := out[3]["errorMessage"]; has {
-		t.Fatalf("a no-output failure keeps its text as the error, got %v", out[3])
+	if out[3]["errorMessage"] != "The model provider rejected authentication." || len(out[3]["content"].([]any)) != 0 || strings.Contains(raw, "private provider details") {
+		t.Fatalf("a no-output failure must carry only safe metadata, got %v", out[3])
 	}
 	stopped := out[5]
 	if stopped["stopReason"] != "aborted" || stopped["cancelReason"] != "shutdown" {

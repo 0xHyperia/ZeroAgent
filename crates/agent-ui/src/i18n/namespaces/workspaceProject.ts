@@ -53,6 +53,7 @@ registerTranslations({
     "chat.folderTrustDescription":
       "信任此目录后，其中的项目提示词、斜杠指令和其他项目文件才会生效。只信任内容可靠的目录。修改立即生效。",
     "chat.folderTrustInherited": "因上级目录 {path} 已受信任而受信任。",
+    "chat.folderTrustInheritedParent": "此目录继承了上级目录的信任。",
     "chat.folderTrustUnsupported":
       "当前后端版本不支持修改目录信任。请在 kn 终端中打开一次该目录来信任它。",
     "chat.workspaceSettingsDirectoriesDescription":
@@ -139,6 +140,7 @@ registerTranslations({
     "chat.folderTrustDescription":
       "Trusting this folder lets its project prompts, slash commands and other project files take effect. Only trust folders whose contents you trust. Changes apply immediately.",
     "chat.folderTrustInherited": "Trusted because its parent folder {path} is trusted.",
+    "chat.folderTrustInheritedParent": "This folder inherits trust from a parent folder.",
     "chat.folderTrustUnsupported":
       "This backend version cannot change folder trust. Open the folder once in the kn terminal to trust it.",
     "chat.workspaceSettingsDirectoriesDescription":

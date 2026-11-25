@@ -58,8 +58,8 @@ import { normalizeLatexDelimiters } from "../lib/normalizeLatexDelimiters";
 import { copyTextToClipboard } from "../lib/shared/clipboard";
 import { useLazyModule } from "../lib/shared/lazyModule";
 import { cn } from "../lib/shared/utils";
-import { DEFAULT_MARKDOWN_CODE_LANGUAGE, MARKDOWN_CODE_THEMES } from "../lib/syntaxHighlighter";
 import { createStreamingBlockParser } from "../lib/streamingMarkdownBlocks";
+import { DEFAULT_MARKDOWN_CODE_LANGUAGE, MARKDOWN_CODE_THEMES } from "../lib/syntaxHighlighter";
 import { MarkdownMermaidBlock } from "./markdown/MarkdownMermaidBlock";
 import {
   CHAT_MARKDOWN_CLASS,
@@ -68,6 +68,7 @@ import {
   RELEASE_NOTES_MARKDOWN_CLASS,
   THINKING_MARKDOWN_CLASS,
 } from "./markdown/markdownStyles";
+import { HtmlPreviewFence } from "./sandboxed-ui/DeviceUiTranscript";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { CopyButton } from "./ui/copy-button";
@@ -276,8 +277,22 @@ const remarkPlugins = [
     name === "gfm" ? withDoubleTildeStrikethrough(plugin) : plugin,
   ),
   remarkBreaks,
+  remarkHtmlPreviewFence,
 ];
 const chatRemarkPlugins = [...remarkPlugins, remarkChatFileLinks];
+
+function remarkHtmlPreviewFence() {
+  type CodeNode = { type: string; lang?: string; meta?: string; children?: CodeNode[] };
+  return (tree: CodeNode) => {
+    const nodes = [tree];
+    for (const node of nodes) {
+      if (node.type === "code" && node.lang === "html" && node.meta?.trim() === "preview") {
+        node.lang = "html-preview";
+      }
+      if (node.children) for (const child of node.children) nodes.push(child);
+    }
+  };
+}
 
 type StreamdownRehypePlugins = NonNullable<ComponentProps<typeof Streamdown>["rehypePlugins"]>;
 
@@ -357,7 +372,6 @@ type MarkdownFileLinkProps = ComponentProps<"a"> &
     onOpenFileLink: (link: ChatFileLink) => void;
     workdir?: string;
   };
-
 
 function readRewrittenChatFileLink(props: MarkdownAnchorFallbackProps) {
   const href = typeof props.href === "string" ? props.href : "";
@@ -649,6 +663,19 @@ export function CollapsibleCodePre({
         pending={pendingMermaid}
         readOnly={!allowMermaidFullscreen}
       />
+    );
+  }
+
+  if (language === "html-preview" && !fenceIncomplete && allowMermaidFullscreen) {
+    return (
+      <HtmlPreviewFence code={codeContent}>
+        <div className="relative w-full">
+          <CodeBlockActions code={codeContent} />
+          <HeightClampedCode>
+            {cloneElement(childElement, { "data-block": "true", className: "language-html" })}
+          </HeightClampedCode>
+        </div>
+      </HtmlPreviewFence>
     );
   }
 

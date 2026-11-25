@@ -89,8 +89,10 @@ test("physical drop coordinates are normalized before attribution (Windows DPI)"
 function createHookHarness() {
   const refs = [];
   const states = [];
+  const memos = [];
   let refIndex = 0;
   let stateIndex = 0;
+  let memoIndex = 0;
 
   const react = {
     createContext: (defaultValue) => ({ defaultValue }),
@@ -110,7 +112,15 @@ function createHookHarness() {
       return [states[index], setState];
     },
     useCallback: (callback) => callback,
-    useMemo: (factory) => factory(),
+    useMemo(factory, dependencies) {
+      const index = memoIndex++;
+      const previous = memos[index];
+      if (!previous || !dependencies || dependencies.length !== previous.dependencies?.length ||
+          dependencies.some((dependency, i) => !Object.is(dependency, previous.dependencies[i]))) {
+        memos[index] = { value: factory(), dependencies };
+      }
+      return memos[index].value;
+    },
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
     useEffect: () => undefined,
   };
@@ -120,6 +130,7 @@ function createHookHarness() {
     render(run) {
       refIndex = 0;
       stateIndex = 0;
+      memoIndex = 0;
       return run();
     },
   };
@@ -149,6 +160,7 @@ function mountPendingUploads({ invokeImpl }) {
   const notifications = [];
   const errors = [];
   const params = {
+    owner: "first-account",
     isAgentMode: true,
     workdir: "/ws/a",
     conversationId: "conv-a",
@@ -158,8 +170,8 @@ function mountPendingUploads({ invokeImpl }) {
     setErrorMessage: (message) => errors.push(message),
     addNotify: (type, message) => notifications.push({ type, message }),
   };
-  const hook = harness.render(() => usePendingUploads(params));
-  return { hook, uploadStore, currentConversationIdRef, invokeCalls, notifications, errors };
+  const render = (owner = params.owner) => harness.render(() => usePendingUploads({ ...params, owner }));
+  return { hook: render(), render, uploadStore, currentConversationIdRef, invokeCalls, notifications, errors };
 }
 
 function uploadedFile(relativePath) {
@@ -170,6 +182,36 @@ function uploadedFile(relativePath) {
     sizeBytes: 1,
   };
 }
+
+test("an annotated upload settles only while its desktop account still owns the draft", async () => {
+  for (const nextOwner of ["first-account", "second-account"]) {
+    const started = Promise.withResolvers();
+    const imported = Promise.withResolvers();
+    const { hook, render, uploadStore } = mountPendingUploads({
+      invokeImpl: () => {
+        started.resolve();
+        return imported.promise;
+      },
+    });
+    const original = { ...uploadedFile("before.png"), kind: "image" };
+    const annotated = { ...uploadedFile("annotated.png"), kind: "image" };
+    uploadStore.set("conv-a", [original, uploadedFile("other.txt")]);
+    const replacing = hook.replacePendingUpload(
+      original.relativePath,
+      new File(["annotated"], annotated.fileName, { type: "image/png" }),
+    );
+    await started.promise;
+    render(nextOwner);
+    imported.resolve({ files: [annotated], skipped: [] });
+
+    const sameOwner = nextOwner === "first-account";
+    assert.deepEqual(await replacing, sameOwner ? annotated : null);
+    assert.deepEqual(
+      uploadStore.getSnapshot("conv-a").map((file) => file.relativePath),
+      [sameOwner ? annotated.relativePath : original.relativePath, "other.txt"],
+    );
+  }
+});
 
 test("an explicit drop target routes the import to that conversation and workdir", async () => {
   const { hook, uploadStore, invokeCalls } = mountPendingUploads({

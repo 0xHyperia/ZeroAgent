@@ -7,6 +7,11 @@ import { AssistantVisualActivity } from "@liveagent/ui/components/chat/Assistant
 import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/BackgroundNoticeMessage";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
+import {
+  type TranscriptCommentHandler,
+  TranscriptCommentProvider,
+} from "@liveagent/ui/components/chat/TranscriptCommentContext";
+import { TranscriptQuoteSelection } from "@liveagent/ui/components/chat/TranscriptQuoteSelection";
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { DocumentRevisionMessageBody } from "@liveagent/ui/components/chat/DocumentRevisionMessageChip";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
@@ -17,10 +22,15 @@ import {
   TranscriptAssistantMessageActions,
   TranscriptUserMessageActions,
 } from "@liveagent/ui/components/chat/TranscriptMessageActions";
+import { TurnErrorNotice } from "@liveagent/ui/components/chat/TurnErrorNotice";
 import { UserAttachmentCards } from "@liveagent/ui/components/chat/UserAttachmentCards";
 import { Loader2 } from "@liveagent/ui/components/IconSet";
 import { useLocale } from "@liveagent/ui/i18n/LocaleContext";
-import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
+import {
+  normalizeLiveToolStatus,
+  turnErrorDetailOf,
+  turnErrorOf,
+} from "@liveagent/ui/lib/chat/assistantStatus";
 import { type ChatFileLink, chatAttachmentFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import {
   copyDocumentRevision,
@@ -157,6 +167,8 @@ type GatewayTranscriptProps = {
   branchPendingMessageId?: string | null;
   resendCreatesBranch?: boolean;
   onSuggestionSelect?: (text: string) => void;
+  onQuoteSelection?: (text: string) => void;
+  onCommentSelection?: TranscriptCommentHandler;
   readOnly?: boolean;
   redactToolContent?: boolean;
 };
@@ -1270,6 +1282,8 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
             rowIndex === liveAssistantIndex && (assistantLiveMode === "retained" || isStreaming);
           const isLatestLiveStreaming = isStreaming && isLatestLiveAssistant;
           const retryTarget = findRetryTarget(rows, rowIndex);
+          const turnError = readOnly || isLatestLiveStreaming ? null : turnErrorOf(row.rounds);
+          const retryRef = retryTarget?.messageRef;
           const durationMs = chatDuration(retryTarget?.timestamp, row.timestamp);
           return (
             <article
@@ -1304,6 +1318,28 @@ const GatewayTranscriptListRegion = memo(function GatewayTranscriptListRegion(pr
                   <AssistantDeliverables items={row.deliverables} onOpenFileLink={onOpenFileLink} />
                 ) : null}
                 <AssistantVisualActivity messageId={row.key} />
+                {turnError ? (
+                  <TurnErrorNotice
+                    error={turnError}
+                    errorDetail={turnErrorDetailOf(row.rounds)}
+                    retryDisabled={isStreaming}
+                    onRetry={
+                      !resendCreatesBranch &&
+                      retryTarget &&
+                      retryRef &&
+                      !retryTarget.contentOmitted &&
+                      onResendFromEdit
+                        ? () =>
+                            onResendFromEdit(
+                              retryRef,
+                              retryTarget.retryText ?? retryTarget.text,
+                              retryTarget.attachments,
+                              retryTarget.referencedConversations,
+                            )
+                        : undefined
+                    }
+                  />
+                ) : null}
                 {isLatestLiveStreaming &&
                 !shouldShowPendingLiveBubble &&
                 retryAttempts &&
@@ -1416,6 +1452,8 @@ export function GatewayTranscript({
   branchPendingMessageId,
   resendCreatesBranch = false,
   onSuggestionSelect,
+  onQuoteSelection,
+  onCommentSelection,
   readOnly = false,
   redactToolContent = false,
 }: GatewayTranscriptProps) {
@@ -1429,8 +1467,14 @@ export function GatewayTranscript({
     if (inlineErrorText.length === 0) {
       return false;
     }
-    return !rows.some((row) => row.kind === "error" && row.text.trim() === inlineErrorText);
-  }, [rows, inlineErrorText]);
+    return !rows.some(
+      (row) =>
+        (row.kind === "error" && row.text.trim() === inlineErrorText) ||
+        (!readOnly &&
+          row.kind === "assistant" &&
+          turnErrorOf(row.rounds)?.trim() === inlineErrorText),
+    );
+  }, [rows, inlineErrorText, readOnly]);
 
   useLayoutEffect(() => {
     const nextViewport = resolveNearestScrollViewport(transcriptListRef.current);
@@ -1470,7 +1514,9 @@ export function GatewayTranscript({
     );
   }
 
+  const comments = readOnly || isLoading ? undefined : onCommentSelection;
   return (
+    <TranscriptCommentProvider onComment={comments}>
     <div className={GATEWAY_TRANSCRIPT_SHELL_CLASS}>
       <div
         ref={transcriptListRef}
@@ -1535,7 +1581,16 @@ export function GatewayTranscript({
         {footer}
       </div>
       <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
+      {!readOnly && !isLoading && onQuoteSelection ? (
+        <TranscriptQuoteSelection
+          rootRef={transcriptListRef}
+          scopeKey={JSON.stringify([imagePreviewScope, conversationId])}
+          onQuote={onQuoteSelection}
+          onComment={comments}
+        />
+      ) : null}
       <ChatFileLinkContextMenuHost />
     </div>
+    </TranscriptCommentProvider>
   );
 }

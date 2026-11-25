@@ -102,6 +102,9 @@ export type ChatEvent = (
       model?: string;
       api?: string;
       stopReason?: string;
+      errorMessage?: string;
+      errorDetail?: unknown;
+      cancelReason?: string;
       usage?: unknown;
       /** `usage` is a mid-run report of the model call that just finished. */
       usageLive?: boolean;

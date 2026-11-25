@@ -11,6 +11,9 @@ import { readPatchSet } from "./kbrain-patches.mjs";
 // Build a detached checkout, never the developer's uncommitted working tree.
 export async function buildSource(options = {}) {
   const lock = await readLock(options.lock);
+  if (typeof lock.sourceGoVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(lock.sourceGoVersion)) {
+    throw new Error("K-brain source build requires a pinned Go toolchain version");
+  }
   const target = resolveTarget(options.target);
   const platform = platformFor(lock, target);
   const output = resolve(options.output || defaultArtifact);
@@ -52,7 +55,13 @@ export async function buildSource(options = {}) {
         run("git", ["-C", source, "apply", "--", file], { stdio: "inherit" });
       }
     }
-    const env = { ...process.env, CGO_ENABLED: "0", GOOS: platform.goos, GOARCH: platform.goarch };
+    const env = {
+      ...process.env,
+      CGO_ENABLED: "0",
+      GOOS: platform.goos,
+      GOARCH: platform.goarch,
+      GOTOOLCHAIN: `go${lock.sourceGoVersion}`,
+    };
     const sha256 = {};
     const buildVersion = patches ? `${lock.sourceRevision}+zeroagent.${patches.receipt.manifestSha256.slice(0, 12)}` : lock.sourceRevision;
     for (const [kind, command] of [["backend", "./cmd/kn"], ["computer", "./cmd/k-brain-computer"]]) {

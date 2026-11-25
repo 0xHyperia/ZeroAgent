@@ -337,7 +337,9 @@ test("turn reconnects with after_seq and treats EOF without terminal as an error
   const eofFetch = makeFetch({ calls: eofCalls, streams: [() => stream(event(2, "assistant.text.delta", { text: "partial" })), () => stream("")] });
   const failed = await runKBrainTurn({ ...baseParams, fetch: eofFetch, baseUrl: "http://kbrain.test" });
   assert.equal(failed.stopReason, "error");
-  assert.match(failed.errorMessage, /terminal|event stream/i);
+  assert.equal(failed.errorMessage, "Connection to the model was interrupted.");
+  assert.deepEqual(failed.errorDetail, { kind: "connection_lost" });
+  assert.deepEqual(failed.content, [{ type: "text", text: "partial" }]);
   assert.equal(eofCalls.some(({ url }) => url.pathname.includes("/cancel")), true);
 });
 

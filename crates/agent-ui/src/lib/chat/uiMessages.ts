@@ -1635,7 +1635,7 @@ export function buildUiMessages(messages: Message[]): UiMessage[] {
         const blocks = buildUiRoundBlocks(assistant, toolResultById);
         const hasContent = hasRoundContent({ blocks });
 
-        if (!hasContent) continue;
+        if (!hasContent && assistant.stopReason !== "aborted" && !assistant.errorMessage) continue;
 
         rounds.push({
           round: roundNum,

@@ -76,6 +76,8 @@ test("the account-aware entry keeps specialized readers and audio capture deferr
   const reached = new Set([...files].map(relative));
   assert.ok(reached.has("agent-gateway/web/src/pages/AccountLoginPage.tsx"));
   for (const deferredModule of [
+    "agent-gateway/web/src/app/GatewayApp.tsx",
+    "agent-gateway/web/src/app/GatewayAppView.tsx",
     "agent-ui/src/components/resource-preview/ResourcePreviewContent.tsx",
     "agent-ui/src/components/resource-preview/ResourceDOCXPreview.tsx",
     "agent-ui/src/components/resource-preview/ResourceSlidesPreview.tsx",
@@ -92,6 +94,7 @@ test("the account-aware entry keeps specialized readers and audio capture deferr
 
 test("the picker, renderers and audio initialize on demand", () => {
   const expectations = [
+    [join(webSrc, "App.tsx"), "@/app/GatewayApp"],
     [join(webSrc, "components/useRemotePathPicker.tsx"), "./RemotePathPickerModal"],
     [join(uiSrc, "components/resource-preview/ResourcePreview.tsx"), "./ResourcePreviewContent"],
     [join(uiSrc, "components/resource-preview/ResourcePreviewContent.tsx"), "./ResourceSheetPreview"],

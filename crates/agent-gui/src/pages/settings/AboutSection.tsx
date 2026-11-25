@@ -28,12 +28,14 @@ import type { ReleaseAnnouncementController } from "../../lib/releaseAnnouncemen
 import { releaseNotesBody, releaseTitle } from "../../lib/releaseNotes";
 import { updateUpdateSettings } from "../../lib/settings";
 import { formatReleaseDate } from "./aboutDate";
+import { DesktopDiagnosticsRow } from "./DesktopDiagnosticsRow";
 import { KBrainBackendRow } from "./KBrainBackendRow";
 import type { SettingsSectionProps } from "./types";
 
 type AboutSectionProps = SettingsSectionProps & {
   appUpdate: AppUpdateController;
   releaseAnnouncement: ReleaseAnnouncementController;
+  onOpenSetupGuide?: () => void;
 };
 
 export function AboutSection(props: AboutSectionProps) {
@@ -222,6 +224,19 @@ export function AboutSection(props: AboutSectionProps) {
           />
 
           <KBrainBackendRow loadHealth={getKBrainHealth} />
+          <DesktopDiagnosticsRow version={currentVersion} />
+          {props.onOpenSetupGuide ? (
+            <SettingsRow
+              data-settings-anchor="desktop-setup-guide"
+              title={t("settings.setupGuide.title")}
+              description={t("settings.setupGuide.aboutDescription")}
+              control={
+                <Button variant="outline" size="sm" onClick={props.onOpenSetupGuide}>
+                  {t("settings.setupGuide.open")}
+                </Button>
+              }
+            />
+          ) : null}
 
           <SettingsRow
             title={t("settings.aboutSoftwareUpdate")}

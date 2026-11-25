@@ -31,7 +31,7 @@ for (const surface of ["desktop", "web"]) test(`SettingsPage ${surface} shows pr
       [shared("memory/MemoryPanel.tsx")]: { MemoryPanel: () => null },
       "@liveagent/ui/i18n/index": { useLocale: () => ({ t: (key) => key }) },
       "@liveagent/adapters/settingsExtension": {
-        createSettingsExtension: (props) => ({ surface, iconClassName: "", slots: {}, sections: [], renderProviders: () => { providerProps = props; return env.React.createElement("div", null, "protected-managed-provider-interface"); } }),
+        createSettingsExtension: (props) => ({ surface, iconClassName: "", excludedSearchAnchors: [], slots: {}, sections: [], renderProviders: () => { providerProps = props; return env.React.createElement("div", null, "protected-managed-provider-interface"); } }),
       },
       "@liveagent/adapters/providerSettings": {
         ProviderSettingsExtension: () => null,

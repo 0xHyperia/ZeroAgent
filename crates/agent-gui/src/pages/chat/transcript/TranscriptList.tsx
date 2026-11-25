@@ -1,7 +1,6 @@
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { ProcessViewportFollowingProvider } from "@liveagent/ui/components/chat/processDisclosure";
 import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
-import { normalizeLiveToolStatus } from "@liveagent/ui/lib/chat/assistantStatus";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
@@ -42,13 +41,13 @@ import {
   getPendingToolApprovalsSnapshot,
   subscribeToolApprovalsForConversation,
 } from "../../../lib/tools/toolApproval";
-import { AssistantActivityRow } from "./AssistantActivityRow";
 import { AssistantRenderUnit } from "./AssistantRenderUnit";
 import {
   initialTranscriptLayout,
   readTranscriptScrollPosition,
   saveTranscriptScrollPosition,
 } from "./initialTranscriptLayout";
+import { LiveAssistantActivityRow, liveTranscriptShapeKey } from "./LiveAssistantActivityRow";
 import { measureRowLive } from "./measureRowLive";
 import { extractRenderUnitRange } from "./renderUnitRangeExtractor";
 import { createReplyHoverStore } from "./replyHoverStore";
@@ -178,11 +177,11 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
     findSource,
   } = props;
 
-  const liveState = useSyncExternalStore(
-    liveTranscriptStore.subscribe,
-    liveTranscriptStore.getSnapshot,
-    liveTranscriptStore.getSnapshot,
+  const getLiveShape = useCallback(
+    () => liveTranscriptShapeKey(liveTranscriptStore.getSnapshot()),
+    [liveTranscriptStore],
   );
+  const liveShape = useSyncExternalStore(liveTranscriptStore.subscribe, getLiveShape, getLiveShape);
 
   // 审批门在工具执行「之前」挂起，转录里看不出运行中的工具；活跃回合据此把
   // 进度指示冻结成静态（同一份 pending 表也驱动输入框上方的审批栏）。
@@ -204,13 +203,23 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   // 手动压缩空闲态只置 isCompactionRunning、不置 isSending，仍要显示「正在
   // 压缩」live tail：把它并入可见性 gate（只影响 live tail 是否显示，不改动
   // 其他 isSending 语义）。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: liveShape invalidates the structure when the store's visible tail changes.
   const {
     rows,
     liveStartIndex,
     getRowKey: getTranscriptRowKey,
   } = useMemo(
-    () => rowModel.build(historyItems, { ...liveState, isSending, isCompactionRunning }),
-    [rowModel, historyItems, liveState, isSending, isCompactionRunning],
+    () =>
+      rowModel.build(historyItems, {
+        ...liveTranscriptStore.getSnapshot(),
+        isSending,
+        isCompactionRunning,
+      }),
+    [rowModel, historyItems, liveTranscriptStore, liveShape, isSending, isCompactionRunning],
+  );
+  const liveActivity = useMemo(
+    () => ({ rowModel, historyItems, store: liveTranscriptStore, isSending, findSource }),
+    [rowModel, historyItems, liveTranscriptStore, isSending, findSource],
   );
 
   const rowsRef = useRef(rows);
@@ -219,8 +228,9 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   pendingReplyRef.current = pendingReply;
   const virtualCount = rows.length + (pendingReply ? 1 : 0);
   useEffect(() => {
+    if (liveStartIndex >= 0) return;
     findSource?.publish(() => buildTranscriptFindEntries(rows));
-  }, [findSource, rows]);
+  }, [findSource, rows, liveStartIndex]);
   const liveStartIndexRef = useRef(liveStartIndex);
   liveStartIndexRef.current =
     liveStartIndex >= 0 ? liveStartIndex : pendingReply ? rows.length : -1;
@@ -277,8 +287,6 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   const handleCancelEdit = useCallback(() => {
     setEditingMessageKey(null);
   }, []);
-
-  const displayedToolStatus = normalizeLiveToolStatus(liveState.toolStatus);
 
   // Restored once per mount: at conversation-switch remounts the viewport is
   // already live, so a same-width snapshot skips straight to exact layout.
@@ -711,14 +719,13 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
           } else if (row.kind === "assistant-activity") {
             body = (
               <div className="flex justify-start">
-                <AssistantActivityRow
+                <LiveAssistantActivityRow
                   row={row}
+                  live={virtualRow.index === liveStartIndex ? liveActivity : undefined}
                   showUsage={showUsage}
                   usageContextWindow={usageContextWindow}
                   isCompactionRunning={isCompactionRunning}
                   hasPendingToolApproval={hasPendingToolApproval}
-                  toolStatus={displayedToolStatus}
-                  retryAttempts={liveState.retryAttempts}
                   workdir={workspaceRoot}
                   onOpenFileLink={onOpenFileLink}
                   onResendFromEdit={onResendFromEdit}
@@ -734,8 +741,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
                   showUsage={showUsage}
                   usageContextWindow={usageContextWindow}
                   isCompactionRunning={row.mutable ? isCompactionRunning : false}
-                  toolStatus={row.mutable ? displayedToolStatus : null}
-                  retryAttempts={row.mutable ? liveState.retryAttempts : undefined}
+                  toolStatus={null}
                   workdir={workspaceRoot}
                   onOpenFileLink={onOpenFileLink}
                   onResendFromEdit={onResendFromEdit}

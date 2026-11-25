@@ -1,5 +1,6 @@
-import { X } from "@liveagent/ui/components/IconSet";
+import { Pencil, RotateCcw, X } from "@liveagent/ui/components/IconSet";
 import { Skeleton } from "@liveagent/ui/components/ui/skeleton";
+import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { PendingUploadedFile } from "../../lib/chat/uploadedFiles";
@@ -7,6 +8,9 @@ import { ImagePreview, type ImagePreviewSlide } from "./ImagePreview";
 import { ImagePreviewActionFeedback, ImagePreviewContextMenu } from "./ImagePreviewMenu";
 import { getCompletedImageLoadState } from "./imageLoadState";
 import "./composer-attachments.css";
+
+const annotationActionClassName =
+  "absolute bottom-1 z-10 inline-flex size-6 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40";
 
 export function ComposerAttachmentCard(props: {
   file?: PendingUploadedFile;
@@ -23,6 +27,9 @@ export function ComposerAttachmentCard(props: {
   onRemove: () => void;
   onOpen?: () => void;
   previewContent?: ReactNode;
+  annotated?: boolean;
+  onAnnotate?: () => void;
+  onRevertAnnotation?: () => void;
 }) {
   const {
     file,
@@ -39,7 +46,11 @@ export function ComposerAttachmentCard(props: {
     onRemove,
     onOpen,
     previewContent,
+    annotated = false,
+    onAnnotate,
+    onRevertAnnotation,
   } = props;
+  const { t } = useLocale();
   const format = fileName.split(".").pop()?.toUpperCase() || "文件";
   const fileSize = file?.sizeBytes
     ? file.sizeBytes >= 1024 * 1024
@@ -94,12 +105,14 @@ export function ComposerAttachmentCard(props: {
   if (!previewContent && (imageSrc || isImageLoading)) {
     return (
       <div
-        title={fileName}
+        title={annotated ? `${fileName} · ${t("chat.annotate.annotated")}` : fileName}
         className={cn(
           "group za-composer-image-attachment relative size-24 shrink-0 overflow-hidden",
           "rounded-lg border border-black/[0.075] bg-black/[0.035] transition-[border-color]",
           "hover:border-black/[0.16] dark:border-white/[0.11] dark:bg-white/[0.065] dark:hover:border-white/[0.22]",
+          annotated && "ring-2 ring-inset ring-primary/60",
         )}
+        data-composer-attachment-annotated-state={annotated ? "annotated" : undefined}
       >
         {imageSrc && !imageLoadFailed ? (
           <ImagePreviewContextMenu
@@ -153,6 +166,37 @@ export function ComposerAttachmentCard(props: {
         >
           <X className="size-2.5" />
         </button>
+        {onAnnotate && canPreview ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onAnnotate}
+            data-composer-attachment-annotate=""
+            className={cn(
+              annotationActionClassName,
+              "right-1",
+              !annotated &&
+                "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+            )}
+            aria-label={`${t("chat.annotate.actionHint")} · ${fileName}`}
+            title={t("chat.annotate.action")}
+          >
+            <Pencil className="size-3" />
+          </button>
+        ) : null}
+        {annotated && onRevertAnnotation ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onRevertAnnotation}
+            data-composer-attachment-revert=""
+            className={cn(annotationActionClassName, "left-1")}
+            aria-label={`${t("chat.annotate.revert")} · ${fileName}`}
+            title={t("chat.annotate.revert")}
+          >
+            <RotateCcw className="size-3" />
+          </button>
+        ) : null}
         {previewOpen ? (
           <ImagePreview
             open={previewOpen}

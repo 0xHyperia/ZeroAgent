@@ -69,11 +69,12 @@ export async function searchPersistedConversations(params: {
   currentWorkdir?: string;
   excludeConversationId?: string;
   limit?: number;
+  search?: typeof searchChatHistory;
 }): Promise<PersistedConversationSearchResult[]> {
   const query = params.query.trim();
   if (!query) return [];
 
-  const response = await searchChatHistory({
+  const response = await (params.search ?? searchChatHistory)({
     query,
     limit: HISTORY_SEARCH_FETCH_LIMIT,
   });

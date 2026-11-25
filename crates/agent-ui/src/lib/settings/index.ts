@@ -1704,6 +1704,7 @@ function normalizeMcpAuthConfig(input: unknown): McpAuthConfig | undefined {
 export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
   const obj = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const id = typeof obj.id === "string" ? obj.id.trim() : "";
+  const name = typeof obj.name === "string" ? obj.name.trim() : "";
   const description = typeof obj.description === "string" ? obj.description.trim() : "";
   const docsUrl = typeof obj.docsUrl === "string" ? obj.docsUrl.trim() : "";
   const cwd = typeof obj.cwd === "string" ? obj.cwd.trim() : "";
@@ -1727,6 +1728,7 @@ export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
 
   return {
     id,
+    ...(name ? { name } : {}),
     ...(description ? { description } : {}),
     ...(docsUrl ? { docsUrl } : {}),
     enabled: Boolean(obj.enabled),
@@ -1751,6 +1753,7 @@ export function normalizeMcpServerConfig(input: unknown): McpServerConfig {
 /** Server fields ZeroAgent edits or derives itself; anything else K-brain returns is kept as is. */
 export const MCP_SERVER_CONFIG_FIELDS: readonly string[] = [
   "id",
+  "name",
   "description",
   "docsUrl",
   "enabled",
@@ -1930,6 +1933,7 @@ export function normalizeCustomSettings(
     chatTranscript: normalizeChatTranscriptSettings(obj.chatTranscript),
     // 缺省开启：老配置无此字段时启用后台对话通知。
     runNotifications: obj.runNotifications !== false,
+    runCompletionSound: obj.runCompletionSound === true,
     rightDock: normalizeRightDockSettings(obj.rightDock),
     // 三档枚举：历史配置无此字段或值不合法（含曾设想过的 "auto"）一律落回默认的统计状态栏。
     composerContextDisplay:
@@ -2537,6 +2541,11 @@ export function updateExpandProcessByDefault(prev: AppSettings, enabled: boolean
 export function updateRunNotifications(prev: AppSettings, enabled: boolean): AppSettings {
   if (prev.customSettings.runNotifications === enabled) return prev;
   return updateCustomSettings(prev, { runNotifications: enabled });
+}
+
+export function updateRunCompletionSound(prev: AppSettings, enabled: boolean): AppSettings {
+  if (prev.customSettings.runCompletionSound === enabled) return prev;
+  return updateCustomSettings(prev, { runCompletionSound: enabled });
 }
 
 export function updateRightDockWidth(prev: AppSettings, width: number): AppSettings {

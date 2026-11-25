@@ -8,6 +8,10 @@ import { getFileTypeIconSvg } from "@liveagent/ui/components/chat/fileTypeIcons"
 import { SKILL_ICON_SVG_MARKUP } from "@liveagent/ui/components/IconSet";
 import { getAppMentionIconDataUrl } from "@liveagent/ui/lib/chat/appMentionIcons";
 import { appMentionRecencyKey } from "@liveagent/ui/lib/chat/appMentionRecency";
+import {
+  appendComposerCommentsBlock,
+  type ComposerComment,
+} from "@liveagent/ui/lib/chat/composerComments";
 import { normalizeLogicalLineEndings } from "@liveagent/ui/lib/chat/composerText";
 import {
   type CodeMentionReference,
@@ -342,7 +346,9 @@ export function serializeChildren(
   return serializeDraftSegments(serializeChildrenToSegments(parent, largePastes));
 }
 
-function serializeDraftSegment(segment: Exclude<MentionComposerDraftSegment, { type: "quote" }>) {
+function serializeDraftSegment(
+  segment: Exclude<MentionComposerDraftSegment, { type: "quote" } | { type: "comment" }>,
+) {
   if (segment.type === "fileMention") return formatFileMentionToken(segment.reference);
   if (segment.type === "largePaste") return segment.paste.text;
   if (segment.type === "skillMention") return formatSkillMentionToken(segment.skill);
@@ -358,13 +364,13 @@ function serializeDraftSegment(segment: Exclude<MentionComposerDraftSegment, { t
 
 export function serializeDraftSegments(segments: MentionComposerDraftSegment[]) {
   let text = "";
+  const comments: ComposerComment[] = [];
   for (const segment of segments) {
-    text +=
-      segment.type === "quote"
-        ? buildComposerQuoteInsertion(text, segment.text)
-        : serializeDraftSegment(segment);
+    if (segment.type === "comment") comments.push(segment.comment);
+    else if (segment.type === "quote") text += buildComposerQuoteInsertion(text, segment.text);
+    else text += serializeDraftSegment(segment);
   }
-  return text;
+  return comments.length > 0 ? appendComposerCommentsBlock(text, comments) : text;
 }
 
 export function editorTextIsEmpty(editor: HTMLElement) {
@@ -1883,6 +1889,8 @@ export function createComposerSegmentNode(
   if (segment.type === "conversationMention") {
     return createConversationMentionChip(segment.conversation);
   }
+  // Comments live in the chip row above the editor, never inline.
+  if (segment.type === "comment") return null;
   return createCodeMentionChip(segment.reference);
 }
 

@@ -31,6 +31,7 @@ export type RightDockToolClients = {
 
 export type RightDockToolCapabilities = {
   projectReady: boolean;
+  canOpenInLocalEditor?: boolean;
   terminalReady: boolean;
   disabledMessage?: string;
   terminalDisabledMessage?: string;

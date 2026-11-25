@@ -12,7 +12,7 @@ export type ChatFileLinkMenuState =
     })
   | (MenuPoint & { kind: "url"; url: string });
 
-export type ChatFileLinkMenuIntent = "open" | "reveal" | "default-app";
+export type ChatFileLinkMenuIntent = "open" | "reveal" | "default-app" | { editor: string };
 
 export type ChatFileLinkMenuSnapshot = {
   menu: ChatFileLinkMenuState | null;
@@ -74,6 +74,7 @@ export function withChatFileLinkMenuIntent(link: ChatFileLink): ChatFileLink {
   pendingIntent = "open";
   if (intent === "reveal") return { ...link, openInFileManager: true };
   if (intent === "default-app") return { ...link, openWithDefaultApp: true };
+  if (typeof intent === "object") return { ...link, openInEditor: intent.editor };
   return link;
 }
 

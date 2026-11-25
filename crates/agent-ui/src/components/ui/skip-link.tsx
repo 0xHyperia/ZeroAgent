@@ -17,7 +17,13 @@ export function focusChatComposer(root: ParentNode = document): boolean {
  * First Tab stop of the chat layout: hidden until it receives keyboard focus,
  * then jumps past the sidebar and header controls straight to the composer.
  */
-export function SkipToComposerLink({ className }: { className?: string }) {
+export function SkipToComposerLink({
+  className,
+  onFocusComposer = focusChatComposer,
+}: {
+  className?: string;
+  onFocusComposer?: () => void;
+}) {
   const { t } = useLocale();
   // A button rather than an in-page anchor: the composer has no stable id and
   // focusing it is an action, not navigation.
@@ -25,7 +31,7 @@ export function SkipToComposerLink({ className }: { className?: string }) {
     <button
       type="button"
       data-slot="skip-to-composer"
-      onClick={() => focusChatComposer()}
+      onClick={() => onFocusComposer()}
       className={cn(
         "sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:m-0",
         "focus-visible:size-auto focus-visible:overflow-visible focus-visible:whitespace-nowrap",

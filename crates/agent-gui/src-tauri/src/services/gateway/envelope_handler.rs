@@ -4,6 +4,10 @@ use tauri::Emitter;
 
 use crate::commands::chat_history::{self};
 use crate::commands::settings::reset_ssh_known_host_everywhere;
+#[cfg(desktop)]
+use crate::services::device_plugins::{
+    remote_device_plugins_operation, DevicePluginAction, DevicePluginRequest,
+};
 use crate::services::gateway_bridge;
 use crate::services::workspace_watch::WatchSource;
 
@@ -21,6 +25,61 @@ pub(super) fn provider_usage_agent_envelope(
 }
 
 impl GatewayController {
+    #[cfg(desktop)]
+    async fn read_device_ui_surface(
+        self: &Arc<Self>,
+        request_id: &str,
+        request: proto::DeviceUiSurfaceRequest,
+    ) -> Result<String, String> {
+        use crate::services::device_plugins::surface::{run_surface, SurfaceAction, SurfaceRequest};
+        use crate::services::kbrain_backend::KBrainBackendState;
+        use tauri::Manager;
+
+        let action = match request.action.as_str() {
+            "history" => SurfaceAction::History,
+            "preview" => SurfaceAction::Preview,
+            "panel" => SurfaceAction::Panel,
+            "mcp" => SurfaceAction::Mcp,
+            _ => return Err("DEVICE_UI_SURFACE_INVALID".into()),
+        };
+        let state = self.app_handle.try_state::<Arc<KBrainBackendState>>()
+            .ok_or("DEVICE_UI_SURFACE_UNAVAILABLE")?;
+        let state = Arc::clone(state.inner());
+        state.require_current_device_owner(request.owner_id)?;
+        let connection = state.running_connection().ok_or("DEVICE_UI_SURFACE_UNAVAILABLE")?;
+        let session_id = if action == SurfaceAction::Panel {
+            None
+        } else {
+            let value = self.run_composer_action(super::composer_action::GatewayComposerActionEvent {
+                request_id: format!("{request_id}:ui-surface"),
+                kind: "history".into(),
+                conversation_id: request.conversation_id,
+                action: "ui_surface_session".into(),
+                cron: String::new(),
+                interval: String::new(),
+                prompt: String::new(),
+                reasoning: String::new(),
+                loop_id: String::new(),
+                data: None,
+            }).await.map_err(|_| "DEVICE_UI_SURFACE_UNAVAILABLE")?;
+            value["sessionId"].as_str().map(str::to_owned)
+        };
+        let result = run_surface(
+            state,
+            connection,
+            Some(request.owner_id),
+            SurfaceRequest {
+                action,
+                workdir: Some(request.workdir),
+                resource_id: (!request.resource_id.is_empty()).then_some(request.resource_id),
+                plugin_id: (!request.plugin_id.is_empty()).then_some(request.plugin_id),
+                plugin_version: (!request.plugin_version.is_empty()).then_some(request.plugin_version),
+            },
+            session_id,
+        ).await?;
+        serde_json::to_string(&result).map_err(|_| "DEVICE_UI_SURFACE_INVALID".to_owned())
+    }
+
     pub(crate) async fn handle_gateway_envelope(
         self: &Arc<Self>,
         envelope: proto::GatewayEnvelope,
@@ -124,15 +183,19 @@ impl GatewayController {
                     #[cfg(windows)]
                     return self.private_loopback.handle(self, frame);
                     #[cfg(not(windows))]
-                    return self.send_agent_envelope(proto::AgentEnvelope {
-                        request_id,
-                        timestamp: now_unix_seconds(),
-                        payload: Some(proto::agent_envelope::Payload::TunnelFrame(proto::TunnelFrame {
-                            stream_id: frame.stream_id,
-                            kind: proto::TunnelFrameKind::Error as i32,
-                            ..Default::default()
-                        })),
-                    }).await;
+                    return self
+                        .send_agent_envelope(proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::TunnelFrame(
+                                proto::TunnelFrame {
+                                    stream_id: frame.stream_id,
+                                    kind: proto::TunnelFrameKind::Error as i32,
+                                    ..Default::default()
+                                },
+                            )),
+                        })
+                        .await;
                 }
                 self.tunnel_proxy.handle_frame(self, frame)
             }
@@ -1173,6 +1236,103 @@ impl GatewayController {
                     }
                 });
                 Ok(())
+            }
+            #[cfg(desktop)]
+            Some(proto::gateway_envelope::Payload::DevicePlugins(request)) => {
+                let action = match request.action.as_str() {
+                    "list" => DevicePluginAction::List,
+                    "reload" => DevicePluginAction::Reload,
+                    "enable" => DevicePluginAction::Enable,
+                    "disable" => DevicePluginAction::Disable,
+                    "remove" => DevicePluginAction::Remove,
+                    "install" => DevicePluginAction::Install,
+                    "trust" => DevicePluginAction::Trust,
+                    "revokeTrust" => DevicePluginAction::RevokeTrust,
+                    _ => {
+                        return self
+                            .send_error_response(
+                                request_id,
+                                400,
+                                "invalid device plugin operation".into(),
+                            )
+                            .await
+                    }
+                };
+                let sender = self.current_outbound_sender()?;
+                let app = self.app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let result = remote_device_plugins_operation(
+                        &app,
+                        request.owner_id,
+                        DevicePluginRequest {
+                            action,
+                            workdir: Some(request.workdir),
+                            plugin_id: (!request.plugin_id.is_empty()).then_some(request.plugin_id),
+                            source_path: (!request.source_path.is_empty())
+                                .then_some(request.source_path),
+                            since: None,
+                        },
+                    )
+                    .await
+                    .and_then(|snapshot| {
+                        serde_json::to_string(&snapshot)
+                            .map_err(|_| "DEVICE_PLUGIN_REQUEST_FAILED".to_owned())
+                    });
+                    let envelope = match result {
+                        Ok(snapshot_json) => proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::DevicePluginsResp(
+                                proto::DevicePluginsResponse { snapshot_json },
+                            )),
+                        },
+                        Err(error) => build_error_response_envelope(request_id, 400, error),
+                    };
+                    if let Err(error) = send_agent_envelope_to(sender, envelope).await {
+                        eprintln!("send device plugins response failed: {error}");
+                    }
+                });
+                Ok(())
+            }
+            #[cfg(not(desktop))]
+            Some(proto::gateway_envelope::Payload::DevicePlugins(_)) => {
+                self.send_error_response(
+                    request_id,
+                    501,
+                    "DEVICE_PLUGIN_BACKEND_UNAVAILABLE".into(),
+                )
+                .await
+            }
+            #[cfg(desktop)]
+            Some(proto::gateway_envelope::Payload::DeviceUiSurface(request)) => {
+                let sender = self.current_outbound_sender()?;
+                let controller = Arc::clone(self);
+                tauri::async_runtime::spawn(async move {
+                    let outcome = controller.read_device_ui_surface(&request_id, request).await;
+                    let envelope = match outcome {
+                        Ok(result_json) => proto::AgentEnvelope {
+                            request_id,
+                            timestamp: now_unix_seconds(),
+                            payload: Some(proto::agent_envelope::Payload::DeviceUiSurfaceResp(
+                                proto::DeviceUiSurfaceResponse { result_json },
+                            )),
+                        },
+                        Err(error) => build_error_response_envelope(request_id, 400, error),
+                    };
+                    if let Err(error) = send_agent_envelope_to(sender, envelope).await {
+                        eprintln!("send device UI surface response failed: {error}");
+                    }
+                });
+                Ok(())
+            }
+            #[cfg(not(desktop))]
+            Some(proto::gateway_envelope::Payload::DeviceUiSurface(_)) => {
+                self.send_error_response(
+                    request_id,
+                    501,
+                    "DEVICE_UI_SURFACE_UNAVAILABLE".into(),
+                )
+                .await
             }
             Some(proto::gateway_envelope::Payload::ProxyDetect(request)) => {
                 // 检测要等握手超时（约 1.5s），测速最长 10s；spawn 出去，别让 Ping、

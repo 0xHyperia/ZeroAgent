@@ -103,7 +103,6 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "projectTools.sshLocalForwardHelp":
       "仅监听本机 127.0.0.1；本地端口留空或填 0 自动分配，远端主机留空默认 SSH 服务器自身的 127.0.0.1",
     "projectTools.sshLocalForwardListening": "正在监听（仅本机）",
-    "settings.navAbout": "关于",
     "settings.groupOther": "其他",
     "settings.aboutTitle": "关于 ZeroAgent",
     "settings.aboutDescription": "查看当前版本、发布说明和桌面端更新状态。",
@@ -195,7 +194,6 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "settings.closeWindowExit": "退出应用",
     "settings.closeWindowExitDesc": "关闭窗口即退出；有运行中的终端时会先确认。",
     "settings.globalShortcuts": "快捷键",
-    "settings.navBackup": "备份与同步",
     "settings.backupLocalTitle": "本地备份",
     "settings.backupExport": "导出配置",
     "settings.backupExportHint": "保存为单个 JSON 文件",
@@ -479,7 +477,6 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "projectTools.sshLocalForwardHelp":
       "Listens on local 127.0.0.1 only. Leave the local port empty or 0 for auto-assign; leave the remote host empty for 127.0.0.1 on the SSH server.",
     "projectTools.sshLocalForwardListening": "Listening on this computer only",
-    "settings.navAbout": "About",
     "settings.groupOther": "Other",
     "settings.aboutTitle": "About ZeroAgent",
     "settings.aboutDescription":
@@ -583,7 +580,6 @@ export const GUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>> =
     "settings.closeWindowExitDesc":
       "Quit when the window closes. Running terminals still require confirmation.",
     "settings.globalShortcuts": "Keyboard Shortcuts",
-    "settings.navBackup": "Backup & Sync",
     "settings.backupLocalTitle": "Local backup",
     "settings.backupExport": "Export config",
     "settings.backupExportHint": "Save as a single JSON file",

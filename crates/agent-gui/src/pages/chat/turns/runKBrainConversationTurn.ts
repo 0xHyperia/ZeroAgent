@@ -632,6 +632,9 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
             model: projected.model,
             api: projected.api,
             stopReason: projected.stopReason,
+            errorMessage: projected.errorMessage,
+            errorDetail: projected.errorDetail,
+            cancelReason: projected.cancelReason,
             usage: finalUsage,
             ...(usageBlockCount === undefined ? {} : { usageBlockCount }),
           },
@@ -644,8 +647,10 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
         api: projected.api,
         stopReason: projected.stopReason,
         usage: finalUsage,
+        errorMessage: projected.errorMessage,
+        errorDetail: projected.errorDetail,
+        cancelReason: projected.cancelReason,
       });
-      if (projected.errorMessage) gatewayBridgeEvents.emitError(projected.errorMessage);
       let state = appendMessagesToConversation(params.getNextConversationState(), [
         projected,
         ...results.values(),
@@ -658,10 +663,8 @@ export async function runKBrainConversationTurn(params: Params): Promise<void> {
           params.conversationId,
           buildConversationStateFromWindow(history),
         );
-      } catch (error) {
-        gatewayBridgeEvents.emitError(
-          `Turn ended, but history refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+      } catch {
+        gatewayBridgeEvents.emitError("Turn ended, but history refresh failed.");
       }
       params.applyConversationState(state);
       const goalState = readGoalState();

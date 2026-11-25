@@ -47,6 +47,8 @@ import {
   ClarifyTurnRequestSchema,
   CronManageRequestSchema,
   CuaDriverRequestSchema,
+  DevicePluginsRequestSchema,
+  DeviceUiSurfaceRequestSchema,
   FileMentionListRequestSchema,
   FsCreateDirRequestSchema,
   FsCreateProjectFolderRequestSchema,
@@ -965,6 +967,28 @@ function agentRequestPayload(type: string, body: J): GatewayEnvelope["payload"] 
           timezone: trimStr(body.timezone),
         }),
       };
+    case "device.plugins":
+      return {
+        case: "devicePlugins",
+        value: create(DevicePluginsRequestSchema, {
+          action: trimStr(body.action),
+          workdir: trimStr(body.workdir),
+          pluginId: trimStr(body.pluginId),
+          sourcePath: trimStr(body.sourcePath),
+        }),
+      };
+    case "device.ui_surface":
+      return {
+        case: "deviceUiSurface",
+        value: create(DeviceUiSurfaceRequestSchema, {
+          action: trimStr(body.action),
+          workdir: trimStr(body.workdir),
+          conversationId: trimStr(body.conversationId),
+          resourceId: trimStr(body.resourceId),
+          pluginId: trimStr(body.pluginId),
+          pluginVersion: trimStr(body.pluginVersion),
+        }),
+      };
     case "files.preview":
       return {
         case: "uploadedImagePreview",
@@ -1794,6 +1818,10 @@ function decodeAgentResponse(envelope: AgentEnvelope, options: { agentOnline: bo
       return payload.value.unsupported
         ? { available: false }
         : { available: true, stats: unmarshalJsonPayload(payload.value.resultJson) };
+    case "devicePluginsResp":
+      return unmarshalJsonPayload(payload.value.snapshotJson);
+    case "deviceUiSurfaceResp":
+      return unmarshalJsonPayload(payload.value.resultJson);
     case "sftpResponse":
       return sftpResponsePayload(payload.value);
     case "chatQueueResp":

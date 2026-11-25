@@ -355,8 +355,12 @@ func historyMessagesJSON(messages []Message, firstOffset int32) (string, error) 
 		if message.Role != "user" && message.Role != "assistant" && message.Role != "tool" {
 			continue
 		}
+		failureMarker := message.Role == "assistant" && isFailureMarker(message.ID)
 		content := make([]map[string]any, 0, len(message.Content))
 		for _, block := range message.Content {
+			if failureMarker {
+				break
+			}
 			switch block.Type {
 			case "text":
 				content = append(content, map[string]any{"type": "text", "text": block.Text})
@@ -434,13 +438,14 @@ func historyMessagesJSON(messages []Message, firstOffset int32) (string, error) 
 				stop = "toolUse"
 			}
 			entry["stopReason"] = stop
-			if stop == "error" && strings.TrimSpace(message.Error) != "" {
-				entry["errorMessage"] = strings.TrimSpace(message.Error)
+			if stop == "error" || failureMarker {
+				failure := message.Error
+				if failure == "" && failureMarker {
+					failure = historyText(message)
+				}
+				addFailureOutcome(entry, message.ErrorDetail, failure)
 			}
-			if detail := historyErrorDetail(message.ErrorDetail); detail != nil {
-				entry["errorDetail"] = detail
-			}
-			if message.CancelReason != "" {
+			if stop == "aborted" && message.CancelReason == "shutdown" {
 				entry["cancelReason"] = message.CancelReason
 			}
 			if message.Usage != nil {
@@ -453,19 +458,4 @@ func historyMessagesJSON(messages []Message, firstOffset int32) (string, error) 
 	}
 	data, err := json.Marshal(out)
 	return string(data), err
-}
-
-// historyErrorDetail is a failure's classification in the WebUI's field names.
-func historyErrorDetail(detail *ErrorDetail) map[string]any {
-	if detail == nil || strings.TrimSpace(detail.Kind) == "" {
-		return nil
-	}
-	out := map[string]any{"kind": strings.TrimSpace(detail.Kind)}
-	if detail.UpstreamStatus > 0 {
-		out["upstreamStatus"] = detail.UpstreamStatus
-	}
-	if message := strings.TrimSpace(detail.ProviderMessage); message != "" {
-		out["providerMessage"] = message
-	}
-	return out
 }

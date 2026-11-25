@@ -3,6 +3,7 @@ package pbws
 import (
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 
 	"github.com/liveagent/agent-gateway/internal/chatcmd"
@@ -30,7 +31,69 @@ const (
 	errProxyDetectUnsupported      = "desktop app does not support proxy detection; update ZeroAgent on the desktop"
 	errPermissionRulesUnsupported  = "permission rules are unavailable on the selected device"
 	errUsageStatsUnsupported       = "desktop app does not support usage statistics; update ZeroAgent on the desktop"
+	errDevicePluginsUnsupported    = "DEVICE_PLUGIN_BACKEND_UNAVAILABLE"
+	errDeviceUiSurfaceUnsupported  = "DEVICE_UI_SURFACE_UNAVAILABLE"
 )
+
+var devicePluginID = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,128}$`)
+var deviceUiID = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,256}$`)
+var deviceUiPreviewID = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+func vetDeviceUiSurface(req *gatewayv2.DeviceUiSurfaceRequest) error {
+	workdir := req.GetWorkdir()
+	if req.GetOwnerId() != 0 || strings.TrimSpace(workdir) == "" ||
+		len(workdir) > maxSlashCommandWorkdirLen || strings.ContainsRune(workdir, 0) {
+		return errors.New("invalid device UI surface scope")
+	}
+	id, conversation, plugin, version := req.GetResourceId(), req.GetConversationId(), req.GetPluginId(), req.GetPluginVersion()
+	if req.GetAction() == "panel" {
+		if conversation == "" && devicePluginID.MatchString(plugin) && plugin != "." && plugin != ".." &&
+			len(id) <= 128 && deviceUiID.MatchString(id) && len(version) <= 128 && !strings.ContainsRune(version, 0) {
+			return nil
+		}
+	} else if deviceUiID.MatchString(conversation) && plugin == "" && version == "" {
+		switch req.GetAction() {
+		case "history":
+			if id == "" {
+				return nil
+			}
+		case "preview":
+			if deviceUiPreviewID.MatchString(id) {
+				return nil
+			}
+		case "mcp":
+			if deviceUiID.MatchString(id) {
+				return nil
+			}
+		}
+	}
+	return errors.New("invalid device UI surface operation")
+}
+
+func vetDevicePlugins(req *gatewayv2.DevicePluginsRequest) error {
+	workdir := strings.TrimSpace(req.GetWorkdir())
+	if req.GetOwnerId() != 0 || workdir == "" || len(workdir) > maxSlashCommandWorkdirLen ||
+		strings.ContainsRune(workdir, 0) {
+		return errors.New("invalid device plugin scope")
+	}
+	id, source := req.GetPluginId(), req.GetSourcePath()
+	switch req.GetAction() {
+	case "list", "reload", "trust", "revokeTrust":
+		if id == "" && source == "" {
+			return nil
+		}
+	case "enable", "disable", "remove":
+		if devicePluginID.MatchString(id) && id != "." && id != ".." && source == "" {
+			return nil
+		}
+	case "install":
+		if id == "" && strings.TrimSpace(source) != "" && len(source) <= maxSlashCommandWorkdirLen &&
+			!strings.ContainsRune(source, 0) {
+			return nil
+		}
+	}
+	return errors.New("invalid device plugin operation")
+}
 
 func requireComposerCommands(sm session.AgentView) error {
 	if !sm.SupportsCapability(gatewayv2.ComposerCommandsV1Capability) {
@@ -142,6 +205,16 @@ func vetAgentRequest(sm session.AgentView, env *gatewayv2.GatewayEnvelope) error
 			return errors.New(errUsageStatsUnsupported)
 		}
 		return vetUsageStats(payload.UsageStats)
+	case *gatewayv2.GatewayEnvelope_DevicePlugins:
+		if !sm.SupportsCapability(gatewayv2.DevicePluginsV1Capability) {
+			return errors.New(errDevicePluginsUnsupported)
+		}
+		return vetDevicePlugins(payload.DevicePlugins)
+	case *gatewayv2.GatewayEnvelope_DeviceUiSurface:
+		if !sm.SupportsCapability(gatewayv2.DeviceUiSurfaceV1Capability) {
+			return errors.New(errDeviceUiSurfaceUnsupported)
+		}
+		return vetDeviceUiSurface(payload.DeviceUiSurface)
 
 	// ---- 带功能门控 / 限额的直通臂 ----
 	case *gatewayv2.GatewayEnvelope_GitRequest:

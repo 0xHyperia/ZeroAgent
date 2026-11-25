@@ -17,6 +17,7 @@ test("device conversation keeps its draft and requires fresh online status after
   });
 
   let attempts = 0;
+  let deviceChoices = 0;
   let resolveAttempt;
   let rejectAttempt;
   const reconnect = () => {
@@ -61,7 +62,9 @@ test("device conversation keeps its draft and requires fresh online status after
         agentOnline: online,
         statusReadFailed: false,
         draftEditable: presentation.composerDraftOnly,
+        deviceName: "Original workstation",
         onReconnect: reconnect,
+        onChooseDevice: () => { deviceChoices += 1; },
       }),
       React.createElement("textarea", {
         defaultValue: "Unsent reply",
@@ -106,7 +109,12 @@ test("device conversation keeps its draft and requires fresh online status after
   assert.equal(draft.disabled, false);
   assert.equal(send().disabled, true, "socket authentication alone cannot unlock sending");
   await render(false, true, false);
-  assert.match(notice().textContent, /Device offline/);
+  assert.match(notice().textContent, /Original workstation is offline/);
+  const choose = [...notice().querySelectorAll("button")].find((button) => button.textContent === "Choose another device");
+  assert.equal(deviceChoices, 0, "an offline detection must not switch the target");
+  await act(async () => choose.click());
+  assert.equal(deviceChoices, 1);
+  assert.equal(draft.value, "Reply edited offline");
   await act(async () => notice().querySelector("button").click());
   assert.equal(attempts, 2);
   await act(async () => resolveAttempt());

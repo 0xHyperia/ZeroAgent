@@ -55,6 +55,7 @@ export async function executeCronPromptRun(
     throw new Error("Scheduled Auto Prompt has an incomplete backend model.");
   }
   const connection = getConfiguredKBrainConnection();
+  let approvalRequested = false;
   const assistant = await runKBrainTurn({
     conversationId: request.executionId,
     sessionId: request.executionId,
@@ -80,13 +81,19 @@ export async function executeCronPromptRun(
     onThinkingDelta() {},
     onToolCall() {},
     onToolResult() {},
-    onPermissionRequest: async () => "reject",
+    onPermissionRequest: async () => {
+      approvalRequested = true;
+      return "reject";
+    },
   });
 
   if (signal.aborted || assistant.stopReason === "aborted") {
     throw new Error("Scheduled Auto Prompt was cancelled.");
   }
   if (assistant.stopReason !== "stop") {
+    if (approvalRequested && assistant.errorDetail?.kind === "unknown") {
+      throw new Error("Scheduled Auto Prompt failed after a tool required approval.");
+    }
     throw new Error(assistant.errorMessage || "ZeroAgent engine scheduled run failed.");
   }
   const conclusion = assistantMessageToText(assistant).trim();

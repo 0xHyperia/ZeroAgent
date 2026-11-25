@@ -61,6 +61,12 @@ func TestSettingsProjectionOnlyProjectsKBrainOwnedFields(t *testing.T) {
 	if _, ok := got["theme"]; ok {
 		t.Fatal("projection invented theme")
 	}
+	if !reflect.DeepEqual(got["browserLocalSettings"], []any{"locale", "theme"}) {
+		t.Fatalf("browser display preferences: %v", got["browserLocalSettings"])
+	}
+	if _, err := settingsUpdateForKBrain(json.RawMessage(`{"locale":"zh-CN"}`)); err == nil {
+		t.Fatal("accepted browser-local language as a device configuration write")
+	}
 	provider := got["customProviders"].([]any)[0].(map[string]any)
 	if provider["apiKey"] != "" || provider["apiKeyConfigured"] != true || provider["type"] != "codex" {
 		t.Fatalf("provider projection=%v", provider)

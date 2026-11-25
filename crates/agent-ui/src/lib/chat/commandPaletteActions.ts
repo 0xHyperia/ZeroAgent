@@ -1,4 +1,6 @@
 import {
+  ArrowLeft,
+  ArrowRight,
   Blend,
   Bot,
   Brain,
@@ -10,19 +12,27 @@ import {
   FolderTree,
   GitBranch,
   ImageIcon,
+  Lightbulb,
   MessageSquare,
   MessageSquareText,
+  Minus,
   MonitorSmartphone,
   Moon,
   PanelLeft,
   PanelRightOpen,
   Pin,
+  Plus,
+  RotateCcw,
   Settings,
   Square,
   SquarePen,
   Sun,
+  Terminal,
   Waypoints,
+  X,
 } from "../../components/IconSet";
+import type { NavigationHistoryControls } from "../navigation/navigationHistory";
+import { listSettingsIndexEntries } from "../settings/settingsSearchIndex";
 import type { SidebarShortcutId } from "../settings/sidebarShortcuts";
 import { getNextTheme } from "../settings/themeAndMemory";
 import type { Theme } from "../settings/types";
@@ -76,8 +86,9 @@ export type BuildCommandPaletteActionsInput = {
   isMac: boolean;
   onNewConversation?: () => void;
   onOpenWorkspace?: () => void;
-  onOpenSettings?: (section?: string) => void;
+  onOpenSettings?: (section?: string, anchor?: string) => void;
   settingsSections?: readonly CommandPaletteSettingsSection[];
+  settingsExcludedAnchors?: readonly string[];
   sidebar?: { open: boolean; onToggle: () => void };
   theme?: { current: Theme; onToggle: () => void };
   /** Right-hand project tools dock (terminal / file tree / Git review). */
@@ -102,6 +113,11 @@ export type BuildCommandPaletteActionsInput = {
   };
   onStopRun?: () => void;
   windowPin?: { pinned?: boolean; onToggle: () => void };
+  onToggleTerminal?: () => void;
+  onCloseActiveContext?: () => void;
+  onCycleThinking?: () => void;
+  zoom?: { level: number; zoomIn: () => void; zoomOut: () => void; reset: () => void };
+  navigation?: NavigationHistoryControls;
 };
 
 function format(template: string, values: Record<string, string>) {
@@ -156,6 +172,25 @@ export function buildCommandPaletteActions(
       keywords: ["workspace", "project", "folder", "open", "clone"],
       icon: FolderOpen,
       run: input.onOpenWorkspace,
+    });
+  }
+
+  if (input.navigation?.canGoBack) {
+    actions.push({
+      id: "navigate-back",
+      group: "navigation",
+      label: t("shortcuts.command.navigateBack"),
+      icon: ArrowLeft,
+      run: input.navigation.goBack,
+    });
+  }
+  if (input.navigation?.canGoForward) {
+    actions.push({
+      id: "navigate-forward",
+      group: "navigation",
+      label: t("shortcuts.command.navigateForward"),
+      icon: ArrowRight,
+      run: input.navigation.goForward,
     });
   }
 
@@ -247,6 +282,66 @@ export function buildCommandPaletteActions(
       run: input.theme.onToggle,
     });
   }
+  if (input.onToggleTerminal) {
+    actions.push({
+      id: "toggle-terminal",
+      group: "view",
+      label: t("shortcuts.command.toggleTerminal"),
+      keywords: ["terminal", "shell", "console", "panel"],
+      icon: Terminal,
+      run: input.onToggleTerminal,
+    });
+  }
+  if (input.onCloseActiveContext) {
+    actions.push({
+      id: "close-active-context",
+      group: "view",
+      label: t("shortcuts.command.closeActiveContext"),
+      keywords: ["close", "pane", "split", "panel", "dock", "hub"],
+      icon: X,
+      run: input.onCloseActiveContext,
+    });
+  }
+  if (input.onCycleThinking) {
+    actions.push({
+      id: "cycle-thinking-level",
+      group: "view",
+      label: t("shortcuts.command.cycleThinkingLevel"),
+      keywords: ["thinking", "reasoning", "effort", "level"],
+      icon: Lightbulb,
+      run: input.onCycleThinking,
+    });
+  }
+  if (input.zoom) {
+    const { level, zoomIn, zoomOut, reset } = input.zoom;
+    const percent = `${Math.round(level * 100)}%`;
+    actions.push(
+      {
+        id: "zoom-in",
+        group: "view",
+        label: t("shortcuts.command.zoomIn"),
+        keywords: ["zoom", "scale", percent],
+        icon: Plus,
+        run: zoomIn,
+      },
+      {
+        id: "zoom-out",
+        group: "view",
+        label: t("shortcuts.command.zoomOut"),
+        keywords: ["zoom", "scale", percent],
+        icon: Minus,
+        run: zoomOut,
+      },
+      {
+        id: "zoom-reset",
+        group: "view",
+        label: format(t("chat.commandPalette.zoomResetWithLevel"), { level: percent }),
+        keywords: ["zoom", "reset", "actual size", "100%"],
+        icon: RotateCcw,
+        run: reset,
+      },
+    );
+  }
   if (input.windowPin) {
     actions.push({
       id: "toggle-window-pin",
@@ -273,6 +368,23 @@ export function buildCommandPaletteActions(
         searchOnly: true,
         run: () => openSettings(section.id),
       });
+    }
+    if (input.settingsSections) {
+      for (const { entry, label, sectionLabel } of listSettingsIndexEntries(
+        input.settingsSections,
+        t,
+        input.settingsExcludedAnchors,
+      )) {
+        actions.push({
+          id: `settings:${entry.section}:${entry.anchor}`,
+          group: "settings",
+          label: `${label} · ${sectionLabel}`,
+          keywords: ["settings", entry.section, entry.keywords],
+          icon: Settings,
+          searchOnly: true,
+          run: () => openSettings(entry.section, entry.anchor),
+        });
+      }
     }
   }
 

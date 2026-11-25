@@ -12,6 +12,7 @@ import type {
   PermissionRuleList,
 } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
 import { getKBrainRuntimeConnection } from "../lib/kbrain/runtimeConnection";
+import { desktopDevicePlugins } from "./devicePlugins";
 
 /** A K-brain answer outside 2xx; `status` lets a caller tell "no such route" apart. */
 class KBrainHttpError extends Error {
@@ -178,4 +179,5 @@ export const settingsHostAdapter = {
   isKbrain: true as const,
   runtimeConnection: getKBrainRuntimeConnection,
   kbrain: kbrainSettingsAdapter,
+  devicePlugins: desktopDevicePlugins,
 };

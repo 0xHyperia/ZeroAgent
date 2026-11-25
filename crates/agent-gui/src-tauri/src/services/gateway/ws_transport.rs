@@ -35,6 +35,9 @@ const CONVERSATION_IMAGE_EDITS_V1_CAPABILITY: &str = "CONVERSATION_IMAGE_EDITS_V
 pub(crate) const PROXY_DETECT_V1_CAPABILITY: &str = "PROXY_DETECT_V1";
 /// 设置 → 用量统计：只读的跨会话 token 用量（usage_stats 请求）。
 pub(crate) const USAGE_STATS_V1_CAPABILITY: &str = "ZEROAGENT_USAGE_STATS_V1";
+#[cfg(desktop)]
+const DEVICE_PLUGINS_V1_CAPABILITY: &str = "ZEROAGENT_DEVICE_PLUGINS_V1";
+const DEVICE_UI_SURFACE_V1_CAPABILITY: &str = "ZEROAGENT_DEVICE_UI_SURFACE_V1";
 /// 桌面端主链路路径。
 pub(crate) const GATEWAY_WS_AGENT_PATH: &str = "/ws/v2/agent";
 /// 终端数据面路径。
@@ -108,6 +111,10 @@ pub(crate) fn build_client_hello(
             PROXY_DETECT_V1_CAPABILITY.to_string(),
             "WORKSPACE_HANDOFF_PATH_V1".to_string(),
             USAGE_STATS_V1_CAPABILITY.to_string(),
+            #[cfg(desktop)]
+            DEVICE_PLUGINS_V1_CAPABILITY.to_string(),
+            #[cfg(desktop)]
+            DEVICE_UI_SURFACE_V1_CAPABILITY.to_string(),
         ],
     }
 }
@@ -642,6 +649,10 @@ mod tests {
                     PROXY_DETECT_V1_CAPABILITY,
                     "WORKSPACE_HANDOFF_PATH_V1",
                     USAGE_STATS_V1_CAPABILITY,
+                    #[cfg(desktop)]
+                    DEVICE_PLUGINS_V1_CAPABILITY,
+                    #[cfg(desktop)]
+                    DEVICE_UI_SURFACE_V1_CAPABILITY,
                 ]
             );
 

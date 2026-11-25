@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import { matchesShortcutCommand } from "../shortcuts/shortcutCommands";
-import { SHORTCUT_IGNORED_TARGETS } from "../shortcuts/shortcutKeys";
+import { isKeyEventHandledElsewhere, SHORTCUT_IGNORED_TARGETS } from "../shortcuts/shortcutKeys";
 
 /**
  * Cmd/Ctrl+K command palette model. The palette lives inside the conversation
@@ -36,7 +36,19 @@ export type CommandPaletteAction = {
 };
 
 /** Read lazily when the palette opens so hosts never re-render the sidebar for it. */
-export type CommandPaletteActionsProvider = () => readonly CommandPaletteAction[];
+export type CommandPaletteActionsProvider = (origin?: Element | null) => readonly CommandPaletteAction[];
+
+export type CommandPaletteCapability = {
+  scopeKey: string;
+  isCurrent?: () => boolean;
+  getActions: CommandPaletteActionsProvider;
+  files?: import("./fileQuickOpenSearch").QuickOpenFileSource;
+  searchConversations?: (
+    query: string,
+    currentWorkdir: string | undefined,
+    signal: AbortSignal,
+  ) => Promise<import("./conversationSearch").PersistedConversationSearchResult[]>;
+};
 
 /** `>` restricts the palette to actions, like editor command palettes. */
 export const COMMAND_PALETTE_ACTIONS_PREFIX = ">";
@@ -50,6 +62,16 @@ export function parseCommandPaletteQuery(raw: string): { actionsOnly: boolean; q
     };
   }
   return { actionsOnly: false, query: trimmed };
+}
+
+export function resolveCommandPaletteQuery(raw: string) {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("@")) return { scope: "files", query: trimmed.slice(1).trim() } as const;
+  if (trimmed.startsWith("#")) {
+    return { scope: "conversations", query: trimmed.slice(1).trim() } as const;
+  }
+  const { actionsOnly, query } = parseCommandPaletteQuery(raw);
+  return { scope: actionsOnly ? "actions" : "all", query } as const;
 }
 
 function normalize(value: string) {
@@ -124,7 +146,7 @@ export const COMMAND_PALETTE_IGNORED_TARGETS = SHORTCUT_IGNORED_TARGETS;
  * elsewhere). Ctrl+K on macOS stays the native "kill to end of line" binding.
  */
 export function isCommandPaletteShortcut(event: ShortcutKeyEvent, isMac: boolean): boolean {
-  if (event.defaultPrevented) return false;
+  if (isKeyEventHandledElsewhere(event as KeyboardEvent)) return false;
   return matchesShortcutCommand(event, "commandPalette", isMac);
 }
 
@@ -132,5 +154,9 @@ export function isCommandPaletteShortcut(event: ShortcutKeyEvent, isMac: boolean
 export const COMMAND_PALETTE_SUPPRESSED_ATTRIBUTE = "data-command-palette-suppressed";
 
 export function isCommandPaletteSuppressed(doc: Document | undefined = globalThis.document) {
-  return Boolean(doc?.querySelector(`[${COMMAND_PALETTE_SUPPRESSED_ATTRIBUTE}]`));
+  return Boolean(
+    doc?.querySelector(
+      `[${COMMAND_PALETTE_SUPPRESSED_ATTRIBUTE}]:not([inert]), [aria-modal="true"]:not([data-ending-style])`,
+    ),
+  );
 }

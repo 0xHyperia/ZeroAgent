@@ -1,5 +1,5 @@
 diff --git a/cmd/kn/backend.go b/cmd/kn/backend.go
-index 4085785..3a4d31c 100644
+index 25e1040e0190c369d78f09b99e515d254e53e030..cbdb414cb0de18a4b9acc389dc4bb4da5c20667c 100644
 --- a/cmd/kn/backend.go
 +++ b/cmd/kn/backend.go
 @@ -66,6 +66,10 @@ func backendCLI(args []string) error {
@@ -23,7 +23,7 @@ index 4085785..3a4d31c 100644
  		FilesystemRoots:         filesystemRoots,
 diff --git a/internal/backend/device_skills.go b/internal/backend/device_skills.go
 new file mode 100644
-index 0000000..7b8e4ca
+index 0000000000000000000000000000000000000000..7b8e4ca06e27b0ee85445ea587d818e7788d1f39
 --- /dev/null
 +++ b/internal/backend/device_skills.go
 @@ -0,0 +1,188 @@
@@ -217,7 +217,7 @@ index 0000000..7b8e4ca
 +}
 diff --git a/internal/backend/device_skills_test.go b/internal/backend/device_skills_test.go
 new file mode 100644
-index 0000000..bb9c9c8
+index 0000000000000000000000000000000000000000..bb9c9c8d071925cf96966d5e8e38bb6dfdb3c211
 --- /dev/null
 +++ b/internal/backend/device_skills_test.go
 @@ -0,0 +1,117 @@
@@ -339,7 +339,7 @@ index 0000000..bb9c9c8
 +	}
 +}
 diff --git a/internal/backend/run_start.go b/internal/backend/run_start.go
-index f001c3e..9080a2a 100644
+index 2ebe61d5ac7d0b3ef4456edc2f798074ff3f2e1b..07a8b7866ac21d372b5f16ea5f07f602f16a30e7 100644
 --- a/internal/backend/run_start.go
 +++ b/internal/backend/run_start.go
 @@ -87,34 +87,58 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
@@ -443,7 +443,7 @@ index f001c3e..9080a2a 100644
  		if err := s.switchModelLocked(rt, *in.Model); err != nil {
  			return fail(rebuildErrorStatus(err), "model switch failed: "+err.Error())
 diff --git a/internal/backend/server.go b/internal/backend/server.go
-index 594e957..3d1f68e 100644
+index 75b3ce35a33959554a825733ef6e409235f40971..943d3533c28d2d417fb66027a166ef019ed20200 100644
 --- a/internal/backend/server.go
 +++ b/internal/backend/server.go
 @@ -46,6 +46,7 @@ type Factory func(context.Context, string, protocol.ModelRef) (*agent.Agent, err
@@ -454,7 +454,7 @@ index 594e957..3d1f68e 100644
  	Image                *ImageModule
  	Store                *session.Store
  	Factory              Factory
-@@ -84,6 +85,7 @@ type Options struct {
+@@ -87,6 +88,7 @@ type Options struct {
  }
  
  type Server struct {
@@ -462,7 +462,7 @@ index 594e957..3d1f68e 100644
  	image                *ImageModule
  	store                *session.Store
  	factory              Factory
-@@ -297,9 +299,10 @@ func New(opts Options) (*Server, error) {
+@@ -305,9 +307,10 @@ func New(opts Options) (*Server, error) {
  		return nil, err
  	}
  	server := &Server{
@@ -475,4 +475,4 @@ index 594e957..3d1f68e 100644
 +		store:               opts.Store, factory: opts.Factory, token: opts.Token, models: append([]protocol.ModelRef(nil), opts.Models...),
  		settings: opts.Settings, usage: NewProviderUsageService(opts.Settings), prompts: opts.Prompts,
  		eventDir: opts.EventDir, permissionDir: opts.PermissionRulesDir, sandboxMasked: append([]string(nil), opts.SandboxMasked...), sandboxEnvKeep: append([]string(nil), opts.SandboxEnvKeep...), defaultCWD: opts.DefaultCWD, memoryStore: memoryStore, questionWait: opts.QuestionTimeout, memoryRuntimeFactory: opts.MemoryRuntimeFactory, cron: cron, hookStore: hookStore, hookRunner: NewBackendHookRunner(hookStore), mcp: opts.MCP, sessions: make(map[string]*runtimeSession), snapshots: make(map[string]sessionHTTPSnapshot),
- 		build: opts.Build, ssh: sshmgr.New(sshHosts, sshmgr.Options{}),
+ 		build: opts.Build, ssh: sshmgr.New(sshHosts, sshmgr.Options{}), plugins: opts.Plugins,

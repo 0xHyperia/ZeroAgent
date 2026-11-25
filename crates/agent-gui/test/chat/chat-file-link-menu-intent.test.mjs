@@ -12,6 +12,7 @@ import { createDomTestEnv } from "../helpers/dom-test-env.mjs";
 
 const openedUrls = [];
 const copiedTexts = [];
+let installedEditors = ["vscode", "cursor", "terminal"];
 const noopIcons = new Proxy(
   {},
   {
@@ -37,6 +38,12 @@ const env = await createDomTestEnv({
         return true;
       },
     },
+    "@liveagent/ui/lib/tools/fsBackend": {
+      invokeFs: async (command) => {
+        assert.equal(command, "fs_workspace_editor_targets");
+        return installedEditors;
+      },
+    },
     "@streamdown/cjk": { cjk: {} },
     "@streamdown/code": { code: {} },
     "@streamdown/math": { math: {} },
@@ -54,6 +61,9 @@ const { ChatFileLinkContextMenuHost } = env.loadModule(
   "@liveagent/ui/components/chat/ChatFileLinkContextMenu.tsx",
 );
 const markdown = env.loadModule("@liveagent/ui/components/Markdown.tsx");
+const { refreshWorkspaceEditors, setPreferredWorkspaceEditor } = env.loadModule(
+  "@liveagent/ui/lib/tools/workspaceEditors.ts",
+);
 
 function fileLinkNode(href) {
   const node = { type: "element", tagName: "a", properties: { href }, children: [] };
@@ -329,6 +339,60 @@ test("desktop host offers the default app, and the browser for web pages; the We
     await act(async () => menuItem("chat.fileLink.open").click());
   } finally {
     await view.unmount();
+  }
+});
+
+test("the native editor preference affects the clicked link without enabling remote launch", async () => {
+  const calls = [];
+  const node = fileLinkNode("C:/work/project/src/report.ts:12:4");
+  const render = (canOpenInLocalEditor) =>
+    mount(
+      React.createElement(
+        "div",
+        null,
+        React.createElement(markdown.MarkdownFileLink, {
+          href: node.properties.href,
+          node,
+          onOpenFileLink: (link) => calls.push(link),
+          children: "report.ts",
+        }),
+        React.createElement(ChatFileLinkContextMenuHost, { canOpenInLocalEditor }),
+      ),
+    );
+  setPreferredWorkspaceEditor("cursor");
+  const desktop = await render(true);
+  try {
+    const link = desktop.container.querySelector('[data-liveagent-file-link="true"]');
+    await chooseFromMenu(link, "Open in Cursor");
+    await act(async () => link.click());
+    assert.deepEqual(calls.map(({ openInEditor, line, column }) => ({ openInEditor, line, column })), [
+      { openInEditor: "cursor", line: 12, column: 4 },
+      { openInEditor: undefined, line: 12, column: 4 },
+    ]);
+  } finally {
+    await desktop.unmount();
+  }
+  installedEditors = ["vscode"];
+  await refreshWorkspaceEditors();
+  const refreshed = await render(true);
+  try {
+    const link = refreshed.container.querySelector('[data-liveagent-file-link="true"]');
+    await chooseFromMenu(link, "Open in VS Code");
+    assert.equal(calls.at(-1).openInEditor, "vscode");
+  } finally {
+    await refreshed.unmount();
+    installedEditors = ["vscode", "cursor", "terminal"];
+  }
+  const remote = await render(false);
+  try {
+    const link = remote.container.querySelector('[data-liveagent-file-link="true"]');
+    await act(async () => mouse("contextmenu", link, 2));
+    assert.equal(menuItem("Open in Cursor"), undefined);
+    assert.equal(menuItem("Open in Other Editor"), undefined);
+    assert.ok(menuItem("chat.fileLink.open"));
+  } finally {
+    await remote.unmount();
+    setPreferredWorkspaceEditor("");
   }
 });
 

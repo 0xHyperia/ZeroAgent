@@ -53,16 +53,13 @@ import type { GitClient, GitRepositoryState } from "@liveagent/ui/lib/git/types"
 import { copyTextToClipboard } from "@liveagent/ui/lib/shared/clipboard";
 import { resolveSourceLanguage } from "@liveagent/ui/lib/sourceLanguages";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
+import {
+  openInWorkspaceEditor,
+  useWorkspaceEditors,
+} from "@liveagent/ui/lib/tools/workspaceEditors";
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import AndroidIcon from "~icons/logos/android-icon";
-import GitIcon from "~icons/logos/git-icon";
-import WslIcon from "~icons/logos/linux-tux";
-import PyCharmIcon from "~icons/logos/pycharm";
-import TerminalIcon from "~icons/logos/terminal";
-import VisualStudioIcon from "~icons/logos/visual-studio";
-import VSCodeIcon from "~icons/logos/visual-studio-code";
-import CursorIcon from "~icons/material-icon-theme/cursor";
 import type { WorkspaceFileRequest } from "./useWorkspaceTabs";
+import { installedWorkspaceEditorTargets } from "./WorkspaceEditorMenuItems";
 import { WorkspaceFileTreeIcon } from "./WorkspaceFileTreeIcon";
 import "./workspace-file-header.css";
 
@@ -103,17 +100,6 @@ type DirectorySnapshot = {
   hasMore?: boolean;
 };
 
-const WORKSPACE_OPEN_TARGETS = [
-  { id: "vscode", label: "VS Code", Icon: VSCodeIcon },
-  { id: "visual-studio", label: "Visual Studio", Icon: VisualStudioIcon },
-  { id: "vscode-insiders", label: "VS Code Insiders", Icon: VSCodeIcon },
-  { id: "cursor", label: "Cursor", Icon: CursorIcon },
-  { id: "terminal", label: "Terminal", Icon: TerminalIcon },
-  { id: "git-bash", label: "Git Bash", Icon: GitIcon },
-  { id: "wsl", label: "WSL", Icon: WslIcon },
-  { id: "android-studio", label: "Android Studio", Icon: AndroidIcon },
-  { id: "pycharm", label: "PyCharm", Icon: PyCharmIcon },
-] as const;
 type FileApplication = { id: string; name: string; iconDataUrl?: string | null };
 type FileApplications = {
   defaultApplication: FileApplication | null;
@@ -170,7 +156,7 @@ export function WorkspaceFileTabMenuItems({
     (isWorkspacePreviewPath(path) || resolveSourceLanguage(path) !== "plaintext") &&
     !["csv", "tsv"].includes(workspacePathExtension(path));
   const [applications, setApplications] = useState<FileApplications>();
-  const [editors, setEditors] = useState<string[]>([]);
+  const { targets: editors, preferredEditor } = useWorkspaceEditors(native && codeTools);
   const [github, setGithub] = useState("");
   useEffect(() => {
     if (!native) return;
@@ -181,13 +167,6 @@ export function WorkspaceFileTabMenuItems({
       },
       () => {},
     );
-    if (codeTools)
-      void invokeFs<string[]>("fs_workspace_editor_targets", {}).then(
-        (result) => {
-          if (current) setEditors(result);
-        },
-        () => {},
-      );
     if (gitClient)
       void gitClient.status(workdir).then(
         (result) => {
@@ -198,16 +177,15 @@ export function WorkspaceFileTabMenuItems({
     return () => {
       current = false;
     };
-  }, [codeTools, gitClient, native, path, request, workdir]);
+  }, [gitClient, native, path, request, workdir]);
   const primary = applications?.defaultApplication ?? undefined;
   const alternatives = applications?.alternatives ?? [];
-  const targets = WORKSPACE_OPEN_TARGETS.filter(
-    ({ id, label }) =>
-      editors.includes(id) &&
-      (line ||
-        ![primary, ...alternatives].some(
-          (item) => item && applicationDisplayKey(item.name) === applicationDisplayKey(label),
-        )),
+  const targets = installedWorkspaceEditorTargets(editors, preferredEditor).filter(
+    ({ label }) =>
+      line ||
+      ![primary, ...alternatives].some(
+        (item) => item && applicationDisplayKey(item.name) === applicationDisplayKey(label),
+      ),
   );
   const open = async (command: string, args?: Record<string, unknown>) => {
     try {
@@ -697,7 +675,6 @@ export function WorkspaceFileHeader({
   const [controlsPortal, setControlsPortal] = useState<HTMLElement | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [openWith, setOpenWith] = useState(false);
-  const [editorTargets, setEditorTargets] = useState<string[]>([]);
   const [applicationSnapshot, setApplicationSnapshot] = useState<{
     path: string;
     workdir: string;
@@ -711,6 +688,9 @@ export function WorkspaceFileHeader({
     editable &&
     (isWorkspacePreviewPath(request.path) || resolveSourceLanguage(request.path) !== "plaintext") &&
     !["csv", "tsv"].includes(workspacePathExtension(request.path));
+  const { targets: editorTargets, preferredEditor } = useWorkspaceEditors(
+    active && nativeFileActions && !request.remote && codeTools,
+  );
   const applications =
     active &&
     applicationSnapshot?.path === request.path &&
@@ -719,13 +699,12 @@ export function WorkspaceFileHeader({
       : undefined;
   const defaultApplication = applications?.defaultApplication ?? undefined;
   const openTargets = codeTools
-    ? WORKSPACE_OPEN_TARGETS.filter(
-        ({ id, label }) =>
-          editorTargets.includes(id) &&
-          (request.line ||
-            ![defaultApplication, ...(applications?.alternatives ?? [])].some(
-              (item) => item && applicationDisplayKey(item.name) === applicationDisplayKey(label),
-            )),
+    ? installedWorkspaceEditorTargets(editorTargets, preferredEditor).filter(
+        ({ label }) =>
+          request.line ||
+          ![defaultApplication, ...(applications?.alternatives ?? [])].some(
+            (item) => item && applicationDisplayKey(item.name) === applicationDisplayKey(label),
+          ),
       )
     : [];
   const comparing = Boolean(comparisonActions);
@@ -809,27 +788,11 @@ export function WorkspaceFileHeader({
     };
   }, [active, nativeFileActions, request.path, request.remote, request.workdir]);
   useEffect(() => {
-    if (!active || !nativeFileActions || request.remote || !codeTools) return;
-    let listening = true;
-    void invokeFs<string[]>("fs_workspace_editor_targets", {}).then(
-      (targets) => {
-        if (listening) setEditorTargets(targets);
-      },
-      () => {
-        if (listening) setEditorTargets([]);
-      },
-    );
-    return () => {
-      listening = false;
-    };
-  }, [active, codeTools, nativeFileActions, request.remote]);
-  useEffect(() => {
     if (!active) {
       setControlsOpen(false);
       setOptionsOpen(false);
       setOpenWith(false);
       setRepository(null);
-      setEditorTargets([]);
       setApplicationSnapshot(undefined);
     }
   }, [active]);
@@ -875,13 +838,7 @@ export function WorkspaceFileHeader({
   const openEditor = async (id: string) => {
     try {
       if (!(await beforeOpen()) || activeRequest.current !== request) return;
-      await invokeFs("fs_open_workspace_editor", {
-        workdir: request.workdir,
-        path: request.path,
-        editor: id,
-        line: request.line,
-        column: request.column,
-      });
+      await openInWorkspaceEditor(request.workdir, request.path, id, request.line, request.column);
     } catch {
       onError(copy("无法在此编辑器中打开文件", "Could not open the file in this editor"));
     }
@@ -1064,7 +1021,9 @@ export function WorkspaceFileHeader({
             open={active && controlsOpen}
             onOpenChange={(open) => {
               if (open)
-                setControlsPortal(header.current?.closest<HTMLElement>('[data-slot="sheet-popup"]') ?? null);
+                setControlsPortal(
+                  header.current?.closest<HTMLElement>('[data-slot="sheet-popup"]') ?? null,
+                );
               setControlsOpen(open);
             }}
           >

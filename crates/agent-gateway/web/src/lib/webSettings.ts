@@ -3,6 +3,31 @@ import { type AppSettings, getDefaultSettings, normalizeSettings } from "@/lib/s
 import { desktopStorageKey, gatewayOrigin } from "./desktopRemoteHost";
 
 const WEB_SETTINGS_STORAGE_KEY = "liveagent.gateway.webui.settings.v1";
+const RELAY_DISPLAY_PREFERENCES_KEY = "zeroagent.gateway.webui.relay-display.v1";
+
+type RelayDisplayPreferences = Partial<Pick<AppSettings, "locale" | "theme">>;
+
+export function loadRelayDisplayPreferences(): RelayDisplayPreferences {
+  try {
+    const raw = window.localStorage.getItem(desktopStorageKey(RELAY_DISPLAY_PREFERENCES_KEY));
+    if (!raw) return {};
+    const { locale, theme } = JSON.parse(raw) ?? {};
+    return {
+      ...(locale === "en-US" || locale === "zh-CN" ? { locale } : {}),
+      ...(theme === "system" || theme === "light" || theme === "dark" ? { theme } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+export function persistRelayDisplayPreferences(preferences: RelayDisplayPreferences) {
+  if (Object.keys(preferences).length === 0) return;
+  window.localStorage.setItem(
+    desktopStorageKey(RELAY_DISPLAY_PREFERENCES_KEY),
+    JSON.stringify({ ...loadRelayDisplayPreferences(), ...preferences }),
+  );
+}
 
 export type WebSettingsSaveState =
   | { status: "idle" }

@@ -11,6 +11,8 @@ pub mod cua_driver;
 #[cfg(desktop)]
 pub mod desktop_oauth;
 pub mod device_credentials;
+#[cfg(desktop)]
+pub(crate) mod device_plugins;
 pub mod gateway;
 pub mod gateway_bridge;
 #[cfg(desktop)]

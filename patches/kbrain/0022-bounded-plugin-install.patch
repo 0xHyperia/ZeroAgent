@@ -1,0 +1,518 @@
+diff --git a/internal/backend/plugins.go b/internal/backend/plugins.go
+index 382a2a3..c781e7f 100644
+--- a/internal/backend/plugins.go
++++ b/internal/backend/plugins.go
+@@ -149,12 +149,13 @@ type pluginToolView struct {
+ }
+ 
+ type pluginList struct {
+-	Version  string       `json:"version"`
+-	Workdir  string       `json:"workdir,omitempty"`
+-	Trusted  bool         `json:"trusted"`
+-	Revision uint64       `json:"revision"`
+-	Plugins  []pluginView `json:"plugins"`
+-	Errors   []string     `json:"errors,omitempty"`
++	Version        string       `json:"version"`
++	Workdir        string       `json:"workdir,omitempty"`
++	Trusted        bool         `json:"trusted"`
++	BoundedInstall bool         `json:"boundedInstall"`
++	Revision       uint64       `json:"revision"`
++	Plugins        []pluginView `json:"plugins"`
++	Errors         []string     `json:"errors,omitempty"`
+ }
+ 
+ func viewPlugin(m *plugins.Manager, p plugins.Plugin) pluginView {
+@@ -187,7 +188,7 @@ func (h *PluginHost) list(workdir string) (pluginList, error) {
+ 		return pluginList{}, err
+ 	}
+ 	h.loadErrs[project] = errText(m.Reload())
+-	out := pluginList{Version: protocol.Version, Trusted: project != "", Plugins: []pluginView{}}
++	out := pluginList{Version: protocol.Version, Trusted: project != "", BoundedInstall: true, Plugins: []pluginView{}}
+ 	if canonical, canonicalErr := resources.CanonicalWorkdir(strings.TrimSpace(workdir)); canonicalErr == nil {
+ 		out.Workdir = canonical
+ 	}
+@@ -262,8 +263,8 @@ func (h *PluginHost) remove(workdir, id string) error {
+ 	})
+ }
+ 
+-func (h *PluginHost) install(workdir, src string) error {
+-	return h.mutate(workdir, func(m *plugins.Manager) error { return m.Install(src) })
++func (h *PluginHost) install(workdir, src, sourceRoot string) error {
++	return h.mutate(workdir, func(m *plugins.Manager) error { return m.InstallWithin(src, sourceRoot) })
+ }
+ 
+ func (h *PluginHost) reload(workdir string) error {
+@@ -355,8 +356,9 @@ func (s *Server) syncPluginTools(ag *agent.Agent) {
+ }
+ 
+ type pluginRequest struct {
+-	Workdir string `json:"workdir,omitempty"`
+-	Path    string `json:"path,omitempty"`
++	Workdir    string `json:"workdir,omitempty"`
++	Path       string `json:"path,omitempty"`
++	SourceRoot string `json:"sourceRoot,omitempty"`
+ 	// Name and Arguments are a tools/call request: the tool's name as the
+ 	// plugin declares it and its JSON arguments.
+ 	Name      string          `json:"name,omitempty"`
+@@ -367,7 +369,7 @@ type pluginRequest struct {
+ //
+ //	GET    /v1/plugins?workdir=&since=&wait=  list (long-polls with since/wait)
+ //	POST   /v1/plugins/reload {workdir?}       rescan the plugin directories
+-//	POST   /v1/plugins/install {path, workdir?} copy a plugin directory into the user's plugins
++//	POST   /v1/plugins/install {path, workdir?, sourceRoot?} copy a plugin directory into the user's plugins
+ //	POST   /v1/plugins/{id}/enable {workdir?}
+ //	POST   /v1/plugins/{id}/disable {workdir?}
+ //	DELETE /v1/plugins/{id}?workdir=           remove a user plugin
+@@ -419,7 +421,12 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
+ 			writeJSONError(w, http.StatusBadRequest, "path must be an absolute plugin directory")
+ 			return
+ 		}
+-		err = s.plugins.install(workdir, path)
++		sourceRoot := strings.TrimSpace(in.SourceRoot)
++		if sourceRoot != "" && (!filepath.IsAbs(sourceRoot) || !filepath.IsAbs(workdir) || filepath.Clean(sourceRoot) != filepath.Clean(workdir)) {
++			writeJSONError(w, http.StatusBadRequest, "sourceRoot must be the selected workspace")
++			return
++		}
++		err = s.plugins.install(workdir, path, sourceRoot)
+ 	case len(parts) == 2 && (parts[1] == "enable" || parts[1] == "disable") && r.Method == http.MethodPost:
+ 		err = s.plugins.setEnabled(workdir, parts[0], parts[1] == "enable")
+ 	case len(parts) == 3 && parts[1] == "tools" && parts[2] == "call" && r.Method == http.MethodPost:
+diff --git a/internal/backend/plugins_test.go b/internal/backend/plugins_test.go
+index fc32bf0..70f3d3c 100644
+--- a/internal/backend/plugins_test.go
++++ b/internal/backend/plugins_test.go
+@@ -331,3 +331,24 @@ func TestPluginToolsAskPermissionAndRecheckState(t *testing.T) {
+ 		t.Fatalf("call after disable: %v", err)
+ 	}
+ }
++func TestBoundedPluginInstallRouteRequiresSelectedWorkspace(t *testing.T) {
++	f := newPluginFixture(t)
++	src := filepath.Join(f.workdir, "authored")
++	writePlugin(t, src, map[string]any{"name": "authored", "command": []string{"demo"}})
++	outside := t.TempDir()
++	writePlugin(t, outside, map[string]any{"name": "outside", "command": []string{"demo"}})
++	install := func(path, root string, status int) pluginList {
++		body, err := json.Marshal(map[string]string{"path": path, "workdir": f.workdir, "sourceRoot": root})
++		if err != nil {
++			t.Fatal(err)
++		}
++		return f.request(t, http.MethodPost, "/v1/plugins/install", string(body), status)
++	}
++	install(outside, outside, http.StatusBadRequest)
++	install(outside, f.workdir, http.StatusBadRequest)
++	list := install(src, f.workdir, http.StatusOK)
++	plugin := pluginByID(list, "authored")
++	if !list.BoundedInstall || plugin == nil || plugin.Source != "user" || plugin.Enabled {
++		t.Fatalf("scoped install = %+v", list)
++	}
++}
+diff --git a/internal/plugins/install.go b/internal/plugins/install.go
+new file mode 100644
+index 0000000..5f099fa
+--- /dev/null
++++ b/internal/plugins/install.go
+@@ -0,0 +1,190 @@
++package plugins
++
++import (
++	"errors"
++	"fmt"
++	"io"
++	"os"
++	"path/filepath"
++)
++
++const (
++	maxInstallEntries = 4096
++	maxInstallDepth   = 24
++	maxInstallFile    = 16 << 20
++	maxInstallBytes   = 64 << 20
++)
++
++func (m *Manager) Install(src string) error {
++	return m.InstallWithin(src, "")
++}
++
++// InstallWithin anchors reads to the supplied workspace for device installs.
++// A local caller that picked the directory can omit the workspace. The
++// manifest is parsed from the staged copy only after its source was bounded.
++func (m *Manager) InstallWithin(src, workspace string) error {
++	src, err := filepath.Abs(src)
++	if err != nil {
++		return err
++	}
++	parent, relative := src, "."
++	if workspace != "" {
++		parent, err = filepath.Abs(workspace)
++		if err != nil {
++			return err
++		}
++		relative, err = filepath.Rel(parent, src)
++		if err != nil || !filepath.IsLocal(relative) {
++			return errors.New("plugin source is outside the authorized workspace")
++		}
++	}
++
++	meta, err := os.Lstat(parent)
++	if err != nil || !meta.IsDir() {
++		return errors.New("plugin source must be a directory without symbolic links")
++	}
++	root, err := os.OpenRoot(parent)
++	if err != nil {
++		return err
++	}
++	defer root.Close()
++	opened, err := root.Stat(".")
++	if err != nil || !os.SameFile(meta, opened) {
++		return errors.New("plugin source changed during installation")
++	}
++
++	home := pluginHome()
++	if home == "" {
++		return errors.New("plugin directory is unavailable")
++	}
++	if err := os.MkdirAll(home, 0o750); err != nil {
++		return err
++	}
++	staging, err := os.MkdirTemp(home, ".plugin-install-")
++	if err != nil {
++		return err
++	}
++	// staging is a freshly allocated child of the process-owned plugin home.
++	// Once renamed, this cleanup only addresses its old temporary name.
++	defer os.RemoveAll(staging)
++	if err := copyInstallDirectory(root, relative, staging, 0, &installBudget{
++		entries: maxInstallEntries,
++		bytes:   maxInstallBytes,
++	}); err != nil {
++		return err
++	}
++	p, err := Load(staging)
++	if err != nil {
++		return err
++	}
++	pluginsDir := filepath.Join(home, "plugins")
++	if err := os.MkdirAll(pluginsDir, 0o750); err != nil {
++		return err
++	}
++	info, err := os.Lstat(pluginsDir)
++	if err != nil || !info.IsDir() {
++		return errors.New("plugin destination must be a directory without symbolic links")
++	}
++	dst := filepath.Join(pluginsDir, p.Name)
++	if _, err := os.Lstat(dst); !errors.Is(err, os.ErrNotExist) {
++		if err != nil {
++			return err
++		}
++		return fmt.Errorf("plugin %q is already installed", p.Name)
++	}
++	if err := os.Rename(staging, dst); err != nil {
++		return err
++	}
++	return m.Reload()
++}
++
++type installBudget struct {
++	entries int
++	bytes   int64
++}
++
++func copyInstallDirectory(root *os.Root, relative, dst string, depth int, budget *installBudget) error {
++	if depth > maxInstallDepth {
++		return errors.New("plugin directory is too deeply nested")
++	}
++	meta, err := root.Lstat(relative)
++	if err != nil || !meta.IsDir() {
++		return errors.New("plugin directories must not be symbolic links")
++	}
++	dir, err := root.OpenRoot(relative)
++	if err != nil {
++		return err
++	}
++	defer dir.Close()
++	opened, err := dir.Stat(".")
++	if err != nil || !os.SameFile(meta, opened) {
++		return errors.New("plugin directory changed during installation")
++	}
++	reader, err := dir.Open(".")
++	if err != nil {
++		return err
++	}
++	entries, readErr := reader.ReadDir(budget.entries + 1)
++	reader.Close()
++	if readErr != nil && !errors.Is(readErr, io.EOF) {
++		return readErr
++	}
++	if len(entries) > budget.entries {
++		return errors.New("plugin contains too many files or directories")
++	}
++	budget.entries -= len(entries)
++	for _, entry := range entries {
++		name := entry.Name()
++		to := filepath.Join(dst, name)
++		info, err := dir.Lstat(name)
++		if err != nil {
++			return err
++		}
++		switch {
++		case info.IsDir():
++			if err := os.Mkdir(to, 0o750); err != nil {
++				return err
++			}
++			if err := copyInstallDirectory(dir, name, to, depth+1, budget); err != nil {
++				return err
++			}
++		case info.Mode().IsRegular():
++			if err := copyInstallFile(dir, name, to, info, budget); err != nil {
++				return err
++			}
++		default:
++			return errors.New("plugins must contain only ordinary files and directories")
++		}
++	}
++	return nil
++}
++
++func copyInstallFile(root *os.Root, name, dst string, info os.FileInfo, budget *installBudget) error {
++	limit := min(int64(maxInstallFile), budget.bytes)
++	if info.Size() > limit {
++		return errors.New("plugin files exceed the installation size limit")
++	}
++	file, err := root.OpenFile(name, installReadFlags, 0)
++	if err != nil {
++		return err
++	}
++	defer file.Close()
++	opened, err := file.Stat()
++	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
++		return errors.New("plugin file changed during installation")
++	}
++	target, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
++	if err != nil {
++		return err
++	}
++	written, copyErr := io.Copy(target, io.LimitReader(file, limit+1))
++	closeErr := target.Close()
++	if err := errors.Join(copyErr, closeErr); err != nil {
++		return err
++	}
++	if written > limit {
++		return errors.New("plugin files exceed the installation size limit")
++	}
++	budget.bytes -= written
++	return nil
++}
+diff --git a/internal/plugins/install_other.go b/internal/plugins/install_other.go
+new file mode 100644
+index 0000000..fd5f3e8
+--- /dev/null
++++ b/internal/plugins/install_other.go
+@@ -0,0 +1,7 @@
++//go:build !unix
++
++package plugins
++
++import "os"
++
++const installReadFlags = os.O_RDONLY
+diff --git a/internal/plugins/install_test.go b/internal/plugins/install_test.go
+new file mode 100644
+index 0000000..e3a66ce
+--- /dev/null
++++ b/internal/plugins/install_test.go
+@@ -0,0 +1,115 @@
++package plugins
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestBoundedPluginInstall(t *testing.T) {
++	home := isolatePluginHome(t)
++	workspace := t.TempDir()
++	src := filepath.Join(workspace, "author", "demo")
++	writeManifest(t, src, `{"name":"demo","version":"1","command":["demo"]}`)
++	if err := os.Mkdir(filepath.Join(src, "assets"), 0o700); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(src, "assets", "page.txt"), []byte("authored asset"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	manager, err := New("")
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := manager.InstallWithin(src, workspace); err != nil {
++		t.Fatal(err)
++	}
++	asset, err := os.ReadFile(filepath.Join(home, "plugins", "demo", "assets", "page.txt"))
++	if err != nil || string(asset) != "authored asset" {
++		t.Fatalf("installed asset = %q, error = %v", asset, err)
++	}
++	outside := t.TempDir()
++	writeManifest(t, outside, `{"name":"other","command":["demo"]}`)
++	if err := manager.InstallWithin(outside, workspace); err == nil {
++		t.Fatal("installed from outside the scope")
++	}
++	link := filepath.Join(src, "external")
++	if err := os.Symlink(filepath.Join(outside, "plugin.json"), link); err != nil {
++		t.Logf("symlink fixture unavailable: %v", err)
++		return
++	}
++	if err := manager.InstallWithin(src, workspace); err == nil {
++		t.Fatal("installed an external link")
++	}
++	linked := filepath.Join(workspace, "link")
++	if err := os.Symlink(outside, linked); err != nil {
++		t.Skipf("directory symlink fixture unavailable: %v", err)
++	}
++	if err := manager.InstallWithin(linked, workspace); err == nil {
++		t.Fatal("installed from a linked directory")
++	}
++	if other, ok := manager.Get("other"); ok {
++		t.Fatalf("outside plugin was published: %+v", other)
++	}
++}
++
++func TestBoundedPluginInstallRejectsLinkedManifest(t *testing.T) {
++	home := isolatePluginHome(t)
++	src := t.TempDir()
++	outside := t.TempDir()
++	writeManifest(t, outside, `{"name":"linked","command":["demo"]}`)
++	if err := os.Symlink(filepath.Join(outside, "plugin.json"), filepath.Join(src, "plugin.json")); err != nil {
++		t.Skipf("symlink fixture unavailable: %v", err)
++	}
++	manager, err := New("")
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := manager.Install(src); err == nil {
++		t.Fatal("installed a linked manifest")
++	}
++	if _, err := os.Stat(filepath.Join(home, "plugins", "linked")); !os.IsNotExist(err) {
++		t.Fatalf("rejected plugin was published: %v", err)
++	}
++}
++
++func TestBoundedPluginCopyBudgetAndCleanup(t *testing.T) {
++	home := isolatePluginHome(t)
++	src := t.TempDir()
++	writeManifest(t, src, `{"name":"large","command":["demo"]}`)
++	file, err := os.Create(filepath.Join(src, "large"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := file.Truncate(maxInstallFile + 1); err != nil {
++		file.Close()
++		t.Fatal(err)
++	}
++	if err := file.Close(); err != nil {
++		t.Fatal(err)
++	}
++	manager, err := New("")
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := manager.Install(src); err == nil {
++		t.Fatal("installed an oversized tree")
++	}
++	if _, err := os.Stat(filepath.Join(home, "plugins", "large")); !os.IsNotExist(err) {
++		t.Fatalf("rejected plugin was published: %v", err)
++	}
++	pending, err := filepath.Glob(filepath.Join(home, ".plugin-install-*"))
++	if err != nil || len(pending) != 0 {
++		t.Fatalf("staging files left after rejection: %v, %v", pending, err)
++	}
++	root, err := os.OpenRoot(src)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer root.Close()
++	for _, budget := range []installBudget{{entries: 1, bytes: maxInstallBytes}, {entries: 10, bytes: 1}} {
++		if err := copyInstallDirectory(root, ".", t.TempDir(), 0, &budget); err == nil {
++			t.Fatal("copy exceeded its budget")
++		}
++	}
++}
+diff --git a/internal/plugins/install_unix.go b/internal/plugins/install_unix.go
+new file mode 100644
+index 0000000..1ca3339
+--- /dev/null
++++ b/internal/plugins/install_unix.go
+@@ -0,0 +1,11 @@
++//go:build unix
++
++package plugins
++
++import (
++	"os"
++	"syscall"
++)
++
++// A regular source file might be replaced by a FIFO after its metadata check.
++const installReadFlags = os.O_RDONLY | syscall.O_NONBLOCK | syscall.O_NOFOLLOW
+diff --git a/internal/plugins/manager.go b/internal/plugins/manager.go
+index 0620ce0..7c0a9d8 100644
+--- a/internal/plugins/manager.go
++++ b/internal/plugins/manager.go
+@@ -208,58 +208,6 @@ func (m *Manager) Remove(name string) error {
+ 	return m.saveState()
+ }
+ 
+-func (m *Manager) Install(src string) error {
+-	src, err := filepath.Abs(src)
+-	if err != nil {
+-		return err
+-	}
+-	p, err := Load(src)
+-	if err != nil {
+-		return err
+-	}
+-	home := pluginHome()
+-	if home == "" {
+-		return errors.New("plugin directory is unavailable")
+-	}
+-	// Install where Dirs looks for user plugins.
+-	dst := filepath.Join(home, "plugins", p.Name)
+-	if _, err := os.Stat(dst); err == nil {
+-		return fmt.Errorf("plugin %q is already installed", p.Name)
+-	}
+-	if err := copyTree(src, dst); err != nil {
+-		_ = os.RemoveAll(dst)
+-		return err
+-	}
+-	return m.Reload()
+-}
+-
+-func copyTree(src, dst string) error {
+-	entries, err := os.ReadDir(src)
+-	if err != nil {
+-		return err
+-	}
+-	if err := os.MkdirAll(dst, 0o750); err != nil {
+-		return err
+-	}
+-	for _, entry := range entries {
+-		from, to := filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())
+-		if entry.IsDir() {
+-			if err := copyTree(from, to); err != nil {
+-				return err
+-			}
+-			continue
+-		}
+-		data, err := os.ReadFile(from)
+-		if err != nil {
+-			return err
+-		}
+-		if err := os.WriteFile(to, data, 0o640); err != nil {
+-			return err
+-		}
+-	}
+-	return nil
+-}
+-
+ func (m *Manager) PromptBlock() string {
+ 	var b strings.Builder
+ 	for _, p := range m.List() {

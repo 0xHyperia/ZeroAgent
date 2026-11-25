@@ -243,9 +243,15 @@ fn allowed_route(method: &Method, path: &str) -> bool {
                 | Method::DELETE
                 | Method::HEAD
         )
-        && !path.split('/').any(|part| matches!(part, "secrets" | "host-bridge"))
+        && !path.split('/').any(|part| matches!(part, "secrets" | "host-bridge" | "mcp-ui" | "previews"))
         && path != "/v1/network/proxy"
         && path != "/v1/mcp/tools/call"
+        && path != "/v1/plugins"
+        && !path.starts_with("/v1/plugins/")
+        && path != "/v1/plugin-assets"
+        && !path.starts_with("/v1/plugin-assets/")
+        && path != "/v1/trust"
+        && !path.starts_with("/v1/trust/")
 }
 
 fn cors(response: &mut Response) {

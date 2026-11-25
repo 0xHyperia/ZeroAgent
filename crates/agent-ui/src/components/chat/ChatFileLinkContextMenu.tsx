@@ -1,5 +1,6 @@
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import { AppWindow, Copy, FileText, FolderOpen, Globe } from "@liveagent/ui/components/IconSet";
+import { WorkspaceEditorMenuItems } from "@liveagent/ui/components/project-tools/WorkspaceEditorMenuItems";
 import {
   ContextMenuItem,
   ContextMenuLabel,
@@ -27,12 +28,14 @@ type ChatFileLinkContextMenuHostProps = {
   /** Desktop only: launching the host's default app (or a code editor)
    * means nothing to a WebUI viewer on another device. */
   canOpenWithDefaultApp?: boolean;
+  canOpenInLocalEditor?: boolean;
 };
 
 /** Renders the menu opened by `showChatFileLinkContextMenu` or
  * `showChatUrlContextMenu`; mount one per transcript. */
 export function ChatFileLinkContextMenuHost({
   canOpenWithDefaultApp = false,
+  canOpenInLocalEditor = false,
 }: ChatFileLinkContextMenuHostProps) {
   const { t, locale } = useLocale();
   const openWorkbenchBrowser = useContext(WorkbenchBrowserLink);
@@ -80,6 +83,11 @@ export function ChatFileLinkContextMenuHost({
               )}
             </ContextMenuItem>
           ) : null}
+          {canOpenInLocalEditor && (
+            <WorkspaceEditorMenuItems
+              onOpen={(editor) => openFromChatFileLinkMenu(state, { editor })}
+            />
+          )}
         </>
       ) : (
         <>

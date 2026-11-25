@@ -602,6 +602,51 @@ func TestVetAgentRequestUsageStatsRequiresDesktopCapability(t *testing.T) {
 	}
 }
 
+func TestVetDevicePluginsRejectsSpoofedPrincipalAndUnknownOperation(t *testing.T) {
+	request := &gatewayv2.DevicePluginsRequest{Action: "enable", Workdir: "/repo/a", PluginId: "example"}
+	if err := vetDevicePlugins(request); err != nil {
+		t.Fatalf("allowed plugin action rejected: %v", err)
+	}
+	env := &gatewayv2.GatewayEnvelope{
+		Payload: &gatewayv2.GatewayEnvelope_DevicePlugins{DevicePlugins: request},
+	}
+	if err := vetAgentRequest(permissionRulesAgentView(t), env); err == nil {
+		t.Fatal("plugin action accepted by a desktop without the capability")
+	}
+	for _, invalid := range []*gatewayv2.DevicePluginsRequest{
+		{Action: "list", Workdir: "/repo/a", OwnerId: 7},
+		{Action: "exec", Workdir: "/repo/a"},
+		{Action: "install", Workdir: "/repo/a"},
+		{Action: "remove", Workdir: "/repo/a", PluginId: "../other"},
+		{Action: "reload", Workdir: "/repo/a", SourcePath: "extra"},
+	} {
+		if err := vetDevicePlugins(invalid); err == nil {
+			t.Fatalf("invalid plugin operation accepted: %v", invalid)
+		}
+	}
+}
+
+func TestVetDeviceUISurfaceAcceptsScopedReadsOnly(t *testing.T) {
+	valid := &gatewayv2.DeviceUiSurfaceRequest{
+		Action: "preview", Workdir: "/repo/a", ConversationId: "conversation", ResourceId: "0123456789abcdef",
+	}
+	if err := vetDeviceUiSurface(valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []*gatewayv2.DeviceUiSurfaceRequest{
+		{Action: "history", Workdir: "/repo/a", ConversationId: "conversation", OwnerId: 42},
+		{Action: "preview", Workdir: "/repo/a", ConversationId: "conversation", ResourceId: "../preview"},
+		{Action: "mcp", Workdir: "/repo/a", ConversationId: "conversation", ResourceId: "ui://raw"},
+		{Action: "tool.call", Workdir: "/repo/a", ConversationId: "conversation", ResourceId: "tool"},
+		{Action: "panel", Workdir: "/repo/a", ResourceId: "entry.html", PluginId: ".."},
+		{Action: "panel", Workdir: "/repo/a", ResourceId: "index.html", PluginId: "plugin", ConversationId: "other"},
+	} {
+		if err := vetDeviceUiSurface(invalid); err == nil {
+			t.Errorf("accepted %+v", invalid)
+		}
+	}
+}
+
 func permissionRulesAgentView(t *testing.T) session.AgentView {
 	t.Helper()
 	manager := session.NewManager()

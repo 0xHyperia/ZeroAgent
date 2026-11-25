@@ -83,6 +83,7 @@ export function toKBrainMcpSettings(settings: McpSettings) {
       }
       return {
         id: server.id,
+        name: server.name?.trim() || undefined,
         description: server.description,
         docsUrl: server.docsUrl,
         enabled: server.enabled,
@@ -162,6 +163,7 @@ export function mergeKBrainMcpSettings(
   current: unknown,
   next: McpSettings,
   previous?: McpSettings,
+  serverNames = false,
 ): Record<string, unknown> {
   const document = kbrainMcpSettingsDocument(current);
   if (!document) throw new Error("Malformed K-brain MCP settings");
@@ -201,6 +203,11 @@ export function mergeKBrainMcpSettings(
           : server[field];
       if (value === undefined) delete out[field];
       else out[field] = value;
+    }
+    const name = server.name?.trim();
+    if (serverNames && (before?.name ?? "") !== (name ?? "")) {
+      if (name) out.name = name;
+      else delete out.name;
     }
     return out;
   });
@@ -244,6 +251,38 @@ export function kbrainMcpStatuses(input: unknown): KBrainMcpServerStatus[] {
     });
   }
   return out;
+}
+
+export function kbrainMcpToolSummaries(bodies: readonly unknown[]) {
+  const summaries = new Map<string, { label?: string; uiTools: number; appOnlyTools: number }>();
+  const seen = new Set<string>();
+  for (const body of bodies) {
+    if (!isRecord(body) || !Array.isArray(body.tools)) continue;
+    for (const tool of body.tools) {
+      if (!isRecord(tool) || typeof tool.serverId !== "string" || typeof tool.name !== "string")
+        continue;
+      const serverId = tool.serverId.trim();
+      const name = tool.name.trim();
+      if (!serverId || !name) continue;
+      const key = JSON.stringify([serverId, name]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const summary = summaries.get(serverId) ?? { uiTools: 0, appOnlyTools: 0 };
+      const label = typeof tool.serverLabel === "string" ? tool.serverLabel.trim() : "";
+      if (label && label !== serverId) summary.label = label;
+      if (typeof tool.uiResourceUri === "string" && tool.uiResourceUri.trim()) summary.uiTools += 1;
+      if (
+        Array.isArray(tool.visibility) &&
+        tool.visibility.includes("app") &&
+        !tool.visibility.includes("model")
+      ) {
+        summary.appOnlyTools += 1;
+      }
+      summaries.set(serverId, summary);
+    }
+  }
+  return summaries;
 }
 
 const savedListeners = new Set<() => void>();

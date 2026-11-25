@@ -10,7 +10,9 @@ type Props = {
   agentOnline?: boolean;
   statusReadFailed: boolean;
   draftEditable?: boolean;
+  deviceName?: string;
   onReconnect: () => Promise<unknown>;
+  onChooseDevice?: () => void;
 };
 
 export function GatewayDeviceConnectionNotice({
@@ -19,7 +21,9 @@ export function GatewayDeviceConnectionNotice({
   agentOnline,
   statusReadFailed,
   draftEditable = false,
+  deviceName,
   onReconnect,
+  onChooseDevice,
 }: Props) {
   const { locale } = useLocale();
   const zh = locale === "zh-CN";
@@ -34,7 +38,16 @@ export function GatewayDeviceConnectionNotice({
   if (reconnecting) message = zh ? "正在重新连接…" : "Reconnecting…";
   else if (checking) message = zh ? "正在检查设备连接…" : "Checking the device connection…";
   else if (connectionLost) message = zh ? "连接已中断" : "Connection interrupted";
-  else if (agentOnline === false && !statusReadFailed) message = zh ? "设备离线" : "Device offline";
+  else if (agentOnline === false && !statusReadFailed) {
+    const name = deviceName?.trim();
+    message = name
+      ? zh
+        ? `${name} 已离线`
+        : `${name} is offline`
+      : zh
+        ? "设备离线"
+        : "Device offline";
+  }
 
   const reconnect = async () => {
     if (reconnectingRef.current) return;
@@ -67,17 +80,24 @@ export function GatewayDeviceConnectionNotice({
             : "Your draft is kept. You can send once connected."
       }
       actions={
-        !checking || reconnecting ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-disabled={reconnecting}
-            onClick={reconnect}
-          >
-            {zh ? "重新连接" : "Reconnect"}
-          </Button>
-        ) : undefined
+        <>
+          {(!checking || reconnecting) && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-disabled={reconnecting}
+              onClick={reconnect}
+            >
+              {zh ? "重新连接" : "Reconnect"}
+            </Button>
+          )}
+          {onChooseDevice && (
+            <Button type="button" size="sm" variant="ghost" onClick={onChooseDevice}>
+              {zh ? "选择其他设备" : "Choose another device"}
+            </Button>
+          )}
+        </>
       }
       className="mx-5 mt-3 shrink-0 max-sm:mx-3"
     />

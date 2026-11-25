@@ -3,6 +3,7 @@ import { AlertTriangle, RotateCcw, X } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { KbdShortcut } from "@liveagent/ui/components/ui/kbd";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { shortcutCommandSettingsAnchor } from "@liveagent/ui/lib/settings/settingsSearchIndex";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isMacLikePlatform } from "../../lib/shared/platform";
 import { cn } from "../../lib/shared/utils";
@@ -261,6 +262,7 @@ export function ShortcutCommandsSection({
                 <div
                   key={command.id}
                   data-shortcut-command={command.id}
+                  data-settings-anchor={shortcutCommandSettingsAnchor(command.id)}
                   className={cn(
                     "flex min-h-12 w-full flex-wrap items-center gap-3 rounded-xl px-4 py-2.5",
                     isRecording ? "bg-settings-active" : "bg-settings-tile",

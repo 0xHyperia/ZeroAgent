@@ -95,7 +95,6 @@ import type {
   ChatQueueSnapshot,
   HistoryDetail,
 } from "@/lib/gatewayTypes";
-import { parseHistoryShareToken } from "@/lib/historyShare";
 import { isEmbeddedMobileRuntime, MOBILE_BACK_EVENT, mobileHaptic } from "@/lib/mobileRuntime";
 import {
   getRelayDashboardStats,
@@ -114,7 +113,6 @@ import {
 import { createIdleSidebarBackend, createWebSidebarBackend } from "@/lib/sidebar/webSidebarBackend";
 import { importReadableFiles } from "@/lib/uploadReadableFiles";
 import { GATEWAY_MAIN_SHELL_CLASS, GATEWAY_SHELL_CLASS } from "@/lib/webStyleClasses";
-import { AccountLoginPage } from "@/pages/AccountLoginPage";
 import { CloudChatPage } from "@/pages/CloudChatPage";
 import { GatewayLoadingCard, GatewayLoadingScreen } from "@/pages/GatewayLoadingScreen";
 import { SharedHistoryPage } from "@/pages/SharedHistoryPage";
@@ -125,6 +123,7 @@ import {
 } from "./chatEventUtils";
 import { HISTORY_LIST_PAGE_SIZE, PROTECTED_DRAFT_CONVERSATION } from "./constants";
 import { GatewayAppView } from "./GatewayAppView";
+import { type GatewaySession, GatewaySessionEntry } from "./GatewaySessionEntry";
 import {
   createGatewayChatCommandActions,
   type QueuedEditSession,
@@ -181,7 +180,6 @@ import { useGatewayConversationState } from "./hooks/useGatewayConversationState
 import { useGatewayHistoryReconciliation } from "./hooks/useGatewayHistoryReconciliation";
 import { useGatewayProjectTools } from "./hooks/useGatewayProjectTools";
 import { useGatewayRuntimePreparation } from "./hooks/useGatewayRuntimePreparation";
-import { useGatewaySession } from "./hooks/useGatewaySession";
 import { useGatewaySettingsOverlay } from "./hooks/useGatewaySettingsOverlay";
 import { useGatewaySettingsSync } from "./hooks/useGatewaySettingsSync";
 import { useGatewaySharedHistory } from "./hooks/useGatewaySharedHistory";
@@ -196,11 +194,7 @@ import { useGatewayWorkbench } from "./workbench/useGatewayWorkbench";
 
 const SEARCH_JUMP_MAX_PAGES = 20;
 
-function useGatewayAppController() {
-  const historyShareToken = useMemo(
-    () => (getDesktopRemoteHost() ? null : parseHistoryShareToken()),
-    [],
-  );
+function useGatewayAppController(session: GatewaySession, historyShareToken: string | null) {
   const {
     token,
     accountUser,
@@ -208,14 +202,6 @@ function useGatewayAppController() {
     environmentDirectoryUnavailable,
     reloadEnvironments,
     selection,
-    authInitializing,
-    authSubmitting,
-    authError,
-    twoFactorRequired,
-    setAuthError,
-    login: handleLoginSubmit,
-    register: handleRegisterSubmit,
-    verifyTwoFactor,
     switchExecutionTarget,
     finishDeviceDraft,
     returnToCloudDraft,
@@ -224,7 +210,7 @@ function useGatewayAppController() {
     returnToCloudConversation,
     applyExecutionPresence,
     clearSession,
-  } = useGatewaySession(historyShareToken);
+  } = session;
   const terminalIdentityRef = useRef<{ conversationId?: string; runId?: string } | null>(null);
   const getTerminalIdentity = useCallback(() => terminalIdentityRef.current, []);
   const { api, terminalClient, sftpClient, gitClient } = useGatewayClients(
@@ -397,6 +383,7 @@ function useGatewayAppController() {
     resetSettingsOverlay,
     settingsSection,
     settingsProviderId,
+    settingsAnchor,
     modelPreferencesOpen,
     setModelPreferencesOpen,
   } = useGatewaySettingsOverlay(setSidebarOpen);
@@ -859,6 +846,7 @@ function useGatewayAppController() {
     handleFileDragOver: handlePendingFileDragOver,
     handleFileDragLeave,
     handleFileDrop: handlePendingFileDrop,
+    replacePendingUpload,
   } = usePendingUploads({
     token,
     workspaceOwner,
@@ -3269,39 +3257,7 @@ function useGatewayAppController() {
     );
   }
 
-  if (authInitializing) {
-    return (
-      <main
-        className="app-auth-restoring flex min-h-dvh w-full min-w-0 flex-1 items-center justify-center bg-background"
-        role="status"
-        aria-label="正在恢复登录状态"
-      >
-        <img
-          src="/zeroagent-logo.png"
-          alt=""
-          width={48}
-          height={48}
-          className="h-12 w-12 shrink-0 animate-pulse"
-          draggable={false}
-        />
-      </main>
-    );
-  }
-
-  if (!accountUser) {
-    return (
-      <AccountLoginPage
-        error={authError}
-        isSubmitting={authSubmitting}
-        twoFactorRequired={twoFactorRequired}
-        onSubmit={(email, password) => void handleLoginSubmit(email, password)}
-        onRegister={(input) => void handleRegisterSubmit(input)}
-        onSubmitTwoFactor={(code) => void verifyTwoFactor(code)}
-        onClearError={() => setAuthError(null)}
-        onSetError={setAuthError}
-      />
-    );
-  }
+  if (!accountUser) return null;
 
   if (deviceRouteStatus) {
     const loading = deviceRouteStatus === "loading";
@@ -3571,6 +3527,7 @@ function useGatewayAppController() {
     getCachedComposerDraft,
     getDisplayedConversationId,
     getPendingUploadsForConversation,
+    replacePendingUpload,
     subscribePendingUploads,
     gitClient,
     gitDisabledMessage,
@@ -3733,6 +3690,7 @@ function useGatewayAppController() {
     settingsSaveState,
     settingsSection,
     settingsSyncError,
+    settingsAnchor,
     sftpClient,
     shareConversation,
     shareError,
@@ -3814,16 +3772,34 @@ export type GatewayAppViewModel = Extract<
 >;
 
 type GatewayAppProps = { imageStudioIdentity?: TrustedGatewayImageIdentity };
+type GatewayWorkbenchProps = GatewayAppProps & {
+  session: GatewaySession;
+  historyShareToken: string | null;
+};
 
 export default function GatewayApp(props: GatewayAppProps) {
+  return (
+    <GatewaySessionEntry>
+      {(session, historyShareToken) => (
+        <GatewayWorkbench {...props} session={session} historyShareToken={historyShareToken} />
+      )}
+    </GatewaySessionEntry>
+  );
+}
+
+export function GatewayWorkbench(props: GatewayWorkbenchProps) {
   return (
     <SidebarProvider>
       <GatewayAppContent {...props} />
     </SidebarProvider>
   );
 }
-function GatewayAppContent({ imageStudioIdentity }: GatewayAppProps) {
-  const result = useGatewayAppController();
+function GatewayAppContent({
+  imageStudioIdentity,
+  session,
+  historyShareToken,
+}: GatewayWorkbenchProps) {
+  const result = useGatewayAppController(session, historyShareToken);
   if (!result || !("activeFloorKey" in result)) {
     return result;
   }

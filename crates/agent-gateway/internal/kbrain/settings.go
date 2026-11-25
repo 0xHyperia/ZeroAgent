@@ -20,6 +20,7 @@ type gatewaySettingsProjection struct {
 	KBrainMemoryOrganizer json.RawMessage `json:"kbrainMemoryOrganizer,omitempty"`
 	CustomProviders       []any           `json:"customProviders"`
 	SelectedModel         map[string]any  `json:"selectedModel"`
+	BrowserLocalSettings  []string        `json:"browserLocalSettings"`
 }
 
 type kbrainSettingsDocument struct {
@@ -214,7 +215,11 @@ func settingsProjectionForGateway(raw json.RawMessage) (json.RawMessage, error) 
 			"providerType":     providerTypeByID[document.DefaultProvider],
 		}
 	}
-	return json.Marshal(gatewaySettingsProjection{CustomProviders: providers, SelectedModel: selected, Computer: document.Computer, AIApproval: document.AIApproval, KBrainMemory: document.Memory, KBrainMemoryOrganizer: document.MemoryOrganizer})
+	return json.Marshal(gatewaySettingsProjection{
+		CustomProviders: providers, SelectedModel: selected, Computer: document.Computer,
+		AIApproval: document.AIApproval, KBrainMemory: document.Memory, KBrainMemoryOrganizer: document.MemoryOrganizer,
+		BrowserLocalSettings: []string{"locale", "theme"},
+	})
 }
 
 func decodeSettingsDocument(raw json.RawMessage) (kbrainSettingsDocument, error) {

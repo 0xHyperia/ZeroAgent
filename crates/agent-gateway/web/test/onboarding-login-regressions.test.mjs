@@ -15,6 +15,7 @@ const desktopOnboardingSource = readFileSync(
   ),
   "utf8",
 );
+const desktopAppSource = readFileSync(new URL("../../../agent-gui/src/App.tsx", import.meta.url), "utf8");
 const desktopRelayGateSource = readFileSync(
   new URL("../../../agent-gui/src/components/relay/RelayAccessGate.tsx", import.meta.url),
   "utf8",
@@ -165,10 +166,12 @@ test("first-run onboarding follows the interface locale through group selection 
   assert.ok(dialog().querySelector('[aria-label="跳过引导"]'));
 });
 
-test("desktop onboarding uses the desktop relay client", () => {
-  assert.match(desktopOnboardingSource, /from "\.\.\/\.\.\/lib\/relay\/client"/);
-  assert.match(desktopOnboardingSource, /Promise\.all\(\[listRelayApiKeys\(\), listRelayGroups\(\)\]\)/);
-  assert.doesNotMatch(desktopOnboardingSource, /agent-gateway\/web/);
+test("desktop setup uses the signed-in local host settings without provisioning keys", () => {
+  assert.match(desktopAppSource, /setupGuideAvailable = localExecutionSelected && !cloudSelected && isTauriHost\(\)/);
+  assert.match(desktopAppSource, /<FirstRunOnboarding[\s\S]*?userId=\{relayUser\.id\}/);
+  assert.match(desktopAppSource, /onConfigureModels=\{\(\) => openSettings\("providers"\)\}/);
+  assert.match(desktopOnboardingSource, /await onChooseProject\(\)/);
+  assert.doesNotMatch(desktopOnboardingSource, /lib\/relay\/client|RelayApiKey|agent-gateway\/web/);
 });
 
 test("expired web sessions clear the complete cached application state", () => {
@@ -184,10 +187,10 @@ test("expired web sessions clear the complete cached application state", () => {
 });
 
 test("session restoration renders a neutral loading surface before the login page", () => {
-  assert.match(gatewayAppSource, /if \(authInitializing\) \{/);
-  assert.match(gatewayAppSource, /aria-label="正在恢复登录状态"/);
+  const entrySource = readFileSync(new URL("../src/app/GatewaySessionEntry.tsx", import.meta.url), "utf8");
+  assert.match(entrySource, /GatewayStartupStatus label="正在恢复登录状态"/);
   assert.match(
-    gatewayAppSource,
-    /if \(authInitializing\) \{[\s\S]*?if \(!accountUser\) \{/,
+    entrySource,
+    /if \(session\.authInitializing\) \{[\s\S]*?if \(!session\.accountUser\) \{/,
   );
 });

@@ -2,7 +2,8 @@ import { workspaceProjectPathKey } from "@liveagent/app/lib/settings";
 import type { WorkspaceCodeEditorOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceCodeEditorOverlay";
 import type { WorkspaceFilePreviewOpenRequest } from "@liveagent/ui/components/workspace-editor/WorkspaceFilePreviewOverlay";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
-import { useCallback, useMemo, useRef } from "react";
+import { openInWorkspaceEditor } from "@liveagent/ui/lib/tools/workspaceEditors";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { ChatFileLink } from "./chatFileLinks";
 import {
   type OpenChatFileLinkParams,
@@ -12,12 +13,14 @@ import {
 
 type WorkspaceOpenRequest = Omit<WorkspaceCodeEditorOpenRequest, "id">;
 type WorkspacePreviewRequest = Omit<WorkspaceFilePreviewOpenRequest, "id">;
+type EditorLinkContext = { conversationId: string; workdir: string };
 
 type UseChatFileLinkNavigationParams = {
   conversationId: string;
   conversationWorkdir: string;
   resolveWorkdirOnHost?: boolean;
   readStagedAttachments?: boolean;
+  canOpenInLocalEditor?: boolean;
   workspaceOwner?: string;
   terminalProjectPathKey: string;
   notifyError: (message: string) => void;
@@ -44,6 +47,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
     conversationWorkdir,
     resolveWorkdirOnHost,
     readStagedAttachments,
+    canOpenInLocalEditor,
     workspaceOwner,
     terminalProjectPathKey,
     notifyError,
@@ -55,28 +59,50 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
     getErrorMessage = defaultErrorMessage,
   } = params;
   const scope = useMemo(
-    () => ({ conversationId, conversationWorkdir, workspaceOwner }),
-    [conversationId, conversationWorkdir, workspaceOwner],
+    () => ({ conversationId, conversationWorkdir, workspaceOwner, canOpenInLocalEditor }),
+    [conversationId, conversationWorkdir, workspaceOwner, canOpenInLocalEditor],
   );
-  const currentScope = useRef(scope);
-  currentScope.current = scope;
+  const currentScope = useRef<typeof scope | null>(scope);
+  useLayoutEffect(() => {
+    currentScope.current = scope;
+    return () => {
+      currentScope.current = null;
+    };
+  }, [scope]);
 
   return useCallback(
-    (link: ChatFileLink) => {
-      const workdir = conversationWorkdir.trim();
-      if (!conversationId || (!workdir && !resolveWorkdirOnHost)) {
+    (link: ChatFileLink, editorContext?: EditorLinkContext) => {
+      if (link.openInEditor && !canOpenInLocalEditor) return;
+      const editorScope = link.openInEditor ? editorContext : undefined;
+      const targetConversationId = editorScope?.conversationId ?? conversationId;
+      const workdir = (editorScope?.workdir ?? conversationWorkdir).trim();
+      if (!targetConversationId || (!workdir && !resolveWorkdirOnHost)) {
         notifyError("The conversation working directory is unavailable.");
         return;
       }
-      const request = { ...link, conversationId, workdir };
+      const request = { ...link, conversationId: targetConversationId, workdir };
       const returnFocusTo =
         document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
       void openLink(request)
         .then(async (result) => {
           if (currentScope.current !== scope) return;
-          if (result.action === "opened" || result.action === "revealed") return;
           const resultWorkdir = result.workdir?.trim() ?? "";
           const resultPath = result.path?.trim() ?? "";
+          if (link.openInEditor) {
+            if (!resultWorkdir || result.path === undefined || result.outsideWorkspace) {
+              notifyError(FILE_OPEN_FAILED);
+              return;
+            }
+            await openInWorkspaceEditor(
+              resultWorkdir,
+              result.path,
+              link.openInEditor,
+              result.line,
+              result.column,
+            );
+            return;
+          }
+          if (result.action === "opened" || result.action === "revealed") return;
           if (!resultWorkdir || !resultPath) {
             notifyError(FILE_OPEN_FAILED);
             return;
@@ -142,6 +168,7 @@ export function useChatFileLinkNavigation(params: UseChatFileLinkNavigationParam
         });
     },
     [
+      canOpenInLocalEditor,
       conversationId,
       conversationWorkdir,
       getErrorMessage,

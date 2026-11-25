@@ -89,6 +89,7 @@ function appHarness(request) {
   let current = selectedRemote();
   let cloudControlOwner = 42;
   let cloudMountedOwner = 42;
+  let setupGuideOwner = 42;
   let leases = new Map([[remote.device_id, { lease: "fixture-lease", expiresAt: Date.now() + 60000 }]]);
   const epoch = { current: 0 };
   const context = vm.createContext({
@@ -103,11 +104,12 @@ function appHarness(request) {
     cloudSelected: false, captureLocalDraft: { current: null }, cloudNavigationGuard: { current: null },
     setCloudControlOwner(value) { cloudControlOwner = value; },
     setCloudMountedOwner(value) { cloudMountedOwner = value; },
+    setSetupGuideOwner(value) { setupGuideOwner = value; },
     setRelayReady() {}, setRelayUser() {}, setRelayStats() {}, closeSettingsOverlay() {},
   });
   const code = `${extract("buildLocalOnlyEnvironment")}\n${extract("isRemoteLeaseValid")}\nconst refresh=${extract("refresh", node => appSource.slice(node.init.start, node.init.end).includes("getDesktopEnvironments(settings)"))};\nconst handleSessionChanged=${extract("handleSessionChanged")};\n${extract("handleExecutionSwitch")}\n${extract("handleRemoteSelectionInvalid")}`;
   vm.runInContext(transpileTypeScriptModule(code, "desktop-route-fixture.ts"), context);
-  return { context, current: () => current, leases: () => leases, cloudOwners: () => [cloudControlOwner, cloudMountedOwner], epoch, changed: () => vm.runInContext("handleSessionChanged()", context) };
+  return { context, current: () => current, leases: () => leases, cloudOwners: () => [cloudControlOwner, cloudMountedOwner], setupGuideOwner: () => setupGuideOwner, epoch, changed: () => vm.runInContext("handleSessionChanged()", context) };
 }
 
 test("the actual refresh callback keeps a remote route on rejection and missing-device success", async () => {
@@ -127,6 +129,7 @@ test("the actual directory refresh retains the local workbench after its remote 
   assert.equal(next.selectedDeviceId, local.device_id);
   assert.equal(next.environments.find(item => item.device_id === local.device_id)?.online, true);
   assert.equal(next.environments.find(item => item.device_id === remote.device_id), remote);
+  assert.equal(harness.setupGuideOwner(), null);
 });
 
 test("account changes clear routes and leases before old refresh results or failures settle", async () => {

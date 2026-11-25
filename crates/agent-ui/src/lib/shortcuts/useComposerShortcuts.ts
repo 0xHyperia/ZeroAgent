@@ -12,7 +12,7 @@ const DIALOG = "[role=dialog], [role=alertdialog], [aria-modal=true]";
  * composer outside the workbench always does.
  */
 function ownsComposerShortcut(root: Element | null): boolean {
-  if (!root?.isConnected) return false;
+  if (!root?.isConnected || root.closest("[hidden], [inert]")) return false;
   const pane = root.closest(WORKBENCH_PANE);
   return !pane || pane.getAttribute("data-workbench-pane-focused") === "true";
 }

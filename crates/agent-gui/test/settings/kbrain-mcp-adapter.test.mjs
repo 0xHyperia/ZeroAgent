@@ -29,3 +29,12 @@ test("MCP bootstrap rejects retired endpoint overrides without echoing their val
       error.message.includes("Message URL overrides are not supported") && !error.message.includes("private.invalid"));
   }
 });
+
+test("MCP Hub counts a view tool once across audiences and groups by configured id", () => {
+  const modelTool = { serverId: "docs-account", serverLabel: "Docs", name: "mcp__docs__search", uiResourceUri: "ui://docs/list", visibility: ["model", "app"] };
+  const appTool = { serverId: "docs-account", name: "mcp__docs__detail", visibility: ["app"] };
+  const other = { ...modelTool, serverId: "docs-sandbox", serverLabel: "Sandbox" };
+  const summaries = adapter.kbrainMcpToolSummaries([{ tools: [modelTool, other] }, { tools: [modelTool, appTool] }]);
+  assert.deepEqual(summaries.get("docs-account"), { label: "Docs", uiTools: 1, appOnlyTools: 1 });
+  assert.deepEqual(summaries.get("docs-sandbox"), { label: "Sandbox", uiTools: 1, appOnlyTools: 0 });
+});

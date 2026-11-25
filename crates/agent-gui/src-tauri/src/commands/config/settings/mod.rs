@@ -190,6 +190,8 @@ include!("ccs_import.rs");
 include!("cherry_import.rs");
 include!("agents.rs");
 include!("system.rs");
+#[cfg(desktop)]
+include!("device_plugin_workspaces.rs");
 include!("mcp.rs");
 include!("memory_settings.rs");
 include!("model_failover.rs");

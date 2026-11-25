@@ -1,10 +1,12 @@
 # CI performance and code-rule checks
 
 Run these checks locally to inspect bundle health, performance and code hygiene.
-The JSON files under `scripts/budgets/` contain the imported LiveAgent reference
-values. Make intentional baseline changes in review after measuring ZeroAgent's
-production bundles and source tree. The scope of the existing blocking CI jobs
-is defined by `.github/workflows/ci.yml`.
+The JSON files under `scripts/budgets/` contain the reference values. The
+bundle baselines come from ZeroAgent production builds. GUI and WebUI CI each
+run both browser engines and enforce the corresponding bundle budget. GUI CI
+also runs the calibrated transcript micro-benchmarks. Source file size,
+design tokens and knip retain their local checks while the product baselines
+are reconciled.
 
 | Check | Local command |
 | --- | --- |
@@ -18,6 +20,16 @@ is defined by `.github/workflows/ci.yml`.
 
 The Transcript Performance workflow also runs on demand and reports the browser
 measurements in the job summary.
+
+## Linux native startup
+
+The native CI job builds a debug Tauri application with the production GUI
+assets and reviewed K-brain binaries built from source. It launches the
+application through `tauri-driver` and `WebKitWebDriver` under Xvfb. The
+signed-out check uses a temporary home, an isolated D-Bus session and platform
+vault, and a loopback account origin. It checks the visible account form and
+verifies that the app requested public settings from the fixture. The test
+requires neither account credentials nor a model key.
 
 ## Bundle smoke
 
@@ -60,7 +72,9 @@ with `scripts/budgets/bundle-size.json`. The measured values are:
   imports statically, transitively, both raw and gzip. This is what the
   browser must fetch and evaluate before the first render.
 - **Startup CSS** (gzip).
-- **Total dist size.**
+- **Total dist size.** The desktop total includes its independently mounted
+  remote-device workbench, workers and bundled preview assets. The WebUI total
+  includes its own workers and preview assets.
 
 These fail when they exceed the budget by more than `tolerance` (3%). The
 startup file count and total JS are informational only. The table goes to

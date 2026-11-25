@@ -168,15 +168,18 @@ test("executeCronPromptRun cancels an in-flight K-brain run", async () => {
   assert.equal(cancelSeen, true);
 });
 
-test("executeCronPromptRun surfaces a backend run error", async () => {
+test("executeCronPromptRun surfaces a classified backend run error without provider diagnostics", async () => {
   await withFixture(
     fixtureRoute({
-      eventStream: (response) => response.end(sseEvent(2, "run.failed", { error: "provider unavailable" })),
+      eventStream: (response) => response.end(sseEvent(2, "run.failed", {
+        error: "fixture private provider response",
+        error_detail: { kind: "server_error", upstream_status: 503, provider_message: "fixture private details" },
+      })),
     }),
     async (baseUrl) => {
       await assert.rejects(
         executeCronPromptRun(runRequest(), new AbortController().signal, { baseUrl }),
-        /provider unavailable/,
+        { message: "The model provider could not complete the request." },
       );
     },
   );
@@ -207,7 +210,7 @@ test("executeCronPromptRun rejects permission requests without waiting for appro
     async (baseUrl) => {
       await assert.rejects(
         executeCronPromptRun(runRequest(), new AbortController().signal, { baseUrl }),
-        /permission denied|failed/i,
+        { message: "Scheduled Auto Prompt failed after a tool required approval." },
       );
     },
   );

@@ -387,6 +387,7 @@ fn build_chat_file_link_plan(
         column,
         open_in_file_manager,
         false,
+        false,
     )
 }
 
@@ -418,6 +419,7 @@ fn build_chat_file_link_plan_with(
     column: Option<u32>,
     open_in_file_manager: bool,
     open_with_default_app: bool,
+    resolve_for_editor: bool,
 ) -> Result<ChatFileLinkPlan, ChatFileLinkError> {
     if conversation_id.trim().is_empty() || conversation_id.len() > 256 {
         return Err(ChatFileLinkError::new(
@@ -497,13 +499,46 @@ fn build_chat_file_link_plan_with(
         )
     })?;
 
-    if metadata.is_dir() {
-        if is_active_directory(&target) {
+    if metadata.is_dir() && is_active_directory(&target) {
+        return Err(ChatFileLinkError::new(
+            ChatFileLinkErrorCode::UnsupportedTarget,
+            "The linked directory cannot be opened safely.",
+        ));
+    }
+    if resolve_for_editor {
+        let relative = target.strip_prefix(&conversation_workdir).map_err(|_| {
+            ChatFileLinkError::new(
+                ChatFileLinkErrorCode::UnsupportedTarget,
+                "The linked path is outside the conversation workspace.",
+            )
+        })?;
+        let (action, kind, line, end_line, column) = if metadata.is_dir() {
+            ("directory", "directory", None, None, None)
+        } else if metadata.is_file() {
+            ("editor", "file", line, end_line, column)
+        } else {
             return Err(ChatFileLinkError::new(
                 ChatFileLinkErrorCode::UnsupportedTarget,
-                "The linked directory cannot be opened safely.",
+                "The linked path is not a regular file or directory.",
             ));
-        }
+        };
+        return Ok(ChatFileLinkPlan {
+            response: ChatFileLinkOpenResponse {
+                action: action.to_owned(),
+                kind: kind.to_owned(),
+                workdir: Some(display_path(&conversation_workdir)),
+                path: Some(display_path(relative)),
+                line,
+                end_line,
+                column,
+                outside_workspace: false,
+            },
+            target,
+            system_mode: None,
+        });
+    }
+
+    if metadata.is_dir() {
         let inside_workspace =
             target.starts_with(&conversation_workdir) && target != conversation_workdir;
         if open_with_default_app {
@@ -657,6 +692,7 @@ pub(crate) fn open_chat_file_link_sync(
     column: Option<u32>,
     open_in_file_manager: bool,
     open_with_default_app: bool,
+    resolve_for_editor: bool,
 ) -> Result<ChatFileLinkOpenResponse, ChatFileLinkError> {
     let plan = build_chat_file_link_plan_with(
         &conversation_id,
@@ -668,6 +704,7 @@ pub(crate) fn open_chat_file_link_sync(
         column,
         open_in_file_manager,
         open_with_default_app,
+        resolve_for_editor,
     )?;
     if let Some(mode) = plan.system_mode {
         spawn_workspace_open_command(&plan.target, mode).map_err(|_| {
@@ -724,6 +761,7 @@ pub(crate) async fn open_chat_file_link_for_conversation<F, Fut>(
     column: Option<u32>,
     open_in_file_manager: bool,
     open_with_default_app: bool,
+    resolve_for_editor: bool,
     current_workdir: F,
 ) -> Result<ChatFileLinkOpenResponse, ChatFileLinkError>
 where
@@ -762,6 +800,7 @@ where
                 column,
                 open_in_file_manager,
                 open_with_default_app,
+                resolve_for_editor,
             )
         })
         .await
@@ -792,6 +831,7 @@ pub async fn open_chat_file_link(
     column: Option<u32>,
     open_in_file_manager: Option<bool>,
     open_with_default_app: Option<bool>,
+    resolve_for_editor: Option<bool>,
 ) -> Result<ChatFileLinkOpenResponse, ChatFileLinkError> {
     // The desktop webview owns this device and already reads any workdir
     // through the fs commands, so the workdir it shows for the conversation
@@ -805,6 +845,7 @@ pub async fn open_chat_file_link(
         column,
         open_in_file_manager.unwrap_or(false),
         open_with_default_app.unwrap_or(false),
+        resolve_for_editor.unwrap_or(false),
         || async move { Some(workdir) },
     )
     .await
@@ -844,6 +885,43 @@ mod tests {
             false,
         )
         .expect("build plan")
+    }
+
+    #[test]
+    fn resolving_a_chat_link_for_workspace_editor_is_scoped_and_has_no_system_action() {
+        let temporary = tempfile::tempdir().unwrap();
+        let workspace = temporary.path().join("workspace");
+        fs::create_dir_all(workspace.join("src")).unwrap();
+        fs::write(workspace.join("src/report.txt"), "").unwrap();
+        fs::write(temporary.path().join("outside.txt"), "").unwrap();
+        let resolve = |path: &str, source: &str| {
+            build_chat_file_link_plan_with(
+                "conversation-test",
+                workspace.to_str().unwrap(),
+                path,
+                source,
+                Some(2),
+                None,
+                Some(3),
+                false,
+                false,
+                true,
+            )
+        };
+        let file = resolve("src/report.txt", "relative").unwrap();
+        assert_eq!(file.system_mode, None);
+        assert_eq!(file.response.line, Some(2));
+        assert_eq!(file.response.column, Some(3));
+        assert_eq!(file.response.path.as_deref(), Some("src/report.txt"));
+        let directory = resolve(workspace.to_str().unwrap(), "absolute").unwrap();
+        assert_eq!(directory.system_mode, None);
+        assert_eq!(directory.response.action, "directory");
+        assert_eq!(directory.response.path.as_deref(), Some(""));
+        assert_eq!(directory.response.line, None);
+        assert!(matches!(
+            resolve("../outside.txt", "relative").unwrap_err().code,
+            ChatFileLinkErrorCode::UnsupportedTarget
+        ));
     }
 
     fn resolve(
@@ -925,6 +1003,7 @@ mod tests {
             None,
             false,
             true,
+            false,
         )
     }
 

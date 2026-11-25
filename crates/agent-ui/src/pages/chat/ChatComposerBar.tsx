@@ -78,6 +78,7 @@ import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { useLocale } from "@liveagent/ui/i18n/index";
+import { useComposerShortcuts } from "../../lib/shortcuts/useComposerShortcuts";
 import { requestCheckpointRewindLatest } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type { ComposerCommandHost } from "@liveagent/ui/lib/chat/composerCommands";
 import { measureComposerOverlay } from "@liveagent/ui/lib/chat/composerOverlayMetrics";
@@ -137,6 +138,8 @@ import {
   useUploadedImagePreview,
 } from "../../lib/chat/uploadedImagePreview";
 import type { PendingUploadedFile } from "../../lib/chat/uploadTypes";
+import type { ReplacePendingUpload } from "../../lib/chat/uploadedFiles";
+import { useComposerImageAnnotation } from "../../components/chat/image-annotation/useComposerImageAnnotation";
 import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
 import { useComposerStt } from "./useComposerStt";
 
@@ -151,6 +154,9 @@ function PendingComposerAttachment(props: {
   onRemove: (relativePath: string) => void;
   onOpen?: (relativePath: string) => void;
   renderPreview?: (file: PendingUploadedFile) => ReactNode;
+  annotated?: boolean;
+  onAnnotate?: (file: PendingUploadedFile, imageSrc: string) => void;
+  onRevertAnnotation?: (file: PendingUploadedFile) => void;
 }) {
   const {
     file,
@@ -185,7 +191,16 @@ function PendingComposerAttachment(props: {
       closePreviewLabel={closePreviewLabel}
       onRemove={() => onRemove(file.relativePath)}
       onOpen={onOpen ? () => onOpen(file.relativePath) : undefined}
-      previewContent={props.renderPreview?.(file)}
+      previewContent={imageSrc && props.onAnnotate ? undefined : props.renderPreview?.(file)}
+      annotated={props.annotated}
+      onAnnotate={
+        imageSrc && props.onAnnotate && file.kind === "image"
+          ? () => props.onAnnotate?.(file, imageSrc)
+          : undefined
+      }
+      onRevertAnnotation={
+        props.onRevertAnnotation ? () => props.onRevertAnnotation?.(file) : undefined
+      }
     />
   );
 }
@@ -384,6 +399,8 @@ export type ChatComposerBarProps = {
   renderPendingUploadPreview?: (file: PendingUploadedFile) => ReactNode;
   uploadingAttachments?: readonly { id: string; fileName: string; sizeBytes: number }[];
   onRemovePendingUpload: (relativePath: string) => void;
+  onReplacePendingUpload?: ReplacePendingUpload;
+  imageAnnotationAuthority?: string;
   onOpenPendingUpload?: (relativePath: string) => void;
   /** 输入框上方的目标栏（/goal）；与指令队列上下排列。 */
   goalBar?: ReactNode;
@@ -544,6 +561,22 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     },
   );
   const { t } = useLocale();
+  const imageAnnotation = useComposerImageAnnotation({
+    conversationId,
+    authority: props.imageAnnotationAuthority,
+    workdir,
+    composerRef,
+    imagePreviewLoader: onLoadUploadedImagePreview,
+    onReplacePendingUpload: props.onReplacePendingUpload,
+  });
+  const { forgetAnnotation } = imageAnnotation;
+  const handleRemovePendingUpload = useCallback(
+    (relativePath: string) => {
+      forgetAnnotation(relativePath);
+      onRemovePendingUpload(relativePath);
+    },
+    [forgetAnnotation, onRemovePendingUpload],
+  );
   const [composerIsEmpty, setComposerIsEmpty] = useState(true);
   // 可澄清文本存在性：与 composerIsEmpty 分开跟踪——空态只看编辑器整体
   // （chip 文本也算非空），而澄清需要纯文本段。仅在事件里读草稿：
@@ -646,6 +679,12 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
   const pendingUploadCountRef = useRef(pendingUploadedFiles.length);
   pendingUploadCountRef.current = pendingUploadedFiles.length;
   const modelPickerAvailable = hasModels && !controlsDisabled;
+  useComposerShortcuts({
+    rootRef: composerLayerRef,
+    enabled: !hidden && !controlsDisabled,
+    focusComposer: () => composerRef.current?.focus(),
+    openModelPicker: modelPickerAvailable ? () => setModelPickerOpen(true) : undefined,
+  });
   // 宿主没给的 /model 选择弹层与 /rewind 由这里按本输入框的会话补上。
   const effectiveCommandHost = useMemo(() => {
     if (!commandHost) return commandHost;
@@ -1841,7 +1880,16 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
                     previewLabel={t("chat.upload.previewImage")}
                     closePreviewLabel={t("chat.upload.closePreview")}
                     imagePreviewLoader={onLoadUploadedImagePreview}
-                    onRemove={onRemovePendingUpload}
+                    onRemove={handleRemovePendingUpload}
+                    annotated={imageAnnotation.isAnnotated(file.relativePath)}
+                    onAnnotate={
+                      imageAnnotation.enabled ? imageAnnotation.startAnnotation : undefined
+                    }
+                    onRevertAnnotation={
+                      imageAnnotation.isAnnotated(file.relativePath)
+                        ? imageAnnotation.revertAnnotation
+                        : undefined
+                    }
                     onOpen={onOpenPendingUpload}
                     renderPreview={props.renderPendingUploadPreview}
                   />
@@ -2316,6 +2364,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
           ? statsBar
           : null}
       </div>
+      {imageAnnotation.dialog}
     </div>
   );
   return props.focusImagePlacement ? (

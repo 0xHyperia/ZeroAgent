@@ -30,6 +30,7 @@ func toChatEvent(event Event, callArgs func(id string) map[string]any) (*v2.Chat
 		return nil, nil, err
 	}
 	base := &v2.ChatEvent{ConversationId: event.ConversationID, Data: string(data)}
+	var control *v2.ChatControlEvent
 	switch strings.TrimSpace(event.Type) {
 	case "run.accepted":
 		return nil, &v2.ChatControlEvent{RequestId: event.RunID, ConversationId: event.ConversationID, Type: "started"}, nil
@@ -39,6 +40,27 @@ func toChatEvent(event Event, callArgs func(id string) map[string]any) (*v2.Chat
 		base.Type = v2.ChatEvent_TOKEN
 	case "assistant.message.created":
 		base.Type = v2.ChatEvent_TOKEN
+		outcome, err := decodeRunOutcome(event.Payload)
+		if err != nil {
+			return nil, nil, err
+		}
+		failureMarker := isFailureMarker(outcome.ID)
+		if failureMarker {
+			delete(payload, "content")
+		}
+		delete(payload, "error")
+		delete(payload, "error_detail")
+		delete(payload, "cancel_reason")
+		delete(payload, "errorMessage")
+		delete(payload, "errorDetail")
+		delete(payload, "cancelReason")
+		if outcome.StopReason == "error" || failureMarker {
+			failure := outcome.Error
+			if failure == "" && failureMarker {
+				failure = historyText(outcome)
+			}
+			addFailureOutcome(payload, outcome.ErrorDetail, failure)
+		}
 		if usage, ok := payload["usage"].(map[string]any); ok {
 			payload["usage"] = liveAgentUsage(usage)
 		}
@@ -139,13 +161,22 @@ func toChatEvent(event Event, callArgs func(id string) map[string]any) (*v2.Chat
 	case "run.completed":
 		return nil, &v2.ChatControlEvent{RequestId: event.RunID, ConversationId: event.ConversationID, Type: "completed"}, nil
 	case "run.failed":
-		message := ""
-		if terminal, ok := payloadAsMap(payload); ok {
-			message, _ = terminal["error"].(string)
+		outcome, err := decodeRunOutcome(event.Payload)
+		if err != nil {
+			return nil, nil, err
 		}
-		return nil, &v2.ChatControlEvent{RequestId: event.RunID, ConversationId: event.ConversationID, Type: "failed", Message: message}, nil
+		base.Type = v2.ChatEvent_TOKEN
+		payload = map[string]any{"text": ""}
+		message := addFailureOutcome(payload, outcome.ErrorDetail, outcome.Error)
+		control = &v2.ChatControlEvent{RequestId: event.RunID, ConversationId: event.ConversationID, Type: "failed", Message: message}
 	case "run.cancelled":
-		return nil, &v2.ChatControlEvent{RequestId: event.RunID, ConversationId: event.ConversationID, Type: "cancelled"}, nil
+		base.Type = v2.ChatEvent_TOKEN
+		cancelReason := payload["cancel_reason"]
+		payload = map[string]any{"text": "", "stopReason": "aborted"}
+		if cancelReason == "shutdown" {
+			payload["cancelReason"] = "shutdown"
+		}
+		control = &v2.ChatControlEvent{RequestId: event.RunID, ConversationId: event.ConversationID, Type: "cancelled"}
 	default:
 		return nil, nil, nil
 	}
@@ -154,7 +185,7 @@ func toChatEvent(event Event, callArgs func(id string) map[string]any) (*v2.Chat
 		return nil, nil, err
 	}
 	base.Data = string(data)
-	return base, nil, nil
+	return base, control, nil
 }
 
 // retryMax is how many retries the turn's status counts to. K-brain's max counts

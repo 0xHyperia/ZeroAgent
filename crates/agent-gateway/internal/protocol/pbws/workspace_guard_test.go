@@ -97,6 +97,69 @@ func TestWorkspaceGuardRejectsProjectBrowsingForWorkspaceSelection(t *testing.T)
 	}
 }
 
+func TestDevicePluginsRequireCurrentAccountDeviceAndPublishedWorkspace(t *testing.T) {
+	current := true
+	conn := &browserConn{
+		userID: 7, boundAgentID: "desktop", selectionScope: account.SelectionScopeDevice,
+		selectionCurrent:  func() bool { return current },
+		allowedWorkspaces: []account.Workspace{{ID: "project-a", Path: "/repo/a"}},
+	}
+	req := &gatewayv2.DevicePluginsRequest{Action: "list", Workdir: "/repo/a"}
+	env := &gatewayv2.GatewayEnvelope{
+		Payload: &gatewayv2.GatewayEnvelope_DevicePlugins{DevicePlugins: req},
+	}
+	if err := conn.vetWorkspaceAgentRequest(env); err != nil {
+		t.Fatalf("published workspace rejected: %v", err)
+	}
+	req.Workdir = "/repo/b"
+	if err := conn.vetWorkspaceAgentRequest(env); err == nil {
+		t.Fatal("unpublished workspace accepted")
+	}
+	req.Workdir = "/repo/a"
+	for _, scope := range []string{"", account.SelectionScopeWorkspace} {
+		conn.selectionScope = scope
+		if err := conn.vetWorkspaceAgentRequest(env); err == nil {
+			t.Fatalf("plugin snapshot disclosed to scope %q", scope)
+		}
+	}
+	conn.selectionScope = account.SelectionScopeDevice
+	current = false
+	if err := conn.vetWorkspaceAgentRequest(env); err == nil {
+		t.Fatal("revoked device selection accepted")
+	}
+}
+
+func TestDeviceUiSurfaceRechecksDeviceAndWorkspaceRevocation(t *testing.T) {
+	current := true
+	conn := &browserConn{
+		userID: 7, boundAgentID: "desktop", selectionScope: account.SelectionScopeDevice,
+		selectionCurrent:  func() bool { return current },
+		allowedWorkspaces: []account.Workspace{{ID: "project-a", Path: "/repo/a"}},
+	}
+	env := &gatewayv2.GatewayEnvelope{
+		Payload: &gatewayv2.GatewayEnvelope_DeviceUiSurface{
+			DeviceUiSurface: &gatewayv2.DeviceUiSurfaceRequest{Workdir: "/repo/a", ConversationId: "example"},
+		},
+	}
+	if err := conn.vetWorkspaceAgentRequest(env); err != nil {
+		t.Fatal(err)
+	}
+	conn.selectionScope = account.SelectionScopeWorkspace
+	if err := conn.vetWorkspaceAgentRequest(env); err == nil {
+		t.Fatal("device UI surface accepted for a workspace-only lease")
+	}
+	conn.selectionScope = account.SelectionScopeDevice
+	conn.allowedWorkspaces = nil
+	if err := conn.vetWorkspaceAgentRequest(env); err == nil {
+		t.Fatal("device UI surface accepted after workspace removal")
+	}
+	conn.allowedWorkspaces = []account.Workspace{{ID: "project-a", Path: "/repo/a"}}
+	current = false
+	if err := conn.vetWorkspaceAgentRequest(env); err == nil {
+		t.Fatal("device UI surface accepted after device revocation")
+	}
+}
+
 func TestStagedAttachmentPreviewUsesVerifiedConversationProject(t *testing.T) {
 	conn := &browserConn{
 		selectionScope: account.SelectionScopeDevice,

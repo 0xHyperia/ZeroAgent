@@ -47,6 +47,12 @@ func TestBackendQueueRelayAgainstRealKBrain(t *testing.T) {
 				prompt = message.Content
 			}
 		}
+		if strings.Contains(prompt, "fixture-auth-failure") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"error":{"message":"fixture-internal-provider-diagnostic"}}`)
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		if strings.Contains(prompt, "hold-first") {
 			once.Do(func() { close(firstStarted) })
@@ -245,6 +251,56 @@ func TestBackendQueueRelayAgainstRealKBrain(t *testing.T) {
 	if fmt.Sprint(prompts) != "[hold-first edited-second]" {
 		t.Fatalf("replayed or deleted request executed: %v", prompts)
 	}
+
+	t.Run("typed no-output failure", func(t *testing.T) {
+		const diagnostic = "fixture-internal-provider-diagnostic"
+		const safeMessage = "The model provider rejected authentication."
+		events := make(chan *gatewayv2.ChatEvent, 32)
+		terminals := make(chan *gatewayv2.ChatControlEvent, 4)
+		cb := Callbacks{
+			OnEvent:   func(_ string, event *gatewayv2.ChatEvent) { events <- event },
+			OnControl: func(_ string, event *gatewayv2.ChatControlEvent) { terminals <- event },
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := restored.Start(ctx, "gateway-failure", "failure-conv", "request-failure", PromptRequest{Prompt: "fixture-auth-failure"}, "append", cb); err != nil {
+			t.Fatal(err)
+		}
+		for ended := false; !ended; {
+			select {
+			case stop := <-terminals:
+				if stop.Type == "started" {
+					continue
+				}
+				if stop.Type != "failed" || stop.Message != safeMessage || stop.RequestId != "gateway-failure" {
+					t.Fatalf("terminal=%+v", stop)
+				}
+				ended = true
+			case <-ctx.Done():
+				t.Fatal("the fixture failure was not delivered")
+			}
+		}
+		var failureEvent string
+		for len(events) > 0 {
+			event := <-events
+			if strings.Contains(event.Data, diagnostic) {
+				t.Fatalf("live event exposed provider details: %s", event.Data)
+			}
+			if event.Type == gatewayv2.ChatEvent_TOKEN && strings.Contains(event.Data, safeMessage) {
+				failureEvent = event.Data
+			}
+		}
+		if !strings.Contains(failureEvent, `"kind":"invalid_api_key"`) || !strings.Contains(failureEvent, `"upstreamStatus":401`) {
+			t.Fatalf("typed live failure: %s", failureEvent)
+		}
+		history, err := restored.HistoryGet(ctx, &gatewayv2.HistoryGetRequest{ConversationId: "failure-conv"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw := history.GetMessagesJson(); !strings.Contains(raw, safeMessage) || strings.Contains(raw, diagnostic) || !strings.Contains(raw, `"content":[]`) {
+			t.Fatalf("typed persisted failure: %s", raw)
+		}
+	})
 }
 
 func TestBackendQueueProjectionAndFanoutPreserveCanonicalIdentity(t *testing.T) {

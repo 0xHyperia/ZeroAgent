@@ -90,19 +90,30 @@ test("the pane host shows the confirmation in place without remounting the viewp
   );
 });
 
-test("both hosts route the pane × and Meta+Alt+W through the terminal close flow", () => {
+test("both hosts route the pane × and the rebindable close command through the terminal close flow", () => {
   const chatPage = readSource("../../src/pages/ChatPage.tsx");
   const gatewayView = readSource("../../../agent-gateway/web/src/app/GatewayAppView.tsx");
   const gatewayWorkbench = readSource(
     "../../../agent-gateway/web/src/app/workbench/useGatewayWorkbench.ts",
   );
+  const palette = readSource("../../../agent-ui/src/lib/chat/useWorkbenchCommandPalette.ts");
+  const shortcuts = readSource("../../../agent-ui/src/lib/shortcuts/shortcutCommands.ts");
+  assert.match(shortcuts, /id: "closeActiveContext",[\s\S]*?defaultBinding: "Mod\+Alt\+KeyW"/);
+  assert.match(palette, /"closeActiveContext",/);
+  assert.match(palette, /onCloseActiveContext:\s*options\.resolveCloseActiveContext\?\.\(origin\)/);
+  assert.match(palette, /event\.preventDefault\(\);\s*if \([^\n]+\) action\.run\(\)/);
+
   assert.match(chatPage, /useTerminalPaneCloseFlow\(\{/);
+  assert.match(chatPage, /const requestWorkbenchClosePane = terminalPaneClose\.requestClosePane;/);
   assert.match(chatPage, /onClose=\{\(\) => requestWorkbenchClosePane\(pane\.paneId\)\}/);
-  assert.match(chatPage, /event\.preventDefault\(\);\s*requestWorkbenchClosePane\(focusedPaneId\);/);
+  assert.match(chatPage, /const resolveCloseActiveContext[\s\S]*?if \(paneId\) requestWorkbenchClosePane\(paneId\);/);
+  assert.match(chatPage, /\n    resolveCloseActiveContext,/);
   assert.match(chatPage, /closeRequest=\{\s*terminalPaneClose\.pendingClose\?\.paneId === pane\.paneId/);
   assert.match(gatewayWorkbench, /useTerminalPaneCloseFlow\(\{/);
-  assert.match(gatewayWorkbench, /event\.preventDefault\(\);\s*requestClosePane\(focusedPaneId\);/);
+  assert.match(gatewayWorkbench, /const requestClosePane = terminalPaneClose\.requestClosePane;/);
   assert.match(gatewayView, /onClose=\{\(\) => workbenchController\.requestClosePane\(pane\.paneId\)\}/);
+  assert.match(gatewayView, /const resolveCloseActiveContext[\s\S]*?if \(paneId\) workbenchController\.requestClosePane\(paneId\);/);
+  assert.match(gatewayView, /\n    resolveCloseActiveContext,/);
   assert.match(gatewayView, /workbenchController\.terminalPaneCloseRequest\?\.paneId === pane\.paneId/);
   // closed 事件联动收 Pane 的通路保留,是终止后 Pane 消失的正式路径。
   assert.match(chatPage, /if \(paneId\) handleWorkbenchClosePane\(paneId\);/);

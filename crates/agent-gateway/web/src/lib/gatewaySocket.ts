@@ -185,7 +185,10 @@ export type GatewayWebSocketClientLike = {
   planningManage<T = unknown>(action: string, input?: unknown): Promise<T>;
   subscribePlanning(listener: (seq: number) => void): () => void;
   cronManage(payload: CronManagePayload): Promise<CronManageResponse>;
-  memoryManage<T = unknown>(payload: MemoryManagePayload): Promise<T>;
+  memoryManage<T = unknown>(
+    payload: MemoryManagePayload,
+    isCurrentAgent?: () => boolean,
+  ): Promise<T>;
   /** 轨迹按需拉取：事件窗口、Prompt 分段和子代理 run 使用彼此独立的 ID 字段。 */
   trajectoryFetch<T = unknown>(payload: {
     conversation_id: string;
@@ -388,6 +391,7 @@ export type GatewayWebSocketClientLike = {
     maxResults?: number,
     query?: string,
     showHidden?: boolean,
+    isCurrentAgent?: () => boolean,
   ): Promise<MentionListResponse>;
   listFsRoots(): Promise<FsRootsResponse>;
   listWorkspaceRootGrants(

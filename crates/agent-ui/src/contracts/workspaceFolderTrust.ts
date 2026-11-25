@@ -7,6 +7,8 @@ export type WorkspaceFolderTrustStatus = {
   workdir: string;
   trusted: boolean;
   source?: string;
+  /** A host may expose that trust is inherited without exposing an ancestor path. */
+  inherited?: boolean;
 };
 
 /**

@@ -1,6 +1,15 @@
 import type { ClarifyMessage } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { buildHistoryMessageRefPayload } from "@liveagent/ui/lib/chat/historyMessageRef";
 import type {
+  DevicePluginList,
+  DevicePluginRequest,
+} from "@liveagent/ui/lib/plugins/devicePlugins";
+import type {
+  DeviceUiDocument,
+  DeviceUiHistory,
+  DeviceUiSurfaceRequest,
+} from "@liveagent/ui/lib/plugins/deviceUiSurface";
+import type {
   GatewaySettingsSyncPayload,
   GatewaySettingsSyncUpdatePayload,
   GatewaySettingsUpdateReceipt,
@@ -522,11 +531,14 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     return this.request<CronManageResponse>("cron.manage", payload);
   }
 
-  async memoryManage<T = unknown>(payload: MemoryManagePayload): Promise<T> {
+  async memoryManage<T = unknown>(
+    payload: MemoryManagePayload,
+    isCurrentAgent?: () => boolean,
+  ): Promise<T> {
     if (shouldRecoverMemoryManageRequest(payload)) {
-      return this.requestWithRecovery<T>("memory.manage", payload);
+      return this.requestWithRecovery<T>("memory.manage", payload, { isCurrentAgent });
     }
-    return this.request<T>("memory.manage", payload);
+    return this.request<T>("memory.manage", payload, { isCurrentAgent });
   }
 
   async trajectoryFetch<T = unknown>(payload: {
@@ -1250,13 +1262,18 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     maxResults?: number,
     query?: string,
     showHidden?: boolean,
+    isCurrentAgent?: () => boolean,
   ): Promise<MentionListResponse> {
-    return this.requestWithRecovery<MentionListResponse>("mentions.list", {
-      workdir,
-      max_results: maxResults,
-      query,
-      show_hidden: showHidden,
-    });
+    return this.requestWithRecovery<MentionListResponse>(
+      "mentions.list",
+      {
+        workdir,
+        max_results: maxResults,
+        query,
+        show_hidden: showHidden,
+      },
+      { isCurrentAgent },
+    );
   }
 
   /** 桌面端“/”指令目录。列表不是状态变更，可安全重试。 */
@@ -1381,8 +1398,40 @@ export class GatewayWebSocketRpcClient extends GatewayWebSocketTransport {
     });
   }
 
+  async devicePlugins(request: DevicePluginRequest): Promise<DevicePluginList> {
+    const options = { isCurrentAgent: this.captureActiveAgentScope() };
+    if (request.action !== "list") {
+      return this.request<DevicePluginList>("device.plugins", request, options);
+    }
+    try {
+      return await this.requestWithRecovery<DevicePluginList>("device.plugins", request, options);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "DEVICE_PLUGIN_BACKEND_UNAVAILABLE") {
+        throw error;
+      }
+      return {
+        available: false,
+        trustAvailable: false,
+        installAvailable: false,
+        workdir: request.workdir ?? "",
+        trusted: false,
+        revision: 0,
+        plugins: [],
+        errors: [],
+      };
+    }
+  }
+
   async listFsRoots(): Promise<FsRootsResponse> {
     return this.requestWithRecovery<FsRootsResponse>("fs.roots", {});
+  }
+
+  async readDeviceUiSurface(
+    request: DeviceUiSurfaceRequest,
+  ): Promise<DeviceUiDocument | DeviceUiHistory> {
+    return this.request<DeviceUiDocument | DeviceUiHistory>("device.ui_surface", request, {
+      isCurrentAgent: this.captureActiveAgentScope(),
+    });
   }
 
   async listWorkspaceRootGrants(

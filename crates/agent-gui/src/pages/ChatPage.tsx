@@ -32,9 +32,12 @@ import type {
   MentionComposerDraft,
   MentionComposerSkillMention,
 } from "@liveagent/ui/components/chat/MentionComposer";
+import { NavigationHistoryButtons } from "@liveagent/ui/components/chat/NavigationHistoryButtons";
 import { SharedHistoryManagerModal } from "@liveagent/ui/components/chat/SharedHistoryManagerModal";
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
+import { McpServerLabelsProvider } from "@liveagent/ui/components/chat/assistant-bubble/McpServerLabelsContext";
+import { SkipToComposerLink } from "@liveagent/ui/components/ui/skip-link";
 import { PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
@@ -83,6 +86,10 @@ import type {
 } from "@liveagent/ui/lib/chat/composerCommands";
 import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
 import { searchMentionConversations } from "@liveagent/ui/lib/chat/conversationSearch";
+import {
+  QUICK_OPEN_MAX_FILES,
+  type QuickOpenFileListing,
+} from "@liveagent/ui/lib/chat/fileQuickOpenSearch";
 import { rememberSshHostNames } from "@liveagent/ui/lib/chat/sshManagerDisplay";
 import { toolResultMessageToText } from "@liveagent/ui/lib/chat/uiMessages";
 import { useChangedFilesActions } from "@liveagent/ui/lib/chat/useChangedFilesActions";
@@ -93,6 +100,15 @@ import {
   useInsertCodeReviewSkill,
 } from "@liveagent/ui/lib/chat/useComposerActions";
 import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
+import { useWorkbenchCommandPalette } from "@liveagent/ui/lib/chat/useWorkbenchCommandPalette";
+import { nextThinkingLevel } from "@liveagent/ui/lib/chat/thinkingLevels";
+import {
+  activateRightDockTab,
+  isFocusInRightDock,
+  resolveCloseContextTarget,
+  resolveTerminalToggle,
+  RIGHT_DOCK_TERMINAL_LAUNCHER,
+} from "@liveagent/ui/lib/chat/workbenchCommands";
 import { WorkbenchBrowserLink } from "@liveagent/ui/lib/chat/workbenchBrowserLink";
 import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 import { useThinkingLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
@@ -101,6 +117,7 @@ import { releaseProjectToolFromDock } from "@liveagent/ui/lib/projectTools/relea
 import { useConversationRightDock } from "@liveagent/ui/lib/projectTools/useConversationRightDock";
 import { useRightDockSettings } from "@liveagent/ui/lib/projectTools/useRightDockSettings";
 import type { ChatRuntimeControls } from "@liveagent/ui/lib/settings/types";
+import { getWorkbenchSettingsSections } from "@liveagent/ui/lib/settings/settingsSearchIndex";
 import { buildGatewayPublicBaseUrl } from "@liveagent/ui/lib/shared/gatewayPublicUrl";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -128,6 +145,7 @@ import {
   terminalSessionBelongsToProject,
 } from "@liveagent/ui/lib/terminal/sessionStore";
 import type { TerminalSession } from "@liveagent/ui/lib/terminal/types";
+import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
 import { useConversationViewState } from "@liveagent/ui/lib/trajectory/useConversationViewState";
 import type { TranscriptMessageJump } from "@liveagent/ui/lib/transcript-virtual/useTranscriptMessageJump";
 import type { LocalTunnelClient } from "@liveagent/ui/lib/tunnels/constants";
@@ -170,6 +188,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { loadComposerUploadedImagePreview } from "../agent-ui-adapters/composerImagePreview";
+import { desktopDevicePlugins, useDesktopDevicePlugins } from "../agent-ui-adapters/devicePlugins";
+import { settingsHostAdapter } from "../agent-ui-adapters/kbrainSettings";
+import { useMcpServerLabels } from "../lib/kbrain/useMcpServerLabels";
+import { workspaceTrustFromDevicePlugins } from "@liveagent/ui/lib/plugins/devicePlugins";
 import { kbrainSettingsAdapter } from "../agent-ui-adapters/kbrainSettings";
 import { createTauriTrajectoryHost } from "../agent-ui-adapters/trajectory";
 import { WorkspaceCloneTaskOverlayAdapter } from "../agent-ui-adapters/workspaceCloneTasks";
@@ -195,7 +217,14 @@ import {
 } from "../lib/chat/page/chatPageHelpers";
 import { skillMentionInjection } from "../lib/chat/skills/mentionInjection";
 import { tauriGitClient } from "../lib/git/tauriGitClient";
-import { isKBrainBackendEnabled, isKBrainBrowserHost } from "../lib/host";
+import {
+  isKBrainBackendEnabled,
+  isKBrainBrowserHost,
+  isTauriHost,
+  supportsNativeWorkspaceEditors,
+} from "../lib/host";
+import { useRunCompletionSound } from "../lib/notifications/useRunCompletionSound";
+import { useWebviewZoom } from "../lib/system/webviewZoom";
 import { useKBrainCatalogSettings } from "../lib/kbrain/catalog";
 import { createKBrainClient } from "../lib/kbrain/client";
 import { publishGoalState } from "../lib/kbrain/goalStore";
@@ -365,6 +394,7 @@ export function ChatPage(props: ChatPageProps) {
 }
 function ChatPageContent(props: ChatPageProps) {
   const active = props.active !== false;
+  const canOpenInLocalEditor = active && supportsNativeWorkspaceEditors();
   const activeRef = useRef(active);
   activeRef.current = active;
   const {
@@ -433,6 +463,7 @@ function ChatPageContent(props: ChatPageProps) {
 
   const isAgentMode = isAgentExecutionMode(settings.system.executionMode);
   const kBrainBackendEnabled = isKBrainBackendEnabled();
+  const dockDevicePlugins = useDesktopDevicePlugins();
   const kBrainClient = useMemo(
     () => (kBrainBackendEnabled ? createKBrainClient() : undefined),
     [kBrainBackendEnabled],
@@ -467,6 +498,15 @@ function ChatPageContent(props: ChatPageProps) {
   const { activeView, setActiveView, projectSettingsProject, setProjectSettingsProject } =
     useApplicationViewState<WorkspaceProject>();
   const workspaceOwner = String(props.relayUser.id);
+  const mcpServerLabels = useMcpServerLabels(workspaceOwner, active && kBrainBackendEnabled);
+  const projectSettingsPath = projectSettingsProject?.path;
+  const projectTrustClient = useMemo(
+    () =>
+      active && workspaceOwner && projectSettingsPath
+        ? workspaceTrustFromDevicePlugins(desktopDevicePlugins, projectSettingsPath)
+        : undefined,
+    [active, projectSettingsPath, workspaceOwner],
+  );
   const dock = useConversationRightDock(workspaceOwner, currentConversationId);
   const { rightDockOpen, setRightDockOpen, openToolTab, closeToolForPane } = dock;
   const {
@@ -489,9 +529,11 @@ function ChatPageContent(props: ChatPageProps) {
     ensureTunnelToolTab,
     ensureSshTunnelToolTab,
     handleBrowseWorkspaceProjectInSystemFileManager,
+    handleOpenWorkspaceProjectInEditor,
     handleOpenCreateWorkspaceProject,
     workspaceCreateModalOpen,
     setWorkspaceCreateModalOpen,
+    pickWorkspaceProjectFolder,
     handleOpenWorkspaceFolder,
     handleDropWorkspaceFolders,
     handleCloneWorkspaceProject,
@@ -509,6 +551,8 @@ function ChatPageContent(props: ChatPageProps) {
     handleSidebarProjectsCollapsedChange,
     handleSidebarRecentCollapsedChange,
   } = useWorkspaceProjects({
+    canOpenInLocalEditor,
+    activeRef,
     settings,
     setSettings,
     sidebarStore,
@@ -522,6 +566,20 @@ function ChatPageContent(props: ChatPageProps) {
     startNewConversationActionRef,
     prepareComposerForConversationChangeActionRef,
   });
+  const setupProjectPickerRef = props.setupProjectPickerRef;
+  useEffect(() => {
+    if (!active || !setupProjectPickerRef) return;
+    const pickProject = async () => {
+      const project = await pickWorkspaceProjectFolder(true);
+      if (project && activeRef.current && setupProjectPickerRef.current === pickProject) {
+        activateWorkspaceProject(project);
+      }
+    };
+    setupProjectPickerRef.current = pickProject;
+    return () => {
+      if (setupProjectPickerRef.current === pickProject) setupProjectPickerRef.current = null;
+    };
+  }, [active, activateWorkspaceProject, pickWorkspaceProjectFolder, setupProjectPickerRef, workspaceOwner]);
   useEffect(() => {
     onImageStudioWorkspaceChange?.(activeWorkspaceProject?.path.trim() ?? workdir);
   }, [activeWorkspaceProject?.path, workdir, onImageStudioWorkspaceChange]);
@@ -1175,6 +1233,7 @@ function ChatPageContent(props: ChatPageProps) {
   // 语音输入失败（麦克风不可用等）以 toast 提示，不占用输入框区域。
   const handleSttError = useCallback((message: string) => addNotify("error", message), [addNotify]);
   const handleOpenChatFileLink = useChatFileLinkNavigation({
+    canOpenInLocalEditor,
     workspaceOwner,
     conversationId: currentConversationId,
     conversationWorkdir: displayedConversationWorkdir,
@@ -1200,11 +1259,13 @@ function ChatPageContent(props: ChatPageProps) {
     importReadableFilePaths,
     importReadableFiles,
     removePendingUpload,
+    replacePendingUpload,
   } = usePendingUploads({
     isAgentMode,
     workdir: displayedConversationWorkdir,
     conversationId: currentConversationId,
     uploadStore: conversationRuntimeRegistry.uploads,
+    owner: workspaceOwner,
     currentConversationIdRef,
     composerRef,
     setErrorMessage,
@@ -1272,6 +1333,12 @@ function ChatPageContent(props: ChatPageProps) {
   // Capture while the editor is still visible. Lazy workspaces and hidden panes
   // may temporarily detach its ref; do not replace that snapshot from a hidden editor.
   const chatVisible = activeView === "chat" && !accountDestination && active;
+  useRunCompletionSound(
+    sidebarStore,
+    isTauriHost() && settings.customSettings.runCompletionSound,
+    workspaceOwner,
+    chatVisible ? currentConversationId : "",
+  );
   const registerExecutionDeparture = props.registerExecutionDeparture;
   useLayoutEffect(
     () =>
@@ -2463,6 +2530,7 @@ function ChatPageContent(props: ChatPageProps) {
       createGuiComposerCommandHost({
         t,
         client: kBrainClient,
+        devicePlugins: desktopDevicePlugins,
         getKBrainSessionId: () => getKBrainSessionId(currentConversationId),
         onGoalState: (state) => publishGoalState(currentConversationId, state),
         reloadConversation: () => reloadConversationLatestRef.current(currentConversationId),
@@ -2804,7 +2872,7 @@ function ChatPageContent(props: ChatPageProps) {
       const pendingPlan = getPendingPlanForConversation(conversationId);
       if (pendingPlan) {
         const text = composerRef.current?.getText().trim() ?? "";
-        if (text && isPlanApprovalMessage(text)) {
+        if (text && !composerRef.current?.getComments?.().length && isPlanApprovalMessage(text)) {
           const outcome = answerPlanDecision(
             pendingPlan.toolCallId,
             { decision: "approve" },
@@ -3093,6 +3161,7 @@ function ChatPageContent(props: ChatPageProps) {
         },
       },
       isConversationRunning: currentPaneRunning,
+      htmlPreviews: settings.customSettings.chatTranscript.htmlPreviews,
       fileDrop: {
         active: isFileDropActive,
         canDropUpload,
@@ -3127,6 +3196,7 @@ function ChatPageContent(props: ChatPageProps) {
         contentWidth: settings.customSettings.chatTranscript.width,
         onContentWidthChange: handleChatTranscriptWidthChange,
         onOpenFileLink: handleOpenChatFileLink,
+        canOpenInLocalEditor,
         onResendFromEdit: handleResendFromEdit,
         onBranchConversation:
           isConversationHydrating || isConversationHydrationFailed
@@ -3202,6 +3272,8 @@ function ChatPageContent(props: ChatPageProps) {
           : undefined,
         clarifyContext: { workdir: displayedConversationWorkdir },
         onRemovePendingUpload: removePendingUpload,
+        onReplacePendingUpload: replacePendingUpload,
+        imageAnnotationAuthority: workspaceOwner,
         onRunQueuedTurnNow: runQueuedTurnNow,
         onMoveQueuedTurnUp: moveQueuedTurnUp,
         onEditQueuedTurn: editQueuedTurn,
@@ -3210,6 +3282,7 @@ function ChatPageContent(props: ChatPageProps) {
       },
     }),
     [
+      canOpenInLocalEditor,
       composerCommandHost,
       currentConversationWorkspaceRoot,
       currentModelContextWindow,
@@ -3258,6 +3331,8 @@ function ChatPageContent(props: ChatPageProps) {
       pickReadableFiles,
       pickWorkspaceFolder,
       removePendingUpload,
+      replacePendingUpload,
+      workspaceOwner,
       removeQueuedTurn,
       renderedConversationView,
       runQueuedTurnNow,
@@ -3265,6 +3340,7 @@ function ChatPageContent(props: ChatPageProps) {
       selectedValue,
       setSettings,
       settings.customSettings.chatTranscript.width,
+      settings.customSettings.chatTranscript.htmlPreviews,
       settings.customSettings.composerContextDisplay,
       settings.customSettings.promptClarifyEnabled,
       settings.kbrainWebSearch,
@@ -4094,7 +4170,7 @@ function ChatPageContent(props: ChatPageProps) {
 
   // Keyboard equivalents for workbench pane commands, all on Meta/Ctrl+Alt:
   // Arrow focuses the adjacent pane, Shift+Arrow moves the focused pane there,
-  // W closes it, and =/+ equalizes its parent split. Every command needs at
+  // and =/+ equalizes its parent split. Every command needs at
   // least two panes; with one pane the workbench has nothing to navigate.
   useEffect(() => {
     if (!active || !sessionWorkbench.enabled) return;
@@ -4135,11 +4211,6 @@ function ChatPageContent(props: ChatPageProps) {
       }
 
       if (event.shiftKey) return;
-      if (event.key === "w" || event.key === "W") {
-        event.preventDefault();
-        requestWorkbenchClosePane(focusedPaneId);
-        return;
-      }
       if (event.key === "=" || event.key === "+") {
         const splitId = findParentSplitId(layout, focusedPaneId);
         if (!splitId) return;
@@ -4149,7 +4220,7 @@ function ChatPageContent(props: ChatPageProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [active, handleWorkbenchFocusPane, requestWorkbenchClosePane, workbench]);
+  }, [active, handleWorkbenchFocusPane, workbench]);
 
   // Background pane controllers (conversations visible in unfocused panes).
   const backgroundControllersRef = useRef(new Map<string, ConversationSurfaceController>());
@@ -4243,6 +4314,7 @@ function ChatPageContent(props: ChatPageProps) {
       host: createGuiComposerCommandHost({
         t,
         client: kBrainClient,
+        devicePlugins: desktopDevicePlugins,
         getKBrainSessionId: () => getKBrainSessionId(conversationId),
         onGoalState: (state) => publishGoalState(conversationId, state),
         reloadConversation: () => reloadConversationLatestRef.current(conversationId),
@@ -4383,6 +4455,7 @@ function ChatPageContent(props: ChatPageProps) {
         onRewound: () => undefined,
       },
       isConversationRunning: isConversationRunning(conversationId),
+      htmlPreviews: settings.customSettings.chatTranscript.htmlPreviews,
       scheduledRun: taskResult?.scheduledRun,
       // Native file drop routes only to the focused pane's composer.
       fileDrop: {
@@ -4418,7 +4491,9 @@ function ChatPageContent(props: ChatPageProps) {
         liveTranscriptStore: getConversationLiveTranscriptStore(conversationId),
         contentWidth: settings.customSettings.chatTranscript.width,
         onContentWidthChange: handleChatTranscriptWidthChange,
-        onOpenFileLink: handleOpenChatFileLink,
+        onOpenFileLink: (link) =>
+          handleOpenChatFileLink(link, { conversationId, workdir: workspaceRoot ?? "" }),
+        canOpenInLocalEditor,
         onResendFromEdit: focusGuard(handleResendFromEdit),
         onBranchConversation: undefined,
         branchPendingMessageId: undefined,
@@ -4515,6 +4590,14 @@ function ChatPageContent(props: ChatPageProps) {
         // 信息；会话无 cwd/workdir 时不传空串，避免系统提示词带噪音。
         clarifyContext: workspaceRoot ? { workdir: workspaceRoot } : undefined,
         onRemovePendingUpload: (relativePath) => removePendingUpload(relativePath, composerScopeId),
+        onReplacePendingUpload: workspaceRoot
+          ? (relativePath, replacement) =>
+              replacePendingUpload(relativePath, replacement, {
+                conversationId: composerScopeId,
+                workdir: workspaceRoot,
+              })
+          : undefined,
+        imageAnnotationAuthority: workspaceOwner,
         onRunQueuedTurnNow: runQueuedTurnNow,
         onMoveQueuedTurnUp: moveQueuedTurnUp,
         onEditQueuedTurn: focusGuard(editQueuedTurn),
@@ -4789,6 +4872,7 @@ function ChatPageContent(props: ChatPageProps) {
         workspaceActivity: tauriWorkspaceActivityClient,
       },
       capabilities: {
+        canOpenInLocalEditor,
         disabledMessage: projectToolsDisabledMessage,
         terminalDisabledMessage,
         gitWriteEnabled: true,
@@ -4845,6 +4929,7 @@ function ChatPageContent(props: ChatPageProps) {
       },
     }),
     [
+      canOpenInLocalEditor,
       codeReviewSkill,
       effectiveTheme,
       gitReviewFocusRequest,
@@ -5127,6 +5212,141 @@ function ChatPageContent(props: ChatPageProps) {
     />
   );
 
+  const deviceFilesAvailable = Boolean(
+    terminalProjectPath &&
+      terminalProjectPathKey &&
+      activeWorkspaceProject &&
+      !missingWorkspaceProjectPathKeys.has(terminalProjectPathKey),
+  );
+  const resolveCloseActiveContext = (origin?: Element | null) => {
+    const target = resolveCloseContextTarget({
+      activeView,
+      paneCount: sessionWorkbench.enabled
+        ? Object.keys(workbench.layoutRef.current.panes).length
+        : 1,
+      rightDockOpen,
+      focusInDock: isFocusInRightDock(undefined, origin),
+    });
+    if (!target) return undefined;
+    return () => {
+      if (target === "hub") selectNavigation("chat");
+      else if (target === "dock") setRightDockOpen(false);
+      else {
+        const paneId = workbench.layoutRef.current.focusedPaneId;
+        if (paneId) requestWorkbenchClosePane(paneId);
+      }
+    };
+  };
+  const nextThinking = activeView === "chat"
+    ? nextThinkingLevel({
+        reasoningOptions: chatRuntimeReasoningOptions,
+        thinkingAlwaysOn: chatRuntimeThinkingAlwaysOn,
+        controls: chatRuntimeControlsForCurrentProvider,
+      })
+    : null;
+  const webviewZoom = useWebviewZoom();
+  const { commandPalette, navigation: deviceNavigation } = useWorkbenchCommandPalette({
+    scopeKey: active ? JSON.stringify([workspaceOwner, "local"]) : undefined,
+    visible: active && !accountDestination && !settingsNavigationTarget && !showTaskSidebar,
+    activeView,
+    conversationId: currentConversationId,
+    isDraft: isDraftConversation,
+    hasConversation: (id) => {
+      const conversation = sidebarStore.peek(id);
+      return Boolean(conversation && !conversation.isPending);
+    },
+    openConversation: (id) => {
+      setRightDockOpen(false);
+      setActiveView("chat");
+      handleSelectConversation(id);
+    },
+    visibleHubs: settings.customSettings.sidebarShortcuts,
+    openHub: selectNavigation,
+    resolveCloseActiveContext,
+    actions: {
+      t,
+      onNewConversation: () => {
+        setActiveView("chat");
+        if (activeView === "chat" || !isDraftConversation) handleNewConversation();
+      },
+      onOpenSettings: (section, anchor) =>
+        onOpenSettings(section as Parameters<typeof onOpenSettings>[0], undefined, anchor),
+      settingsSections: getWorkbenchSettingsSections({
+        surface: "desktop",
+        usage: Boolean(settingsHostAdapter.kbrain?.getUsageStats),
+        devicePlugins: isTauriHost() && Boolean(settingsHostAdapter.devicePlugins),
+        webSearch: Boolean(settingsHostAdapter.kbrain),
+        permissions: isTauriHost() && Boolean(
+          settingsHostAdapter.kbrain?.listPermissionRules &&
+            settingsHostAdapter.kbrain.addPermissionRule &&
+            settingsHostAdapter.kbrain.deletePermissionRule,
+        ),
+      }),
+      settingsExcludedAnchors: [
+        ...(isTauriHost() ? [] : ["desktop-setup-guide", "run-completion-sound"]),
+        ...(supportsNativeWorkspaceEditors() ? [] : ["preferred-workspace-editor"]),
+        ...(isTauriHost() && settingsHostAdapter.devicePlugins?.readSurface ? [] : ["html-previews"]),
+      ],
+      onOpenWorkspace: isAgentMode ? handleOpenCreateWorkspaceProject : undefined,
+      sidebar: { open: sidebarOpen, onToggle: handleToggleSidebar },
+      theme: { current: settings.theme, onToggle: onToggleTheme },
+      projectTools: !projectToolsDisabledMessage && activeView === "chat"
+        ? { open: rightDockOpen, onToggle: () => setRightDockOpen((open) => !open) }
+        : undefined,
+      onToggleTerminal: deviceFilesAvailable && !terminalDisabledMessage
+        ? () => {
+            const target = resolveTerminalToggle({
+              open: activeView === "chat" && rightDockOpen && !desktopTabs.view.activeId,
+              activeTabId: rightDockProjectState.activeTabId,
+              tabOrder: rightDockProjectState.tabOrder,
+              sessions: projectTerminalSessions,
+            });
+            if (target.kind === "close") {
+              setRightDockOpen(false);
+              return;
+            }
+            setActiveView("chat");
+            desktopTabs.activate(null);
+            setRightDockOpen(true);
+            handleRightDockProjectStateChange((current) =>
+              activateRightDockTab(current, target.sessionId ?? RIGHT_DOCK_TERMINAL_LAUNCHER),
+            );
+          }
+        : undefined,
+      onCycleThinking: nextThinking
+        ? () => handleChatRuntimeControlsChange(nextThinking.patch)
+        : undefined,
+      zoom: isTauriHost() ? webviewZoom : undefined,
+    },
+    workspace: deviceFilesAvailable
+      ? {
+          projectPathKey: terminalProjectPathKey,
+          tabs: desktopTabs.view.tabs,
+          activeFileTabId: workspaceVisible ? desktopTabs.view.activeId : null,
+          openTab: (id) => {
+            setActiveView("chat");
+            setRightDockOpen(true);
+            desktopTabs.activate(id);
+          },
+          files: {
+            listFiles: (signal) => {
+              signal.throwIfAborted();
+              return invokeFs<QuickOpenFileListing>("fs_mention_list", {
+                workdir: terminalProjectPath,
+                max_results: QUICK_OPEN_MAX_FILES,
+                query: "",
+                show_hidden: false,
+              });
+            },
+            openFile: (path) => {
+              setActiveView("chat");
+              handleOpenWorkspaceFile(path, undefined, true);
+            },
+          },
+        }
+      : undefined,
+  });
+
   if (!active) return null;
 
   const conversationImageHost: ContextType<typeof DesktopConversationImageHost> =
@@ -5266,12 +5486,19 @@ function ChatPageContent(props: ChatPageProps) {
     ) : (
       <AppWorkbenchChrome
         navigationActions={
-          <MacOsTitleBarToggle
-            sidebarOpen={sidebarOpen}
-            onToggle={handleToggleSidebar}
-            onOpenSettings={() => onOpenSettings()}
-            appUpdate={appUpdate}
-          />
+          <>
+            <MacOsTitleBarToggle
+              sidebarOpen={sidebarOpen}
+              onToggle={handleToggleSidebar}
+              onOpenSettings={() => onOpenSettings()}
+              appUpdate={appUpdate}
+            />
+            {commandPalette &&
+            !sidebar.isMobile &&
+            (deviceNavigation.canGoBack || deviceNavigation.canGoForward) ? (
+              <NavigationHistoryButtons history={deviceNavigation} />
+            ) : null}
+          </>
         }
         settings={settings}
         sidebarOpen={sidebarOpen}
@@ -5322,12 +5549,17 @@ function ChatPageContent(props: ChatPageProps) {
       />
     );
 
-  return (
+  const workspace = (
     <WorkbenchShell
       ref={navigationPreview.rootRef}
       data-app-frame="three-column"
       layout={stackedWorkbench ? "stacked-panels" : "panels"}
       navigationRail={stackedWorkbench ? undefined : navigationRail}
+      keyboardNavigation={
+        chatVisible && !isComposerInputDisabled ? (
+          <SkipToComposerLink onFocusComposer={() => composerRef.current?.focus()} />
+        ) : null
+      }
       windowControls={<WindowsTitleBar controlsOnly followImagePreview />}
     >
       {stackedWorkbench ? workbenchChrome : null}
@@ -5399,6 +5631,7 @@ function ChatPageContent(props: ChatPageProps) {
             isOpen={sidebarOpen}
             fontScale={settings.customSettings.fontScale.sidebar}
             conversationSearchRequestKey={conversationSearchRequestKey}
+            commandPalette={commandPalette}
             activeView={shownSidebar as ApplicationViewId}
             showProjects={isAgentMode}
             projects={workspaceProjects}
@@ -5427,6 +5660,9 @@ function ChatPageContent(props: ChatPageProps) {
               accountNavigation?.close();
             }}
             onBrowseProjectInSystemFileManager={handleBrowseWorkspaceProjectInSystemFileManager}
+            onOpenProjectInEditor={
+              canOpenInLocalEditor ? handleOpenWorkspaceProjectInEditor : undefined
+            }
             onConfigureProject={setProjectSettingsProject}
             onSetProjectPinned={handleSetWorkspaceProjectPinned}
             onRemoveProject={handleRemoveWorkspaceProject}
@@ -5674,6 +5910,7 @@ function ChatPageContent(props: ChatPageProps) {
           }
           tools={
             <RightDockPanel
+              devicePlugins={dockDevicePlugins}
               workspace={
                 tabbedWorkspace
                   ? {
@@ -5717,6 +5954,7 @@ function ChatPageContent(props: ChatPageProps) {
                 settings.remote.gatewayPort,
               )}
               workspaceActivityClient={tauriWorkspaceActivityClient}
+              canOpenInLocalEditor={canOpenInLocalEditor}
               onProjectStateChange={handleRightDockProjectStateChange}
               onFileTreeStateChange={handleRightDockFileTreeStateChange}
               onSshProjectHostIdsChange={handleSshProjectHostIdsChange}
@@ -5764,6 +6002,7 @@ function ChatPageContent(props: ChatPageProps) {
           settings={settings}
           skills={availableSkills}
           rootClient={desktopWorkspaceProjectRootClient}
+          trustClient={projectTrustClient}
           onClose={() => setProjectSettingsProject(null)}
           onRenameProject={(name) => {
             commitWorkspaceProjectRename(projectSettingsProject, name);
@@ -5777,4 +6016,5 @@ function ChatPageContent(props: ChatPageProps) {
       ) : null}
     </WorkbenchShell>
   );
+  return <McpServerLabelsProvider value={mcpServerLabels}>{workspace}</McpServerLabelsProvider>;
 }

@@ -1,4 +1,6 @@
 import { invoke } from "@liveagent/app/shims/tauriCore";
+import { hasFrozenCapability } from "@liveagent/ui/lib/kbrain/health";
+import { KBRAIN_MCP_TOOL_SERVER_IDS_CAPABILITY } from "@liveagent/ui/lib/mcp/toolCall";
 import { webSearchFallbackStateFrom } from "@liveagent/ui/lib/providers/webSearchFallback";
 import {
   buildGatewaySettingsSyncPayload,
@@ -724,7 +726,13 @@ async function loadKBrainMcpSettings(settings: AppSettings): Promise<AppSettings
 async function saveKBrainMcpSettings(previous: McpSettings, next: McpSettings): Promise<void> {
   const client = createKBrainClient();
   const current = await client.getMcpSettings();
-  await client.updateMcpSettings(mergeKBrainMcpSettings(current, next, previous));
+  const previousNames = new Map(previous.servers.map((server) => [server.id, server.name]));
+  const namesChanged = next.servers.some((server) => server.name !== previousNames.get(server.id));
+  const health = namesChanged ? await client.getHealth().catch(() => null) : null;
+  const serverNames = Boolean(
+    health && hasFrozenCapability(health, KBRAIN_MCP_TOOL_SERVER_IDS_CAPABILITY),
+  );
+  await client.updateMcpSettings(mergeKBrainMcpSettings(current, next, previous, serverNames));
   notifyKBrainMcpSettingsSaved();
 }
 

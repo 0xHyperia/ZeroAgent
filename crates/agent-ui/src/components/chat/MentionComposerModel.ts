@@ -1,4 +1,5 @@
 import type { ComposerCommand, ComposerCommandHost } from "@liveagent/ui/lib/chat/composerCommands";
+import type { ComposerComment, ComposerCommentInput } from "@liveagent/ui/lib/chat/composerComments";
 import type { ConversationReferenceInsertResult } from "@liveagent/ui/lib/chat/conversationReferenceDrag";
 import type {
   CodeMentionReference,
@@ -173,6 +174,9 @@ export interface MentionComposerHandle {
    * unavailable/disabled or the text is blank.
    */
   insertQuote: (text: string) => boolean;
+  upsertComment: (comment: ComposerCommentInput) => string | null;
+  removeComment: (id: string) => void;
+  getComments: () => ComposerComment[];
   insertWorkspaceExcerpt: (text: string, path: string, comment?: string) => boolean;
   /**
    * Runs the draft as a registered action/prompt command instead of sending.
@@ -213,6 +217,7 @@ export type MentionComposerDraftSegment =
   | { type: "conversationMention"; conversation: MentionComposerConversationMention }
   | { type: "codeMention"; reference: CodeMentionReference }
   | { type: "workspaceExcerpt"; excerpt: WorkspaceExcerpt }
+  | { type: "comment"; comment: ComposerComment }
   | { type: "quote"; text: string };
 
 export type MentionComposerDraft = {
@@ -227,6 +232,7 @@ export type MentionComposerDraft = {
   /** Optional for backward compatibility with drafts persisted before conversation mentions. */
   conversationMentions?: MentionComposerConversationMention[];
   codeMentions: CodeMentionReference[];
+  comments?: ComposerComment[];
   isEmpty: boolean;
 };
 

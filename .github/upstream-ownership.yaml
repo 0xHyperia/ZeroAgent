@@ -112,7 +112,7 @@
       ]
     },
     {
-      "glob": "{crates/agent-gateway/internal/kbrain/health.go,crates/agent-ui/src/lib/kbrain/health.ts,crates/agent-gui/src-tauri/src/services/kbrain_health.rs,crates/agent-ui/src/lib/chat/permissionModes.ts}",
+      "glob": "{crates/agent-gateway/internal/kbrain/health.go,crates/agent-ui/src/lib/kbrain/health.ts,crates/agent-gui/src-tauri/src/services/kbrain_health.rs,crates/agent-ui/src/lib/chat/permissionModes.ts,crates/agent-ui/src/pages/settings/PermissionRulesSection.tsx,crates/agent-gui/test/settings/permission-rules-registration.test.mjs}",
       "ownership": "adapted",
       "risk": "high",
       "checks": [
@@ -767,6 +767,17 @@
         "后台通知保留来源，不成为伪造的用户输入",
         "接续只读取原会话并受当前运行与版本保护，保留未接受的输入和附件",
         "桌面外部运行、停止前接受回执、设备 WebUI 历史窗口专项"
+      ]
+    },
+    {
+      "glob": "{crates/agent-ui/src/lib/plugins/**,crates/agent-ui/src/components/sandboxed-ui/**,crates/agent-ui/src/components/project-tools/RightDockPluginPanels.tsx,crates/agent-ui/src/pages/settings/DevicePluginsSection.tsx,crates/agent-gui/src-tauri/src/services/device_plugins.rs,crates/agent-gui/src-tauri/src/services/device_ui_surface.rs,crates/agent-gui/src-tauri/src/commands/config/settings/device_plugin_workspaces.rs,crates/agent-gui/src/agent-ui-adapters/devicePlugins.ts,crates/agent-gateway/internal/protocol/pbws/workspace_guard.go}",
+      "ownership": "adapted",
+      "risk": "critical",
+      "checks": [
+        "上游插件管理与 ZeroAgent 账户扩展保持所属来源及固定引用",
+        "远程请求校验账户、设备租约与授权项目，回响应复查当前范围",
+        "本机原生目录选择与远程有界复制，停用、撤权和切换时丢弃旧读取",
+        "预览固定会话或声明面板，隔离 HTML 脚本、导航和网络请求"
       ]
     },
     {

@@ -3,6 +3,7 @@ import { FileDropOverlay } from "@liveagent/ui/components/chat/FileDropOverlay";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import { ScheduledReplyPreview } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
+import { DeviceUiTranscript } from "@liveagent/ui/components/sandboxed-ui/DeviceUiTranscript";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ScrollFollowHandle } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -20,6 +21,7 @@ import {
   useState,
 } from "react";
 import { PaneLoadingSkeleton } from "../../../components/app/PaneLoadingSkeleton";
+import { useDesktopDeviceUiSurface } from "../../../agent-ui-adapters/devicePlugins";
 import { isKBrainBackendEnabled } from "../../../lib/host";
 import { ConversationStatsBarHost } from "../components/ConversationStatsBarHost";
 import { CurrentTaskProgress } from "../components/CurrentTaskProgress";
@@ -232,6 +234,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
   } = binding;
   const composerRef = useRef<MentionComposerHandle | null>(null);
   const scrollFollowRef = useRef<ScrollFollowHandle | null>(null);
+  const deviceUiSurface = useDesktopDeviceUiSurface();
   const images = useDesktopConversationImages(
     conversationId,
     transcript.workspaceRoot ?? "",
@@ -259,6 +262,11 @@ const RegisteredConversationPaneHostContent = forwardRef<
   const handleQuoteSelection = useCallback((text: string) => {
     composerRef.current?.insertQuote(text);
   }, []);
+  const handleCommentSelection = useCallback(
+    (comment: Parameters<MentionComposerHandle["upsertComment"]>[0]) =>
+      composerRef.current?.upsertComment?.(comment) != null,
+    [],
+  );
 
   useImperativeHandle(
     forwardedRef,
@@ -364,6 +372,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
                   floatingOverhangPx={composerFloatingOverhang}
                   composerCenterOffsetPx={composerCenterOffset}
                   onQuoteSelection={handleQuoteSelection}
+                  onCommentSelection={handleCommentSelection}
                 />
               </CheckpointRewindProvider>
             </ChangedFilesActionsProvider>
@@ -417,6 +426,7 @@ const RegisteredConversationPaneHostContent = forwardRef<
                   <PendingToolApprovalBar
                     conversationId={snapshot.conversationId}
                     approvals={snapshot.approvals}
+                    workdir={transcript.workspaceRoot}
                   />
                 ) : null
               }
@@ -470,7 +480,15 @@ const RegisteredConversationPaneHostContent = forwardRef<
       host={images}
       includeAttachments={Boolean(transcript.workspaceRoot)}
     >
-      {conversationWithSubagents}
+      <DeviceUiTranscript
+        client={kbrainSubagents && !scheduledRun ? deviceUiSurface : undefined}
+        conversationId={conversationId}
+        workdir={transcript.workspaceRoot}
+        running={isConversationRunning}
+        htmlPreviews={binding.htmlPreviews}
+      >
+        {conversationWithSubagents}
+      </DeviceUiTranscript>
     </DeviceConversationImageSurface>
   );
 });

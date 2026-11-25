@@ -116,3 +116,96 @@ test("conversation search preserves ordering, navigation, draft opening and stal
     await act(async () => root.unmount()); host.remove(); env.cleanup();
   }
 });
+
+test("palette scopes commands, conversations and file results to the current authorization", async () => {
+  const searches = [];
+  const listings = [];
+  const selected = [];
+  const env = await createDomTestEnv({
+    mocks: {
+      "../IconSet": new Proxy({}, { get: () => () => null }),
+      "@liveagent/ui/components/IconSet": Object.fromEntries(
+        ["Clock3", "File", "Loader2", "MessageSquareText", "Pin", "Search", "X"].map(
+          (name) => [name, () => null],
+        ),
+      ),
+      "@liveagent/ui/i18n/index": { useLocale: () => ({ t: (key) => key, locale: "en" }) },
+      "@liveagent/ui/lib/chat/conversationSearch": {
+        searchPersistedConversations: async ({ query }) => {
+          searches.push(query);
+          return [{ id: "conversation", title: "Notes" }];
+        },
+      },
+    },
+  });
+  const { React, act, createRoot } = env;
+  HTMLElement.prototype.scrollIntoView = () => {};
+  const { ConversationSearchDialog } = env.loadModule(
+    "@liveagent/ui/components/chat/ConversationSearchDialog.tsx",
+  );
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  const makePalette = (scopeKey, valid = true) => ({
+    scopeKey,
+    getActions: () => [{ id: "open-settings", group: "suggested", label: "Settings", run: () => selected.push("settings") }],
+    files: valid ? {
+      scopeKey,
+      listFiles: (signal) => new Promise((resolve) => listings.push({ scopeKey, signal, resolve })),
+      openFile: (path) => selected.push(`${scopeKey}:${path}`),
+    } : undefined,
+  });
+  const render = (palette) => act(async () => root.render(React.createElement(ConversationSearchDialog, {
+    open: true,
+    conversations: [],
+    onOpenChange: () => {},
+    onSelectConversation: (id) => selected.push(id),
+    palette,
+  })));
+  const type = (value) => act(async () => {
+    const input = document.querySelector("input");
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const options = () => [...document.querySelectorAll('[role="option"]')];
+  const file = (path, hidden = false) => ({ kind: "file", path, hidden });
+  try {
+    await render(makePalette("account-a/device-a/project-a"));
+    await type(">sett");
+    assert.deepEqual(options().map((element) => element.textContent), ["Settings"]);
+    await act(async () => options()[0].click());
+    await type("@report");
+    assert.equal(listings.length, 1);
+    assert.equal(document.body.textContent.includes("chat.commandPalette.filesLoading"), true);
+    let currentDevice = true;
+    await render({ ...makePalette("account-a/device-b/project-b"), isCurrent: () => currentDevice });
+    assert.equal(listings[0].signal.aborted, true);
+    assert.equal(listings.length, 2);
+    await act(async () => listings[0].resolve({ entries: [file("report-secret.md")], truncated: false }));
+    assert.deepEqual(options(), []);
+    await act(async () => listings[1].resolve({
+      entries: [file("docs/report.md"), file("../report-escape.md"), file("C:\\report-local.md"), file("report-hidden.md", true)],
+      truncated: false,
+    }));
+    assert.deepEqual(options().map((element) => element.textContent), ["docs/report.md"]);
+    await type("@report md");
+    assert.equal(listings.length, 2, "typing reuses the file index within the open scope");
+    currentDevice = false;
+    await act(async () => options()[0].click());
+    assert.deepEqual(selected, ["settings"], "a displayed result cannot act after device authority changes");
+    currentDevice = true;
+    await act(async () => options()[0].click());
+    assert.deepEqual(selected, ["settings", "account-a/device-b/project-b:docs/report.md"]);
+    assert.deepEqual(searches, []);
+    await render(makePalette("account-a/device-b/project-b", false));
+    assert.deepEqual(options(), []);
+    assert.equal(document.body.textContent.includes("chat.commandPalette.filesUnavailable"), true);
+    await type("#notes");
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 210)));
+    assert.deepEqual(searches, ["notes"]);
+    assert.deepEqual(options().map((element) => element.textContent), ["Notes"]);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    env.cleanup();
+  }
+});

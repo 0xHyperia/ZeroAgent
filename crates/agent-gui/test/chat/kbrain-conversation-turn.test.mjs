@@ -10,7 +10,7 @@ const { createConversationStateFromContext } = loader.loadModule("src/lib/chat/c
 const approval = loader.loadModule("src/lib/tools/toolApproval.ts");
 const planMode = loader.loadModule("src/lib/tools/planModeTools.ts");
 const { buildUiMessages } = loader.loadModule("src/lib/chat/messages/uiMessages.ts");
-const { turnErrorOf } = loader.loadModule("@liveagent/ui/lib/chat/assistantStatus.ts");
+const { turnErrorDetailOf, turnErrorOf } = loader.loadModule("@liveagent/ui/lib/chat/assistantStatus.ts");
 const { setKBrainRuntimeConnection, clearKBrainRuntimeConnection } = loader.loadModule("src/lib/kbrain/runtimeConnection.ts");
 
 for (const [mode, runTurn] of [["text", runTextConversationTurn], ["agent", runAgentConversationTurn]]) {
@@ -148,6 +148,10 @@ test("K-brain turn abort cancels an accepted backend run", async (t) => {
 });
 
 test("K-brain failed runs with no assistant content remain visible after final persistence projection", async (t) => {
+  const diagnostic = "401 Unauthorized: fixture private provider response";
+  const backendDetail = { kind: "invalid_api_key", upstream_status: 401, provider_message: diagnostic };
+  const publicDetail = { kind: "invalid_api_key", upstreamStatus: 401 };
+  const publicMessage = "The model provider rejected authentication.";
   const directFailureUi = buildUiMessages([
     { role: "user", content: "search the web", timestamp: 1 },
     {
@@ -179,13 +183,13 @@ test("K-brain failed runs with no assistant content remain visible after final p
     }
     if (request.url === "/v1/sessions/session/events?after_seq=1") {
       response.writeHead(200, { "Content-Type": "text/event-stream" });
-      response.end(`data: ${JSON.stringify({ version: "kbrain.agent.v1", seq: 2, conversation_id: "session", run_id: "run", type: "run.failed", created_at: new Date().toISOString(), payload: { state: "failed", error: "native web search is unsupported for Chat Completions" } })}\n\n`);
+      response.end(`data: ${JSON.stringify({ version: "kbrain.agent.v1", seq: 2, conversation_id: "session", run_id: "run", type: "run.failed", created_at: new Date().toISOString(), payload: { state: "failed", error: diagnostic, error_detail: backendDetail } })}\n\n`);
       return;
     }
     if (request.url.startsWith("/v1/sessions/session/history")) {
       const messages = [
         { id: "user-failed", role: "user", content: [{ type: "text", text: "search the web" }] },
-        { id: "assistant-failed", role: "assistant", content: [{ type: "text", text: "native web search is unsupported for Chat Completions" }], stop_reason: "error" },
+        { id: "assistant-error-run", role: "assistant", content: [{ type: "text", text: diagnostic }], stop_reason: "error", error_detail: backendDetail },
       ];
       const session = { id: "session", revision: "failed-history", model: { provider: "fixture", model: "model" }, messages, message_count: 2, last_seq: 2 };
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -219,6 +223,7 @@ test("K-brain failed runs with no assistant content remain visible after final p
   let persisted;
   let finalProjectionState;
   const errors = [];
+  const terminalTokens = [];
   await runTextConversationTurn({
     providerId: "codex",
     model: "model",
@@ -245,7 +250,9 @@ test("K-brain failed runs with no assistant content remain visible after final p
       return true;
     },
     gatewayBridgeEvents: {
-      queueToken() {},
+      queueToken(text, metadata) {
+        if (metadata?.stopReason) terminalTokens.push({ text, ...metadata });
+      },
       queueEvent() {},
       queueToolStatus() {},
       emitError(message) { errors.push(message); },
@@ -253,12 +260,19 @@ test("K-brain failed runs with no assistant content remain visible after final p
     hookLifecycle: Object.fromEntries(["startAgent", "startTurn", "ensureMessageEnded", "endTurn", "endAgent"].map((key) => [key, () => {}])),
   });
 
-  assert.deepEqual(errors, ["native web search is unsupported for Chat Completions"]);
+  assert.deepEqual(errors, []);
+  assert.equal(terminalTokens.length, 1);
+  assert.equal(terminalTokens[0].text, "");
+  assert.equal(terminalTokens[0].errorMessage, publicMessage);
+  assert.deepEqual(terminalTokens[0].errorDetail, publicDetail);
   for (const projectedState of [state, finalProjectionState, persisted.state]) {
     const messages = projectedState.segments.flatMap((segment) => segment.messages);
-    const ui = buildUiMessages(messages);
-    assert.equal(ui.at(-1).role, "assistant");
-    assert.match(ui.at(-1).text, /native web search is unsupported for Chat Completions/);
+    const reply = buildUiMessages(messages).at(-1);
+    assert.equal(reply.role, "assistant");
+    assert.equal(reply.text, "");
+    assert.equal(turnErrorOf(reply.rounds), publicMessage);
+    assert.deepEqual(turnErrorDetailOf(reply.rounds), publicDetail);
+    assert.ok(!JSON.stringify(messages).includes(diagnostic));
   }
 });
 
@@ -297,9 +311,10 @@ for (const [mode, runTurn, decision, expectedDecision] of [
       if (request.url === "/v1/sessions/session/runs") return json({ version: "kbrain.agent.v1", conversation_id: "session", run_id: "run", accepted_seq: 1 }, 202);
       if (request.url === "/v1/sessions/session" || request.url.startsWith("/v1/sessions/session/history")) {
         if (mode === "agent-refresh-failed") return json({ error: "history temporarily unavailable" }, 503);
+        const failure = mode === "agent-failed" ? { error: "fixture upstream unavailable", error_detail: { kind: "server_error", upstream_status: 503, provider_message: "fixture provider diagnostics" } } : {};
         const messages = [
           { id: "user-persisted", role: "user", content: [{ type: "text", text: "inspect" }] },
-          { id: "assistant-persisted", role: "assistant", content: [{ type: "text", text: "Hello" }], stop_reason: mode === "agent-failed" ? "error" : "stop", tool_calls: [{ id: "call", name: "read_file", arguments: { path: "README.md" } }] },
+          { id: "assistant-persisted", role: "assistant", content: [{ type: "text", text: "Hello" }], stop_reason: mode === "agent-failed" ? "error" : "stop", tool_calls: [{ id: "call", name: "read_file", arguments: { path: "README.md" } }], ...failure },
           { id: "tool-persisted", role: "tool", tool_call_id: "call", name: "read_file", content: [{ type: "text", text: expectedDecision === "reject" ? "permission rejected" : "file contents" }], stop_reason: expectedDecision === "reject" ? "error" : "stop" },
         ];
         const session = { id: "session", revision: "saved-revision", title: "Inspect", model: { provider: "fixture", model: "model" }, created_at: "2026-09-28T00:00:00Z", updated_at: "2026-09-28T00:00:01Z", message_count: messages.length, last_seq: sequence, messages,
@@ -330,7 +345,7 @@ for (const [mode, runTurn, decision, expectedDecision] of [
           event("tool.result", { tool_result: { id: "plan-call", name: "ExitPlanMode", output: "Plan submitted", failed: false } });
         }
         event("assistant.message.created", { role: "assistant", content: [{ type: "text", text: "Hello" }], usage: { input_tokens: 7, output_tokens: 2 } });
-        if (mode === "agent-failed") event("run.failed", { state: "failed", error: "fixture upstream unavailable" });
+        if (mode === "agent-failed") event("run.failed", { state: "failed", error: "fixture upstream unavailable", error_detail: { kind: "server_error", upstream_status: 503, provider_message: "fixture provider diagnostics" } });
         else event("run.completed", { state: "completed" });
         stream.end();
         return;
@@ -384,6 +399,7 @@ for (const [mode, runTurn, decision, expectedDecision] of [
     const hooks = [];
     const errors = [];
     const gatewayEvents = [];
+    const terminalTokens = [];
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     t.after(() => clearTimeout(timeout));
@@ -392,7 +408,10 @@ for (const [mode, runTurn, decision, expectedDecision] of [
       runtime: mode.endsWith("no-backend") ? {} : { backend: mode.endsWith("legacy-direct") ? "direct" : "kbrain", baseUrl: "https://must-not-be-called.invalid", apiKey: "unused-secret", reasoning: mode === "agent-controls" ? "minimal" : "max" }, sessionId: "frontend-session", conversationId,
       trajectoryMessageId: `message-${mode}`, conversationCwd: "/workspace", ...(mode.startsWith("agent") ? { effectiveWorkdir: "/workspace", ...(mode === "agent-controls" ? { additionalRoots: [{ id: "external", alias: "external-root", path: "/tmp/external", access: "read" }], planModeEnabled: mode === "agent-controls", getToolPolicies: () => ({ Read: "allow", Write: "ask", Bash: "deny", Browser: "allow", McpManager: "deny", "group:browser": "ask", "server:cua-driver": "allow" }), commandSafetyMode: "always" } : {}) } : {}), createdAt: 1, fallbackTitle: "Inspect", titlePromise: null,
       transcriptStore: {}, cancellation: { userStop: controller },
-      gatewayBridgeEvents: { queueToken() {}, queueEvent(event) { gatewayEvents.push(event); }, queueToolStatus() {}, emitError(message) { errors.push(message); } },
+      gatewayBridgeEvents: {
+        queueToken(text, metadata) { if (metadata?.stopReason) terminalTokens.push({ text, ...metadata }); },
+        queueEvent(event) { gatewayEvents.push(event); }, queueToolStatus() {}, emitError(message) { errors.push(message); },
+      },
       hookLifecycle: Object.fromEntries(["startAgent", "startTurn", "ensureMessageEnded", "endTurn", "endAgent"].map((key) => [key, () => hooks.push(key)])),
       buildPreparedContext: () => context, getNextConversationState: () => state,
       applyConversationState: (value) => { state = value; },
@@ -433,16 +452,29 @@ for (const [mode, runTurn, decision, expectedDecision] of [
     const messages = persisted.state.segments.flatMap((segment) => segment.messages);
     if (mode === "agent-refresh-failed") {
       assert.equal(errors.length, 1);
-      assert.match(errors[0], /Turn ended, but history refresh failed:.*history temporarily unavailable/);
+      assert.equal(errors[0], "Turn ended, but history refresh failed.");
       assert.equal(requests.filter((request) => request.path.endsWith("/runs")).length, 1);
     } else {
-      assert.deepEqual(errors, mode === "agent-failed" ? ["fixture upstream unavailable"] : []);
+      assert.deepEqual(errors, []);
       assert.equal(messages.find((message) => message.role === "user").id, "user-persisted");
     }
     assert.equal(messages.find((message) => message.role === "assistant").stopReason, mode === "agent-failed" ? "error" : "stop");
     assert.ok(messages.some((message) => message.role === "toolResult" && message.toolCallId === "call"));
     assert.ok(messages.some((message) => message.role === "assistant" && message.content.some((block) => block.type === "toolCall" && block.id === "call")));
     const restored = buildUiMessages(messages);
+    if (mode === "agent-failed") {
+      const reply = restored.find((message) => message.role === "assistant");
+      const detail = { kind: "server_error", upstreamStatus: 503 };
+      assert.equal(rounds[0].meta.errorMessage, "The model provider could not complete the request.");
+      assert.deepEqual(rounds[0].meta.errorDetail, detail);
+      assert.equal(terminalTokens.length, 1);
+      assert.equal(terminalTokens[0].errorMessage, rounds[0].meta.errorMessage);
+      assert.deepEqual(terminalTokens[0].errorDetail, detail);
+      assert.match(reply.text, /Hello/);
+      assert.equal(turnErrorOf(reply.rounds), terminalTokens[0].errorMessage);
+      assert.deepEqual(turnErrorDetailOf(reply.rounds), detail);
+      assert.ok(!JSON.stringify({ messages, terminalTokens }).includes("fixture provider diagnostics"));
+    }
     const restoredTools = restored.flatMap((message) => message.rounds ?? []).flatMap((round) => round.blocks).filter((block) => block.kind === "tool");
     assert.ok(restoredTools.some((block) => block.item.toolCall.id === "call" && block.item.toolResult.content[0].text === expectedOutput && block.item.toolResult.isError === (expectedDecision === "reject")));
     assert.ok(restoredTools.some((block) => block.item.toolCall.id === "kbrain-subagent:child" && block.item.toolResult.content[0].text === "Reviewed"));

@@ -41,6 +41,7 @@ export type ComposerLoopEntry = {
 export interface ComposerCommandHost {
   /** 后端指令目录；不提供时只有 Skill。 */
   listCommands?: () => Promise<readonly ComposerCatalogCommand[]>;
+  subscribeCommandCatalog?: (onChange: () => void) => () => void;
   /**
    * 发送一轮带指令语义的消息。text 是转录区里的用户消息；planMode 只作用于
    * 这一轮（/plan 任务）。

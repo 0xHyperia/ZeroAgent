@@ -1,4 +1,5 @@
 import type { KBrainHealth } from "@liveagent/ui/lib/kbrain/health";
+import type { DevicePluginsClient } from "@liveagent/ui/lib/plugins/devicePlugins";
 import type { UsageStatsAnswer, UsageStatsQuery } from "@liveagent/ui/lib/usage/usageStats";
 export type KBrainSettingsProvider = {
   id: string;
@@ -142,6 +143,10 @@ export type KBrainSettingsAdapter = {
 export type SettingsHostAdapter = {
   isKbrain: boolean;
   usageScope?: string | number;
+  permissionRulesScope?: string | number;
+  devicePlugins?: DevicePluginsClient;
+  devicePluginScope?: string | number;
+  devicePluginWorkdir?: string;
   runtimeConnection?: () => KBrainRuntimeConnection | null;
   kbrain?: KBrainSettingsAdapter;
 };

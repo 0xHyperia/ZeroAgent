@@ -1,3 +1,44 @@
+diff --git a/internal/mcp/apps.go b/internal/mcp/apps.go
+index 3954cc1ce69d4c30a47449219d55590f90ba1ce7..44ecfd5332cb140d421579e58ff428f22c898e61 100644
+--- a/internal/mcp/apps.go
++++ b/internal/mcp/apps.go
+@@ -256,17 +256,33 @@ func (m *Manager) readUIResource(ctx context.Context, serverName, uri string) (U
+ 		return UIResource{}, ErrUIResourceNotFound
+ 	}
+ 	s.mu.Lock()
+-	sess := s.sess
++	sess, sessionCtx, workers := s.sess, s.callCtx, s.callWorkers
++	current := sess != nil && sessionCtx != nil && workers != nil && !s.cfg.Disabled()
++	if current {
++		workers.Add(1)
++	}
+ 	s.mu.Unlock()
+-	if sess == nil {
+-		return UIResource{}, fmt.Errorf("MCP server %q is not connected", serverName)
++	if !current {
++		return UIResource{}, ErrUIResourceNotFound
+ 	}
++	defer workers.Done()
+ 	ctx, cancel := context.WithTimeout(ctx, uiReadTimeout)
+ 	defer cancel()
++	stop := context.AfterFunc(sessionCtx, cancel)
++	defer stop()
++	if sessionCtx.Err() != nil {
++		return UIResource{}, context.Canceled
++	}
+ 	result, err := sess.ReadResource(ctx, &sdkmcp.ReadResourceParams{URI: uri})
+ 	if err != nil {
+ 		return UIResource{}, s.cfg.redactNativeError(err)
+ 	}
++	s.mu.Lock()
++	current = s.sess == sess && s.callCtx == sessionCtx && !s.cfg.Disabled()
++	s.mu.Unlock()
++	if !current || sessionCtx.Err() != nil || ctx.Err() != nil {
++		return UIResource{}, context.Canceled
++	}
+ 	return s.cfg.nativeUIContent(result, uri)
+ }
+ 
 diff --git a/internal/mcp/client_identity_test.go b/internal/mcp/client_identity_test.go
 new file mode 100644
 index 0000000000000000000000000000000000000000..b2f8905302a9b9693a845e01db616dbef134c27c
@@ -400,7 +441,7 @@ index 3e0324f903143c380f2938fb1841b9a47c0d968c..8d667b53bf74cd02bd85df95ff1dedf4
 +	}
 +}
 diff --git a/internal/mcp/manager.go b/internal/mcp/manager.go
-index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d54077458804b67 100644
+index 8fd791e60d3f75ef198f5ab5be3f308f2563bd5d..c937804efdf092aa61daca239137d11feb8ff790 100644
 --- a/internal/mcp/manager.go
 +++ b/internal/mcp/manager.go
 @@ -8,7 +8,6 @@ import (
@@ -476,83 +517,26 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  						s.sess = nil
  						s.defs = nil
  						s.instr = ""
-@@ -466,23 +474,30 @@ func (s *server) bridge(d *sdkmcp.Tool) tools.Tool {
- const connectGrace = 5 * time.Second
- 
- func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (output string, callErr error) {
--
+@@ -486,16 +494,14 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (s
+ // callResult calls tool and returns its flattened text with the server's
+ // CallToolResult (nil when the call did not complete).
+ func (s *server) callResult(ctx context.Context, tool string, args json.RawMessage) (output string, result *sdkmcp.CallToolResult, callErr error) {
++
  	s.mu.Lock()
--	settled, sess, status, errMsg := s.settled, s.sess, s.status, s.err
--	toolTimeout := s.cfg.ToolTimeoutDuration()
+ 	settled, sess, status, errMsg := s.settled, s.sess, s.status, s.err
+ 	toolTimeout := s.cfg.ToolTimeoutDuration()
  	history := s.cfg.nativeHistory
  	s.mu.Unlock()
  	defer func() {
- 		if history != nil {
- 			output = history.redactValue(output)
- 			if callErr != nil {
--				message := history.redactValue(callErr.Error())
--				if message != callErr.Error() {
--					callErr = &credentialOutputError{message: message, cause: callErr}
--				}
-+				callErr = &credentialOutputError{message: history.redactValue(callErr.Error()), cause: callErr}
- 			}
- 		}
+-		if history != nil {
+-			output = history.redactValue(output)
+-			callErr = s.cfg.redactNativeError(callErr)
+-		}
++		callErr = s.cfg.redactNativeError(callErr)
  	}()
-+	res, err := s.callResult(ctx, tool, args)
-+	if err != nil {
-+		return "", err
-+	}
-+	return flattenResultWithHistory(res, history), nil
-+}
-+
-+func (s *server) callResult(ctx context.Context, tool string, args json.RawMessage) (*sdkmcp.CallToolResult, error) {
-+
-+	s.mu.Lock()
-+	settled, sess, status, errMsg := s.settled, s.sess, s.status, s.err
-+	toolTimeout := s.cfg.ToolTimeoutDuration()
-+	s.mu.Unlock()
  	if !settled {
  
- 		grace, cancel := context.WithTimeout(ctx, connectGrace)
-@@ -491,9 +506,9 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
- 		case <-grace.Done():
- 			cancel()
- 			if ctx.Err() != nil {
--				return "", ctx.Err()
-+				return nil, ctx.Err()
- 			}
--			return "", fmt.Errorf("mcp server %q is still connecting — retry in a moment (/mcp shows status)", s.name)
-+			return nil, fmt.Errorf("mcp server %q is still connecting — retry in a moment (/mcp shows status)", s.name)
- 		}
- 		cancel()
- 		s.mu.Lock()
-@@ -504,13 +519,13 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
- 		switch status {
- 		case StatusFailed:
- 			if errMsg != "" {
--				return "", fmt.Errorf("mcp server %q unavailable: %s (/mcp %s reconnect)", s.name, errMsg, s.name)
-+				return nil, fmt.Errorf("mcp server %q unavailable: %s (/mcp %s reconnect)", s.name, errMsg, s.name)
- 			}
--			return "", fmt.Errorf("mcp server %q unavailable (/mcp %s reconnect)", s.name, s.name)
-+			return nil, fmt.Errorf("mcp server %q unavailable (/mcp %s reconnect)", s.name, s.name)
- 		case StatusDisabled:
--			return "", fmt.Errorf("mcp server %q is disabled (/mcp %s enable)", s.name, s.name)
-+			return nil, fmt.Errorf("mcp server %q is disabled (/mcp %s enable)", s.name, s.name)
- 		default:
--			return "", fmt.Errorf("mcp server %q is %s", s.name, status)
-+			return nil, fmt.Errorf("mcp server %q is %s", s.name, status)
- 		}
- 	}
- 
-@@ -518,13 +533,35 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
- 	case s.calling <- struct{}{}:
- 		defer func() { <-s.calling }()
- 	case <-ctx.Done():
--		return "", ctx.Err()
-+		return nil, ctx.Err()
- 	}
- 	// The timeout pauses while the user answers an elicitation form.
- 	ctx, cancel := context.WithCancelCause(ctx)
+@@ -539,6 +545,28 @@ func (s *server) callResult(ctx context.Context, tool string, args json.RawMessa
  	defer cancel(nil)
  	deadline := startDeadline(toolTimeout, func() { cancel(errToolTimeout) })
  	defer deadline.stop()
@@ -567,7 +551,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
 +	}
 +	s.mu.Unlock()
 +	if !current {
-+		return nil, errors.New("MCP session changed")
++		return "", nil, errors.New("MCP session changed")
 +	}
 +	defer workers.Done()
 +	stop := context.AfterFunc(callCtx, func() { cancel(context.Canceled) })
@@ -576,43 +560,28 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
 +		cancel(context.Canceled)
 +	}
 +	if err := ctx.Err(); err != nil {
-+		return nil, err
++		return "", nil, err
 +	}
  	call := &activeCall{ctx: ctx, tool: tool, deadline: deadline}
  	s.mu.Lock()
  	s.active = call
-@@ -539,17 +576,26 @@ func (s *server) call(ctx context.Context, tool string, args json.RawMessage) (o
- 	var argMap map[string]any
- 	if len(args) > 0 {
- 		if err := json.Unmarshal(args, &argMap); err != nil {
--			return "", fmt.Errorf("invalid tool arguments: %w", err)
-+			return nil, fmt.Errorf("invalid tool arguments: %w", err)
+@@ -563,6 +591,15 @@ func (s *server) callResult(ctx context.Context, tool string, args json.RawMessa
  		}
+ 		return "", nil, err
  	}
- 	res, err := sess.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: argMap})
- 	if err != nil {
- 		if errors.Is(context.Cause(ctx), errToolTimeout) {
--			return "", fmt.Errorf("mcp tool %s timed out after %s", tool, toolTimeout)
-+			return nil, fmt.Errorf("mcp tool %s timed out after %s", tool, toolTimeout)
- 		}
--		return "", err
-+		return nil, err
- 	}
--	return flattenResultWithHistory(res, history), nil
 +	if err := ctx.Err(); err != nil {
-+		return nil, err
++		return "", nil, err
 +	}
 +	s.mu.Lock()
 +	current = s.sess == sess && s.callCtx == callCtx && !s.cfg.Disabled()
 +	s.mu.Unlock()
 +	if !current || callCtx.Err() != nil {
-+		return nil, context.Canceled
++		return "", nil, context.Canceled
 +	}
-+	return res, nil
+ 	return flattenResultWithHistory(res, history), res, nil
  }
  
- func flattenResult(res *sdkmcp.CallToolResult) string {
-@@ -640,11 +686,13 @@ func (m *Manager) Disable(name string) bool {
+@@ -654,11 +691,13 @@ func (m *Manager) Disable(name string) bool {
  		s.connectCancel()
  	}
  	old := s.sess
@@ -626,7 +595,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  	if old != nil {
  		_ = old.Close()
  	}
-@@ -754,6 +802,7 @@ func (m *Manager) Reconnect(name string) bool {
+@@ -768,6 +807,7 @@ func (m *Manager) Reconnect(name string) bool {
  		s.connectCancel()
  	}
  	old := s.sess
@@ -634,7 +603,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  	s.sess, s.defs, s.instr = nil, nil, ""
  	s.gen++
  	s.autoTries = 0
-@@ -763,6 +812,7 @@ func (m *Manager) Reconnect(name string) bool {
+@@ -777,6 +817,7 @@ func (m *Manager) Reconnect(name string) bool {
  	s.mu.Unlock()
  	m.startLocked(context.Background(), s)
  	m.onChangeMu.Unlock()
@@ -642,7 +611,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  	if old != nil {
  		_ = old.Close()
  	}
-@@ -777,12 +827,17 @@ func (m *Manager) Close() {
+@@ -791,12 +832,17 @@ func (m *Manager) Close() {
  	m.closeOnce.Do(func() {
  		m.onChangeMu.Lock()
  		m.closed = true
@@ -662,7 +631,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  			}
  			s.sess, s.defs, s.instr = nil, nil, ""
  			s.gen++
-@@ -791,7 +846,8 @@ func (m *Manager) Close() {
+@@ -805,7 +851,8 @@ func (m *Manager) Close() {
  		}
  		m.onChangeMu.Unlock()
  		for _, sess := range sessions {
@@ -672,7 +641,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  		}
  		m.workers.Wait()
  	})
-@@ -823,6 +879,7 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+@@ -837,6 +884,7 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
  			client.Transport = &nativeCredentialTransport{base: client.Transport, endpoint: cfg.URL, resolve: cfg.nativeCredential, history: cfg.nativeHistory}
  			client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
  		}
@@ -680,7 +649,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  		if cfg.remoteTransport == "sse" {
  			return &ownedSSEClientTransport{endpoint: cfg.URL, client: client}, nil
  		}
-@@ -834,7 +891,10 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+@@ -848,7 +896,10 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
  		}, nil
  	}
  
@@ -692,7 +661,7 @@ index 50b6157c9a5c350d42cb3a17401e0262bc7fd1a4..50fa25224e56ccb6a7b2b6152d540774
  
  	env, err := config.ResolveEnvMapContext(ctx, cfg.Env)
  	if err != nil {
-@@ -842,15 +902,12 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
+@@ -856,15 +907,12 @@ func defaultTransport(ctx context.Context, cfg ServerConfig, stderr *ringBuffer)
  	}
  
  	cmd.Env = append(os.Environ(), envPairs(env)...)

@@ -59,7 +59,7 @@ function createMarkdownModule(expanded) {
       // needs the plain pre path, so stub the whole block out of this module graph.
       "./markdown/MarkdownMermaidBlock": { MarkdownMermaidBlock: "MarkdownMermaidBlock" },
       // HTML preview fences need the sandboxed UI host context; not exercised here.
-      "./sandboxed-ui/HtmlPreviewFence": { HtmlPreviewFence: "HtmlPreviewFence" },
+      "./sandboxed-ui/DeviceUiTranscript": { HtmlPreviewFence: "HtmlPreviewFence" },
       // Static rendering only: the streaming tail-block frame is not exercised.
       "./markdown/streamingTailBlock": {
         createStreamingBlockFrame: () => null,

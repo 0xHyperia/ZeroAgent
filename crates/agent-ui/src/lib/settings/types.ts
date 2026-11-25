@@ -32,6 +32,8 @@ export type McpAuthConfig = {
 
 export type McpServerConfig = {
   id: string;
+  /** Display label, independent of the id used in tool names and policies. */
+  name?: string;
   description?: string;
   docsUrl?: string;
   enabled: boolean;
@@ -165,6 +167,8 @@ export type ChatTranscriptSettings = {
   expandProcessByDefault: boolean;
   /** Show live tool and reasoning details with timing. */
   showDetailedProgress?: boolean;
+  /** Opt out of sandboxed HTML previews while keeping the original source visible. */
+  htmlPreviews: boolean;
 };
 
 /**
@@ -196,6 +200,7 @@ export type CustomSettings = {
   // Desktop system notifications (and Dock badge) when a background run
   // finishes or blocks on approval / a question. Device-local, never synced.
   runNotifications: boolean;
+  runCompletionSound: boolean;
   rightDock: RightDockSettings;
   composerContextDisplay: ComposerContextDisplayMode;
   // Empty strings select the built-in stacks for each typography role.

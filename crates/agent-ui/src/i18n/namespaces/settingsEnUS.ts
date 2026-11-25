@@ -83,6 +83,7 @@ export const SETTINGS_EN_US = {
   "settings.backToChatHint": "Back to chat (Esc)",
   "settings.searchPlaceholder": "Search settings…",
   "settings.searchNoResults": "No matching settings",
+  "settings.searchItems": "Matching settings",
   "settings.memoryTitle": "Memory",
   "settings.memoryBrowseDescription":
     "Manage information kept across conversations, project knowledge, and journals.",
@@ -283,6 +284,8 @@ export const SETTINGS_EN_US = {
   "settings.dark": "Dark",
   "settings.auto": "Auto",
   "settings.showDetailedProgress": "Show detailed progress",
+  "settings.htmlPreviews": "HTML previews",
+  "settings.htmlPreviewsDesc": "Show sandboxed previews of HTML code and tool-generated HTML in your conversations. Turn off to see the source.",
   "settings.showDetailedProgressDesc":
     "While a reply is running, name every backend stage with its timings and open reasoning and tool output as they stream. When off, a single status line is shown and the details stay one click away.",
   "settings.defaultTimeZoneAuto": "Automatic (system: {zone})",
@@ -1183,6 +1186,28 @@ export const SETTINGS_EN_US = {
   "diagnostics.save": "Save zip…",
   "diagnostics.download": "Download zip",
   "sandboxedUi.plugins.reload": "Reload",
+  "settings.devicePlugins.title": "Plugins",
+  "settings.devicePlugins.userScope": "This device",
+  "settings.devicePlugins.selectWorkspace":
+    "Select an authorized project in the device workspace first.",
+  "settings.devicePlugins.loading": "Loading plugins…",
+  "settings.devicePlugins.updating": "Updating plugins…",
+  "settings.devicePlugins.loadError": "Could not load plugins from this device",
+  "settings.devicePlugins.updateError":
+    "The device did not confirm the change. Check the current plugin state.",
+  "settings.devicePlugins.unavailable": "The engine on this device does not support plugins.",
+  "settings.devicePlugins.chooseFolder": "Choose folder",
+  "settings.devicePlugins.installDescription":
+    "Install a plugin from a folder you trust. A plugin can add tools, hooks, and prompts to this device.",
+  "settings.devicePlugins.trustTitle": "Workspace trust",
+  "settings.devicePlugins.trusted": "Workspace plugins are allowed to load here.",
+  "settings.devicePlugins.trust": "Trust workspace",
+  "settings.devicePlugins.trustDescription":
+    "Allow this workspace’s plugins and other project-defined features to load on this device.",
+  "settings.devicePlugins.revokeTrust": "Revoke trust",
+  "settings.devicePlugins.revokeDescription":
+    "Remove this workspace’s trust grant on the current device.",
+  "settings.devicePlugins.pluginActions": "Actions for {name}",
   "sandboxedUi.plugins.install": "Install from folder",
   "sandboxedUi.plugins.errors": "These plugins failed to load",
   "sandboxedUi.plugins.untrusted":

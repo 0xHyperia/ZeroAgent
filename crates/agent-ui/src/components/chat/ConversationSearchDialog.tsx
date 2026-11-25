@@ -1,5 +1,6 @@
 import {
   Clock3,
+  File,
   Loader2,
   MessageSquareText,
   Pin,
@@ -23,10 +24,17 @@ import {
 } from "@liveagent/ui/components/ui/command";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
+  type CommandPaletteCapability,
+  filterCommandPaletteActions,
+  resolveCommandPaletteQuery,
+} from "@liveagent/ui/lib/chat/commandPalette";
+import {
   type PersistedConversationSearchResult,
   searchPersistedConversations,
 } from "@liveagent/ui/lib/chat/conversationSearch";
+import { splitQuickOpenHighlights } from "@liveagent/ui/lib/chat/fileQuickOpen";
 import { setSearchJumpTarget } from "@liveagent/ui/lib/chat/searchJumpTarget";
+import { useQuickOpenFiles } from "@liveagent/ui/lib/chat/useQuickOpenFiles";
 import { cachedDateTimeFormat } from "@liveagent/ui/lib/shared/intlFormatters";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import {
@@ -68,6 +76,8 @@ type ConversationSearchDialogProps = {
   onSelectConversation: (id: string, options?: ConversationOpenOptions) => void;
   searchAdapter?: ConversationSearchAdapter;
   returnFocus?: RefObject<HTMLElement | null>;
+  palette?: CommandPaletteCapability;
+  initialQuery?: string;
 };
 
 type SearchStatus = "idle" | "loading" | "ready" | "error";
@@ -162,9 +172,11 @@ export function ConversationSearchDialog({
   onSelectConversation,
   searchAdapter,
   returnFocus,
+  palette,
+  initialQuery = "",
 }: ConversationSearchDialogProps) {
   const { t, locale } = useLocale();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<ConversationSearchResult[]>([]);
   const [nextCursor, setNextCursor] = useState<string>();
   const [moreStatus, setMoreStatus] = useState<SearchStatus>("idle");
@@ -174,7 +186,18 @@ export function ConversationSearchDialog({
   const resultSelected = useRef(false);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const requestSequenceRef = useRef(0);
-  const normalizedQuery = query.trim();
+  const parsed = palette
+    ? resolveCommandPaletteQuery(query)
+    : { scope: "conversations", query: query.trim() };
+  const actionScope = parsed.scope === "actions" || parsed.scope === "all";
+  const conversationScope = parsed.scope === "conversations" || parsed.scope === "all";
+  const normalizedQuery = conversationScope ? parsed.query : "";
+  const searchPaletteConversations = palette?.searchConversations;
+  const files = useQuickOpenFiles(
+    palette?.files,
+    open,
+    parsed.scope === "files" ? parsed.query : null,
+  );
 
   const performSearch = useCallback(
     async (searchQuery: string, cursor?: string) => {
@@ -189,9 +212,15 @@ export function ConversationSearchDialog({
         setStatus("loading");
       }
       try {
-        const page: ConversationSearchPage = searchAdapter
-          ? await searchAdapter.search(searchQuery, { cursor, signal: controller.signal })
-          : { items: await searchPersistedConversations({ query: searchQuery, currentWorkdir }) };
+        let page: ConversationSearchPage;
+        if (searchAdapter)
+          page = await searchAdapter.search(searchQuery, { cursor, signal: controller.signal });
+        else {
+          const items = searchPaletteConversations
+            ? await searchPaletteConversations(searchQuery, currentWorkdir, controller.signal)
+            : await searchPersistedConversations({ query: searchQuery, currentWorkdir });
+          page = { items };
+        }
         if (requestSequence !== requestSequenceRef.current || controller.signal.aborted) return;
         setResults((current) =>
           cursor
@@ -221,7 +250,7 @@ export function ConversationSearchDialog({
         }
       }
     },
-    [currentWorkdir, searchAdapter],
+    [currentWorkdir, searchAdapter, searchPaletteConversations],
   );
 
   useEffect(() => () => controllerRef.current?.abort(), []);
@@ -229,22 +258,23 @@ export function ConversationSearchDialog({
   useEffect(() => {
     if (open) {
       resultSelected.current = false;
+      setQuery(initialQuery);
       return;
     }
     paginationFocus.current = null;
     requestSequenceRef.current += 1;
     controllerRef.current?.abort();
-    setQuery("");
+    setQuery(initialQuery);
     setResults([]);
     setStatus("idle");
-  }, [open]);
+  }, [open, initialQuery]);
 
   useEffect(() => {
     requestSequenceRef.current += 1;
     controllerRef.current?.abort();
     setNextCursor(undefined);
     setMoreStatus("idle");
-    if (!open || !normalizedQuery) {
+    if (!open || !normalizedQuery || !conversationScope) {
       setResults([]);
       setStatus("idle");
       return;
@@ -256,9 +286,10 @@ export function ConversationSearchDialog({
       void performSearch(normalizedQuery);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [normalizedQuery, open, performSearch]);
+  }, [conversationScope, normalizedQuery, open, performSearch]);
 
   const groups = useMemo<SearchGroup[]>(() => {
+    if (!conversationScope) return [];
     if (normalizedQuery) {
       return [
         {
@@ -293,11 +324,57 @@ export function ConversationSearchDialog({
         items: recent,
       },
     ];
-  }, [conversations, normalizedQuery, results, t]);
+  }, [conversationScope, conversations, normalizedQuery, results, t]);
 
-  const selectableItems = useMemo(() => groups.flatMap((group) => group.items), [groups]);
+  const actions = useMemo(
+    () =>
+      open && palette && actionScope
+        ? filterCommandPaletteActions(palette.getActions(returnFocus?.current), parsed.query).map((action) => ({
+            ...action,
+            title: action.label,
+          }))
+        : [],
+    [actionScope, open, palette, parsed.query, returnFocus],
+  );
+  const fileItems = useMemo(
+    () =>
+      parsed.scope === "files" && files.status === "ready"
+        ? files.matches.map((match) => ({ ...match, title: match.path }))
+        : [],
+    [files, parsed.scope],
+  );
+  const selectableItems = [...actions, ...fileItems, ...groups.flatMap((group) => group.items)];
+
+  const searchTitle = t(palette ? "chat.commandPalette.title" : "chat.searchConversations");
+  const searchDescription = t(
+    palette ? "chat.commandPalette.description" : "chat.searchConversationsDescription",
+  );
+  const busy =
+    (conversationScope && status === "loading") ||
+    (parsed.scope === "files" && files.status === "loading");
+  const paletteStatus =
+    parsed.scope === "actions"
+      ? actions.length === 0
+        ? t("chat.commandPalette.noActions")
+        : null
+      : parsed.scope === "files"
+        ? {
+            unavailable: t("chat.commandPalette.filesUnavailable"),
+            loading: t("chat.commandPalette.filesLoading"),
+            error: t("chat.commandPalette.filesFailed"),
+            ready: fileItems.length === 0 ? t("chat.commandPalette.noFiles") : null,
+          }[files.status]
+        : null;
+
+  const selectPaletteEntry = (run: () => void) => {
+    if (!open || palette?.isCurrent?.() === false) return;
+    resultSelected.current = true;
+    onOpenChange(false);
+    run();
+  };
 
   const selectConversation = (item: ConversationSearchResult) => {
+    if (!open || palette?.isCurrent?.() === false) return;
     const { id } = item;
     resultSelected.current = true;
     onOpenChange(false);
@@ -341,10 +418,8 @@ export function ConversationSearchDialog({
             : false;
         }}
       >
-        <CommandDialogTitle className="sr-only">{t("chat.searchConversations")}</CommandDialogTitle>
-        <CommandDialogDescription className="sr-only">
-          {t("chat.searchConversationsDescription")}
-        </CommandDialogDescription>
+        <CommandDialogTitle className="sr-only">{searchTitle}</CommandDialogTitle>
+        <CommandDialogDescription className="sr-only">{searchDescription}</CommandDialogDescription>
         <Command
           items={selectableItems}
           value={query}
@@ -394,10 +469,12 @@ export function ConversationSearchDialog({
               )
                 event.stopPropagation();
             }}
-            aria-label={t("chat.searchConversations")}
-            placeholder={t("chat.searchConversationsPlaceholder")}
+            aria-label={searchTitle}
+            placeholder={t(
+              palette ? "chat.commandPalette.placeholder" : "chat.searchConversationsPlaceholder",
+            )}
             startAddon={
-              status === "loading" ? (
+              busy ? (
                 <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
               ) : undefined
             }
@@ -410,8 +487,43 @@ export function ConversationSearchDialog({
               }
             }}
           />
-          <CommandPanel aria-busy={status === "loading"}>
-            {status === "error" ? (
+          {palette ? (
+            <fieldset className="flex flex-wrap gap-1 border-b border-border/70 px-3 py-1">
+              <legend className="sr-only">{t("chat.commandPalette.scopeHintsLabel")}</legend>
+              {(
+                [
+                  [">", "actions"],
+                  ["@", "files"],
+                  ["#", "conversations"],
+                ] as const
+              ).map(([prefix, scope]) => (
+                <Button
+                  key={scope}
+                  type="button"
+                  size="sm"
+                  variant={parsed.scope === scope ? "secondary" : "ghost"}
+                  aria-pressed={parsed.scope === scope}
+                  className="gap-1.5 max-820:min-h-10 pointer-coarse:min-h-10"
+                  onClick={() => {
+                    setQuery(`${parsed.scope === scope ? "" : prefix}${parsed.query}`);
+                    inputRef.current?.focus({ preventScroll: true });
+                  }}
+                >
+                  <kbd className="text-muted-foreground">{prefix}</kbd>
+                  {t(`chat.commandPalette.scope.${scope}`)}
+                </Button>
+              ))}
+            </fieldset>
+          ) : null}
+          <CommandPanel aria-busy={busy}>
+            {paletteStatus ? (
+              <p
+                role={files.status === "error" ? "alert" : "status"}
+                className="px-5 py-6 text-center text-sm text-muted-foreground"
+              >
+                {paletteStatus}
+              </p>
+            ) : conversationScope && status === "error" ? (
               <div
                 role="alert"
                 data-conversation-search-status=""
@@ -430,7 +542,7 @@ export function ConversationSearchDialog({
                   {t("chat.retryConversationSearch")}
                 </Button>
               </div>
-            ) : status === "loading" ? (
+            ) : conversationScope && status === "loading" && actions.length === 0 ? (
               <div
                 role="status"
                 data-conversation-search-status=""
@@ -438,7 +550,7 @@ export function ConversationSearchDialog({
               >
                 {t("chat.conversationSearchLoading")}
               </div>
-            ) : selectableItems.length === 0 ? (
+            ) : conversationScope && selectableItems.length === 0 ? (
               <div
                 role="status"
                 data-conversation-search-status=""
@@ -451,12 +563,54 @@ export function ConversationSearchDialog({
               </div>
             ) : null}
             <CommandList
-              aria-label={t("chat.searchConversations")}
+              aria-label={searchTitle}
               className={cn(
                 "min-820:max-h-[min(52vh,440px)]",
                 selectableItems.length === 0 && "p-0",
               )}
             >
+              {actions.length > 0 ? (
+                <CommandGroup items={actions}>
+                  <CommandGroupLabel>{t("chat.commandPalette.actions")}</CommandGroupLabel>
+                  {actions.map((action) => (
+                    <CommandItem
+                      key={action.id}
+                      value={action}
+                      className="flex-row items-center gap-2 max-820:min-h-11 pointer-coarse:min-h-11"
+                      onClick={() => selectPaletteEntry(action.run)}
+                    >
+                      {action.icon ? (
+                        <action.icon className="size-4 shrink-0 text-muted-foreground" />
+                      ) : null}
+                      <span className="min-w-0 flex-1 truncate">{action.title}</span>
+                      {action.shortcut ? (
+                        <kbd className="text-xs text-muted-foreground">{action.shortcut}</kbd>
+                      ) : null}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ) : null}
+              {fileItems.length > 0 && palette?.files ? (
+                <CommandGroup items={fileItems}>
+                  <CommandGroupLabel>{t("chat.commandPalette.files")}</CommandGroupLabel>
+                  {fileItems.map((item) => (
+                    <CommandItem
+                      key={item.path}
+                      value={item}
+                      className="flex-row items-center gap-2 max-820:min-h-11 pointer-coarse:min-h-11"
+                      onClick={() => selectPaletteEntry(() => palette.files?.openFile(item.path))}
+                    >
+                      <File className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="min-w-0 truncate" title={item.path}>
+                        {splitQuickOpenHighlights(item.path, item.positions).map((run, index) =>
+                          // biome-ignore lint/suspicious/noArrayIndexKey: repeated text in the same file path is valid.
+                          run.highlighted ? <strong key={index}>{run.text}</strong> : run.text,
+                        )}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ) : null}
               {groups
                 .filter((group) => group.items.length > 0)
                 .map((group) => {
@@ -534,8 +688,16 @@ export function ConversationSearchDialog({
                   );
                 })}
             </CommandList>
-            {nextCursor && status === "ready" ? (
-              <div data-conversation-search-pagination="" className="shrink-0 px-3 pb-3 text-center max-820:pb-1.5">
+            {parsed.scope === "files" && files.status === "ready" && files.truncated ? (
+              <p className="px-3 pb-2 text-xs text-muted-foreground">
+                {t("chat.commandPalette.filesTruncated")}
+              </p>
+            ) : null}
+            {conversationScope && nextCursor && status === "ready" ? (
+              <div
+                data-conversation-search-pagination=""
+                className="shrink-0 px-3 pb-3 text-center max-820:pb-1.5"
+              >
                 {moreStatus === "error" ? (
                   <p role="alert" className="mb-2 text-xs text-destructive">
                     {t("chat.conversationSearchFailed")}

@@ -34,6 +34,11 @@ import {
 } from "@liveagent/ui/lib/chat/runProgress";
 import { taskResultDetails } from "@liveagent/ui/lib/chat/taskProgress";
 import { withToolRunInfo } from "@liveagent/ui/lib/chat/toolRunInfo";
+import {
+  isKBrainErrorMessageId,
+  isKBrainOutcomeMarkerId,
+  projectKBrainTurnFailure,
+} from "@liveagent/ui/lib/chat/turnError";
 import type { Locale } from "../../i18n/config";
 import type { ConversationViewState } from "../chat/conversation/conversationState";
 import { appendMessagesToConversation } from "../chat/conversation/conversationState";
@@ -178,6 +183,7 @@ export function contextToKBrainMessages(context: Context): KBrainMessage[] {
   // K-brain `question` calls show as AskUserQuestion; send them back under their own name.
   const renamed = new Set<string>();
   for (const message of context.messages) {
+    if (message.role === "assistant" && isKBrainOutcomeMarkerId(message.responseId)) continue;
     const canonical = canonicalMessage(message);
     if (!canonical) continue;
     for (const call of canonical.tool_calls ?? []) {
@@ -418,7 +424,7 @@ function finalContent(
   calls: Map<string, ToolCall>,
 ): AssistantMessage["content"] {
   const content: AssistantMessage["content"] = [];
-  for (const block of message?.content ?? []) {
+  for (const block of isKBrainErrorMessageId(message?.id) ? [] : (message?.content ?? [])) {
     if (block.type === "text" && block.text) content.push({ type: "text", text: block.text });
     else if (block.type === "thinking" && block.text)
       content.push({ type: "thinking", thinking: block.text });
@@ -608,7 +614,13 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
   });
   const model = params.model;
   const promptContent = canonicalPromptContent(params);
-  const tail = params.context.messages.at(-1) as
+  let tailIndex = params.context.messages.length - 1;
+  while (tailIndex >= 0) {
+    const item = params.context.messages[tailIndex];
+    if (item?.role !== "assistant" || !isKBrainOutcomeMarkerId(item.responseId)) break;
+    tailIndex -= 1;
+  }
+  const tail = params.context.messages[tailIndex] as
     | (Message & { id?: string; kbrainEditPending?: boolean })
     | undefined;
   let resumeMessageId =
@@ -786,6 +798,8 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
   let afterSeq = accepted.accepted_seq;
   let terminal: "stop" | "error" | "aborted" = "stop";
   let errorMessage: string | undefined;
+  let errorDetail: unknown;
+  let cancelReason: "shutdown" | undefined;
   let sawTerminal = false;
   let automaticContinuation = false;
   let permissionFailure: Error | undefined;
@@ -839,6 +853,29 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
       case "run.progress": {
         const next = parseRunProgress(eventPayload<unknown>(event));
         if (next) reportProgress(next);
+        break;
+      }
+      case "trajectory.retry": {
+        const retry = eventPayload<{
+          task_id?: string;
+          attempt?: number;
+          max?: number;
+          retries_remaining?: number;
+          delay_ms?: number;
+        }>(event);
+        if (!retry || retry.task_id || !Number.isFinite(retry.attempt)) break;
+        const attempt = retry.attempt ?? 0;
+        const remaining = retry.retries_remaining;
+        const maxRetries =
+          remaining !== undefined && remaining >= 0
+            ? attempt + remaining - 1
+            : (retry.max ?? 1) - 1;
+        reportProgress({
+          stage: "retrying",
+          retry_attempt: attempt,
+          retry_max: Math.max(attempt, maxRetries),
+          retry_at_ms: Date.now() + Math.max(0, retry.delay_ms ?? 0),
+        });
         break;
       }
       case "assistant.text.delta": {
@@ -1272,16 +1309,21 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
         reportStatus(null);
         break;
       }
-      case "run.failed":
+      case "run.failed": {
+        const failure = eventPayload<{ error?: string; error_detail?: unknown }>(event);
         terminal = "error";
-        errorMessage =
-          eventPayload<{ error?: string }>(event)?.error ?? "ZeroAgent engine run failed";
+        errorMessage = failure?.error;
+        errorDetail = failure?.error_detail;
         sawTerminal = true;
         streamAbortController.abort();
         cancelPendingPermissions();
         break;
+      }
       case "run.cancelled":
         terminal = "aborted";
+        if (eventPayload<{ cancel_reason?: string }>(event)?.cancel_reason === "shutdown") {
+          cancelReason = "shutdown";
+        }
         sawTerminal = true;
         streamAbortController.abort();
         cancelPendingPermissions();
@@ -1356,15 +1398,22 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     errorMessage ??= "ZeroAgent engine run completed without an assistant message";
   }
 
-  let content = finalContent(finalMessage, text, thinking, calls);
+  const content = finalContent(finalMessage, text, thinking, calls);
   if (terminal === "stop" && content.length === 0) {
     terminal = "error";
     errorMessage ??= "ZeroAgent engine run completed without an assistant result";
   }
-  // A stopped turn keeps whatever it streamed; the transcript renders the stopped state.
-  if (content.length === 0 && terminal === "error") {
-    content = [{ type: "text", text: errorMessage ?? "K-brain run failed" }];
-  }
+  const failure =
+    terminal === "error"
+      ? projectKBrainTurnFailure(
+          errorDetail ?? finalMessage?.error_detail,
+          errorMessage ??
+            finalMessage?.error ??
+            (isKBrainErrorMessageId(finalMessage?.id)
+              ? finalMessage?.content?.find((block) => block.type === "text")?.text
+              : undefined),
+        )
+      : undefined;
 
   const message: AssistantMessage = {
     role: "assistant",
@@ -1376,7 +1425,10 @@ async function executeKBrainTurn(params: KBrainTurnParams): Promise<AssistantMes
     ...(finalMessage?.id ? { id: finalMessage.id } : {}),
     usage: usage(finalMessage),
     stopReason: terminal,
-    ...(errorMessage ? { errorMessage } : {}),
+    ...failure,
+    ...(terminal === "aborted" && (cancelReason || finalMessage?.cancel_reason === "shutdown")
+      ? { cancelReason: "shutdown" }
+      : {}),
     timestamp: Date.now(),
   };
   if (params.applyConversationState && params.getConversationState) {

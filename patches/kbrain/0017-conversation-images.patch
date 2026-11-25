@@ -1,5 +1,5 @@
 diff --git a/internal/backend/client_tools.go b/internal/backend/client_tools.go
-index 7c2d4c4..f8fe431 100644
+index 7c2d4c4c93231e348ca98b214a88ab98cf9da9dd..f8fe4316bfd726e3c8d65c88f844cd45c7046ffa 100644
 --- a/internal/backend/client_tools.go
 +++ b/internal/backend/client_tools.go
 @@ -48,7 +48,7 @@ func normalizeClientTools(in []protocol.ClientTool, available []tools.Tool) ([]p
@@ -13,7 +13,7 @@ index 7c2d4c4..f8fe431 100644
  		for _, existing := range available {
 diff --git a/internal/backend/conversation_images.go b/internal/backend/conversation_images.go
 new file mode 100644
-index 0000000..0a02f26
+index 0000000000000000000000000000000000000000..0a02f265a20052bcda79acda2ed9d82b676d3abc
 --- /dev/null
 +++ b/internal/backend/conversation_images.go
 @@ -0,0 +1,241 @@
@@ -260,7 +260,7 @@ index 0000000..0a02f26
 +}
 diff --git a/internal/backend/conversation_images_test.go b/internal/backend/conversation_images_test.go
 new file mode 100644
-index 0000000..d3bd54d
+index 0000000000000000000000000000000000000000..d3bd54d247891911c4822aa59aca5d4903d98bd9
 --- /dev/null
 +++ b/internal/backend/conversation_images_test.go
 @@ -0,0 +1,118 @@
@@ -383,7 +383,7 @@ index 0000000..d3bd54d
 +	}
 +}
 diff --git a/internal/backend/health.go b/internal/backend/health.go
-index 383d0ad..93f1b04 100644
+index be0467065fc0e9a3cfadba1e217193cd3d8928dc..34c8495e57fc57a8acb780b0beee6b5244ebd10f 100644
 --- a/internal/backend/health.go
 +++ b/internal/backend/health.go
 @@ -17,6 +17,7 @@ type healthCapabilities struct {
@@ -394,19 +394,19 @@ index 383d0ad..93f1b04 100644
  	SessionExists           int                `json:"session_exists"`
  	AIReviewPerRun          int                `json:"ai_review_per_run"`
  	PermissionRules         int                `json:"permission_rules"`
-@@ -159,6 +160,7 @@ func (s *Server) health() healthResponse {
- 			ComputerSessionApproval: 1,
- 			MemorySwitch:            1,
- 			ImageModelToggle:        1,
-+			ConversationImages:      1,
- 			SessionExists:           1,
- 			AIReviewPerRun:          1,
- 			PermissionRules:         1,
+@@ -254,6 +255,7 @@ func (s *Server) health() healthResponse {
+ 			PluginUIErrors:              1,
+ 			PluginManifestUnknownFields: 1,
+ 			FilesystemMentionList:       1,
++			ConversationImages:          1,
+ 		},
+ 		HostBridge: s.hostBridge.status(),
+ 	}
 diff --git a/internal/backend/run_options.go b/internal/backend/run_options.go
-index be58d8e..6075272 100644
+index cae50b04e1611647e86444e0fd20cf4bdd9060c2..501bffe2f40c805fc8887bf09416c66056ef0cd6 100644
 --- a/internal/backend/run_options.go
 +++ b/internal/backend/run_options.go
-@@ -156,11 +156,14 @@ func applyRunOptions(a *agent.Agent, options protocol.RunOptions) func() {
+@@ -169,11 +169,14 @@ func applyRunOptions(a *agent.Agent, options protocol.RunOptions) func() {
  
  // applyRunOptionsWith also offers run-scoped extra tools (client tools) alongside the agent's
  // own, under the same policy filtering.
@@ -424,10 +424,10 @@ index be58d8e..6075272 100644
  	if options.PlanModeEnabled {
  		available = append(available, exitPlanModeTool())
 diff --git a/internal/backend/server.go b/internal/backend/server.go
-index 3d1f68e..59739c8 100644
+index 943d3533c28d2d417fb66027a166ef019ed20200..94d2472d36d6900f7787f836605ef04a91c3a361 100644
 --- a/internal/backend/server.go
 +++ b/internal/backend/server.go
-@@ -1517,7 +1517,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, id string) {
+@@ -1560,7 +1560,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, id string) {
  		return
  	}
  	// A user run may answer a goal waiting for input or get a paused-goal notice; cron runs never do.
@@ -442,7 +442,7 @@ index 3d1f68e..59739c8 100644
  	if err != nil {
  		writeJSONError(w, status, err.Error())
  		return
-@@ -1530,7 +1536,12 @@ func (s *Server) executeRun(rt *runtimeSession, ctx context.Context, end func(),
+@@ -1573,7 +1579,12 @@ func (s *Server) executeRun(rt *runtimeSession, ctx context.Context, end func(),
  	progress := &runProgress{started: time.Now(), publish: rt.publish}
  	progress.phase("preparing")
  	rt.mu.Lock()
@@ -457,7 +457,7 @@ index 3d1f68e..59739c8 100644
  	defer func() {
  		rt.mu.Lock()
 diff --git a/internal/imaging/projects.go b/internal/imaging/projects.go
-index 9b2416a..f760deb 100644
+index 9b2416aa528da155c5691b2f03b0c2cc89e222af..f760deb30b5aa15485cd7a75bdadfc0d55d00fdb 100644
 --- a/internal/imaging/projects.go
 +++ b/internal/imaging/projects.go
 @@ -35,6 +35,26 @@ func (s *Store) CreateProject(ctx context.Context, scope Scope, title, workspace
@@ -488,7 +488,7 @@ index 9b2416a..f760deb 100644
  	if strings.TrimSpace(title) == "" {
  		return ImageProject{}, invalid("project title required")
 diff --git a/internal/protocol/capabilities.json b/internal/protocol/capabilities.json
-index c112a4d..723b52b 100644
+index 7d0c52dfe12ba2215a54cf9166b8b58e007fc334..96c27d69302580699aa781580026530ddeda9dd5 100644
 --- a/internal/protocol/capabilities.json
 +++ b/internal/protocol/capabilities.json
 @@ -41,6 +41,14 @@
@@ -507,10 +507,10 @@ index c112a4d..723b52b 100644
        "name": "session_exists",
        "type": "integer",
 diff --git a/internal/protocol/protocol.go b/internal/protocol/protocol.go
-index 6782c90..dd62f97 100644
+index a6c8dfcfd190f3d8e3e4f05860634ef07e6b0e5a..5c7cfa231271dd93245c9b44c688115bf6e0ba2f 100644
 --- a/internal/protocol/protocol.go
 +++ b/internal/protocol/protocol.go
-@@ -634,11 +634,12 @@ type CreateSessionRequest struct {
+@@ -715,11 +715,12 @@ type CreateSessionRequest struct {
  }
  
  type RunOptions struct {
@@ -528,8 +528,8 @@ index 6782c90..dd62f97 100644
  	// ReviewScope "per_run" (capability ai_review_per_run) lets the permission mode alone decide
  	// AI review: only auto_review reviews, with the session's model when no reviewer is set.
  	// Without it the global aiApproval mode keeps applying as before.
-@@ -662,6 +663,11 @@ type RunOptions struct {
- 	MCPElicitation bool `json:"mcp_elicitation,omitempty"`
+@@ -765,6 +766,11 @@ type PreviewCreated struct {
+ 	CreatedAt time.Time `json:"created_at"`
  }
  
 +type RunImageCreation struct {

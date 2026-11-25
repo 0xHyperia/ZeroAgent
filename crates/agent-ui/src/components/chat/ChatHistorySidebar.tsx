@@ -58,7 +58,14 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  isCommandPaletteShortcut,
+  isCommandPaletteSuppressed,
+  isMacLikePlatform,
+} from "../../lib/chat/commandPalette";
 import { normalizeSidebarShortcuts, SIDEBAR_SHORTCUTS } from "../../lib/settings/sidebarShortcuts";
+import { matchesShortcutCommand } from "../../lib/shortcuts/shortcutCommands";
+import { isKeyEventHandledElsewhere } from "../../lib/shortcuts/shortcutKeys";
 import type { ConversationOpenOptions } from "../../lib/sidebar/openController";
 import {
   buildSidebarPinnedEntries,
@@ -71,6 +78,7 @@ import { selectRecentSidebarConversations } from "../../lib/sidebar/recentConver
 import { WORKSPACE_HISTORY_PAGE_SIZE } from "../../lib/sidebar/store";
 import type { SidebarConversation } from "../../lib/sidebar/types";
 import { useSidebarReorderDrag } from "../../lib/sidebar/useSidebarReorderDrag";
+import { useSidebarRovingFocus } from "../../lib/sidebar/useSidebarRovingFocus";
 import {
   buildWorkspaceProjectSections,
   sliceWorkspaceProjectSections,
@@ -223,6 +231,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     fontScale = 1,
     conversationSearchRequestKey,
     conversationSearchAdapter,
+    commandPalette,
     activeView = "chat",
     showProjects = false,
     workspaceSectionLabel,
@@ -249,6 +258,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     onBrowseProjectInFileTree,
     onConfigureProject,
     onBrowseProjectInSystemFileManager,
+    onOpenProjectInEditor,
     onSetProjectPinned,
     onRemoveProject,
     onArchiveProject,
@@ -292,7 +302,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
   } = props;
   const { t } = useLocale();
 
+  const sidebarRovingFocus = useSidebarRovingFocus(t("sidebar.rowKeyboardHint"));
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const [paletteRequest, setPaletteRequest] = useState<{ scope: string; query: string }>();
   const conversationSearchTrigger = useRef<HTMLElement>(null);
   const conversationSearchOpener = useRef<HTMLElement | null>(null);
   const [revealedSearchConversationId, setRevealedSearchConversationId] = useState<string | null>(
@@ -382,6 +394,35 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     setConversationSearchOpen(false);
   }, [sectionsDisabled]);
 
+  const paletteScope = commandPalette?.scopeKey;
+  const paletteScopeChanged = paletteRequest && paletteRequest.scope !== paletteScope;
+  useEffect(() => {
+    if (!paletteScopeChanged) return;
+    setConversationSearchOpen(false);
+    setPaletteRequest(undefined);
+  }, [paletteScopeChanged]);
+
+  useEffect(() => {
+    if (!paletteScope || sectionsDisabled || conversationSearchOpen) return;
+    const isMac = isMacLikePlatform();
+    const openPalette = (event: KeyboardEvent) => {
+      if (isKeyEventHandledElsewhere(event) || isCommandPaletteSuppressed()) return;
+      const quickOpen = matchesShortcutCommand(event, "quickOpenFile", isMac);
+      const searchConversations = matchesShortcutCommand(event, "searchConversations", isMac);
+      if (!quickOpen && !searchConversations && !isCommandPaletteShortcut(event, isMac)) return;
+      event.preventDefault();
+      if (event.repeat) return;
+      conversationSearchOpener.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : conversationSearchTrigger.current;
+      setPaletteRequest({ scope: paletteScope, query: quickOpen ? "@" : searchConversations ? "#" : "" });
+      setConversationSearchOpen(true);
+    };
+    window.addEventListener("keydown", openPalette);
+    return () => window.removeEventListener("keydown", openPalette);
+  }, [conversationSearchOpen, paletteScope, sectionsDisabled]);
+
   useEffect(() => {
     if (
       conversationSearchRequestKey === undefined ||
@@ -391,6 +432,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     }
     lastConversationSearchRequestKeyRef.current = conversationSearchRequestKey;
     if (!sectionsDisabled && !conversationSearchOpen) {
+      setPaletteRequest(undefined);
       const focused = document.activeElement;
       conversationSearchOpener.current =
         focused instanceof HTMLElement && focused !== document.body
@@ -613,6 +655,32 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       onStartRenaming(item);
     }
   });
+  useEffect(() => {
+    if (!paletteScope || sectionsDisabled || conversationSearchOpen || selectionMode) return;
+    const isMac = isMacLikePlatform();
+    const step = (event: KeyboardEvent) => {
+      if (isKeyEventHandledElsewhere(event) || isCommandPaletteSuppressed()) return;
+      const delta = matchesShortcutCommand(event, "previousConversation", isMac)
+        ? -1
+        : matchesShortcutCommand(event, "nextConversation", isMac) ? 1 : 0;
+      if (!delta) return;
+      const index = orderedConversationIds.indexOf(currentConversationId);
+      const target = index < 0 ? undefined : orderedConversationIds[index + delta];
+      if (!target) return;
+      event.preventDefault();
+      handleSelectConversation(target);
+    };
+    window.addEventListener("keydown", step);
+    return () => window.removeEventListener("keydown", step);
+  }, [
+    conversationSearchOpen,
+    currentConversationId,
+    handleSelectConversation,
+    orderedConversationIds,
+    paletteScope,
+    sectionsDisabled,
+    selectionMode,
+  ]);
   const handleRenameDraftChange = useStableEvent((value: string) => {
     if (!sectionsDisabled) {
       onRenameDraftChange(value);
@@ -732,6 +800,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
     if (!sectionsDisabled) {
       onBrowseProjectInSystemFileManager?.(project);
     }
+  });
+  const handleOpenProjectInEditor = useStableEvent((project: WorkspaceProject, editor: string) => {
+    if (!sectionsDisabled) onOpenProjectInEditor?.(project, editor);
   });
   const handleSetProjectPinned = useStableEvent((project: WorkspaceProject, isPinned: boolean) => {
     if (!sectionsDisabled) {
@@ -1434,6 +1505,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
           onBrowseProjectInSystemFileManager={
             onBrowseProjectInSystemFileManager ? handleBrowseProjectInSystemFileManager : undefined
           }
+          onOpenProjectInEditor={onOpenProjectInEditor ? handleOpenProjectInEditor : undefined}
           onConfigureProject={handleConfigureProject}
           onSetProjectPinned={handleSetProjectPinned}
           onRemoveProject={handleRemoveProject}
@@ -1500,6 +1572,7 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
           </div>
         ) : null}
         <div
+          {...sidebarRovingFocus}
           className={cn(
             "chat-history-sidebar-inner flex w-full min-w-0 min-h-0 flex-1 flex-col",
             "web:max-820:translate-z-0 web:max-820:[backface-visibility:hidden]",
@@ -1518,6 +1591,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
                     disabled={sectionsDisabled}
                     onClick={(event) => {
                       conversationSearchOpener.current = event.currentTarget;
+                      setPaletteRequest(
+                        paletteScope ? { scope: paletteScope, query: "#" } : undefined,
+                      );
                       setConversationSearchOpen(true);
                     }}
                     title={t("chat.searchConversations")}
@@ -2393,13 +2469,15 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       {bulkDeleteDialog}
       {groupDeleteDialog}
       <ConversationSearchDialog
-        open={conversationSearchOpen}
+        open={conversationSearchOpen && !paletteScopeChanged}
         onOpenChange={setConversationSearchOpen}
         returnFocus={conversationSearchOpener}
         conversations={items}
         currentWorkdir={currentConversationWorkdir}
         onSelectConversation={handleSelectConversation}
         searchAdapter={conversationSearchAdapter}
+        palette={paletteRequest && !paletteScopeChanged ? commandPalette : undefined}
+        initialQuery={paletteRequest?.query}
       />
       {archivedConversations && archivedListOpen ? (
         <ArchivedConversationsModal

@@ -12,6 +12,8 @@ export type ChatFileLink = {
   /** Set by the link's context menu (desktop only) to hand the file to the
    * host's default app or browser; never parsed from message text. */
   openWithDefaultApp?: boolean;
+  /** Desktop context-menu choice. Link parsing never sets it. */
+  openInEditor?: string;
 };
 
 const WINDOWS_DRIVE_PATH_PATTERN = /^[a-zA-Z]:[\\/]/;

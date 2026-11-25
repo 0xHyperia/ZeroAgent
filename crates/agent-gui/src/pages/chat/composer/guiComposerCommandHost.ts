@@ -6,6 +6,10 @@ import {
 } from "@liveagent/ui/lib/chat/composerCommands";
 import type { SharedModelOption } from "@liveagent/ui/lib/models/modelOptions";
 import { parseModelValue } from "@liveagent/ui/lib/models/modelValue";
+import {
+  type DevicePluginsClient,
+  subscribeDeviceTrust,
+} from "@liveagent/ui/lib/plugins/devicePlugins";
 import type { ChatRuntimeControls } from "@liveagent/ui/lib/settings/types";
 import type { KBrainClient } from "../../../lib/kbrain/client";
 import type { KBrainGoalState } from "../../../lib/kbrain/types";
@@ -22,6 +26,7 @@ export function createGuiComposerCommandHost(params: {
   t: (key: string) => string;
   /** K-brain 客户端；不传时只有 Skill 弹层，指令一概不注册。 */
   client?: KBrainClient;
+  devicePlugins?: DevicePluginsClient;
   /** 当前对话映射到的 K-brain 会话；新对话首轮发出前还没有。 */
   getKBrainSessionId: () => string | undefined;
   getWorkdir: () => string | undefined;
@@ -71,6 +76,10 @@ export function createGuiComposerCommandHost(params: {
     },
   };
   if (!client) return host;
+  const { devicePlugins } = params;
+  if (devicePlugins) {
+    host.subscribeCommandCatalog = (onChange) => subscribeDeviceTrust(devicePlugins, onChange);
+  }
   const sessionId = () => {
     const id = params.getKBrainSessionId()?.trim();
     if (!id) throw new Error(t("chat.commands.needsConversation"));

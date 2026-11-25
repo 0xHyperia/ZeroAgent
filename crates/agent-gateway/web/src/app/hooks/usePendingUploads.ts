@@ -3,7 +3,11 @@ import type { MentionComposerHandle } from "@liveagent/ui/components/chat/Mentio
 import type { ToastTone } from "@liveagent/ui/components/ui/toast-manager";
 import { t as translate } from "@liveagent/ui/i18n/index";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
-import { mergePendingUploadedFilesWithStats } from "@liveagent/ui/lib/chat/uploadedFiles";
+import {
+  isPendingUploadedFile,
+  mergePendingUploadedFilesWithStats,
+  replacePendingUploadedFile,
+} from "@liveagent/ui/lib/chat/uploadedFiles";
 import { registerLocalUploadedImagePreviews } from "@liveagent/ui/lib/chat/uploadedImagePreview";
 import { type DragEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -393,6 +397,76 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     ],
   );
 
+  // Swap one pending attachment for another in place: a File (an annotated
+  // image) is uploaded into the workspace first; an already staged entry (the
+  // original, on revert) goes back directly. It never adds files, so the
+  // batch limit/merge rules and the import busy guard do not apply.
+  const replacePendingUpload = useCallback(
+    async (
+      relativePath: string,
+      replacement: File | PendingUploadedFile,
+      target?: { conversationId: string; workdir: string },
+    ): Promise<PendingUploadedFile | null> => {
+      const targetConversationId =
+        target?.conversationId.trim() || displayedConversationIdRef.current;
+      const activeConversation = displayedConversationIdRef.current;
+      const activeWorkdir = displayedConversationWorkdirRef.current;
+      const workdir = target?.workdir.trim() ?? activeWorkdir.trim();
+      const original = getPendingUploadsForConversation(targetConversationId).find(
+        (file) => file.relativePath === relativePath,
+      );
+      const isCurrent = () =>
+        uploadScopeRef.current === uploadScope &&
+        executionModeRef.current !== "text" &&
+        displayedConversationIdRef.current === activeConversation &&
+        displayedConversationWorkdirRef.current === activeWorkdir;
+      if (!targetConversationId || !workdir || !original || !isCurrent()) return null;
+      let next: PendingUploadedFile;
+      if (isPendingUploadedFile(replacement)) {
+        next = replacement;
+      } else {
+        try {
+          const agentID = await resolveAgentID();
+          if (!isCurrent()) return null;
+          const result = await importReadableFiles(token, agentID, workdir, [replacement]);
+          if ((await resolveAgentID()) !== agentID || !isCurrent()) return null;
+          const staged = result.files[0];
+          if (!staged) {
+            if (result.skipped.length > 0) addNotify("warning", result.skipped.join("\n"));
+            return null;
+          }
+          registerLocalUploadedImagePreviews({
+            scope: workspaceOwner,
+            workspaceRoot: workdir,
+            uploadedFiles: [staged],
+            sourceFiles: [replacement],
+          });
+          next = staged;
+        } catch (error) {
+          if (isCurrent()) addNotify("error", asErrorMessage(error, "导入文件失败"));
+          return null;
+        }
+      }
+      const current = getPendingUploadsForConversation(targetConversationId);
+      if (!isCurrent() || !current.includes(original)) return null;
+      setPendingUploadsForConversation(
+        targetConversationId,
+        replacePendingUploadedFile(current, relativePath, next),
+      );
+      return next;
+    },
+    [
+      addNotify,
+      displayedConversationWorkdirRef,
+      getPendingUploadsForConversation,
+      resolveAgentID,
+      setPendingUploadsForConversation,
+      token,
+      uploadScope,
+      workspaceOwner,
+    ],
+  );
+
   const resolveEventUploadTarget = useCallback(
     (eventTarget: EventTarget | null) => {
       const targetConversationId = resolveFileUploadConversationId(eventTarget);
@@ -576,5 +650,6 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     handleFileDragOver,
     handleFileDragLeave,
     handleFileDrop,
+    replacePendingUpload,
   };
 }

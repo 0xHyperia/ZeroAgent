@@ -5,7 +5,7 @@ import { normalizeErrorMessage } from "../providers/errorMessage";
  * reply as a synthetic assistant message (`assistant-error-<run id>`) whose
  * text is the raw provider or transport error, e.g.
  * `401 Unauthorized: {"error":{"message":"Incorrect API key…"}}`. The
- * transcript shows that text as a typed error row, never as reply markdown.
+ * transcript presents a safe classification of the failure separately from reply text.
  */
 const KBRAIN_ERROR_MESSAGE_ID_PREFIX = "assistant-error-";
 
@@ -23,6 +23,10 @@ const KBRAIN_STOPPED_MARKER_ID_PREFIX = "assistant-stopped-";
 
 export function isKBrainStoppedMarkerId(id: unknown): boolean {
   return typeof id === "string" && id.startsWith(KBRAIN_STOPPED_MARKER_ID_PREFIX);
+}
+
+export function isKBrainOutcomeMarkerId(id: unknown): boolean {
+  return isKBrainErrorMessageId(id) || isKBrainStoppedMarkerId(id);
 }
 
 export type TurnErrorKind =
@@ -85,8 +89,7 @@ export type TurnErrorInfo = {
   raw: string;
 };
 
-const AUTH =
-  /invalid[_ ]api[_ ]key|incorrect api key|unauthori[sz]ed|authentication|permission denied/i;
+const AUTH = /invalid[_ ]api[_ ]key|incorrect api key|unauthori[sz]ed|authentication/i;
 const RATE_LIMIT = /rate[_ ]limit|too many requests|quota exceeded/i;
 const SERVER = /server[_ ]error|internal server error|bad gateway|service unavailable|overloaded/i;
 const CONNECTION =
@@ -134,4 +137,52 @@ export function classifyTurnError(
             ? "connection"
             : "unknown";
   return { kind, ...(status === undefined ? {} : { status }), detail, raw };
+}
+
+const KBRAIN_FAILURE_MESSAGES = {
+  invalid_api_key: "The model provider rejected authentication.",
+  rate_limited: "The model provider limited requests.",
+  server_error: "The model provider could not complete the request.",
+  connection_lost: "Connection to the model was interrupted.",
+  unreachable: "Could not connect to the model provider.",
+  timeout: "The model request timed out.",
+  context_limit: "The model's context limit was reached.",
+  bad_request: "The model provider rejected the request.",
+  not_found: "The requested model or endpoint was not found.",
+  provider_error: "The model provider returned an error.",
+  unknown: "The model request failed.",
+} as const;
+
+type KBrainFailureKind = keyof typeof KBRAIN_FAILURE_MESSAGES;
+
+function isKBrainFailureKind(kind: unknown): kind is KBrainFailureKind {
+  return typeof kind === "string" && Object.hasOwn(KBRAIN_FAILURE_MESSAGES, kind);
+}
+
+/** Provider diagnostics are untrusted. Share only stable codes, status and fixed copy. */
+export function projectKBrainTurnFailure(detail: unknown, rawError: unknown) {
+  const record = detail && typeof detail === "object" ? (detail as Record<string, unknown>) : {};
+  const raw = typeof rawError === "string" ? rawError : "";
+  const rawStatus = typeof rawError === "string" ? statusOf(raw) : undefined;
+  const status = record.upstream_status ?? record.upstreamStatus ?? rawStatus;
+  const upstreamStatus =
+    typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599
+      ? status
+      : undefined;
+  let kind: KBrainFailureKind = "unknown";
+  if (isKBrainFailureKind(record.kind)) kind = record.kind;
+  else if (upstreamStatus === 401 || upstreamStatus === 403) kind = "invalid_api_key";
+  else if (upstreamStatus === 404) kind = "not_found";
+  else if (upstreamStatus === 408) kind = "timeout";
+  else if (upstreamStatus === 429) kind = "rate_limited";
+  else if (upstreamStatus !== undefined)
+    kind = upstreamStatus >= 500 ? "server_error" : "bad_request";
+  else if (CONNECTION.test(raw)) kind = "connection_lost";
+  else if (AUTH.test(raw)) kind = "invalid_api_key";
+  else if (RATE_LIMIT.test(raw)) kind = "rate_limited";
+  else if (SERVER.test(raw)) kind = "server_error";
+  return {
+    errorMessage: KBRAIN_FAILURE_MESSAGES[kind],
+    errorDetail: { kind, ...(upstreamStatus === undefined ? {} : { upstreamStatus }) },
+  };
 }

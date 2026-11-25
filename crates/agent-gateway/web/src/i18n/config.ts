@@ -34,7 +34,6 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "projectTools.sshLocalForwardHelp":
       "仅监听桌面端本机 127.0.0.1；本地端口留空或填 0 自动分配，远端主机留空默认 SSH 服务器自身的 127.0.0.1",
     "projectTools.sshLocalForwardListening": "正在监听（仅桌面端本机）",
-    "settings.navAgentManagement": "多客户端管理",
     "settings.devicesTitle": "多客户端管理",
     "settings.devicesDesc": "管理连接到此网关的 Agent 及其独立凭证",
     "settings.devicesRefresh": "刷新",
@@ -162,7 +161,6 @@ export const WEBUI_TRANSLATION_OVERRIDES: Record<Locale, Record<string, string>>
     "projectTools.sshLocalForwardHelp":
       "Listens on the desktop machine's 127.0.0.1 only. Leave the local port empty or 0 for auto-assign; leave the remote host empty for 127.0.0.1 on the SSH server.",
     "projectTools.sshLocalForwardListening": "Listening on the desktop machine only",
-    "settings.navAgentManagement": "Multi-client Management",
     "settings.devicesTitle": "Multi-client Management",
     "settings.devicesDesc": "Manage Agents connected to this Gateway and their credentials",
     "settings.devicesRefresh": "Refresh",

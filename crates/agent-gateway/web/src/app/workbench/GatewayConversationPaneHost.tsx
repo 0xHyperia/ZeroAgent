@@ -24,6 +24,9 @@ import { Loader2 } from "@liveagent/ui/components/IconSet";
 // 项、由正文重发等页面级操作在背景 Pane 上先走 focusGuard。Primary 把自己的
 // 输入框挂到页面 composerRef,卸载时把未发送草稿写回缓存。
 import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
+import { DeviceUiTranscript } from "@liveagent/ui/components/sandboxed-ui/DeviceUiTranscript";
+import type { DevicePluginsClient } from "@liveagent/ui/lib/plugins/devicePlugins";
+import type { DeviceUiSurfaceClient } from "@liveagent/ui/lib/plugins/deviceUiSurface";
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
@@ -139,6 +142,8 @@ type ChatQueueSnapshotLike = Parameters<
  * 函数字段一律按 conversationId 显式路由,不依赖"当前展示会话"。
  */
 export type GatewayConversationPaneHostContext = {
+  deviceUiSurface?: DeviceUiSurfaceClient;
+  devicePlugins?: DevicePluginsClient;
   mobileControls: boolean;
   api: GatewayWebSocketClient;
   registry: TranscriptStoreRegistry;
@@ -172,6 +177,13 @@ export type GatewayConversationPaneHostContext = {
   openSettings: (section?: SectionId, providerId?: string) => void;
   onOpenFileLink: Parameters<typeof GatewayTranscript>[0]["onOpenFileLink"];
   onLoadUploadedImagePreview: ChatComposerBarProps["onLoadUploadedImagePreview"];
+  replacePendingUpload?: (
+    ...args: [
+      ...Parameters<NonNullable<ChatComposerBarProps["onReplacePendingUpload"]>>,
+      { conversationId: string; workdir: string },
+    ]
+  ) => ReturnType<NonNullable<ChatComposerBarProps["onReplacePendingUpload"]>>;
+  imageAnnotationAuthority?: string;
   transcriptContentWidth: number;
   selectionForConversation: (conversationId: string) => SelectedModel | undefined;
   workdirForConversation: (conversationId: string) => string;
@@ -870,11 +882,13 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
   const commandLatestRef = useRef({ context, paneRuntimeControls });
   commandLatestRef.current = { context, paneRuntimeControls };
   const commandApi = context.api;
+  const commandDevicePlugins = context.devicePlugins;
   const backgroundCommandHost = useMemo<ComposerCommandHost>(
     () =>
       createWebComposerCommandHost({
         t,
         client: commandApi,
+        devicePlugins: commandDevicePlugins,
         getConversationId: () => conversationId,
         getWorkdir: () => workdirRef.current || undefined,
         getRuntimeControls: () => commandLatestRef.current.paneRuntimeControls,
@@ -885,7 +899,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             isBusy: () => commandLatestRef.current.context.isConversationBusy(conversationId),
           }),
       }),
-    [commandApi, conversationId, t],
+    [commandApi, commandDevicePlugins, conversationId, t],
   );
 
   // ---- 草稿:挂载恢复缓存,卸载(聚焦切换/关 Pane)写回缓存(桌面端口径) --
@@ -1070,6 +1084,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
       <ToolApprovalBar
         key={conversationId}
         pending={pendingToolApprovals}
+        workdir={workdir}
         onDecide={(toolCallId, decision, options) =>
           submitToolApprovalDecision(toolCallId, decision, conversationId, options)
         }
@@ -1216,6 +1231,10 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
         usePrimary ? (primary?.branchPendingMessageId ?? undefined) : undefined
       }
       onSuggestionSelect={usePrimary ? primary?.onSuggestionSelect : () => onFocusPane()}
+      onQuoteSelection={(text) => {
+        composerRef.current?.insertQuote(text);
+      }}
+      onCommentSelection={(comment) => composerRef.current?.upsertComment?.(comment) != null}
       scheduledTurn={scheduledTurn}
     />
   );
@@ -1467,6 +1486,16 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
             pendingUploadedFiles={
               usePrimary && primary ? primary.pendingUploadedFiles : pendingUploads
             }
+            onReplacePendingUpload={
+              context.replacePendingUpload && workdir
+                ? (relativePath, replacement) =>
+                    context.replacePendingUpload!(relativePath, replacement, {
+                      conversationId: composerKey,
+                      workdir,
+                    })
+                : undefined
+            }
+            imageAnnotationAuthority={context.imageAnnotationAuthority}
             onRemovePendingUpload={
               usePrimary && primary
                 ? primary.onRemovePendingUpload
@@ -1529,7 +1558,15 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
   );
   return (
     <DeviceConversationImageSurface host={images} includeAttachments={Boolean(workdir)}>
-      {surface}
+      <DeviceUiTranscript
+        client={workdir ? context.deviceUiSurface : undefined}
+        conversationId={conversationId}
+        workdir={workdir}
+        running={isRunning}
+        htmlPreviews={context.settings.customSettings.chatTranscript.htmlPreviews}
+      >
+        {surface}
+      </DeviceUiTranscript>
     </DeviceConversationImageSurface>
   );
 }

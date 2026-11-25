@@ -137,6 +137,21 @@ func (c *browserConn) requireWorkspace(workdir string) error {
 }
 
 func (c *browserConn) vetWorkspaceAgentRequest(env *gatewayv2.GatewayEnvelope) error {
+	if req := env.GetDeviceUiSurface(); req != nil {
+		if c.userID <= 0 || c.boundAgentID == "" || c.selectionScope != account.SelectionScopeDevice ||
+			c.selectionCurrent == nil || !c.selectionCurrent() {
+			return errors.New("device UI requires an active account device selection")
+		}
+		return c.requireWorkspace(req.GetWorkdir())
+	}
+	if req := env.GetDevicePlugins(); req != nil {
+		// The snapshot includes device-wide user plugins and workspace plugins.
+		if c.userID <= 0 || c.boundAgentID == "" || c.selectionScope != account.SelectionScopeDevice ||
+			c.selectionCurrent == nil || !c.selectionCurrent() {
+			return errors.New("device plugins require an active account device selection")
+		}
+		return c.requireWorkspace(req.GetWorkdir())
+	}
 	if c.selectionScope == "" || env == nil {
 		return nil
 	}

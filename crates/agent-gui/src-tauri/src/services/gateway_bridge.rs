@@ -1448,6 +1448,7 @@ where
         request.open_in_file_manager,
         // Launching apps on the host is a desktop-window choice only.
         false,
+        false,
         current_workdir,
     )
     .await

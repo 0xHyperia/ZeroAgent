@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/Stack-Cairn/K-brain",
-  "sourceRevision": "3dfb4ca69aa6da5c2411d3b49139f2dadaf8eec0",
+  "sourceRevision": "f93830d9defb4482a6b1b02e63a1e3f7c24b12b9",
   "protocol": "kbrain.agent.v1",
   "capabilities": [
     "zeroagent.mcp-credentials.v1",
@@ -20,11 +20,11 @@
     },
     {
       "file": "0003-mcp-credential-history-and-legacy-sse.patch",
-      "sha256": "7da555e4f6407cd59726bb6cde953ca9f8cc0499e34416cba28723afb0e86328"
+      "sha256": "35030bf4721e6c707c6c7b94c79618df3a8e8d48de2961fa36b31017c4e56c15"
     },
     {
       "file": "0004-owned-mcp-lifecycle.patch",
-      "sha256": "210c8954cb80061bd4633e5d420692ca277e83d7dda3e42c30617e9e1fbeb2f8"
+      "sha256": "26ca843b3fb3e43ad0dacb431ae87f1e218c7022d3bc5d34c7091d1860609633"
     },
     {
       "file": "0006-host-owned-code-review-skill.patch",
@@ -40,7 +40,7 @@
     },
     {
       "file": "0009-prompt-cache-hint-inheritance.patch",
-      "sha256": "72cc3c5c456398742f1626c87fc9d924e5115435571e0f3adb3cc1da98832b44"
+      "sha256": "38a4011c2fda86808bf7e12ade64c7eb669991dd09e79867751e04fdceacf6a7"
     },
     {
       "file": "0010-scheduled-run-message-anchor.patch",
@@ -64,7 +64,7 @@
     },
     {
       "file": "0015-account-skill-snapshots.patch",
-      "sha256": "9ed023b6b5d3e1ac333e1d919284c5a2734f370d8bba98db77ee26f9854d2327"
+      "sha256": "4f636c71f69b83d9bf96648e6b87f498f1c5f7c2290605be980ee2f829b793a6"
     },
     {
       "file": "0016-device-manual-run-receipts.patch",
@@ -72,7 +72,7 @@
     },
     {
       "file": "0017-conversation-images.patch",
-      "sha256": "f353c679ac34bd1ae0219b8db968358162de7be4edeaae05542b9a1ba8ca0d1d"
+      "sha256": "1115e86a6bcab267b1ae24804361a237db993e092cfabf8f919e0267a42d3761"
     },
     {
       "file": "0018-block-plan-tools-in-chat.patch",
@@ -80,7 +80,7 @@
     },
     {
       "file": "0019-scope-desktop-host-tools.patch",
-      "sha256": "f78b3cc9d673a46d71f5e1ef205a0ef6d628d612de6f7ebcc0beb4ab97c77616"
+      "sha256": "1d0e4f094c98c8b8973a705d1e58aec9243077d2c42a4e80d4607242343405b1"
     },
     {
       "file": "0020-file-skill-selection.patch",
@@ -89,6 +89,10 @@
     {
       "file": "0021-managed-search-boundary.patch",
       "sha256": "689a324b8e7383562ac527fdc20d0aa1c022bba1821c9e1cb455c1a9becc5777"
+    },
+    {
+      "file": "0022-bounded-plugin-install.patch",
+      "sha256": "6c07a8b3b4eef0e09043b08c2183185184c7f0e125b2c2eeeb4428de32ac798d"
     }
   ],
   "status": "local-adaptation; native credentials, MCP lifecycle, built-in skills, ClawHub, prompt-cache settings, scheduled run progress, submitted prompts and message anchors, session queue readiness, read-only cron draft preview, account skill snapshots, device manual run receipts, native conversation images, and account-scoped desktop host tools; plain Chat excludes plan tools"

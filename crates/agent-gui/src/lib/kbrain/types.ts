@@ -86,6 +86,9 @@ export type KBrainMessage = {
   usage?: KBrainUsage;
   hosted_search?: KBrainHostedSearch[];
   stop_reason?: string;
+  error?: string;
+  error_detail?: unknown;
+  cancel_reason?: string;
   created_at?: string;
   /** "background" on a user-role notice K-brain delivered on its own (a wait result, a process exit). */
   origin?: string;

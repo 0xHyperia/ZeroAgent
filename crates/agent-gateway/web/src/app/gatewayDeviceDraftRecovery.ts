@@ -9,6 +9,7 @@ import {
   serializeDraftSegments,
 } from "@liveagent/ui/components/chat/MentionComposerInternals";
 import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
+import { createComposerComment, type ComposerCommentInput } from "@liveagent/ui/lib/chat/composerComments";
 import { parseFileMentionPath } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { normalizeWorkspaceExcerpt } from "@liveagent/ui/lib/chat/workspaceExcerpt";
@@ -105,6 +106,11 @@ export function createGatewayDevicePaneDraftRegistry() {
 
 function normalizeSegment(value: unknown) {
   const segment = clipboardRecord(value);
+  if (segment?.type === "comment") {
+    const raw = clipboardRecord(segment.comment);
+    const comment = raw && createComposerComment(raw as ComposerCommentInput);
+    return comment ? { type: "comment" as const, comment } : null;
+  }
   if (segment?.type === "workspaceExcerpt") {
     const excerpt = normalizeWorkspaceExcerpt(segment.excerpt);
     return excerpt ? { type: "workspaceExcerpt" as const, excerpt } : null;

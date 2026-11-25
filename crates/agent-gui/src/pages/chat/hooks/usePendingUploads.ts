@@ -2,14 +2,17 @@ import { invoke } from "@liveagent/app/shims/tauriCore";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
 import type { ToastTone } from "@liveagent/ui/components/ui/toast-manager";
 import {
+  isPendingUploadedFile,
   mergePendingUploadedFilesWithStats,
   type PendingUploadedFile,
+  replacePendingUploadedFile,
 } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { invalidateUploadedImagePreviewCache } from "@liveagent/ui/lib/chat/uploadedImagePreview";
 import {
   type MutableRefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -45,6 +48,7 @@ type UsePendingUploadsParams = {
   workdir: string;
   conversationId: string;
   uploadStore?: ConversationUploadStore;
+  owner?: string;
   currentConversationIdRef: MutableRefObject<string>;
   composerRef: MutableRefObject<MentionComposerHandle | null>;
   setErrorMessage: (message: string | null) => void;
@@ -78,6 +82,7 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     workdir,
     conversationId,
     uploadStore: providedUploadStore,
+    owner,
     currentConversationIdRef,
     composerRef,
     setErrorMessage,
@@ -88,6 +93,15 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     fallbackUploadStoreRef.current = createConversationUploadStore();
   }
   const uploadStore = providedUploadStore ?? fallbackUploadStoreRef.current;
+  const annotationScope = useMemo(() => ({ uploadStore, owner }), [uploadStore, owner]);
+  const activeAnnotationScope = useRef<typeof annotationScope | null>(annotationScope);
+  activeAnnotationScope.current = annotationScope;
+  useEffect(() => {
+    activeAnnotationScope.current = annotationScope;
+    return () => {
+      if (activeAnnotationScope.current === annotationScope) activeAnnotationScope.current = null;
+    };
+  }, [annotationScope]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const uploadTaskActiveRef = useRef(false);
   const subscribePendingUploads = useCallback(
@@ -389,6 +403,72 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     [currentConversationIdRef, getPendingUploadsForConversation, setPendingUploadsForConversation],
   );
 
+  // Swap one pending attachment for another in place: a File (an annotated
+  // image) is staged into the workspace first; an already staged entry (the
+  // original, on revert) goes back directly. Not routed through
+  // runUploadTask: it never adds files, so the batch limit/merge rules and the
+  // single-flight import guard do not apply.
+  const replacePendingUpload = useCallback(
+    async (
+      relativePath: string,
+      replacement: File | PendingUploadedFile,
+      target?: ConversationUploadTarget,
+    ): Promise<PendingUploadedFile | null> => {
+      const targetConversationId = (
+        target?.conversationId ?? currentConversationIdRef.current
+      ).trim();
+      const activeConversation = currentConversationIdRef.current;
+      const activeWorkdir = workdirRef.current;
+      const targetWorkdir = (target?.workdir ?? activeWorkdir).trim();
+      const original = getPendingUploadsForConversation(targetConversationId).find(
+        (file) => file.relativePath === relativePath,
+      );
+      const isCurrent = () =>
+        activeAnnotationScope.current === annotationScope &&
+        isAgentModeRef.current &&
+        currentConversationIdRef.current === activeConversation &&
+        workdirRef.current === activeWorkdir;
+      if (!targetConversationId || !targetWorkdir || !original || !isCurrent()) return null;
+      let next: PendingUploadedFile;
+      if (isPendingUploadedFile(replacement)) {
+        next = replacement;
+      } else {
+        const file = await fileToUploadInput(replacement);
+        if (!isCurrent()) return null;
+        const result = await invoke<SystemPickReadableFilesResponse>(
+          "system_import_uploaded_readable_files",
+          {
+            workdir: targetWorkdir,
+            files: [file],
+            maxFiles: 1,
+          },
+        );
+        if (!isCurrent()) return null;
+        const staged = result.files[0];
+        if (!staged) {
+          if (result.skipped.length > 0) addNotify("warning", result.skipped.join("\n"));
+          return null;
+        }
+        invalidateUploadedImagePreviewCache(targetWorkdir, staged);
+        next = staged;
+      }
+      const current = getPendingUploadsForConversation(targetConversationId);
+      if (!isCurrent() || !current.includes(original)) return null;
+      setPendingUploadsForConversation(
+        targetConversationId,
+        replacePendingUploadedFile(current, relativePath, next),
+      );
+      return next;
+    },
+    [
+      addNotify,
+      currentConversationIdRef,
+      getPendingUploadsForConversation,
+      setPendingUploadsForConversation,
+      annotationScope,
+    ],
+  );
+
   return {
     isUploadingFiles,
     pendingUploadedFiles,
@@ -399,5 +479,6 @@ export function usePendingUploads(params: UsePendingUploadsParams) {
     importReadableFilePaths,
     importReadableFiles,
     removePendingUpload,
+    replacePendingUpload,
   };
 }

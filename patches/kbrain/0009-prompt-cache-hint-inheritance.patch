@@ -25,10 +25,10 @@ index 3e955c3..e1fafc7 100644
  
  func cacheControl(retention string) map[string]any {
 diff --git a/internal/ai/openai.go b/internal/ai/openai.go
-index f22934c..d41a5d5 100644
+index 9511a2f..f2a80d9 100644
 --- a/internal/ai/openai.go
 +++ b/internal/ai/openai.go
-@@ -604,7 +604,7 @@ func (c *OpenAI) applyCache(req *Request) {
+@@ -632,7 +632,7 @@ func (c *OpenAI) applyCache(req *Request) {
  		req.PromptCacheKey = ""
  	}
  	req.PromptCacheRetention = ""
@@ -37,7 +37,7 @@ index f22934c..d41a5d5 100644
  		req.PromptCacheRetention = "24h"
  	}
  }
-@@ -615,7 +615,7 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
+@@ -643,7 +643,7 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
  	}
  	key, ok := req.Context().Value(cacheRequestKey{}).(string)
  	if !ok {
@@ -46,7 +46,7 @@ index f22934c..d41a5d5 100644
  	}
  	if key == "" {
  		return
-@@ -629,6 +629,13 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
+@@ -657,6 +657,13 @@ func (c *OpenAI) applyCacheHeaders(req *http.Request) {
  			format = "openrouter"
  		}
  	}
@@ -257,7 +257,7 @@ index 9065ba9..c470934 100644
  					m.Name = *item.Name
  				}
 diff --git a/internal/backend/settings_provider.go b/internal/backend/settings_provider.go
-index 1faedfd..efcf948 100644
+index 036c6ce..3e6687a 100644
 --- a/internal/backend/settings_provider.go
 +++ b/internal/backend/settings_provider.go
 @@ -260,7 +260,12 @@ func updateProvider(p config.Provider, in settingsProviderUpdate) (config.Provid
@@ -274,7 +274,7 @@ index 1faedfd..efcf948 100644
  	if in.PromptCacheRetention != "" {
  		p.PromptCacheRetention = in.PromptCacheRetention
 diff --git a/internal/config/config.go b/internal/config/config.go
-index dc3ecab..aa67cc9 100644
+index 0135f9a..4ac5fae 100644
 --- a/internal/config/config.go
 +++ b/internal/config/config.go
 @@ -51,12 +51,13 @@ type CustomHeader struct {
@@ -315,7 +315,7 @@ index dc3ecab..aa67cc9 100644
  	// ImageAdapter explicitly selects an image protocol; "disabled" opts out of discovery.
  	ImageAdapter    string   `json:"imageAdapter,omitempty"`
  	InputModalities []string `json:"inputModalities,omitempty"`
-@@ -451,6 +453,9 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
+@@ -477,6 +479,9 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
  	cfg.ProviderOrder = nil
  	for _, name := range slices.Sorted(maps.Keys(cfg.Providers)) {
  		provider := cfg.Providers[name]
@@ -325,7 +325,7 @@ index dc3ecab..aa67cc9 100644
  		if err := provider.CacheCapabilities.Validate(); err != nil {
  			return fmt.Errorf("provider %q: %w", name, err)
  		}
-@@ -497,12 +502,18 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
+@@ -523,12 +528,18 @@ func parseConfigJSONC(data []byte, cfg *Config) error {
  			}
  
  			shared := metadataFromPiModel(pm)

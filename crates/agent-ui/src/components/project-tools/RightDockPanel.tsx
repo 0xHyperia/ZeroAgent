@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/projectTools";
 import {
   closeRightDockBackgroundTasksTabState,
   openRightDockBackgroundTasksTabState,
@@ -10,7 +11,14 @@ import {
 } from "@liveagent/app/lib/settings";
 import { openUrl } from "@liveagent/app/shims/tauriOpener";
 import type { MentionComposerDraftSegment } from "@liveagent/ui/components/chat/MentionComposer";
-import { Maximize2, Minimize2, PanelRightClose, Plus, X } from "@liveagent/ui/components/IconSet";
+import {
+  Maximize2,
+  Minimize2,
+  PanelRightClose,
+  Plug,
+  Plus,
+  X,
+} from "@liveagent/ui/components/IconSet";
 import type {
   GitCommitContextPayload,
   GitFileContextPayload,
@@ -36,6 +44,7 @@ import {
 } from "react";
 import type { ProjectToolTextGenerationClient } from "../../lib/ai/projectToolTextGeneration";
 import { ensureManagedProcessInit, useManagedProcesses } from "../../lib/managed-process/store";
+import type { DevicePluginsClient } from "../../lib/plugins/devicePlugins";
 import { cn } from "../../lib/shared/utils";
 import type { TerminalClient, TerminalSession } from "../../lib/terminal/types";
 import type { WorkspaceActivityClient } from "../../lib/workspace-activity/types";
@@ -52,6 +61,7 @@ import {
   type WorkspaceReviewState,
 } from "./RightDockContext";
 import { RightDockChooser, RightDockCreateMenu } from "./RightDockLauncher";
+import { RightDockPluginPanels } from "./RightDockPluginPanels";
 import { RightDockTabStrip, type RightDockWorkspaceTab } from "./RightDockTabStrip";
 import { RightWorkspaceFileTree } from "./RightWorkspaceFileTree";
 import {
@@ -119,6 +129,7 @@ type RightDockPanelProps = {
   projectPathKey: string;
   cwd: string;
   workspaceProject?: WorkspaceProject;
+  devicePlugins?: DevicePluginsClient;
   workspaceProjectRootClient?: WorkspaceProjectRootClient;
   workspaceRootRevision?: number;
   sessions?: TerminalSession[];
@@ -150,6 +161,7 @@ type RightDockPanelProps = {
   tunnelDisabledMessage?: string;
   tunnelPublicBaseUrl: string;
   workspaceActivityClient?: WorkspaceActivityClient | null;
+  canOpenInLocalEditor?: boolean;
   onProjectStateChange: (
     updater: (current: RightDockProjectState) => RightDockProjectState,
   ) => void;
@@ -459,6 +471,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     projectPathKey,
     cwd,
     workspaceProject,
+    devicePlugins,
     workspaceProjectRootClient,
     workspaceRootRevision = 0,
     sessions: externalSessions,
@@ -482,6 +495,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     tunnelDisabledMessage,
     tunnelPublicBaseUrl,
     workspaceActivityClient,
+    canOpenInLocalEditor,
     onProjectStateChange,
     onFileTreeStateChange,
     onSshProjectHostIdsChange,
@@ -505,6 +519,22 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
     onClose,
   } = props;
   const { t, locale } = useLocale();
+  const pluginButton = useRef<HTMLElement>(null);
+  const [pluginPaneScope, setPluginPaneScope] = useState<{
+    client: DevicePluginsClient;
+    cwd: string;
+  }>();
+  const activePluginPane =
+    isOpen && pluginPaneScope?.client === devicePlugins && pluginPaneScope?.cwd === cwd
+      ? pluginPaneScope
+      : undefined;
+  useEffect(() => {
+    if (!activePluginPane && pluginPaneScope) setPluginPaneScope(undefined);
+  }, [activePluginPane, pluginPaneScope]);
+  const closePlugins = () => {
+    setPluginPaneScope(undefined);
+    pluginButton.current?.focus();
+  };
   const mobile = useIsMobile();
   const onActivateWorkspaceTool = workspace?.onActivateTool;
   const onOpenWorkspaceTree = workspace?.onOpenTree;
@@ -931,6 +961,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       },
       capabilities: {
         projectReady,
+        canOpenInLocalEditor,
         terminalReady,
         disabledMessage,
         terminalDisabledMessage,
@@ -1040,6 +1071,7 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
       tunnelEnabled,
       tunnelPublicBaseUrl,
       workspaceActivityClient,
+      canOpenInLocalEditor,
     ],
   );
 
@@ -1167,10 +1199,12 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                   getTabDragStyle={getTabDragStyle}
                   consumeSuppressedTabClick={consumeSuppressedTabClick}
                   onActivateTab={(id) => {
+                    setPluginPaneScope(undefined);
                     onActivateWorkspaceTool?.();
                     activateTab(id);
                   }}
                   onActivateTerminalSession={(session) => {
+                    setPluginPaneScope(undefined);
                     onActivateWorkspaceTool?.();
                     activateTerminalSession(session);
                   }}
@@ -1184,6 +1218,24 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
               </div>
               {!workspace && <RightDockTabsScrollbar scrollRef={tabsScrollRef} />}
             </div>
+            {devicePlugins?.readSurface && cwd ? (
+              <TooltipButton
+                ref={pluginButton}
+                variant="ghost"
+                size="icon-sm"
+                className="web:max-820:size-11"
+                aria-label={t("sandboxedUi.dock.title")}
+                title={t("sandboxedUi.dock.title")}
+                aria-expanded={Boolean(activePluginPane)}
+                tooltipSide="bottom"
+                onClick={() => {
+                  if (activePluginPane) closePlugins();
+                  else setPluginPaneScope({ client: devicePlugins, cwd });
+                }}
+              >
+                <Plug className="size-4" aria-hidden />
+              </TooltipButton>
+            ) : null}
             {workspace?.onNewBrowser && (
               <TooltipButton
                 variant="ghost"
@@ -1339,7 +1391,10 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
             </header>
           )}
           <div className="relative flex min-h-0 flex-1 overflow-hidden @container">
-            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+              inert={Boolean(activePluginPane)}
+            >
               {workspace?.renderContent(
                 {
                   changes:
@@ -1419,6 +1474,13 @@ export const RightDockPanel = memo(function RightDockPanel(props: RightDockPanel
                 )}
               </div>
             </div>
+            {activePluginPane ? (
+              <RightDockPluginPanels
+                client={activePluginPane.client}
+                workdir={activePluginPane.cwd}
+                onClose={closePlugins}
+              />
+            ) : null}
             {workspace?.treeOpen &&
               (!mobile || isOpen) &&
               !browserActive &&

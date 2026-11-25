@@ -8,6 +8,8 @@ import type { SettingsSaveState, UiExtensionRegistry } from "../../contracts/reg
 import { GATEWAY_COMPACT_VIEWPORT_QUERY } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
 import { PLATFORM_BACK_EVENT } from "../../lib/platformBack";
+import { COMMAND_PALETTE_SUPPRESSED_ATTRIBUTE } from "../../lib/chat/commandPalette";
+import { searchSettingsIndex } from "../../lib/settings/settingsSearchIndex";
 import { useSettingsEscapeToClose } from "../../lib/settings/useSettingsEscapeToClose";
 import { cn } from "../../lib/shared/utils";
 
@@ -32,10 +34,12 @@ type SettingsShellProps<Context> = {
   backLabel?: string;
   canLeaveSection?: () => boolean;
   initialSection?: string;
+  initialAnchor?: string;
   onSectionChange?: (section: string) => void;
   mobileDetail?: boolean;
   onMobileDetailChange?: (detail: boolean) => void;
   hiddenSections?: readonly string[];
+  excludedSearchAnchors?: readonly string[];
   fontScale?: number;
   describeScope?: (section: string) => string | undefined;
 };
@@ -78,6 +82,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
     onBack,
     canLeaveSection,
     initialSection = "system",
+    initialAnchor,
     onSectionChange,
     hiddenSections = [],
     fontScale = 1,
@@ -87,14 +92,20 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
   const groupLabelPrefix = useId();
   const shellRef = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState(initialSection);
-  const [previousInitialSection, setPreviousInitialSection] = useState(initialSection);
+  const [initialRoute, setInitialRoute] = useState({ initialSection, initialAnchor });
+  const [searchTarget, setSearchTarget] = useState(
+    initialAnchor ? { section: initialSection, anchor: initialAnchor } : undefined,
+  );
   // Synchronize before children commit, so a deep link never paints the old section.
-  if (previousInitialSection !== initialSection) {
-    setPreviousInitialSection(initialSection);
+  if (initialRoute.initialSection !== initialSection || initialRoute.initialAnchor !== initialAnchor) {
+    setInitialRoute({ initialSection, initialAnchor });
     setSection(initialSection);
+    setSearchTarget(initialAnchor ? { section: initialSection, anchor: initialAnchor } : undefined);
   }
   const [navQuery, setNavQuery] = useState("");
-  const [localMobileDetail, setLocalMobileDetail] = useState(initialSection !== "system");
+  const [localMobileDetail, setLocalMobileDetail] = useState(
+    initialSection !== "system" || Boolean(initialAnchor),
+  );
   const mobileDetail = props.mobileDetail ?? localMobileDetail;
   const setMobileDetail = props.onMobileDetailChange ?? setLocalMobileDetail;
   useEffect(() => {
@@ -138,6 +149,58 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
       )
       .filter(([, definitions]) => definitions.length > 0);
   }, [groups, navQuery, t]);
+  const settingsMatches = useMemo(
+    () => searchSettingsIndex(navQuery, sections, t, props.excludedSearchAnchors),
+    [navQuery, sections, t, props.excludedSearchAnchors],
+  );
+
+  useEffect(() => {
+    if (!searchTarget || searchTarget.section !== section) return;
+    if (
+      presentation === "page" &&
+      !mobileDetail &&
+      window.matchMedia(GATEWAY_COMPACT_VIEWPORT_QUERY).matches
+    )
+      return;
+    const shell = shellRef.current;
+    if (!shell) return;
+    let target: HTMLElement | undefined;
+    let originalTabIndex: string | null = null;
+    let frame = 0;
+    const reveal = () => {
+      const element = Array.from(
+        shell.querySelectorAll<HTMLElement>("[data-settings-anchor]"),
+      ).find((element) => element.dataset.settingsAnchor === searchTarget.anchor);
+      if (!element?.getClientRects().length) return;
+      target = element;
+      observer.disconnect();
+      originalTabIndex = target.getAttribute("tabindex");
+      target.dataset.settingsSearchTarget = "";
+      target.scrollIntoView({ block: "nearest" });
+      const firstControl = Array.from(
+        target.querySelectorAll<HTMLElement>(
+          "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]",
+        ),
+      ).find((control) => control.getClientRects().length > 0 && !control.closest("[inert]"));
+      if (!firstControl && target.tabIndex < 0) target.setAttribute("tabindex", "-1");
+      (firstControl ?? target).focus({ preventScroll: true });
+    };
+    const schedule = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(reveal);
+    };
+    const observer = new MutationObserver(schedule);
+    observer.observe(shell, { childList: true, subtree: true });
+    schedule();
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+      if (!target?.hasAttribute("data-settings-search-target")) return;
+      target.removeAttribute("data-settings-search-target");
+      if (originalTabIndex === null) target.removeAttribute("tabindex");
+      else target.setAttribute("tabindex", originalTabIndex);
+    };
+  }, [mobileDetail, presentation, searchTarget, section]);
 
   useEffect(() => {
     if (!sections.some((definition) => definition.id === section)) {
@@ -175,17 +238,26 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
   const showSaveIndicator = activeSection.showSaveIndicator !== false;
   const SectionTitle = presentation === "page" ? "h2" : "div";
   const scope = props.describeScope?.(activeSection.id);
+  const selectSection = (id: string, anchor?: string) => {
+    if (id !== section && !(canLeaveSection?.() ?? true)) return;
+    setSearchTarget(anchor ? { section: id, anchor } : undefined);
+    setSection(id);
+    onSectionChange?.(id);
+    setMobileDetail(true);
+  };
 
   return (
     <ZoneFontScaleContext.Provider value={fontScale}>
       <div
         ref={shellRef}
+        {...{ [COMMAND_PALETTE_SUPPRESSED_ATTRIBUTE]: "" }}
         data-settings-presentation={presentation}
         data-design-settings=""
         data-mobile-detail={mobileDetail ? "true" : "false"}
         style={{ "--zone-font-scale": fontScale } as CSSProperties}
         className={cn(
           "zone-font-scale flex h-full bg-background",
+          "[&_[data-settings-search-target]:focus-within]:outline-2 [&_[data-settings-search-target]:focus-within]:outline-primary/60",
           web &&
             "web:min-w-0 web:max-820:h-full web:max-820:min-h-0 web:max-820:flex-col web:max-820:overflow-hidden [&_.settings-section-actions]:min-w-0 [&_.settings-card-actions]:min-w-0",
           web && WEB_SETTINGS_CONTENT_RESPONSIVE_CLASS,
@@ -274,6 +346,18 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                   type="search"
                   value={navQuery}
                   onChange={(event) => setNavQuery(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key !== "Enter" ||
+                      event.nativeEvent.isComposing ||
+                      event.keyCode === 229
+                    )
+                      return;
+                    const match = settingsMatches[0];
+                    if (!match) return;
+                    event.preventDefault();
+                    selectSection(match.entry.section, match.entry.anchor);
+                  }}
                   placeholder={t("settings.searchPlaceholder")}
                   aria-label={t("settings.searchPlaceholder")}
                   className={cn(
@@ -291,6 +375,26 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                 "web:max-820:px-10px web:max-820:pb-10px web:max-820:pt-2 web:max-820:[scrollbar-width:none] web:max-820:[&::-webkit-scrollbar]:hidden web:max-640:px-8px",
               )}
             >
+              {settingsMatches.length > 0 ? (
+                <div className="space-y-px">
+                  <h2 className="mb-1.5 px-2.5 text-xs font-medium text-muted-foreground">
+                    {t("settings.searchItems")}
+                  </h2>
+                  {settingsMatches.map(({ entry, label, sectionLabel }) => (
+                    <button
+                      key={entry.anchor}
+                      type="button"
+                      onClick={() => selectSection(entry.section, entry.anchor)}
+                      className="flex w-full min-w-0 flex-col justify-center gap-0.5 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-settings-tile-hover focus-visible:bg-settings-tile-hover"
+                    >
+                      <span className="max-w-full truncate">{label}</span>
+                      <span className="max-w-full truncate text-xs text-muted-foreground">
+                        {sectionLabel}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {visibleGroups.map(([groupKey, definitions], groupIndex) => (
                 // biome-ignore lint/a11y/useSemanticElements: The labelled navigation group uses display: contents in the compact layout.
                 <div
@@ -315,13 +419,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                         <button
                           key={definition.id}
                           type="button"
-                          onClick={() => {
-                            if (definition.id === section || (canLeaveSection?.() ?? true)) {
-                              setSection(definition.id);
-                              onSectionChange?.(definition.id);
-                              setMobileDetail(true);
-                            }
-                          }}
+                          onClick={() => selectSection(definition.id)}
                           aria-current={active ? "page" : undefined}
                           data-testid={`settings-nav-${definition.id}`}
                           data-settings-nav-id={definition.id}
@@ -356,7 +454,7 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
                   </div>
                 </div>
               ))}
-              {visibleGroups.length === 0 ? (
+              {visibleGroups.length === 0 && settingsMatches.length === 0 ? (
                 <div className="px-3 py-6 text-center text-xs text-muted-foreground">
                   {t("settings.searchNoResults")}
                 </div>

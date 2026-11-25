@@ -12,6 +12,7 @@ export type SectionId =
   | "system"
   | "shortcuts"
   | "skills"
+  | "devicePlugins"
   | "mcp"
   | "systemTools"
   | "permissions"
@@ -45,6 +46,7 @@ export type SettingsPageProps = {
   onBack: () => void;
   backLabel?: string;
   initialSection?: SectionId;
+  initialAnchor?: string;
   onSectionChange?: (section: SectionId) => void;
   mobileDetail?: boolean;
   onMobileDetailChange?: (detail: boolean) => void;

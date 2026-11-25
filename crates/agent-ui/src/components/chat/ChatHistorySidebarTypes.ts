@@ -5,6 +5,7 @@ import type {
   SidebarBatchDeleteResult,
 } from "@liveagent/ui/lib/sidebar/batchDelete";
 import type { ReactNode } from "react";
+import type { CommandPaletteCapability } from "../../lib/chat/commandPalette";
 import type { SidebarShortcutId, SidebarShortcuts } from "../../lib/settings/sidebarShortcuts";
 import type { ConversationOpenOptions } from "../../lib/sidebar/openController";
 import type { SidebarStoreArchive, WorkspaceHistoryState } from "../../lib/sidebar/store";
@@ -74,6 +75,7 @@ export type ChatHistorySidebarProps = {
   /** Incremented by the desktop host when its configured search shortcut fires. */
   conversationSearchRequestKey?: number;
   conversationSearchAdapter?: ConversationSearchAdapter;
+  commandPalette?: CommandPaletteCapability;
   activeView?: ApplicationViewId;
   showProjects?: boolean;
   workspaceSectionLabel?: string;
@@ -107,6 +109,7 @@ export type ChatHistorySidebarProps = {
   onBrowseProjectInFileTree?: (project: WorkspaceProject) => void;
   onConfigureProject?: (project: WorkspaceProject) => void;
   onBrowseProjectInSystemFileManager?: (project: WorkspaceProject) => void;
+  onOpenProjectInEditor?: (project: WorkspaceProject, editor: string) => void;
   onSetProjectPinned?: (project: WorkspaceProject, isPinned: boolean) => void;
   onRemoveProject?: (project: WorkspaceProject, options?: WorkspaceProjectRemoveOptions) => void;
   onArchiveProject?: (project: WorkspaceProject) => void;
@@ -208,6 +211,7 @@ export type ChatHistorySidebarWorkspaceSource = Pick<
   | "onNewConversationForProject"
   | "onBrowseProjectInFileTree"
   | "onBrowseProjectInSystemFileManager"
+  | "onOpenProjectInEditor"
   | "onConfigureProject"
   | "onSetProjectPinned"
   | "onRemoveProject"
@@ -231,6 +235,7 @@ type OptionalWorkspaceSourceKey =
   | "onMoveProjectToGroup"
   | "onToggleWorkspaceGroupCollapsed"
   | "onBrowseProjectInSystemFileManager"
+  | "onOpenProjectInEditor"
   | "archivedProjectPathKeys";
 
 export type ChatHistorySidebarContainerSource = Required<
@@ -246,6 +251,7 @@ export type ChatHistorySidebarContainerSource = Required<
     | "isOpen"
     | "fontScale"
     | "conversationSearchRequestKey"
+    | "commandPalette"
     | "onNewConversation"
     | "onSelectConversation"
     | "canShareConversations"
@@ -318,7 +324,12 @@ type ChatHistorySidebarBaseState = Pick<
 export function buildChatHistorySidebarBaseProps(
   source: Pick<
     ChatHistorySidebarContainerSource,
-    "currentConversationId" | "isOpen" | "fontScale" | "conversationSearchRequestKey" | "activeView"
+    | "currentConversationId"
+    | "isOpen"
+    | "fontScale"
+    | "conversationSearchRequestKey"
+    | "commandPalette"
+    | "activeView"
   >,
   state: ChatHistorySidebarBaseState,
 ) {
@@ -342,6 +353,7 @@ export function buildChatHistorySidebarBaseProps(
     isOpen: source.isOpen,
     fontScale: source.fontScale,
     conversationSearchRequestKey: source.conversationSearchRequestKey,
+    commandPalette: source.commandPalette,
     activeView: source.activeView,
   };
 }
@@ -397,6 +409,7 @@ export function buildChatHistorySidebarWorkspaceProps(
     onNewConversationForProject: source.onNewConversationForProject,
     onBrowseProjectInFileTree: source.onBrowseProjectInFileTree,
     onBrowseProjectInSystemFileManager: source.onBrowseProjectInSystemFileManager,
+    onOpenProjectInEditor: source.onOpenProjectInEditor,
     onConfigureProject: source.onConfigureProject,
     onSetProjectPinned: source.onSetProjectPinned,
     onRemoveProject: source.onRemoveProject,

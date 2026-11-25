@@ -91,6 +91,14 @@ export function PermissionRulesSection({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const epoch = useRef(0);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!kbrain.getCapabilities) return;
@@ -145,21 +153,26 @@ export function PermissionRulesSection({
   const addScope = workspace ? scope : "user";
 
   async function run(action: () => Promise<unknown>) {
+    if (!mounted.current) return false;
+    const connection = connectionScope(kbrain);
+    const isCurrent = () => mounted.current && connection === connectionScope(kbrain);
     setBusy(true);
     setActionError("");
     try {
       await action();
+      if (!isCurrent()) return false;
       // The project chosen now: the user may have switched while the action ran.
       await reload(workspaceRef.current);
-      return true;
+      return isCurrent();
     } catch (reason) {
+      if (!isCurrent()) return false;
       setActionError(messageOf(reason));
       // The change may have reached K-brain before its answer was lost (a dropped
       // connection): list what is there now so a deleted rule does not linger.
       await reload(workspaceRef.current);
       return false;
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 

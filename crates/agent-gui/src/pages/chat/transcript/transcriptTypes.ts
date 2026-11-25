@@ -42,6 +42,7 @@ export type ChatTranscriptProps = {
   contentWidth: number;
   onContentWidthChange: (width: number) => void;
   onOpenFileLink?: (link: ChatFileLink) => void;
+  canOpenInLocalEditor?: boolean;
   onResendFromEdit: (
     messageRef: HistoryMessageRef,
     text: string,
@@ -56,4 +57,6 @@ export type ChatTranscriptProps = {
   onSuggestionSelect?: (text: string) => void;
   /** Selected message text → composer blockquote. Omit to disable the quote button. */
   onQuoteSelection?: (text: string) => void;
+  onCommentSelection?: TranscriptCommentHandler;
 };
+import type { TranscriptCommentHandler } from "@liveagent/ui/components/chat/TranscriptCommentContext";

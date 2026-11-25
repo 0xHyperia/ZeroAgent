@@ -438,6 +438,9 @@ macro_rules! app_invoke_handler {
             commands::gateway::provider_usage_test,
             services::proxy::proxy_get_server_info,
             services::kbrain_backend::kbrain_backend_connection,
+            services::device_plugins::device_plugins_operation,
+            #[cfg(desktop)]
+            services::device_plugins::surface::device_ui_surface_operation,
             services::kbrain_backend::kbrain_file_runtime_ready,
             services::kbrain_backend::kbrain_backend_activate_profile,
             services::kbrain_backend::kbrain_managed_credentials_replace,

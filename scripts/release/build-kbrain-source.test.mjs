@@ -22,7 +22,9 @@ test("source build pins checkout and hashes both sidecars", async () => {
     assert.equal(calls[conversion].args.at(-1), "false");
     assert.equal(calls[checkout].args.at(-1), lock.sourceRevision);
     assert.equal(calls.find(c => c.command === "go").options.env.CGO_ENABLED, "0");
-    assert.deepEqual(calls.filter(c => c.command === "go").map(c => c.args.at(-1)), ["./cmd/kn", "./cmd/k-brain-computer"]);
+    const builds = calls.filter(c => c.command === "go");
+    assert.deepEqual(builds.map(c => c.args.at(-1)), ["./cmd/kn", "./cmd/k-brain-computer"]);
+    assert.ok(builds.every(c => c.options.env.GOTOOLCHAIN === `go${lock.sourceGoVersion}`));
     assert.match(record.platforms[resolveTarget()].sha256.backend, /^[a-f0-9]{64}$/);
     assert.deepEqual(JSON.parse(await readFile(join(output, "kbrain-artifact.json"))), record);
   } finally { await rm(output, { recursive: true, force: true }); }

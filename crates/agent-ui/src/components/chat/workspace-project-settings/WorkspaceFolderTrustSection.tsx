@@ -1,14 +1,16 @@
 import "@liveagent/ui/i18n/namespaces/workspaceProject";
+import "@liveagent/ui/i18n/namespaces/settings";
 import { Loader2, ShieldCheck, ShieldOff } from "@liveagent/ui/components/IconSet";
 import { Badge } from "@liveagent/ui/components/ui/badge";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import type {
   WorkspaceFolderTrustClient,
   WorkspaceFolderTrustStatus,
 } from "@liveagent/ui/contracts/workspaceFolderTrust";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type TrustState =
   | { phase: "loading" }
@@ -36,11 +38,17 @@ export function WorkspaceFolderTrustSection(props: {
   const [state, setState] = useState<TrustState>({ phase: "loading" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirmDialog();
+  const scope = useMemo(() => ({ client, path }), [client, path]);
+  const liveScope = useRef<typeof scope | null>(scope);
+  liveScope.current = scope;
 
   useEffect(() => {
     let cancelled = false;
+    liveScope.current = scope;
     setState({ phase: "loading" });
     setError(null);
+    setBusy(false);
     void (async () => {
       try {
         if (!(await client.supported())) {
@@ -57,28 +65,44 @@ export function WorkspaceFolderTrustSection(props: {
     })();
     return () => {
       cancelled = true;
+      if (liveScope.current === scope) liveScope.current = null;
     };
-  }, [client, path]);
+  }, [client, path, scope]);
 
   const change = async (grant: boolean) => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
+      const label = t(grant ? "chat.folderTrustGrant" : "chat.folderTrustRevoke");
+      const confirmed = await confirm({
+        title: label,
+        description: t(
+          grant
+            ? "settings.devicePlugins.trustDescription"
+            : "settings.devicePlugins.revokeDescription",
+        ),
+        confirmLabel: label,
+        cancelLabel: t("confirmDialog.cancel"),
+      });
+      if (!confirmed || liveScope.current !== scope) return;
       const status = grant ? await client.trust(path) : await client.revoke(path);
+      if (liveScope.current !== scope) return;
       setState({ phase: "ready", status });
       onChange?.(status);
     } catch (failure) {
-      setError(errorMessage(failure));
+      if (liveScope.current === scope) setError(errorMessage(failure));
     } finally {
-      setBusy(false);
+      if (liveScope.current === scope) setBusy(false);
     }
   };
 
   const status = state.phase === "ready" ? state.status : null;
   const trusted = status?.trusted === true;
   const inheritedFrom =
-    status?.trusted && status.source && status.source !== status.workdir ? status.source : null;
+    trusted && status?.source && (status.inherited ?? status.source !== status.workdir)
+      ? status.source
+      : null;
 
   let badge: { label: string; variant: "success" | "muted" | "destructive" };
   if (state.phase === "loading") badge = { label: t("chat.folderTrustChecking"), variant: "muted" };
@@ -91,6 +115,7 @@ export function WorkspaceFolderTrustSection(props: {
 
   return (
     <div className="space-y-2" data-testid="workspace-folder-trust">
+      {dialog}
       <div
         className={cn(
           "flex items-center justify-between gap-3 rounded-xl bg-settings-tile px-4 py-3",
@@ -126,9 +151,11 @@ export function WorkspaceFolderTrustSection(props: {
           ? t("chat.folderTrustUnsupported")
           : t("chat.folderTrustDescription")}
       </p>
-      {inheritedFrom ? (
+      {trusted && (status?.inherited || inheritedFrom) ? (
         <p className="text-xs leading-5 text-muted-foreground">
-          {t("chat.folderTrustInherited").replace("{path}", inheritedFrom)}
+          {inheritedFrom
+            ? t("chat.folderTrustInherited").replace("{path}", inheritedFrom)
+            : t("chat.folderTrustInheritedParent")}
         </p>
       ) : null}
       {error ? (

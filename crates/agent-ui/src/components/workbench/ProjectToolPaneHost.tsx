@@ -54,6 +54,7 @@ export type ProjectToolPaneEnvironment = {
   capabilities: Pick<
     RightDockToolCapabilities,
     | "disabledMessage"
+    | "canOpenInLocalEditor"
     | "terminalDisabledMessage"
     | "gitWriteEnabled"
     | "gitDisabledMessage"
@@ -206,6 +207,7 @@ export function ProjectToolPaneHost(props: ProjectToolPaneHostProps) {
           workspaceProjectRootClient={environment.workspaceProjectRootClient}
           workspaceRootRevision={environment.workspaceRootRevision}
           workspaceActivityClient={clients.workspaceActivity ?? null}
+          canOpenInLocalEditor={capabilities.canOpenInLocalEditor}
           onStateChange={contextValue.fileTree.onStateChange}
           onInsertFileMention={contextValue.fileTree.onInsertFileMention}
           onOpenFile={contextValue.fileTree.onOpenFile}

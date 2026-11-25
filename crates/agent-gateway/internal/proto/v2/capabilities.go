@@ -35,3 +35,7 @@ const WorkspaceHandoffPathV1Capability = "WORKSPACE_HANDOFF_PATH_V1"
 // usage_stats agent request (Settings → Usage: read-only token usage
 // aggregated by K-brain across sessions).
 const UsageStatsV1Capability = "ZEROAGENT_USAGE_STATS_V1"
+
+const DevicePluginsV1Capability = "ZEROAGENT_DEVICE_PLUGINS_V1"
+
+const DeviceUiSurfaceV1Capability = "ZEROAGENT_DEVICE_UI_SURFACE_V1"

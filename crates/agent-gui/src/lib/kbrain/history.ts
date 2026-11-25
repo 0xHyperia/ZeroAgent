@@ -12,6 +12,7 @@ import {
 import { withMcpElicitationDetails } from "@liveagent/ui/lib/chat/mcpElicitation";
 import { taskResultDetails } from "@liveagent/ui/lib/chat/taskProgress";
 import { withToolRunInfo } from "@liveagent/ui/lib/chat/toolRunInfo";
+import { isKBrainErrorMessageId, projectKBrainTurnFailure } from "@liveagent/ui/lib/chat/turnError";
 import { parseUserMessageContentWithUploads } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { capabilityAtLeast } from "@liveagent/ui/lib/kbrain/health";
 import type { SidebarExternalRun } from "@liveagent/ui/lib/sidebar/types";
@@ -266,8 +267,10 @@ function toMessage(
     };
   }
   if (message.role !== "assistant") return null;
+  const failureMarker = isKBrainErrorMessageId(message.id);
+  const stopReason = failureMarker ? "error" : historyStopReason(message.stop_reason);
   const content: AssistantMessage["content"] = [];
-  for (const block of message.content ?? []) {
+  for (const block of failureMarker ? [] : (message.content ?? [])) {
     if (block.type === "text" && block.text) content.push({ type: "text", text: block.text });
     if (block.type === "thinking" && block.text)
       content.push({ type: "thinking", thinking: block.text });
@@ -292,7 +295,16 @@ function toMessage(
     responseId: message.id,
     ...(message.id ? { id: message.id } : {}),
     usage: kbrainUsage(message.usage),
-    stopReason: historyStopReason(message.stop_reason),
+    stopReason,
+    ...(stopReason === "error"
+      ? projectKBrainTurnFailure(
+          message.error_detail,
+          message.error ?? (failureMarker ? contentText(message) : undefined),
+        )
+      : {}),
+    ...(stopReason === "aborted" && message.cancel_reason === "shutdown"
+      ? { cancelReason: "shutdown" }
+      : {}),
     timestamp,
   };
 }

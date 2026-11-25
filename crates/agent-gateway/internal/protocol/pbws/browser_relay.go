@@ -218,6 +218,14 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 		return
 	}
 	if c.srv.kbrainRelay != nil && agentID == c.srv.kbrainTargetID {
+		if env.GetDevicePlugins() != nil {
+			_ = c.sendLocalError(requestID, errDevicePluginsUnsupported)
+			return
+		}
+		if env.GetDeviceUiSurface() != nil {
+			_ = c.sendLocalError(requestID, errDeviceUiSurfaceUnsupported)
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), c.srv.requestTimeout())
 		defer cancel()
 		if response, handled, err := c.srv.kbrainRelay.Filesystem(ctx, env); handled {
@@ -402,6 +410,12 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 		_ = c.sendLocalError(requestID, err.Error())
 		return
 	}
+	if req := env.GetDevicePlugins(); req != nil {
+		req.OwnerId = c.userID
+	}
+	if req := env.GetDeviceUiSurface(); req != nil {
+		req.OwnerId = c.userID
+	}
 	// 命名空间化：多标签页共享一个桌面端，透传 id 必须按连接隔离；回程剥离前缀还原。
 	agentRequestID := c.idPrefix + requestID
 	env.RequestId = agentRequestID
@@ -428,6 +442,16 @@ func (c *browserConn) handleAgentRequest(requestID, agentID string, env *gateway
 	}
 	response, err := c.sm.AwaitUnaryResponse(ctx, agentID, agentRequestID, env)
 	c.finishTextSaveRequest(env)
+	if env.GetDevicePlugins() != nil || env.GetDeviceUiSurface() != nil {
+		if !c.selectionCurrent() {
+			c.core.Close()
+			return
+		}
+		if scopeErr := c.vetWorkspaceAgentRequest(env); scopeErr != nil {
+			_ = c.sendLocalError(requestID, scopeErr.Error())
+			return
+		}
+	}
 	if err != nil {
 		_ = c.sendLocalError(requestID, errorMessage(err))
 		return

@@ -574,7 +574,7 @@ impl KBrainBackendState {
         crate::services::mcp_oauth::store::TokenStore::capture(server_id)
     }
 
-    pub(crate) fn with_current_ssh_profile<T>(
+    pub(crate) fn with_current_backend_profile<T>(
         &self,
         expected: &KBrainBackendConnection,
         action: impl FnOnce() -> Result<T, String>,
@@ -587,10 +587,25 @@ impl KBrainBackendState {
                     && current.token == expected.token
             })
         {
-            return Err("SSH configuration no longer belongs to the active profile".into());
+            return Err("Backend operation no longer belongs to the active profile".into());
         }
         self.profile_start_epoch(&profile, None)?;
         action()
+    }
+
+    #[cfg(desktop)]
+    pub(crate) fn require_current_device_owner(&self, owner: i64) -> Result<(), String> {
+        let sessions = self.account_sessions.as_ref().ok_or("Account is unavailable")?;
+        let scope = format!("{}|user:{owner}", sessions.trusted_origin().origin().ascii_serialization());
+        let expected = BackendProfile::from_account_scope(Some(&scope))?;
+        if self.allows_profile_commands()
+            && self.account_bound.load(Ordering::SeqCst)
+            && self.profile.lock().is_ok_and(|profile| *profile == expected)
+        {
+            Ok(())
+        } else {
+            Err("Device account no longer owns the active profile".into())
+        }
     }
 
     pub(crate) fn configuration_root(&self) -> Result<PathBuf, String> {

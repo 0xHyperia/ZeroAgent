@@ -338,6 +338,9 @@ function applyTokenEvent(turn: Turn, event: Extract<ChatEvent, { type: "token" }
     model: event.model,
     api: event.api,
     stopReason: event.stopReason,
+    errorMessage: event.errorMessage,
+    errorDetail: event.errorDetail,
+    cancelReason: event.cancelReason,
     usage: event.usage,
     contextRelevant: event.contextRelevant,
   });

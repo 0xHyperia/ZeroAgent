@@ -27,10 +27,49 @@ import {
   subscribeToSystemThemePreference,
 } from "@/lib/settings";
 import { loadToken } from "@/lib/storage";
-import { loadWebSettings, persistWebSettings, type WebSettingsSaveState } from "@/lib/webSettings";
+import {
+  loadRelayDisplayPreferences,
+  loadWebSettings,
+  persistRelayDisplayPreferences,
+  persistWebSettings,
+  type WebSettingsSaveState,
+} from "@/lib/webSettings";
 
 import { asErrorMessage } from "../chatEventUtils";
 import { hasSettingsSyncChanged, resolveAppWorkspaceProjects } from "../historyUtils";
+
+type BrowserLocalField = "locale" | "theme";
+
+function readRelayDisplayPreferences(payload: GatewaySettingsSyncUpdatePayload) {
+  if (payload.settingsSyncProtocol || !Array.isArray(payload.browserLocalSettings))
+    return undefined;
+  return payload.browserLocalSettings.filter(
+    (field): field is BrowserLocalField => field === "locale" || field === "theme",
+  );
+}
+
+function omitDisplayPreferences(
+  payload: GatewaySettingsSyncUpdatePayload,
+  fields: readonly BrowserLocalField[],
+) {
+  if (payload.settingsSyncProtocol || fields.length === 0) return payload;
+  const filtered = { ...payload };
+  for (const field of fields) delete filtered[field];
+  return filtered;
+}
+
+function applyBrowserDisplayPreferences(
+  payload: GatewaySettingsSyncUpdatePayload,
+  fields: readonly BrowserLocalField[],
+) {
+  if (payload.settingsSyncProtocol || fields.length === 0) return payload;
+  const local = loadRelayDisplayPreferences();
+  return {
+    ...omitDisplayPreferences(payload, fields),
+    ...(fields.includes("locale") && local.locale ? { locale: local.locale } : {}),
+    ...(fields.includes("theme") && local.theme ? { theme: local.theme } : {}),
+  };
+}
 
 export function getGatewaySettingsErrorMessage(error: unknown, fallback: string, locale: Locale) {
   if (error instanceof GatewaySettingsUpdateError && error.code === "configuration_changed") {
@@ -124,6 +163,13 @@ export function useGatewaySettingsSync(params: {
   const settingsSaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const saveLineage = useRef(new GatewaySettingsSaveLineage());
   const backendPromptResourcesRef = useRef(false);
+  const relayPreferencesRef = useRef<
+    | {
+        scope: typeof saveScope;
+        fields: BrowserLocalField[];
+      }
+    | undefined
+  >(undefined);
   // Mirrors `settings` so setSettings/applyGatewaySettings can read the latest value
   // synchronously without passing a (side-effecting) function into setSettingsState —
   // React 18 StrictMode double-invokes functional state updaters in development,
@@ -202,10 +248,23 @@ export function useGatewaySettingsSync(params: {
         .then(async () => {
           if (!isCurrentScope()) return;
           const target = JSON.stringify([saveScope.activeAgentId, saveScope.token]);
-          const gatewayUpdate =
+          let gatewayUpdate =
             syncGateway && api ? saveLineage.current.prepare(prev, next, target) : null;
           if (gatewayUpdate && backendPromptResourcesRef.current) {
             projectPromptSettingsUpdate(gatewayUpdate, prev, next);
+          }
+          const relayPreferences = relayPreferencesRef.current;
+          if (
+            gatewayUpdate &&
+            !gatewayUpdate.settingsSyncProtocol &&
+            relayPreferences?.scope === saveScope
+          ) {
+            const { locale, theme } = gatewayUpdate;
+            persistRelayDisplayPreferences({
+              ...(relayPreferences.fields.includes("locale") && locale ? { locale } : {}),
+              ...(relayPreferences.fields.includes("theme") && theme ? { theme } : {}),
+            });
+            gatewayUpdate = omitDisplayPreferences(gatewayUpdate, relayPreferences.fields);
           }
           if (gatewayUpdate && Object.keys(gatewayUpdate).length > 0) {
             const snapshotEpoch = settingsSnapshotEpoch.current;
@@ -252,8 +311,13 @@ export function useGatewaySettingsSync(params: {
                 )
                   return;
                 const current = settingsRef.current;
+                const relayPreferences = relayPreferencesRef.current;
+                const input =
+                  relayPreferences?.scope === saveScope
+                    ? applyBrowserDisplayPreferences(payload, relayPreferences.fields)
+                    : payload;
                 const refreshed = redactSettingsForWebStorage(
-                  resolveAppWorkspaceProjects(applyGatewaySettingsSyncPayload(current, payload)),
+                  resolveAppWorkspaceProjects(applyGatewaySettingsSyncPayload(current, input)),
                 );
                 settingsRef.current = refreshed;
                 persistWebSettings(refreshed);
@@ -288,7 +352,12 @@ export function useGatewaySettingsSync(params: {
       feedHooksSnapshot(automation.automationHooks);
     }
     const prev = settingsRef.current;
-    const rawNext = resolveAppWorkspaceProjects(applyGatewaySettingsSyncPayload(prev, payload));
+    const relayPreferences = relayPreferencesRef.current;
+    const input =
+      relayPreferences?.scope === saveScopeRef.current
+        ? applyBrowserDisplayPreferences(payload, relayPreferences.fields)
+        : payload;
+    const rawNext = resolveAppWorkspaceProjects(applyGatewaySettingsSyncPayload(prev, input));
     const next = redactSettingsForWebStorage(rawNext);
     if (
       !hasSettingsSyncChanged(prev, next) &&
@@ -332,6 +401,7 @@ export function useGatewaySettingsSync(params: {
   // biome-ignore lint/correctness/useExhaustiveDependencies: switching the active agent intentionally starts a fresh settings synchronization
   useEffect(() => {
     backendPromptResourcesRef.current = false;
+    relayPreferencesRef.current = undefined;
     if (settingsRef.current.kbrainWebSearch) {
       const next = { ...settingsRef.current, kbrainWebSearch: undefined };
       settingsRef.current = next;
@@ -357,8 +427,13 @@ export function useGatewaySettingsSync(params: {
     void initAutomation().catch(() => undefined);
     const initialSnapshotEpoch = settingsSnapshotEpoch.current;
     const applySyncedSettings = (payload: GatewaySettingsSyncUpdatePayload) => {
-      if (cancelled) {
+      if (cancelled || saveScopeRef.current !== saveScope) {
         return;
+      }
+      const preferences = readRelayDisplayPreferences(payload);
+      if (preferences) relayPreferencesRef.current = { scope: saveScope, fields: preferences };
+      else if (payload.settingsSyncProtocol || Array.isArray(payload.customProviders)) {
+        relayPreferencesRef.current = undefined;
       }
       settingsSnapshotEpoch.current += 1;
       applyGatewaySettings(payload);
@@ -395,7 +470,7 @@ export function useGatewaySettingsSync(params: {
       cancelled = true;
       unsubscribe();
     };
-  }, [api, activeAgentId, applyGatewaySettings, token]);
+  }, [api, activeAgentId, applyGatewaySettings, saveScope, token]);
 
   return {
     settings,

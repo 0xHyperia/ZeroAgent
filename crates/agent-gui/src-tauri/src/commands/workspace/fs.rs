@@ -4111,12 +4111,33 @@ const WORKSPACE_EDITORS: &[&str] = &[
     "visual-studio",
     "vscode-insiders",
     "cursor",
+    "windsurf",
+    "zed",
+    "sublime",
+    "intellij-idea",
+    "webstorm",
+    "goland",
+    "clion",
+    "rustrover",
     "terminal",
     "git-bash",
     "wsl",
     "android-studio",
     "pycharm",
 ];
+
+#[cfg(target_os = "windows")]
+fn windows_jetbrains_editor(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    match id {
+        "intellij-idea" => Some(("intellij idea", "idea64.exe", "idea.cmd")),
+        "webstorm" => Some(("webstorm", "webstorm64.exe", "webstorm.cmd")),
+        "pycharm" => Some(("pycharm", "pycharm64.exe", "pycharm.cmd")),
+        "goland" => Some(("goland", "goland64.exe", "goland.cmd")),
+        "clion" => Some(("clion", "clion64.exe", "clion.cmd")),
+        "rustrover" => Some(("rustrover", "rustrover64.exe", "rustrover.cmd")),
+        _ => None,
+    }
+}
 
 #[cfg(target_os = "windows")]
 fn workspace_editor_install_roots() -> impl Iterator<Item = PathBuf> {
@@ -4159,6 +4180,12 @@ fn installed_workspace_editor(
             "vscode" => vec![root.join(r"Microsoft VS Code\Code.exe")],
             "vscode-insiders" => vec![root.join(r"Microsoft VS Code Insiders\Code - Insiders.exe")],
             "cursor" => vec![root.join(r"Cursor\Cursor.exe")],
+            "windsurf" => vec![root.join(r"Windsurf\Windsurf.exe")],
+            "zed" => vec![root.join(r"Zed\bin\zed.exe"), root.join(r"Zed\Zed.exe")],
+            "sublime" => vec![
+                root.join(r"Sublime Text\subl.exe"),
+                root.join(r"Sublime Text 3\subl.exe"),
+            ],
             "git-bash" => vec![root.join(r"Git\git-bash.exe")],
             "android-studio" => vec![root.join(r"Android\Android Studio\bin\studio64.exe")],
             "visual-studio" => ["2022", "2019", "2017"]
@@ -4172,19 +4199,21 @@ fn installed_workspace_editor(
                     })
                 })
                 .collect(),
-            "pycharm" => fs::read_dir(root.join("JetBrains"))
-                .ok()?
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    entry
-                        .file_name()
-                        .to_string_lossy()
-                        .to_ascii_lowercase()
-                        .starts_with("pycharm")
-                })
-                .map(|entry| entry.path().join(r"bin\pycharm64.exe"))
-                .collect(),
-            _ => return None,
+            _ => {
+                let (install_prefix, executable_name, _) = windows_jetbrains_editor(target)?;
+                fs::read_dir(root.join("JetBrains"))
+                    .ok()?
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .to_ascii_lowercase()
+                            .starts_with(install_prefix)
+                    })
+                    .map(|entry| entry.path().join("bin").join(executable_name))
+                    .collect()
+            }
         };
         candidates.into_iter().find_map(|expected| {
             let executable = expected.canonicalize().ok()?;
@@ -4216,8 +4245,19 @@ fn workspace_editor_on_path(
             &["Cursor.exe"],
             Some(("cursor.cmd", r"..\..\..\Cursor.exe")),
         ),
+        "windsurf" => (
+            &["Windsurf.exe"],
+            Some(("windsurf.cmd", r"..\Windsurf.exe")),
+        ),
+        "zed" => (&["zed.exe"], None),
+        "sublime" => (&["subl.exe", "sublime_text.exe"], None),
         "android-studio" => (&["studio64.exe", "studio.exe"], None),
         "pycharm" => (&["pycharm64.exe", "pycharm.exe"], None),
+        "intellij-idea" => (&["idea64.exe"], None),
+        "webstorm" => (&["webstorm64.exe"], None),
+        "goland" => (&["goland64.exe"], None),
+        "clion" => (&["clion64.exe"], None),
+        "rustrover" => (&["rustrover64.exe"], None),
         "git-bash" => (&["git-bash.exe"], None),
         _ => return None,
     };
@@ -4252,9 +4292,11 @@ fn existing_editor_binary(path: PathBuf, names: &[&str]) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "windows")]
-fn pycharm_toolbox_binary() -> Option<PathBuf> {
+fn windows_jetbrains_toolbox_binary(target: &str) -> Option<PathBuf> {
+    let (_, executable, launcher_name) = windows_jetbrains_editor(target)?;
     let launcher = PathBuf::from(std::env::var_os("LOCALAPPDATA")?)
-        .join(r"JetBrains\Toolbox\scripts\pycharm.cmd");
+        .join(r"JetBrains\Toolbox\scripts")
+        .join(launcher_name);
     if fs::metadata(&launcher).ok()?.len() > 16 * 1024 {
         return None;
     }
@@ -4265,23 +4307,71 @@ fn pycharm_toolbox_binary() -> Option<PathBuf> {
             .strip_prefix("start \"\" %waitarg% \"")?
             .split_once('"')?;
         let path = PathBuf::from(target);
+        let names: &[&str] = if executable == "pycharm64.exe" {
+            &["pycharm64.exe", "pycharm.exe"]
+        } else {
+            &[executable]
+        };
         path.is_absolute()
-            .then(|| existing_editor_binary(path, &["pycharm64.exe", "pycharm.exe"]))?
+            .then(|| existing_editor_binary(path, names))?
     })
+}
+
+#[cfg(target_os = "windows")]
+fn registered_workspace_editor(target: &str) -> Option<PathBuf> {
+    use windows_sys::Win32::Foundation::NO_ERROR;
+    use windows_sys::Win32::System::Registry::{
+        RegGetValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+    };
+
+    let executable = match target {
+        "vscode" => "Code.exe",
+        "vscode-insiders" => "Code - Insiders.exe",
+        "cursor" => "Cursor.exe",
+        "windsurf" => "Windsurf.exe",
+        "sublime" => "sublime_text.exe",
+        "android-studio" => "studio64.exe",
+        _ => windows_jetbrains_editor(target)?.1,
+    };
+    let key: Vec<u16> =
+        format!(r"Software\Microsoft\Windows\CurrentVersion\App Paths\{executable}")
+            .encode_utf16()
+            .chain([0])
+            .collect();
+    [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE]
+        .into_iter()
+        .find_map(|root| {
+            let mut value = [0u16; 1024];
+            let mut size = (value.len() * 2) as u32;
+            let status = unsafe {
+                RegGetValueW(
+                    root,
+                    key.as_ptr(),
+                    std::ptr::null(),
+                    RRF_RT_REG_SZ,
+                    std::ptr::null_mut(),
+                    value.as_mut_ptr().cast(),
+                    &mut size,
+                )
+            };
+            if status != NO_ERROR {
+                return None;
+            }
+            let len = (size as usize / 2).min(value.len());
+            let text = String::from_utf16_lossy(&value[..len]);
+            let path = PathBuf::from(text.trim_end_matches('\0').trim().trim_matches('"'));
+            path.is_absolute()
+                .then(|| existing_editor_binary(path, &[executable]))?
+        })
 }
 
 #[cfg(target_os = "windows")]
 fn locate_workspace_editor(target: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     workspace_editor_on_path(target, std::env::split_paths(&path))
-        .or_else(|| {
-            if target == "pycharm" {
-                pycharm_toolbox_binary()
-            } else {
-                None
-            }
-        })
+        .or_else(|| windows_jetbrains_toolbox_binary(target))
         .or_else(|| installed_workspace_editor(target, workspace_editor_install_roots()))
+        .or_else(|| registered_workspace_editor(target))
 }
 
 #[cfg(target_os = "windows")]
@@ -4359,6 +4449,215 @@ fn visual_studio_from_installer() -> Option<PathBuf> {
         })
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+const UNIX_WORKSPACE_EDITORS: &[(&str, &[&str])] = &[
+    ("vscode", &["code"]),
+    ("vscode-insiders", &["code-insiders"]),
+    ("cursor", &["cursor"]),
+    ("windsurf", &["windsurf"]),
+    ("zed", &["zed", "zeditor", "zedit"]),
+    ("sublime", &["subl"]),
+    (
+        "intellij-idea",
+        &["idea", "intellij-idea-ultimate", "intellij-idea-community"],
+    ),
+    ("webstorm", &["webstorm", "webstorm64"]),
+    (
+        "pycharm",
+        &[
+            "pycharm",
+            "pycharm-professional",
+            "pycharm-community",
+            "pycharm64",
+        ],
+    ),
+    ("goland", &["goland", "goland64"]),
+    ("clion", &["clion", "clion64"]),
+    ("rustrover", &["rustrover", "rustrover64"]),
+    #[cfg(target_os = "macos")]
+    ("xcode", &[]),
+];
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn executable_unix_editor(candidate: &Path) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = candidate.metadata().ok()?;
+    // Some launchers (notably Snap aliases) select an app from the invoked path.
+    (metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .then(|| candidate.to_path_buf())
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+enum UnixWorkspaceEditor {
+    Launcher(PathBuf),
+    #[cfg(target_os = "macos")]
+    Application(PathBuf),
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn locate_unix_workspace_editor(editor: &str) -> Option<UnixWorkspaceEditor> {
+    let &(_, binaries) = UNIX_WORKSPACE_EDITORS
+        .iter()
+        .find(|(id, _)| *id == editor)?;
+    let paths = std::env::var_os("PATH").unwrap_or_default();
+    #[cfg(target_os = "macos")]
+    let system_dirs = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+    #[cfg(target_os = "linux")]
+    let system_dirs = ["/usr/local/bin", "/usr/bin", "/snap/bin"];
+    #[cfg(target_os = "macos")]
+    let toolbox = "Library/Application Support/JetBrains/Toolbox/scripts";
+    #[cfg(target_os = "linux")]
+    let toolbox = ".local/share/JetBrains/Toolbox/scripts";
+    let home_dirs = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|home| home.is_absolute())
+        .into_iter()
+        .flat_map(|home| [home.join(".local/bin"), home.join(toolbox)]);
+    let cli = std::env::split_paths(&paths)
+        .chain(system_dirs.map(PathBuf::from))
+        .chain(home_dirs)
+        .filter(|directory| directory.is_absolute())
+        .find_map(|directory| {
+            binaries
+                .iter()
+                .find_map(|binary| executable_unix_editor(&directory.join(binary)))
+        })
+        .map(UnixWorkspaceEditor::Launcher);
+    #[cfg(target_os = "macos")]
+    return cli.or_else(|| locate_macos_workspace_editor(editor));
+    #[cfg(target_os = "linux")]
+    cli
+}
+
+#[cfg(target_os = "macos")]
+fn locate_macos_workspace_editor(editor: &str) -> Option<UnixWorkspaceEditor> {
+    let (bundles, launchers): (&[&str], &[&str]) = match editor {
+        "vscode" => (
+            &["Visual Studio Code"],
+            &["Contents/Resources/app/bin/code"],
+        ),
+        "vscode-insiders" => (
+            &["Visual Studio Code - Insiders"],
+            &[
+                "Contents/Resources/app/bin/code-insiders",
+                "Contents/Resources/app/bin/code",
+            ],
+        ),
+        "cursor" => (
+            &["Cursor"],
+            &[
+                "Contents/Resources/app/bin/cursor",
+                "Contents/Resources/app/bin/code",
+            ],
+        ),
+        "windsurf" => (&["Windsurf"], &["Contents/Resources/app/bin/windsurf"]),
+        "zed" => (&["Zed"], &["Contents/MacOS/cli"]),
+        "sublime" => (&["Sublime Text"], &["Contents/SharedSupport/bin/subl"]),
+        "intellij-idea" => (
+            &[
+                "IntelliJ IDEA",
+                "IntelliJ IDEA Ultimate",
+                "IntelliJ IDEA CE",
+                "IntelliJ IDEA Community Edition",
+            ],
+            &[],
+        ),
+        "webstorm" => (&["WebStorm"], &[]),
+        "pycharm" => (
+            &[
+                "PyCharm",
+                "PyCharm CE",
+                "PyCharm Professional Edition",
+                "PyCharm Community Edition",
+            ],
+            &[],
+        ),
+        "goland" => (&["GoLand"], &[]),
+        "clion" => (&["CLion"], &[]),
+        "rustrover" => (&["RustRover"], &[]),
+        "xcode" => (&["Xcode"], &["/usr/bin/xed"]),
+        _ => return None,
+    };
+    let user_applications = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|home| home.is_absolute())
+        .map(|home| home.join("Applications"));
+    let app = std::iter::once(PathBuf::from("/Applications"))
+        .chain(user_applications)
+        .find_map(|applications| {
+            bundles.iter().find_map(|bundle| {
+                let app = applications.join(format!("{bundle}.app"));
+                app.is_dir().then_some(app)
+            })
+        })?;
+    let launcher = launchers
+        .iter()
+        .find_map(|launcher| executable_unix_editor(&app.join(launcher)));
+    Some(launcher.map_or(
+        UnixWorkspaceEditor::Application(app),
+        UnixWorkspaceEditor::Launcher,
+    ))
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", test))]
+fn workspace_editor_uses_jetbrains_args(editor: &str) -> bool {
+    matches!(
+        editor,
+        "intellij-idea"
+            | "webstorm"
+            | "pycharm"
+            | "goland"
+            | "clion"
+            | "rustrover"
+            | "android-studio"
+    )
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", test))]
+fn append_workspace_editor_target(
+    command: &mut Command,
+    editor: &str,
+    target: &Path,
+    line: Option<u32>,
+    column: Option<u32>,
+) {
+    if let Some(line) = line {
+        let column = column.unwrap_or(1).max(1);
+        if workspace_editor_uses_jetbrains_args(editor) || editor == "xcode" {
+            command.arg("--line").arg(line.to_string());
+            if editor != "xcode" {
+                command.arg("--column").arg(column.to_string());
+            }
+        } else if editor != "visual-studio" {
+            if !matches!(editor, "zed" | "sublime") {
+                command.arg("--goto");
+            }
+            command.arg(format!("{}:{line}:{column}", display_path(target)));
+            return;
+        }
+    }
+    command.arg(target);
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", test))]
+fn resolve_workspace_editor_target(workdir: &str, path: &str) -> Result<(PathBuf, bool), FsError> {
+    let target = if path.is_empty() {
+        canonicalize_workdir(workdir)?
+    } else {
+        let scope = resolve_scoped_fs_path(workdir, path)?;
+        resolve_target(&scope.root, &scope.relative_path)
+            .map_err(|error| remap_scoped_path_error(&scope, error))?
+    };
+    let metadata = fs::metadata(&target)?;
+    if !metadata.is_file() && !metadata.is_dir() {
+        return Err(FsError::Other(
+            "Only files and folders can be opened".to_string(),
+        ));
+    }
+    Ok((target, metadata.is_file()))
+}
+
 #[tauri::command]
 pub async fn fs_workspace_editor_targets() -> Result<Vec<String>, FsCommandError> {
     run_blocking_fs("fs_workspace_editor_targets", || {
@@ -4368,7 +4667,13 @@ pub async fn fs_workspace_editor_targets() -> Result<Vec<String>, FsCommandError
             .filter(|id| locate_workspace_editor(id).is_some())
             .map(|id| (*id).to_string())
             .collect());
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        return Ok(UNIX_WORKSPACE_EDITORS
+            .iter()
+            .filter(|(editor, _)| locate_unix_workspace_editor(editor).is_some())
+            .map(|(editor, _)| (*editor).to_owned())
+            .collect());
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         Ok(Vec::new())
     })
     .await
@@ -4383,25 +4688,26 @@ pub async fn fs_open_workspace_editor(
     column: Option<u32>,
 ) -> Result<(), FsCommandError> {
     run_blocking_fs("fs_open_workspace_editor", move || {
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        let (target, is_file) = resolve_workspace_editor_target(&workdir, &path)?;
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        let line = line.filter(|line| is_file && *line > 0);
         #[cfg(target_os = "windows")]
         {
             let executable = locate_workspace_editor(&editor)
                 .ok_or_else(|| FsError::Other("Editor is unavailable".to_string()))?;
-            let scope = resolve_scoped_fs_path(&workdir, &path)?;
-            let file = resolve_target(&scope.root, &scope.relative_path)
-                .map_err(|error| remap_scoped_path_error(&scope, error))?;
-            if !file.is_file() {
-                return Err(FsError::Other("Only regular files can be edited".to_string()).into());
-            }
+            let directory = if is_file {
+                target.parent().unwrap_or(&target)
+            } else {
+                &target
+            };
             let mut command = Command::new(executable);
-            let line = line.filter(|line| *line > 0);
             if editor == "git-bash" {
-                let directory = file.parent().unwrap_or(&scope.root);
                 command
                     .current_dir(directory)
                     .arg(format!("--cd={}", display_path(directory)));
             } else if matches!(editor.as_str(), "terminal" | "wsl") {
-                let directory = display_path(file.parent().unwrap_or(&scope.root));
+                let directory = display_path(directory);
                 command.arg("-d").arg(directory.replace(';', r"\;"));
                 if editor == "wsl" {
                     let wsl = installed_wsl()
@@ -4417,29 +4723,46 @@ pub async fn fs_open_workspace_editor(
                         }
                     }
                 }
-            } else if matches!(editor.as_str(), "pycharm" | "android-studio") {
-                if let Some(line) = line {
-                    command
-                        .arg("--line")
-                        .arg(line.to_string())
-                        .arg("--column")
-                        .arg(column.unwrap_or(1).max(1).to_string());
-                }
-                command.arg(file);
-            } else if let Some(line) = line.filter(|_| editor != "visual-studio") {
-                command.arg("--goto").arg(format!(
-                    "{}:{line}:{}",
-                    display_path(&file),
-                    column.unwrap_or(1).max(1),
-                ));
             } else {
-                command.arg(file);
+                append_workspace_editor_target(&mut command, &editor, &target, line, column);
             }
             crate::runtime::process::spawn_and_reap(&mut command)
                 .map(|_| ())
                 .map_err(|error| FsError::Other(format!("Failed to open editor: {error}")).into())
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            let install = locate_unix_workspace_editor(&editor)
+                .ok_or_else(|| FsError::Other("Editor is unavailable".to_string()))?;
+            let mut command = match install {
+                UnixWorkspaceEditor::Launcher(executable) => {
+                    let mut command = Command::new(executable);
+                    append_workspace_editor_target(&mut command, &editor, &target, line, column);
+                    command
+                }
+                #[cfg(target_os = "macos")]
+                UnixWorkspaceEditor::Application(application) => {
+                    let mut command = Command::new("/usr/bin/open");
+                    if line.is_some() && workspace_editor_uses_jetbrains_args(&editor) {
+                        command.arg("-na").arg(&application).arg("--args");
+                        append_workspace_editor_target(
+                            &mut command,
+                            &editor,
+                            &target,
+                            line,
+                            column,
+                        );
+                    } else {
+                        command.arg("-a").arg(&application).arg(&target);
+                    }
+                    command
+                }
+            };
+            crate::runtime::process::spawn_and_reap(&mut command)
+                .map(|_| ())
+                .map_err(|error| FsError::Other(format!("Failed to open editor: {error}")).into())
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         {
             let _ = (workdir, path, editor, line, column);
             Err(FsError::Other("Editor is unavailable on this platform".to_string()).into())
@@ -5649,6 +5972,62 @@ mod tests {
     use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
     use zip::write::SimpleFileOptions;
+
+    #[test]
+    fn workspace_editor_accepts_only_existing_targets_inside_the_scope() {
+        let temporary = tempfile::tempdir().unwrap();
+        let workspace = temporary.path().join("workspace");
+        fs::create_dir_all(workspace.join("src")).unwrap();
+        fs::write(workspace.join("src/example.rs"), "").unwrap();
+        fs::write(temporary.path().join("another.txt"), "").unwrap();
+        let workdir = workspace.to_str().unwrap();
+        assert_eq!(
+            resolve_workspace_editor_target(workdir, "").unwrap(),
+            (workspace.canonicalize().unwrap(), false)
+        );
+        assert!(!resolve_workspace_editor_target(workdir, "src").unwrap().1);
+        assert!(
+            resolve_workspace_editor_target(workdir, "src/example.rs")
+                .unwrap()
+                .1
+        );
+        assert!(resolve_workspace_editor_target(workdir, "../another.txt").is_err());
+        assert!(resolve_workspace_editor_target(workdir, "missing").is_err());
+    }
+
+    #[test]
+    fn workspace_editor_preserves_the_path_for_each_supported_launcher_syntax() {
+        let path = Path::new("/project/my source.ts");
+        let location = "/project/my source.ts:12:4";
+        for (editor, expected) in [
+            ("windsurf", vec!["--goto", location]),
+            ("zed", vec![location]),
+            ("sublime", vec![location]),
+            (
+                "webstorm",
+                vec!["--line", "12", "--column", "4", "/project/my source.ts"],
+            ),
+            ("xcode", vec!["--line", "12", "/project/my source.ts"]),
+            ("visual-studio", vec!["/project/my source.ts"]),
+        ] {
+            let mut command = Command::new(editor);
+            append_workspace_editor_target(&mut command, editor, path, Some(12), Some(4));
+            assert_eq!(
+                command
+                    .get_args()
+                    .map(|arg| arg.to_str().unwrap())
+                    .collect::<Vec<_>>(),
+                expected,
+                "{editor}"
+            );
+        }
+        let mut command = Command::new("code");
+        append_workspace_editor_target(&mut command, "vscode", path, None, None);
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![path.as_os_str()]
+        );
+    }
 
     #[test]
     fn html_preview_assets_stay_inside_workspace_and_obey_limits() {

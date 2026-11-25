@@ -127,7 +127,10 @@ function ProxySettingsRow({
 }
 
 export function SystemSettingsForm(
-  props: SettingsSectionProps & { showLocalRuntimeSettings?: boolean },
+  props: SettingsSectionProps & {
+    showLocalRuntimeSettings?: boolean;
+    htmlPreviewsAvailable?: boolean;
+  },
 ) {
   const { settings, setSettings } = props;
   const showLocalRuntimeSettings = props.showLocalRuntimeSettings !== false;
@@ -428,6 +431,7 @@ export function SystemSettingsForm(
       <SettingsGroup title={t("settings.groupGeneral")}>
         <SettingsRow
           title={t("settings.appearance")}
+          data-settings-anchor="appearance"
           description={t("settings.appearanceDesc")}
           control={
             <SettingsToggleGroup
@@ -450,6 +454,7 @@ export function SystemSettingsForm(
 
         <SettingsRow
           title={t("settings.language")}
+          data-settings-anchor="language"
           description={t("settings.languageDesc")}
           control={
             <Select
@@ -485,28 +490,54 @@ export function SystemSettingsForm(
         ) : null}
       </SettingsGroup>
 
-      {showLocalRuntimeSettings ? (
+      {showLocalRuntimeSettings || props.htmlPreviewsAvailable ? (
         <SettingsGroup title={t("settings.navAgents")}>
-          <SettingsRow
-            title={t("settings.showDetailedProgress")}
-            description={t("settings.showDetailedProgressDesc")}
-            control={
-              <AgentActivationSwitch
-                checked={settings.customSettings.chatTranscript.showDetailedProgress === true}
-                title={t("settings.showDetailedProgress")}
-                onToggle={() =>
-                  setSettings((previous) =>
-                    updateCustomSettings(previous, {
-                      chatTranscript: {
-                        ...previous.customSettings.chatTranscript,
-                        showDetailedProgress: !previous.customSettings.chatTranscript.showDetailedProgress,
-                      },
-                    }),
-                  )
-                }
-              />
-            }
-          />
+          {showLocalRuntimeSettings ? (
+            <SettingsRow
+              title={t("settings.showDetailedProgress")}
+              description={t("settings.showDetailedProgressDesc")}
+              control={
+                <AgentActivationSwitch
+                  checked={settings.customSettings.chatTranscript.showDetailedProgress === true}
+                  title={t("settings.showDetailedProgress")}
+                  onToggle={() =>
+                    setSettings((previous) =>
+                      updateCustomSettings(previous, {
+                        chatTranscript: {
+                          ...previous.customSettings.chatTranscript,
+                          showDetailedProgress:
+                            !previous.customSettings.chatTranscript.showDetailedProgress,
+                        },
+                      }),
+                    )
+                  }
+                />
+              }
+            />
+          ) : null}
+          {props.htmlPreviewsAvailable ? (
+            <SettingsRow
+              data-settings-anchor="html-previews"
+              title={t("settings.htmlPreviews")}
+              description={t("settings.htmlPreviewsDesc")}
+              control={
+                <AgentActivationSwitch
+                  checked={settings.customSettings.chatTranscript.htmlPreviews}
+                  title={t("settings.htmlPreviews")}
+                  onToggle={() =>
+                    setSettings((current) =>
+                      updateCustomSettings(current, {
+                        chatTranscript: {
+                          ...current.customSettings.chatTranscript,
+                          htmlPreviews: !current.customSettings.chatTranscript.htmlPreviews,
+                        },
+                      }),
+                    )
+                  }
+                />
+              }
+            />
+          ) : null}
         </SettingsGroup>
       ) : null}
 
@@ -705,7 +736,7 @@ export function SystemSettingsForm(
 
       <SystemSettingsExtensions settings={settings} setSettings={setSettings} />
 
-      <SettingsGroup title={t("settings.fontFamily")}>
+      <SettingsGroup title={t("settings.fontFamily")} data-settings-anchor="font-family">
         {FONT_FAMILY_FIELDS.map(({ key, labelKey }) => {
           const currentValue = settings.customSettings[key];
           const selectValue = toFontFamilySelectValue(
@@ -761,7 +792,7 @@ export function SystemSettingsForm(
         })}
       </SettingsGroup>
 
-      <SettingsGroup title={t("settings.fontSize")}>
+      <SettingsGroup title={t("settings.fontSize")} data-settings-anchor="font-size">
         {fontScaleZones.map((zone) => (
           <SettingsRow
             key={zone.key}

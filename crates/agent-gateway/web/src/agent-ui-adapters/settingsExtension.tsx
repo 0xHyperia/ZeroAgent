@@ -1,5 +1,9 @@
-import { MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
+import { Keyboard, MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
+import { onDemand } from "@liveagent/ui/components/OnDemand";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
+import { settingsSectionLabel, shortcutCommandSettingsAnchor } from "@liveagent/ui/lib/settings/settingsSearchIndex";
+import { BROWSER_UNSUPPORTED_SHORTCUTS } from "@liveagent/ui/lib/shortcuts/shortcutCommands";
+import type { ShortcutCommandsSectionProps } from "@liveagent/ui/pages/settings/ShortcutCommandsSection";
 import type { KBrainWebSearchUpdate } from "@liveagent/ui/lib/providers/webSearchFallback";
 import {
   configureResourceHostCapabilities,
@@ -25,11 +29,23 @@ import { RelayProvidersSection } from "../pages/settings/RelayProvidersSection";
 import type { SettingsPageProps } from "../pages/settings/types";
 import { gatewaySkillsAdapter } from "./kbrainSkills";
 
+export const WEB_SETTINGS_EXCLUDED_ANCHORS = [
+  ...BROWSER_UNSUPPORTED_SHORTCUTS.map(shortcutCommandSettingsAnchor),
+  "run-completion-sound",
+  "preferred-workspace-editor",
+];
+
+const ShortcutCommandsSection = onDemand<ShortcutCommandsSectionProps>(
+  async () =>
+    (await import("@liveagent/ui/pages/settings/ShortcutCommandsSection")).ShortcutCommandsSection,
+);
+
 export function createSettingsExtension(props: SettingsPageProps): {
   surface: "web";
   iconClassName: string;
   slots: UiExtensionSlots;
   sections: SettingsSectionDefinition<void>[];
+  excludedSearchAnchors: readonly string[];
   renderProviders: (options: {
     initialProviderId?: string;
     onInitialProviderHandled: () => void;
@@ -37,6 +53,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
 } {
   return {
     surface: "web",
+    excludedSearchAnchors: WEB_SETTINGS_EXCLUDED_ANCHORS,
     iconClassName: "size-4",
     slots: {},
     renderProviders: () => (
@@ -53,7 +70,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
         groupKey: "settings.groupGeneral",
         groupOrder: 10,
         order: 5,
-        labelKey: "settings.navAccount",
+        labelKey: settingsSectionLabel("account"),
         icon: <Shield className="h-4 w-4" />,
         showSaveIndicator: false,
         render: () => (
@@ -65,12 +82,24 @@ export function createSettingsExtension(props: SettingsPageProps): {
           />
         ),
       },
+      ...(props.runtimeKind === "device_agent"
+        ? [{
+            id: "shortcuts",
+            groupKey: "settings.groupOther",
+            groupOrder: 50,
+            order: 10,
+            labelKey: settingsSectionLabel("shortcuts"),
+            icon: <Keyboard className="size-4" />,
+            showSaveIndicator: false,
+            render: () => <ShortcutCommandsSection excludeCommandIds={BROWSER_UNSUPPORTED_SHORTCUTS} />,
+          } satisfies SettingsSectionDefinition<void>]
+        : []),
       {
         id: "devices",
         groupKey: "settings.groupConnectivity",
         groupOrder: 40,
         order: 30,
-        labelKey: "settings.navAgentManagement",
+        labelKey: settingsSectionLabel("devices"),
         icon: <MonitorSmartphone className="size-4" />,
         showSaveIndicator: false,
         render: () => <DevicesSection onDirectoryChanged={props.onAgentDirectoryChanged} />,

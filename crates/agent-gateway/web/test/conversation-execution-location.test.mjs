@@ -2,6 +2,48 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
+test("the offline notice opens the existing workbench chooser without switching or altering a draft", async (t) => {
+  const env = await createWebDomTestEnv();
+  const { React, act, createRoot } = env;
+  const { ExecutionEnvironmentSwitcher } = env.loadModule("src/components/ExecutionEnvironmentSwitcher.tsx");
+  const { GatewayDeviceConnectionNotice } = env.loadModule("src/app/GatewayDeviceConnectionNotice.tsx");
+  const { LocaleContext, t: translate } = env.loadModule("@liveagent/ui/i18n/index.ts");
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  t.after(async () => { await act(async () => root.unmount()); host.remove(); env.cleanup(); });
+  const west = { runtime_kind: "device_agent", device_id: "offline", name: "West office", online: false, workspaces: [] };
+  const east = { runtime_kind: "device_agent", device_id: "online", name: "East office", online: true, workspaces: [] };
+  const chosen = [];
+  function Harness() {
+    const [open, setOpen] = React.useState(false);
+    const locale = { locale: "en-US", t: (key) => translate(key, "en-US") };
+    return React.createElement(LocaleContext.Provider, { value: locale },
+      React.createElement(ExecutionEnvironmentSwitcher, {
+        environments: [west, east], selection: west,
+        open, onOpenChange: setOpen,
+        onSwitch: async (target) => { chosen.push(target.device_id); },
+      }),
+      React.createElement(GatewayDeviceConnectionNotice, {
+        unavailable: true, connectionLost: false, agentOnline: false, statusReadFailed: false,
+        deviceName: west.name, draftEditable: true, onReconnect: async () => undefined,
+        onChooseDevice: () => setOpen(true),
+      }),
+      React.createElement("textarea", { defaultValue: "Keep this draft on West office" }),
+    );
+  }
+  await act(async () => root.render(React.createElement(Harness)));
+  assert.deepEqual(chosen, []);
+  assert.equal(document.querySelector('[role="menu"]'), null);
+  const action = [...host.querySelectorAll("button")].find((node) => node.textContent === "Choose another device");
+  await act(async () => action.click());
+  assert.deepEqual(chosen, []);
+  const items = [...document.querySelectorAll('[role="menuitem"]')];
+  assert.equal(items.find((node) => node.textContent.includes(west.name)).getAttribute("aria-disabled"), "true");
+  assert.equal(host.querySelector("textarea").value, "Keep this draft on West office");
+  await act(async () => items.find((node) => node.textContent.includes(east.name)).click());
+  assert.deepEqual(chosen, ["online"]);
+});
+
 test("workbench switcher keeps its selection on failure and permits retry", async (t) => {
   const env = await createWebDomTestEnv();
   const { React, act, createRoot } = env;

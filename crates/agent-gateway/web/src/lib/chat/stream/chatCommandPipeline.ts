@@ -1,3 +1,7 @@
+import {
+  isConnectionSetupTimeoutError,
+  isRecoverableGatewayTransportError,
+} from "../../gatewaySocketShared";
 import type { HistoryMessageRef } from "../conversationState";
 import type { TranscriptStore } from "../transcript/transcriptStore";
 import type { ChatCommandAccepted, ChatCommandUpdate } from "./streamTypes";
@@ -209,7 +213,9 @@ export class ChatCommandPipeline {
         return settledOutcome;
       }
       const message = error instanceof Error ? error.message : "chat command failed";
-      return this.fail(pending, null, message);
+      const transport =
+        isRecoverableGatewayTransportError(error) || isConnectionSetupTimeoutError(error);
+      return this.fail(pending, null, message, transport);
     }
   }
 
@@ -317,6 +323,7 @@ export class ChatCommandPipeline {
     pending: PendingChatCommand,
     errorCode: string | null,
     message: string,
+    transport = false,
   ): Extract<ChatCommandOutcome, { kind: "failed" }> {
     message = this.hooks.describeFailure?.(errorCode, message) ?? message;
     const outcome = { kind: "failed" as const, errorCode, message };
@@ -331,7 +338,7 @@ export class ChatCommandPipeline {
       store.restoreEditResendTranscript?.(pending.clientRequestId);
     }
     store.removeOptimisticUserEntry(pending.clientRequestId);
-    if (!pending.waitForStart) store.appendLocalError(message);
+    if (!pending.waitForStart && !transport) store.appendLocalError(message);
     this.settleBindingWaiters(pending, null);
     this.clearPending(pending);
     this.hooks.onFailed?.(pending, errorCode, message);

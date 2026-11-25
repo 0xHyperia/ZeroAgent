@@ -32,6 +32,7 @@ import {
   isWorkspaceEditablePreviewPath,
   isWorkspacePreviewPath,
 } from "../../workspace-editor/workspaceImagePreview";
+import { WorkspaceEditorMenuItems } from "../WorkspaceEditorMenuItems";
 import { dirname, FILE_TREE_HAS_OS_INTEGRATION, type FileTreeKind } from "./model";
 
 export type FileTreeContextMenuProps = {
@@ -49,6 +50,7 @@ export type FileTreeContextMenuProps = {
   onClose: () => void;
   onOpenFile: (path: string) => void;
   onOpenExternal: (path: string) => void;
+  onOpenInEditor?: (path: string, editor: string) => void;
   onOpenContainingDirectory: (path: string) => void;
   onStartAction: (action: "file" | "folder" | "rename", path: string) => void;
   onDelete: (path: string) => void;
@@ -73,6 +75,7 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
     onClose,
     onOpenFile,
     onOpenExternal,
+    onOpenInEditor,
     onOpenContainingDirectory,
     onStartAction,
     onDelete,
@@ -167,9 +170,17 @@ export function FileTreeContextMenu(props: FileTreeContextMenuProps) {
               {t("projectTools.fileTree.openExternal")}
             </ContextMenuItem>
           ) : null}
-          <ContextMenuSeparator />
         </>
       ) : null}
+      {onOpenInEditor && (
+        <WorkspaceEditorMenuItems
+          onOpen={(editor) => {
+            onOpenInEditor(path, editor);
+            onClose();
+          }}
+        />
+      )}
+      {kind === "file" && <ContextMenuSeparator />}
       <ContextMenuItem
         disabled={!canMutate}
         onClick={() => {

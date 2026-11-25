@@ -3,6 +3,7 @@ import {
   type WorkspaceProject,
   workspaceProjectPathKey,
 } from "@liveagent/app/lib/settings";
+import { WorkspaceEditorMenuItems } from "@liveagent/ui/components/project-tools/WorkspaceEditorMenuItems";
 import {
   Archive,
   ArchiveRestore,
@@ -1352,6 +1353,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
   onBrowseProjectInFileTree?: (project: WorkspaceProject) => void;
   onConfigureProject: (project: WorkspaceProject) => void;
   onBrowseProjectInSystemFileManager?: (project: WorkspaceProject) => void;
+  onOpenProjectInEditor?: (project: WorkspaceProject, editor: string) => void;
   onSetProjectPinned: (project: WorkspaceProject, isPinned: boolean) => void;
   onNewConversationForProject?: (project: WorkspaceProject) => void;
   onRemoveProject: (project: WorkspaceProject, options?: WorkspaceProjectRemoveOptions) => void;
@@ -1396,6 +1398,7 @@ export const ProjectRow = memo(function ProjectRow(props: {
     onBrowseProjectInFileTree,
     onConfigureProject,
     onBrowseProjectInSystemFileManager,
+    onOpenProjectInEditor,
     onSetProjectPinned,
     onNewConversationForProject,
     onRemoveProject,
@@ -1936,6 +1939,11 @@ export const ProjectRow = memo(function ProjectRow(props: {
                       {t("chat.workspaceBrowseInSystemFileManager")}
                     </DropdownMenuItem>
                   ) : null}
+                  {onOpenProjectInEditor && !isInteractionDisabled && !isMissing && !isArchived && (
+                    <WorkspaceEditorMenuItems
+                      onOpen={(editor) => onOpenProjectInEditor(project, editor)}
+                    />
+                  )}
                   {/* 第三组：危险操作 —— 固定在菜单底部并以分隔线隔开。 */}
                   {!isDefaultProject ? (
                     <>

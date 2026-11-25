@@ -350,7 +350,7 @@ func TestRunEndClosesPendingCards(t *testing.T) {
 			results++
 		}
 	}
-	if pending != 0 || results != 1 || len(events) != 4 {
+	if pending != 0 || results != 1 || len(events) != 5 || events[4].data["stopReason"] != "aborted" {
 		t.Fatalf("run end events = %+v", events)
 	}
 	for _, item := range []string{"call-1", syntheticPermissionPrefix + "perm-2"} {

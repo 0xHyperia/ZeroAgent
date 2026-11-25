@@ -108,7 +108,7 @@ pub(crate) fn sync_running(connection: &KBrainBackendConnection) -> Result<SyncO
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     BACKEND.get().ok_or("SSH configuration backend is unavailable")?
-        .with_current_ssh_profile(connection, || {
+        .with_current_backend_profile(connection, || {
             let db = crate::commands::settings::open_db()?;
             let desktop = crate::commands::settings::load_ssh_settings_for_kbrain(&db)?;
             let client = client()?;

@@ -14,6 +14,7 @@ export type SectionId =
   | "system"
   | "shortcuts"
   | "skills"
+  | "devicePlugins"
   | "mcp"
   | "systemTools"
   | "permissions"
@@ -30,6 +31,7 @@ export type SectionId =
   | "planning"
   | "remote"
   | "cua"
+  | "backup"
   | "about";
 
 import type { SettingsHostAdapter } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
@@ -44,6 +46,7 @@ export type SettingsPageProps = {
   settingsHost?: SettingsHostAdapter;
   imageClient?: ImageStudioClient;
   onOpenModelPreferences?: () => void;
+  onOpenSetupGuide?: () => void;
   onOpenScheduledTasks?: () => void;
   registerLeaveGuard?: (guard: () => boolean) => () => void;
   setSettings: SetSettingsFn;
@@ -51,6 +54,7 @@ export type SettingsPageProps = {
   onBack: () => void;
   backLabel?: string;
   initialSection?: SectionId;
+  initialAnchor?: string;
   onSectionChange?: (section: SectionId) => void;
   mobileDetail?: boolean;
   onMobileDetailChange?: (detail: boolean) => void;

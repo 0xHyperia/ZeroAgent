@@ -241,6 +241,7 @@ export function McpHubPage(props: McpHubPageProps) {
 
       {editing ? (
         <McpServerEditModal
+          allowDisplayName={runtime.serverNames}
           mode={editing.mode}
           initialServer={editing.mode === "edit" ? editing.server : null}
           existingServers={settings.mcp.servers}

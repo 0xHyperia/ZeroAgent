@@ -18,6 +18,10 @@ const deviceAgentViewSource = readFileSync(
   new URL("../src/app/GatewayAppView.tsx", import.meta.url),
   "utf8",
 );
+const settingsSearchSource = readFileSync(
+  new URL("../../../agent-ui/src/lib/settings/settingsSearchIndex.ts", import.meta.url),
+  "utf8",
+);
 
 test("Cloud Chat declares its runtime and hides unsupported local capability sections", () => {
   assert.match(cloudChatSource, /runtimeKind="web_chat"/);
@@ -33,6 +37,7 @@ test("Cloud Chat declares its runtime and hides unsupported local capability sec
 });
 
 test("Device Agent keeps desktop runtime settings while hiding remote self-management and Web STT", () => {
-  assert.match(deviceAgentViewSource, /hiddenSections=\{\["remote", "stt"\]\}/);
+  assert.match(deviceAgentViewSource, /hiddenSections=\{\[\.\.\.DEVICE_WEB_HIDDEN_SETTINGS_SECTIONS\]\}/);
+  assert.match(settingsSearchSource, /DEVICE_WEB_HIDDEN_SETTINGS_SECTIONS = \["remote", "stt"\]/);
   assert.doesNotMatch(deviceAgentViewSource, /runtimeKind="web_chat"/);
 });

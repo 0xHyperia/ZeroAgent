@@ -35,6 +35,8 @@ export async function runGatewayHistoryAction(event: GatewayComposerActionEvent)
   // minted alias would shadow that local id and misroute every later turn.
   const id = (target && !getKBrainSessionId(target) && getKBrainConversationId(target)) || target;
   switch (event.action) {
+    case "ui_surface_session":
+      return { sessionId: getKBrainSessionId(id) };
     case "attachment_lookup":
       return findGatewayConversationAttachment(id, String(data.path ?? ""));
     case "image_read":

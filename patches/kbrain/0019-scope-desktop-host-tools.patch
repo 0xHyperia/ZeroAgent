@@ -1,5 +1,5 @@
 diff --git a/internal/backend/health.go b/internal/backend/health.go
-index 93f1b04..eaa07e1 100644
+index 34c8495e57fc57a8acb780b0beee6b5244ebd10f..c8b1f8a5abc1112b6915a225a00b9f2bf54146eb 100644
 --- a/internal/backend/health.go
 +++ b/internal/backend/health.go
 @@ -36,7 +36,8 @@ type healthCapabilities struct {
@@ -12,71 +12,19 @@ index 93f1b04..eaa07e1 100644
  	// SSHManager is 1 where the native SSHManager tool runs SSH/SFTP for the
  	// hosts stored with GET/PUT /v1/settings/ssh.
  	SSHManager int `json:"ssh_manager"`
-@@ -158,32 +159,33 @@ func (s *Server) health() healthResponse {
- 		InstanceID:         s.instance.get(),
- 		CapabilityRevision: capabilityRevision(),
- 		Capabilities: healthCapabilities{
--			SessionChanges:          2,
--			SessionQueue:            1,
--			ComputerSessionApproval: 1,
--			MemorySwitch:            1,
--			ImageModelToggle:        1,
--			ConversationImages:      1,
--			SessionExists:           1,
--			AIReviewPerRun:          1,
--			PermissionRules:         1,
--			ReadOnlyAutoAllow:       1,
--			PermissionModes:         append([]string(nil), permissionModes...),
--			Image:                   healthImageV1{Supported: s.image != nil, Version: imageWireVersion()},
--			RunSandbox:              runSandboxCapability(),
--			SubagentTranscripts:     1,
--			SandboxSetup:            1,
--			QuestionSelectedLabels:  1,
--			MCPElicitation:          1,
--			HostBridge:              1,
--			SSHManager:              1,
--			SkillPacks:              1,
--			BackgroundTool:          1,
--			SessionArchive:          1,
--			MemoryOrganizerSettings: 1,
--			SessionExternalRuns:     1,
--			WebSearchFallback:       1,
--			UsageStats:              1,
-+			SessionChanges:             2,
-+			SessionQueue:               1,
-+			ComputerSessionApproval:    1,
-+			MemorySwitch:               1,
-+			ImageModelToggle:           1,
-+			ConversationImages:         1,
-+			SessionExists:              1,
-+			AIReviewPerRun:             1,
-+			PermissionRules:            1,
-+			ReadOnlyAutoAllow:          1,
-+			PermissionModes:            append([]string(nil), permissionModes...),
-+			Image:                      healthImageV1{Supported: s.image != nil, Version: imageWireVersion()},
-+			RunSandbox:                 runSandboxCapability(),
-+			SubagentTranscripts:        1,
-+			SandboxSetup:               1,
-+			QuestionSelectedLabels:     1,
-+			MCPElicitation:             1,
-+			HostBridge:                 1,
-+			ZeroAgentAccountHostBridge: 1,
-+			SSHManager:                 1,
-+			SkillPacks:                 1,
-+			BackgroundTool:             1,
-+			SessionArchive:             1,
-+			MemoryOrganizerSettings:    1,
-+			SessionExternalRuns:        1,
-+			WebSearchFallback:          1,
-+			UsageStats:                 1,
+@@ -256,6 +257,7 @@ func (s *Server) health() healthResponse {
+ 			PluginManifestUnknownFields: 1,
+ 			FilesystemMentionList:       1,
+ 			ConversationImages:          1,
++			ZeroAgentAccountHostBridge:  1,
  		},
  		HostBridge: s.hostBridge.status(),
  	}
 diff --git a/internal/backend/host_bridge_test.go b/internal/backend/host_bridge_test.go
-index 3498357..03887bc 100644
+index f5aff136b181f0eb84bcb51b3ae4c89dc8c35f37..bdf618573b267e650495df3dc588c9655dad8945 100644
 --- a/internal/backend/host_bridge_test.go
 +++ b/internal/backend/host_bridge_test.go
-@@ -98,7 +98,7 @@ func (f *fakeHostBridge) answer(command string, body map[string]any) (any, error
+@@ -99,7 +99,7 @@ func (f *fakeHostBridge) answer(command string, body map[string]any) (any, error
  		input, _ := body["input"].(map[string]any)
  		id := fmt.Sprintf("tun-%d", len(f.tunnels)+1)
  		f.tunnels = append(f.tunnels, map[string]any{"id": id, "slug": id, "name": input["name"], "targetUrl": input["targetUrl"], "publicPath": "/t/" + id, "createdAt": len(f.tunnels) + 1, "expiresAt": 0, "activeConnections": 0, "projectPathKey": "", "local": map[string]any{"status": "unknown", "httpStatus": 0, "error": "", "checkedAt": 0, "rttMs": 0}})
@@ -85,7 +33,7 @@ index 3498357..03887bc 100644
  	case "gateway_tunnel_close":
  		id, _ := body["tunnel_id"].(string)
  		for i, tunnel := range f.tunnels {
-@@ -372,7 +372,7 @@ func TestHostBridgeToolsFollowConnection(t *testing.T) {
+@@ -373,7 +373,7 @@ func TestHostBridgeToolsFollowConnection(t *testing.T) {
  	bridge := newFakeHostBridge(t, "follow-token")
  	sess := createTestSession(t, base)
  
@@ -94,7 +42,7 @@ index 3498357..03887bc 100644
  	before := client.lastTools()
  	if _, ok := before["TunnelManager"]; ok {
  		t.Fatal("TunnelManager registered without a bridge")
-@@ -386,7 +386,7 @@ func TestHostBridgeToolsFollowConnection(t *testing.T) {
+@@ -387,7 +387,7 @@ func TestHostBridgeToolsFollowConnection(t *testing.T) {
  	if code != http.StatusOK {
  		t.Fatalf("register = %d", code)
  	}
@@ -103,7 +51,7 @@ index 3498357..03887bc 100644
  	connected := client.lastTools()
  	if _, ok := connected["TunnelManager"]; !ok {
  		t.Fatalf("TunnelManager missing after late connect: %v", connected)
-@@ -397,13 +397,13 @@ func TestHostBridgeToolsFollowConnection(t *testing.T) {
+@@ -398,13 +398,13 @@ func TestHostBridgeToolsFollowConnection(t *testing.T) {
  
  	// Only the advertised tools are registered.
  	doHostBridge(t, base, http.MethodPut, map[string]any{"url": bridge.server.URL, "token": bridge.token, "tools": []string{"TunnelManager"}})
@@ -119,7 +67,7 @@ index 3498357..03887bc 100644
  	if _, ok := client.lastTools()["TunnelManager"]; ok {
  		t.Fatal("TunnelManager still registered after disconnect")
  	}
-@@ -541,6 +541,63 @@ func TestHostBridgeReadTerminalKeepsTerminalSessions(t *testing.T) {
+@@ -542,6 +542,63 @@ func TestHostBridgeReadTerminalKeepsTerminalSessions(t *testing.T) {
  	}
  }
  
@@ -183,7 +131,7 @@ index 3498357..03887bc 100644
  func TestHostBridgeTunnelManagerCommands(t *testing.T) {
  	old := tunnelCheckSettle
  	tunnelCheckSettle = 10 * time.Millisecond
-@@ -548,7 +605,8 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
+@@ -549,7 +606,8 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
  	s := &Server{}
  	bridge := newFakeHostBridge(t, "tunnel-token")
  	bridge.connect(s)
@@ -193,7 +141,7 @@ index 3498357..03887bc 100644
  	run := func(args string) (string, error) {
  		return tool.Run(allowGate(context.Background()), json.RawMessage(args))
  	}
-@@ -561,6 +619,9 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
+@@ -562,6 +620,9 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
  		t.Fatalf("create = %q %v", out, err)
  	}
  	call, _ := bridge.lastCall("gateway_tunnel_create")
@@ -203,7 +151,7 @@ index 3498357..03887bc 100644
  	input, _ := call.Body["input"].(map[string]any)
  	if input["targetUrl"] != "http://localhost:3000" || input["name"] != "web" || input["ttlSeconds"] != float64(3600) || len(input) != 3 {
  		t.Fatalf("create input = %v", call.Body)
-@@ -581,7 +642,7 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
+@@ -582,7 +643,7 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
  	if _, err := run(`{"action":"check"}`); err != nil {
  		t.Fatal(err)
  	}
@@ -212,7 +160,7 @@ index 3498357..03887bc 100644
  		t.Fatalf("check all body = %v", call.Body)
  	}
  	if _, err := run(`{"action":"check","id":"nope"}`); err == nil || err.Error() != `TunnelManager failed: No tunnel found for id "nope".` {
-@@ -602,7 +663,7 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
+@@ -603,7 +664,7 @@ func TestHostBridgeTunnelManagerCommands(t *testing.T) {
  	if _, err := run(`{"action":"open"}`); err == nil || !strings.Contains(err.Error(), `must be "list", "create", "close", or "check"`) {
  		t.Fatalf("bad action = %v", err)
  	}
@@ -221,7 +169,7 @@ index 3498357..03887bc 100644
  		t.Fatalf("state body = %v", call.Body)
  	}
  	// A desktop that answers with HTTP errors is a transport failure.
-@@ -686,7 +747,9 @@ func TestHostBridgeCallTimeoutAndCancel(t *testing.T) {
+@@ -687,7 +748,9 @@ func TestHostBridgeCallTimeoutAndCancel(t *testing.T) {
  	}
  	// A desktop that is gone is reported as not connected.
  	bridge.server.Close()
@@ -232,7 +180,7 @@ index 3498357..03887bc 100644
  		t.Fatalf("unreachable = %v", err)
  	}
  }
-@@ -767,7 +830,7 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
+@@ -768,7 +831,7 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
  	tunnelCheckSettle = 10 * time.Millisecond
  	t.Cleanup(func() { tunnelCheckSettle = old })
  	client.queue(hostCall("ReadTerminal", `{}`), hostCall("TunnelManager", `{"action":"list"}`), hostCall("TunnelManager", `{"action":"check"}`))
@@ -241,7 +189,7 @@ index 3498357..03887bc 100644
  	if len(prompts) != 0 {
  		t.Fatalf("prompts = %+v", prompts)
  	}
-@@ -795,7 +858,7 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
+@@ -796,7 +859,7 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
  	client.queue(hostCall("TunnelManager", `{"action":"create","targetUrl":"http://localhost:3000"}`))
  	events, prompts = runRules(t, base, sess.ID, "normal", func(protocol.PermissionRequest) protocol.PermissionDecision {
  		return protocol.PermissionDecision{Decision: "reject"}
@@ -250,7 +198,7 @@ index 3498357..03887bc 100644
  	if len(prompts) != 1 || prompts[0].Tool != "TunnelManager" || prompts[0].Command != "create http://localhost:3000" || prompts[0].Suggestion != nil {
  		t.Fatalf("create prompt = %+v", prompts)
  	}
-@@ -808,14 +871,14 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
+@@ -809,14 +872,14 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
  	client.queue(hostCall("TunnelManager", `{"action":"create","targetUrl":"http://localhost:3000"}`))
  	_, prompts = runRules(t, base, sess.ID, "normal", func(protocol.PermissionRequest) protocol.PermissionDecision {
  		return protocol.PermissionDecision{Decision: "allow_once"}
@@ -267,7 +215,7 @@ index 3498357..03887bc 100644
  	if len(prompts) != 1 || prompts[0].Command != "close tun-1" || !slices.Contains(bridge.commands(), "gateway_tunnel_close") {
  		t.Fatalf("close prompts = %+v", prompts)
  	}
-@@ -828,7 +891,7 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
+@@ -829,7 +892,7 @@ func TestHostBridgePermissionDefaults(t *testing.T) {
  	before := len(bridge.commands())
  	readCall, listCall, checkCall := hostCall("ReadTerminal", `{}`), hostCall("TunnelManager", `{"action":"list"}`), hostCall("TunnelManager", `{"action":"check"}`)
  	client.queue(readCall, listCall, checkCall)
@@ -276,7 +224,7 @@ index 3498357..03887bc 100644
  	results := resultsByID(t, events)
  	for _, call := range []ai.ToolCall{readCall, listCall} {
  		if result := results[call.ID]; !result.Failed || !strings.Contains(result.Output, "denied by permission rule") {
-@@ -850,7 +913,7 @@ func runUnattended(t *testing.T, s *Server, base, sessionID, requestID string) [
+@@ -851,7 +914,7 @@ func runUnattended(t *testing.T, s *Server, base, sessionID, requestID string) [
  		t.Fatal(err)
  	}
  	defer s.releaseRuntime(rt)
@@ -285,7 +233,7 @@ index 3498357..03887bc 100644
  	if err != nil || status != http.StatusAccepted {
  		t.Fatalf("unattended run = %d %v", status, err)
  	}
-@@ -873,47 +936,23 @@ func resultsByID(t *testing.T, events []protocol.Event) map[string]protocol.Tool
+@@ -874,47 +937,23 @@ func resultsByID(t *testing.T, events []protocol.Event) map[string]protocol.Tool
  	return out
  }
  
@@ -340,7 +288,7 @@ index 3498357..03887bc 100644
  	}
  }
  
-@@ -956,7 +995,7 @@ func TestHostBridgeTokenStaysInMemory(t *testing.T) {
+@@ -957,7 +996,7 @@ func TestHostBridgeTokenStaysInMemory(t *testing.T) {
  	}
  	bash := hostCall("Bash", env)
  	client.queue(bash, hostCall("ReadTerminal", `{}`), hostCall("TunnelManager", `{"action":"list"}`))
@@ -350,7 +298,7 @@ index 3498357..03887bc 100644
  	if len(results) != 3 {
  		t.Fatalf("results = %+v", results)
 diff --git a/internal/backend/host_bridge_tools.go b/internal/backend/host_bridge_tools.go
-index 8db0c67..3d78285 100644
+index 8db0c67f8342ca2c758d0ceeaa57d597dc58890d..3d78285380d7518d963dc8fda3b515b815b5fe39 100644
 --- a/internal/backend/host_bridge_tools.go
 +++ b/internal/backend/host_bridge_tools.go
 @@ -6,13 +6,13 @@ import (
@@ -522,7 +470,7 @@ index 8db0c67..3d78285 100644
  			return "", err
  		}
 diff --git a/internal/backend/permission_rules_http_test.go b/internal/backend/permission_rules_http_test.go
-index dfdf92e..291d916 100644
+index dfdf92e81505bf88b95114e66887411133b28691..291d9162bb10f4ee5ff53b31704179a144b53023 100644
 --- a/internal/backend/permission_rules_http_test.go
 +++ b/internal/backend/permission_rules_http_test.go
 @@ -84,9 +84,9 @@ func newRulesServer(t *testing.T, client ai.Client) (string, string) {
@@ -538,20 +486,19 @@ index dfdf92e..291d916 100644
  	resp := postJSON(t, http.DefaultClient, base+"/v1/sessions/"+sessionID+"/runs", protocol.PromptRequest{ConversationID: sessionID, ClientRequestID: fmt.Sprintf("rules-%d", rulesRequestSeq.Add(1)), Prompt: "go", Options: &options}, &accepted)
  	if resp.StatusCode != http.StatusAccepted {
 diff --git a/internal/backend/run_options.go b/internal/backend/run_options.go
-index 01db509..9be95cc 100644
+index 9d9f0476a7206fd57f0ba088467fe127c530c488..e4cdd1b9ef7ed83d7e408641ae82e4b68db0f754 100644
 --- a/internal/backend/run_options.go
 +++ b/internal/backend/run_options.go
-@@ -120,7 +120,7 @@ func normalizeRunOptions(in *protocol.RunOptions, cwd string, available []tools.
- 				return fmt.Errorf("options.tools contains duplicate or empty tool")
- 			}
- 			seen[name] = true
--			if name != "ExitPlanMode" && name != tools.SSHManagerTool && name != tools.WebSearchToolName && !slices.ContainsFunc(available, func(t tools.Tool) bool { return t.Def.Function.Name == name }) {
-+			if name != "ExitPlanMode" && name != tools.SSHManagerTool && name != tools.WebSearchToolName && name != hostToolTunnelManager && !slices.ContainsFunc(available, func(t tools.Tool) bool { return t.Def.Function.Name == name }) {
- 				return fmt.Errorf("options.tools references unavailable tool %q", name)
- 			}
- 			return nil
+@@ -25,6 +25,7 @@ var runReasoning = []string{"off", "minimal", "low", "medium", "high", "xhigh",
+ // policies for them from sessions without one, and a policy for a missing
+ // tool changes nothing.
+ var alwaysKnownTools = map[string]bool{
++	hostToolTunnelManager:   true,
+ 	"ExitPlanMode":          true,
+ 	tools.SSHManagerTool:    true,
+ 	tools.WebSearchToolName: true,
 diff --git a/internal/backend/run_start.go b/internal/backend/run_start.go
-index 9080a2a..d40d547 100644
+index 07a8b7866ac21d372b5f16ea5f07f602f16a30e7..6cbbb2c4c1118c9f977761353f9b1c229cd13be9 100644
 --- a/internal/backend/run_start.go
 +++ b/internal/backend/run_start.go
 @@ -171,8 +171,9 @@ func (s *Server) startCanonicalRunWith(ctx context.Context, rt *runtimeSession,
@@ -563,11 +510,11 @@ index 9080a2a..d40d547 100644
 +	// A bridge is local and interactive. Always clear previously installed host
 +	// tools before admitting a remote, unattended, planning or sandboxed run.
 +	s.syncRunHostTools(ctx, rt.agent, in.Options)
+ 	// Plugins may have been enabled, disabled or (un)trusted since the last turn.
+ 	s.syncPluginTools(rt.agent)
  	// Normalize after model selection so model-specific tools and MCP filters are current.
- 	options, err := normalizeRunOptions(in.Options, rt.agent.WorkingDir, rt.agent.KnownTools())
- 	if err != nil {
 diff --git a/internal/protocol/capabilities.json b/internal/protocol/capabilities.json
-index 723b52b..37d404f 100644
+index 96c27d69302580699aa781580026530ddeda9dd5..872e7e324bbbfa0be1d6d27b4c1e8586b8daf824 100644
 --- a/internal/protocol/capabilities.json
 +++ b/internal/protocol/capabilities.json
 @@ -49,6 +49,14 @@
@@ -586,10 +533,10 @@ index 723b52b..37d404f 100644
        "name": "session_exists",
        "type": "integer",
 diff --git a/internal/protocol/protocol.go b/internal/protocol/protocol.go
-index dd62f97..84b7617 100644
+index 5c7cfa231271dd93245c9b44c688115bf6e0ba2f..f8ac00626ea3321075814861c8c3d90d20924df4 100644
 --- a/internal/protocol/protocol.go
 +++ b/internal/protocol/protocol.go
-@@ -634,12 +634,13 @@ type CreateSessionRequest struct {
+@@ -715,12 +715,13 @@ type CreateSessionRequest struct {
  }
  
  type RunOptions struct {

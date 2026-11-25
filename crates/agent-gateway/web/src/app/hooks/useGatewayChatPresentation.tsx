@@ -207,6 +207,7 @@ export function useGatewayChatPresentation({
       <ToolApprovalBar
         key={displayedConversationId}
         pending={pendingToolApprovals}
+        workdir={displayedConversationWorkdir}
         onDecide={(toolCallId, decision, options) =>
           submitToolApprovalDecision(toolCallId, decision, displayedConversationId, options)
         }

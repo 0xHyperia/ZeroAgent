@@ -2,9 +2,13 @@ import type { RightDockProjectState } from "../settings/types";
 
 /** The right dock's root element (terminals, file tree, git review, ...). */
 export const RIGHT_DOCK_SELECTOR = '[data-app-frame-column="right-dock"]';
+export const RIGHT_DOCK_TERMINAL_LAUNCHER = "tool:terminal-launcher";
 
-export function isFocusInRightDock(doc: Document | undefined = globalThis.document): boolean {
-  const active = doc?.activeElement;
+export function isFocusInRightDock(
+  doc: Document | undefined = globalThis.document,
+  origin?: Element | null,
+): boolean {
+  const active = origin ?? doc?.activeElement;
   return Boolean(
     active && typeof active.closest === "function" && active.closest(RIGHT_DOCK_SELECTOR),
   );
@@ -48,7 +52,13 @@ export function resolveTerminalToggle(input: {
   sessions: readonly { id: string; createdAt?: number }[];
 }): { kind: "close" } | { kind: "open"; sessionId?: string } {
   const ids = new Set(input.sessions.map((session) => session.id));
-  if (input.open && input.activeTabId && ids.has(input.activeTabId)) return { kind: "close" };
+  if (
+    input.open &&
+    input.activeTabId &&
+    (input.activeTabId === RIGHT_DOCK_TERMINAL_LAUNCHER || ids.has(input.activeTabId))
+  ) {
+    return { kind: "close" };
+  }
   const fromTabs = [...input.tabOrder].reverse().find((id) => ids.has(id));
   const newest = [...input.sessions].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
   return { kind: "open", sessionId: fromTabs ?? newest?.id };
@@ -59,6 +69,9 @@ export function activateRightDockTab(
   current: RightDockProjectState,
   tabId: string,
 ): RightDockProjectState {
+  if (tabId === RIGHT_DOCK_TERMINAL_LAUNCHER) {
+    return current.activeTabId === tabId ? current : { ...current, activeTabId: tabId };
+  }
   if (current.activeTabId === tabId && current.tabOrder.includes(tabId)) return current;
   return {
     ...current,

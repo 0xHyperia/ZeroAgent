@@ -15,20 +15,25 @@ import {
   Globe,
   Key,
   Mic,
+  Plug,
   Settings2,
+  ShieldCheck,
   Wrench,
   Zap,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { useLocale } from "@liveagent/ui/i18n";
+import { settingsSectionLabel } from "@liveagent/ui/lib/settings/settingsSearchIndex";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SettingsSectionDefinition, UiExtensionRegistry } from "../../contracts/registry";
 import { AgentsSection } from "./AgentsSection";
 import { AIApprovalSection } from "./AIApprovalSection";
 import { CalendarSection } from "./CalendarSection";
 import { CronSection } from "./CronSection";
+import { DevicePluginsSection } from "./DevicePluginsSection";
 import { HooksSection } from "./HooksSection";
 import { MemoryPanel } from "./memory/MemoryPanel";
+import { PermissionRulesSection } from "./PermissionRulesSection";
 import { RemoteSection } from "./RemoteSection";
 import { ResourceHubSection } from "./ResourceHubSection";
 import { SettingsShell } from "./SettingsShell";
@@ -70,6 +75,18 @@ export function SettingsPage(props: SettingsPageProps) {
   const sttSelectionChangedRef = useRef(STT_SELECTED_PROVIDER_CACHE.has(sttSettingsService));
   const extension = createSettingsExtension(props);
   const showLocalRuntimeSettings = !("runtimeKind" in props && props.runtimeKind === "web_chat");
+  const permissionRulesScope = props.settingsHost?.permissionRulesScope;
+  const rulesBackend = props.settingsHost?.kbrain;
+  const devicePlugins = props.settingsHost?.devicePlugins;
+  const activePluginProject =
+    devicePlugins?.installSource === "native"
+      ? settings.system.workspaceProjects.find(
+          (project) =>
+            project.id === settings.system.activeWorkspaceProjectId &&
+            (project.kind === "managed" || project.kind === "folder"),
+        )
+      : undefined;
+  const devicePluginWorkdir = props.settingsHost?.devicePluginWorkdir ?? activePluginProject?.path;
   useEffect(() => setPendingProviderId(initialProviderId), [initialProviderId]);
   useEffect(() => {
     if (!sttSelectionChangedRef.current) {
@@ -94,13 +111,14 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupGeneral",
         groupOrder: 10,
         order: 10,
-        labelKey: "settings.navSystem",
+        labelKey: settingsSectionLabel("system"),
         icon: <Settings2 className={extension.iconClassName} />,
         render: () => (
           <SystemSettingsForm
             settings={settings}
             setSettings={setSettings}
             showLocalRuntimeSettings={showLocalRuntimeSettings}
+            htmlPreviewsAvailable={Boolean(devicePlugins?.readSurface)}
           />
         ),
       },
@@ -109,7 +127,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupGeneral",
         groupOrder: 10,
         order: 20,
-        labelKey: "settings.navProviders",
+        labelKey: settingsSectionLabel("providers"),
         icon: <Cpu className={extension.iconClassName} />,
         contentMode: "fill",
         render: () =>
@@ -123,7 +141,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupGeneral",
         groupOrder: 10,
         order: 30,
-        labelKey: "settings.navAgents",
+        labelKey: settingsSectionLabel("agents"),
         icon: <BookOpen className={extension.iconClassName} />,
         render: () => <AgentsSection settings={settings} setSettings={setSettings} />,
       },
@@ -135,7 +153,7 @@ export function SettingsPage(props: SettingsPageProps) {
               groupKey: "settings.groupGeneral",
               groupOrder: 10,
               order: 40,
-              labelKey: "settings.navUsage",
+              labelKey: settingsSectionLabel("usage"),
               icon: <ChartColumn className={extension.iconClassName} />,
               showSaveIndicator: false,
               render: () =>
@@ -153,7 +171,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupResources",
         groupOrder: 20,
         order: (index + 1) * 10,
-        labelKey: id === "skills" ? "settings.navSkills" : "settings.navMcp",
+        labelKey: settingsSectionLabel(id),
         icon:
           id === "skills" ? (
             <Blend className={extension.iconClassName} />
@@ -165,12 +183,35 @@ export function SettingsPage(props: SettingsPageProps) {
           <ResourceHubSection resource={id} settings={settings} setSettings={setSettings} />
         ),
       })),
+      ...(showLocalRuntimeSettings && devicePlugins
+        ? [
+            {
+              id: "devicePlugins",
+              groupKey: "settings.groupResources",
+              groupOrder: 20,
+              order: 25,
+              labelKey: settingsSectionLabel("devicePlugins"),
+              icon: <Plug className={extension.iconClassName} />,
+              showSaveIndicator: false,
+              render: () => (
+                <DevicePluginsSection
+                  key={JSON.stringify([
+                    props.settingsHost?.devicePluginScope ?? props.settingsHost?.usageScope,
+                    devicePluginWorkdir,
+                  ])}
+                  client={devicePlugins}
+                  workdir={devicePluginWorkdir}
+                />
+              ),
+            } satisfies SettingsSectionDefinition<void>,
+          ]
+        : []),
       {
         id: "planning",
         groupKey: "settings.groupResources",
         groupOrder: 20,
         order: 35,
-        labelKey: "settings.navPlanning",
+        labelKey: settingsSectionLabel("planning"),
         icon: <CalendarDays className={extension.iconClassName} />,
         render: () => (
           <CalendarSection
@@ -185,7 +226,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupResources",
         groupOrder: 20,
         order: 40,
-        labelKey: "settings.navMemory",
+        labelKey: settingsSectionLabel("memory"),
         icon: <Brain className={extension.iconClassName} />,
         contentMode: "fill",
         render: () => (
@@ -202,7 +243,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupIntelligence",
         groupOrder: 25,
         order: 20,
-        labelKey: "settings.navSystemTools",
+        labelKey: settingsSectionLabel("systemTools"),
         icon: <Wrench className={extension.iconClassName} />,
         render: () => (
           <div className="space-y-7">
@@ -218,7 +259,7 @@ export function SettingsPage(props: SettingsPageProps) {
               groupKey: "settings.groupIntelligence",
               groupOrder: 25,
               order: 22,
-              labelKey: "settings.navWebSearch",
+              labelKey: settingsSectionLabel("webSearch"),
               icon: <Globe className={extension.iconClassName} />,
               render: () =>
                 props.settingsHost?.kbrain ? (
@@ -227,12 +268,36 @@ export function SettingsPage(props: SettingsPageProps) {
             } satisfies SettingsSectionDefinition<void>,
           ]
         : []),
+      ...(showLocalRuntimeSettings &&
+      permissionRulesScope != null &&
+      rulesBackend?.listPermissionRules &&
+      rulesBackend.addPermissionRule &&
+      rulesBackend.deletePermissionRule
+        ? [
+            {
+              id: "permissions",
+              groupKey: "settings.groupIntelligence",
+              groupOrder: 25,
+              order: 25,
+              labelKey: settingsSectionLabel("permissions"),
+              icon: <ShieldCheck className={extension.iconClassName} />,
+              showSaveIndicator: false,
+              render: () => (
+                <PermissionRulesSection
+                  key={permissionRulesScope}
+                  kbrain={rulesBackend}
+                  settings={settings}
+                />
+              ),
+            } satisfies SettingsSectionDefinition<void>,
+          ]
+        : []),
       {
         id: "stt",
         groupKey: "settings.groupIntelligence",
         groupOrder: 25,
         order: 30,
-        labelKey: "settings.navStt",
+        labelKey: settingsSectionLabel("stt"),
         icon: <Mic className={extension.iconClassName} />,
         render: () => (
           <SttSection
@@ -249,7 +314,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupResources",
         groupOrder: 20,
         order: 50,
-        labelKey: "settings.navHooks",
+        labelKey: settingsSectionLabel("hooks"),
         icon: <Zap className={extension.iconClassName} />,
         contentMode: "fill",
         render: () => <HooksSection settings={settings} setSettings={setSettings} />,
@@ -259,11 +324,11 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupResources",
         groupOrder: 20,
         order: 30,
-        labelKey: "settings.navCron",
+        labelKey: settingsSectionLabel("cron"),
         icon: <Clock3 className={extension.iconClassName} />,
         render: () =>
           onOpenScheduledTasks ? (
-            <Button variant="outline" onClick={onOpenScheduledTasks}>
+            <Button data-settings-anchor="cron-tasks" variant="outline" onClick={onOpenScheduledTasks}>
               {t("settings.openScheduledTasks")}
             </Button>
           ) : (
@@ -275,7 +340,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupConnectivity",
         groupOrder: 40,
         order: 10,
-        labelKey: "settings.navSsh",
+        labelKey: settingsSectionLabel("ssh"),
         icon: <Key className={extension.iconClassName} />,
         render: () => (
           <SshSection settings={settings} setSettings={setSettings} saveState={saveState} />
@@ -286,7 +351,7 @@ export function SettingsPage(props: SettingsPageProps) {
         groupKey: "settings.groupConnectivity",
         groupOrder: 40,
         order: 20,
-        labelKey: "settings.navRemote",
+        labelKey: settingsSectionLabel("remote"),
         icon: <Cloud className={extension.iconClassName} />,
         render: () => (
           <RemoteSection
@@ -300,7 +365,11 @@ export function SettingsPage(props: SettingsPageProps) {
     ],
     [
       extension,
+      devicePlugins,
+      devicePluginWorkdir,
       showLocalRuntimeSettings,
+      permissionRulesScope,
+      rulesBackend,
       props.settingsHost,
       handleSttProviderChange,
       pendingProviderId,
@@ -333,10 +402,16 @@ export function SettingsPage(props: SettingsPageProps) {
           ? "providers"
           : initialSection
       }
+      initialAnchor={props.initialAnchor}
       onSectionChange={(section) => onSectionChange?.(section as typeof initialSection)}
       mobileDetail={props.mobileDetail}
       onMobileDetailChange={props.onMobileDetailChange}
       hiddenSections={hiddenSections}
+      excludedSearchAnchors={[
+        ...extension.excludedSearchAnchors,
+        ...(devicePlugins?.readSurface ? [] : ["html-previews"]),
+        ...(rulesBackend ? [] : ["ai-approval-mode", "ai-approval-model"]),
+      ]}
       fontScale={settings.customSettings.fontScale.settings}
       describeScope={(section) => {
         const zh = settings.locale === "zh-CN";

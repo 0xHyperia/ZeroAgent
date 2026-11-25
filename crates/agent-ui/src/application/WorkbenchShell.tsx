@@ -7,6 +7,7 @@ type DivProps = ComponentPropsWithRef<"div">;
 export function WorkbenchShell({
   layout = "panels",
   navigationRail,
+  keyboardNavigation,
   windowControls,
   children,
   className,
@@ -14,6 +15,7 @@ export function WorkbenchShell({
 }: DivProps & {
   layout?: "panels" | "stacked-panels" | "page";
   navigationRail?: ReactNode;
+  keyboardNavigation?: ReactNode;
   windowControls?: ReactNode;
 }) {
   return (
@@ -26,6 +28,7 @@ export function WorkbenchShell({
         className,
       )}
     >
+      {keyboardNavigation}
       {layout === "panels" ? (
         <>
           {navigationRail}

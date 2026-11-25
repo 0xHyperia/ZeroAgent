@@ -82,6 +82,8 @@ type ContextMenuState = {
   x: number;
   y: number;
   path: string;
+  workdir: string;
+  projectPathKey: string;
   kind: FileTreeKind;
   trigger: HTMLButtonElement | null;
   sourceRow: HTMLElement | null;
@@ -132,6 +134,7 @@ export function FileTreePanel(props: {
       }
       externalRoots={context.fileTree.externalRoots}
       workspaceActivityClient={context.clients.workspaceActivity ?? null}
+      canOpenInLocalEditor={context.capabilities.canOpenInLocalEditor}
       onInitializedChange={context.fileTree.onInitializedChange}
       onRefreshExternalRoots={context.fileTree.refreshExternalRoots}
       onStateChange={context.fileTree.onStateChange}
@@ -150,6 +153,7 @@ export type FileTreeSurfaceProps = {
   initialized?: boolean;
   externalRoots?: readonly FileTreeExternalRoot[];
   workspaceActivityClient?: WorkspaceActivityClient | null;
+  canOpenInLocalEditor?: boolean;
   onInitializedChange?: (initialized: boolean) => void;
   onRefreshExternalRoots?: () => Promise<void>;
   onStateChange: (patch: RightDockFileTreeStatePatch) => void;
@@ -201,13 +205,14 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     initialized = true,
     externalRoots = NO_EXTERNAL_FILE_TREE_ROOTS,
     workspaceActivityClient,
+    canOpenInLocalEditor,
     onInitializedChange,
     onRefreshExternalRoots,
     onStateChange,
     onInsertFileMention,
     onOpenFile,
   } = props;
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
 
   const integratedSearch = workspaceSections !== undefined;
   const onSelectWorkspaceFile = workspaceSections?.onSelectFile;
@@ -250,6 +255,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     renameEntry,
     deleteEntry,
     openWorkspacePath,
+    openTreePathInEditor,
     isExternalPath,
     getDisplayPath,
     search,
@@ -336,14 +342,18 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
 
   // Transient UI state never leaks across project switches.
   useEffect(() => {
-    void projectPathKey;
-    setContextMenu(null);
+    setContextMenu((menu) =>
+      menu?.workdir === cwd && menu.projectPathKey === projectPathKey ? menu : null,
+    );
     setPendingAction(null);
     setPendingTargetPath(null);
     setDraftName("");
     setActionError(null);
     setRevealTarget(null);
-  }, [projectPathKey]);
+  }, [projectPathKey, cwd]);
+  useEffect(() => {
+    if (!active) setContextMenu(null);
+  }, [active]);
 
   // Reveal: expand + load the ancestor chain, then scroll the row into view.
   // The expansion merge reads `expandedRef` *after* the awaits so manual
@@ -619,12 +629,14 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         x: (buttonRect?.right ?? event.clientX) - (rect?.left ?? 0),
         y: (buttonRect?.bottom ?? event.clientY) - (rect?.top ?? 0),
         path: targetPath,
+        workdir: cwd,
+        projectPathKey,
         kind: node?.kind ?? kind ?? "dir",
         trigger,
         sourceRow,
       });
     },
-    [selectPath],
+    [cwd, projectPathKey, selectPath],
   );
   const openMore = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>, path: string, kind: FileTreeKind) =>
@@ -763,6 +775,18 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
     },
     [openWorkspacePath, t],
   );
+
+  const handleOpenInEditor = (path: string, editor: string) => {
+    setActionError(null);
+    void openTreePathInEditor(path, editor).catch((error: unknown) => {
+      setActionError(
+        hostAwareErrorMessage(
+          error,
+          locale === "zh-CN" ? "无法在编辑器中打开" : "Could not open in the editor",
+        ),
+      );
+    });
+  };
 
   const handleMenuRefresh = useCallback(
     (path: string, kind: FileTreeKind) => {
@@ -1105,7 +1129,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
         </div>
       </div>
 
-      {contextMenu ? (
+      {active && contextMenu?.workdir === cwd && contextMenu.projectPathKey === projectPathKey ? (
         <FileTreeContextMenu
           key={`${contextMenu.path}:${contextMenu.x}:${contextMenu.y}`}
           anchor={{ x: contextMenu.x, y: contextMenu.y }}
@@ -1123,6 +1147,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
           onClose={() => setContextMenu(null)}
           onOpenFile={handleOpenFile}
           onOpenExternal={handleOpenExternal}
+          onOpenInEditor={canOpenInLocalEditor ? handleOpenInEditor : undefined}
           onOpenContainingDirectory={handleOpenContainingDirectory}
           onStartAction={startAction}
           onDelete={(path) => void deletePath(path, contextMenu.trigger ?? contextMenu.sourceRow)}

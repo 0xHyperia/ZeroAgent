@@ -4,7 +4,7 @@ import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
 const loader = createTsModuleLoader();
 const { convertMessages } = loader.loadModule("src/lib/kbrain/history.ts");
-const { runKBrainTurn } = loader.loadModule("src/lib/kbrain/turn.ts");
+const { contextToKBrainMessages, runKBrainTurn } = loader.loadModule("src/lib/kbrain/turn.ts");
 const { classifyTurnError } = loader.loadModule("@liveagent/ui/lib/chat/turnError.ts");
 
 const user = (id, text) => ({ id, role: "user", content: [{ type: "text", text }] });
@@ -115,7 +115,8 @@ test("a live failure keeps the streamed reply and reports the error", async () =
     ),
   );
   assert.equal(message.stopReason, "error");
-  assert.equal(message.errorMessage, "unexpected EOF");
+  assert.equal(message.errorMessage, "Connection to the model was interrupted.");
+  assert.deepEqual(message.errorDetail, { kind: "connection_lost" });
   assert.deepEqual(message.content, [{ type: "text", text: "Here is the first part" }]);
 });
 
@@ -125,4 +126,49 @@ test("a live cancellation is marked stopped without an error", async () => {
   );
   assert.equal(message.stopReason, "aborted");
   assert.equal(message.errorMessage, undefined);
+});
+
+test("live and persisted no-output failures share a sanitized outcome and never replay the marker", async () => {
+  const privatePayload = "401 Unauthorized: private-provider-response";
+  const stop = {
+    id: "assistant-error-r",
+    role: "assistant",
+    content: [{ type: "text", text: privatePayload }],
+    stop_reason: "error",
+    error_detail: { kind: "invalid_api_key", upstream_status: 401, provider_message: privatePayload },
+  };
+  const status = [];
+  const live = await runKBrainTurn({
+    ...turnParams(
+      sseFixture([
+        ["trajectory.retry", { task_id: "background", attempt: 1, max: 4, error: privatePayload }],
+        ["trajectory.retry", { attempt: 2, max: 7, retries_remaining: 1, delay_ms: 5, error: privatePayload }],
+        ["assistant.message.created", stop],
+        ["run.failed", { state: "failed", error: privatePayload, error_detail: stop.error_detail }],
+      ]),
+      "outcome-no-output",
+    ),
+    onStatus: (value) => status.push(value),
+  });
+  const [input, history, interrupted] = convertMessages([
+    user("u1", "keep me"),
+    stop,
+    { id: "assistant-stopped-r2", role: "assistant", stop_reason: "cancelled", cancel_reason: "shutdown" },
+  ]);
+  assert.ok(status.some((value) => value?.includes('"retry_max":2')));
+  assert.ok(!JSON.stringify(status).includes(privatePayload));
+  for (const message of [live, history]) {
+    assert.equal(message.errorMessage, "The model provider rejected authentication.");
+    assert.deepEqual(message.errorDetail, { kind: "invalid_api_key", upstreamStatus: 401 });
+    assert.deepEqual(message.content, []);
+    assert.ok(!JSON.stringify(message).includes(privatePayload));
+  }
+  assert.deepEqual(contextToKBrainMessages({ messages: [input, history, interrupted] }).map((message) => message.id), ["u1"]);
+  const shutdown = await runKBrainTurn(turnParams(sseFixture([
+    ["assistant.text.delta", { text: "partial" }],
+    ["run.cancelled", { state: "cancelled", cancel_reason: "shutdown" }],
+  ]), "outcome-shutdown"));
+  assert.equal(interrupted.cancelReason, "shutdown");
+  assert.equal(shutdown.cancelReason, "shutdown");
+  assert.deepEqual(shutdown.content, [{ type: "text", text: "partial" }]);
 });

@@ -2773,11 +2773,13 @@ test("chat transcript width defaults, clamps, and updates locally", () => {
     width: value,
     expandProcessByDefault: false,
     showDetailedProgress: false,
+    htmlPreviews: true,
   });
   assert.deepEqual(settings.normalizeChatTranscriptSettings(undefined), width(768));
   assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 400 }), width(560));
   assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 1400 }), width(1200));
   assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 920.4 }), width(920));
+  assert.equal(settings.normalizeChatTranscriptSettings({ htmlPreviews: false }).htmlPreviews, false);
 
   const current = settings.normalizeSettings({ customSettings: { chatTranscript: { width: 768 } } });
   const updated = settings.updateChatTranscriptWidth(current, 960);

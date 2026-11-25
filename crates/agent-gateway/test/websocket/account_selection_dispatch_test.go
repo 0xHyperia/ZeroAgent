@@ -188,6 +188,66 @@ func TestAccountControllerRevalidatesBeforeDispatch(t *testing.T) {
 		})
 	}
 }
+func TestDevicePluginRelayBindsOwnerAndRevalidatesWorkspace(t *testing.T) {
+	fixture := newSelectionDispatchFixture(t, account.SelectionScopeDevice)
+	sm := session.NewManager()
+	sm.RecordAuthentication(fixture.device.ID, "1", "owned")
+	agent := session.NewAgentSession(sm.LatestAuthSnapshot(fixture.device.ID))
+	agent.SetCapabilities([]string{gatewayv2.DevicePluginsV1Capability})
+	sm.SetSession(agent)
+	defer agent.Close()
+	gateway := pbws.NewServer(newV2TestConfig(), sm, fixture.service)
+	defer gateway.Close()
+	conn := dialSelectionDispatch(t, gateway.BrowserHandler(), fixture.header())
+	sendProtoFrame(t, conn, &gatewayv2.WebClientFrame{
+		RequestId: "hello",
+		Payload:   &gatewayv2.WebClientFrame_Hello{Hello: selectionHello(fixture)},
+	})
+	if hello := receiveWebFrameRaw(t, conn).GetHello(); hello == nil || !hello.GetOk() {
+		t.Fatalf("hello: %v", hello)
+	}
+
+	sendList := func(requestID string, owner int64) {
+		sendProtoFrame(t, conn, &gatewayv2.WebClientFrame{
+			RequestId: requestID, AgentId: fixture.device.ID,
+			Payload: &gatewayv2.WebClientFrame_AgentRequest{AgentRequest: &gatewayv2.GatewayEnvelope{
+				Payload: &gatewayv2.GatewayEnvelope_DevicePlugins{DevicePlugins: &gatewayv2.DevicePluginsRequest{
+					Action: "list", Workdir: "/workspace/project", OwnerId: owner,
+				}},
+			}},
+		})
+	}
+	response := func(requestID string) *gatewayv2.WebServerFrame {
+		for {
+			frame := receiveWebFrameRaw(t, conn)
+			if frame.GetRequestId() == requestID {
+				return frame
+			}
+		}
+	}
+
+	sendList("spoofed", fixture.controller.UserID)
+	if frame := response("spoofed"); frame.GetLocalError() == nil {
+		t.Fatalf("browser-supplied owner accepted: %v", frame)
+	}
+
+	sendList("allowed", 0)
+	forwarded := readOutboundEnvelope(t, agent)
+	if req := forwarded.GetDevicePlugins(); req.GetOwnerId() != fixture.controller.UserID {
+		t.Fatalf("authenticated owner was not bound: %v", req)
+	}
+	fixture.invalidate(t, "workspace-removal")
+	sm.DispatchFromAgentForSession(agent, &gatewayv2.AgentEnvelope{
+		RequestId: forwarded.GetRequestId(),
+		Payload: &gatewayv2.AgentEnvelope_DevicePluginsResp{DevicePluginsResp: &gatewayv2.DevicePluginsResponse{
+			SnapshotJson: `{"available":true}`,
+		}},
+	})
+	if frame := response("allowed"); frame.GetLocalError() == nil || frame.GetAgentResponse() != nil {
+		t.Fatalf("plugin snapshot escaped revoked workspace: %v", frame)
+	}
+}
+
 func TestAccountTerminalRevalidatesBeforeInput(t *testing.T) {
 	for _, kind := range []string{"logout", "lease-expiry", "session-expiry", "device-revocation", "workspace-removal"} {
 		t.Run(kind, func(t *testing.T) {

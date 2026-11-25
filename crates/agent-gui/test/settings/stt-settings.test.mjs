@@ -79,6 +79,10 @@ test("STT connection test saves the current form and identifies the active runti
     fileURLToPath(new URL("../../../agent-ui/src/pages/settings/SettingsPage.tsx", import.meta.url)),
     "utf8",
   );
+  const settingsIndex = readFileSync(
+    new URL("../../../agent-ui/src/lib/settings/settingsSearchIndex.ts", import.meta.url),
+    "utf8",
+  );
   const zhCNSettings = ["translations/zhCNSettings.ts", "namespaces/settingsZhCN.ts"]
     .map((path) =>
       readFileSync(
@@ -196,7 +200,8 @@ test("STT connection test saves the current form and identifies the active runti
   assert.doesNotMatch(selectProviderBlock, /setSettings/);
   const saveBlock = section.slice(section.indexOf("const save ="), section.indexOf("const clearProviderSecrets"));
   assert.match(saveBlock, /delete nextProvider\.clearSecrets/);
-  assert.match(gatewayView, /hiddenSections=\{\["remote", "stt"\]\}/);
+  assert.match(gatewayView, /hiddenSections=\{\[\.\.\.DEVICE_WEB_HIDDEN_SETTINGS_SECTIONS\]\}/);
+  assert.match(settingsIndex, /DEVICE_WEB_HIDDEN_SETTINGS_SECTIONS = \["remote", "stt"\]/);
   assert.doesNotMatch(gatewayView, /createWebSttSettingsService/);
   assert.doesNotMatch(gatewayView, /sttTransport=\{/);
   assert.match(

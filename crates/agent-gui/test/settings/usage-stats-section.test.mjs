@@ -208,7 +208,7 @@ async function sectionIds(kbrain) {
       [shared("memory/MemoryPanel.tsx")]: { MemoryPanel: () => null },
       "@liveagent/ui/i18n/index": { useLocale: () => ({ t: (key) => key }) },
       "@liveagent/adapters/settingsExtension": {
-        createSettingsExtension: () => ({ surface: "desktop", iconClassName: "", slots: {}, sections: [] }),
+        createSettingsExtension: () => ({ surface: "desktop", iconClassName: "", excludedSearchAnchors: [], slots: {}, sections: [] }),
       },
       "@liveagent/adapters/providerSettings": { ProviderSettingsExtension: () => null, ProviderCopyConfigButton: () => null },
       "@liveagent/ui/components/IconSet": new Proxy({}, { get: () => () => null }),

@@ -19,6 +19,7 @@ export type ChatPageProps = {
   active?: boolean;
   settingsNavigation?: WorkbenchNavigationPortal;
   scheduledTasksNavigationRef?: RefObject<(() => void) | null>;
+  setupProjectPickerRef?: RefObject<(() => Promise<void>) | null>;
   relayUser: RelayUser;
   relayStats: RelayDashboardStats | null;
   onRefreshRelayAccount: () => Promise<void>;
@@ -33,7 +34,7 @@ export type ChatPageProps = {
   getToolPolicies: () => AppSettings["system"]["toolPolicies"];
   context: Context;
   setContext: (next: Context) => void;
-  onOpenSettings: (section?: SectionId, providerId?: string) => void;
+  onOpenSettings: (section?: SectionId, providerId?: string, anchor?: string) => void;
   onToggleTheme: () => void;
   headerLeadingActions?: ReactNode;
   registerExecutionDeparture?: (captureDraft: () => void) => () => void;

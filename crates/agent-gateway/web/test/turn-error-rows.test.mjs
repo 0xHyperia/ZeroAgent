@@ -36,7 +36,7 @@ test("K-brain's synthetic error message becomes the round's error, not reply tex
   const reply = rows.at(-1);
   assert.equal(reply.kind, "assistant");
   assert.equal(replyText(reply), "");
-  assert.equal(turnErrorOf(reply.rounds), AUTH_ERROR);
+  assert.equal(turnErrorOf(reply.rounds), "The model provider rejected authentication.");
 });
 
 test("an ordinary failed reply keeps its text", () => {
@@ -52,12 +52,17 @@ test("an ordinary failed reply keeps its text", () => {
 test("a live failure keeps the streamed text and adds the error once", () => {
   let turn = createTurn({ key: "run:r1", runId: "r1", phase: "streaming" });
   turn = applyEventToTurn(turn, { type: "token", text: "Here is the first part " });
-  turn = applyEventToTurn(turn, { type: "error", message: "unexpected EOF" });
-  turn = applyEventToTurn(turn, { type: "error", message: "unexpected EOF" });
+  const errorMessage = "Connection to the model was interrupted.";
+  turn = applyEventToTurn(turn, {
+    type: "token", text: "", stopReason: "error", errorMessage,
+    errorDetail: { kind: "connection_lost" },
+  });
+  turn = applyEventToTurn(turn, { type: "error", message: errorMessage });
   const rows = buildRowsFromEntries(turn.entries, "live");
   const reply = rows.at(-1);
   assert.equal(replyText(reply), "Here is the first part ");
-  assert.equal(turnErrorOf(reply.rounds), "unexpected EOF");
+  assert.equal(turnErrorOf(reply.rounds), errorMessage);
+  assert.deepEqual(turnErrorDetailOf(reply.rounds), { kind: "connection_lost" });
   assert.equal(turn.entries.filter((entry) => entry.meta?.errorMessage).length, 1);
 });
 
@@ -98,8 +103,14 @@ test("a failure's classification reaches the error row", () => {
   assert.deepEqual(turnErrorDetailOf(reply.rounds), {
     kind: "invalid_api_key",
     upstreamStatus: 401,
-    providerMessage: "Incorrect API key",
   });
+});
+
+test("a live shutdown is distinguishable from pressing stop", () => {
+  const turn = applyEventToTurn(createTurn({ key: "run:r1", runId: "r1", phase: "streaming" }), {
+    type: "token", text: "", stopReason: "aborted", cancelReason: "shutdown",
+  });
+  assert.equal(isInterruptedByShutdown(buildRowsFromEntries(turn.entries, "live").at(-1).rounds), true);
 });
 
 test("a turn stopped before any output reopens as stopped, and a restart says so", () => {

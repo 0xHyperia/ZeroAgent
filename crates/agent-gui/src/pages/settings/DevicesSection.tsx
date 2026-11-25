@@ -6,8 +6,9 @@ import {
   Trash2,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type DesktopEnvironment,
   getDesktopEnvironments,
@@ -26,6 +27,9 @@ function formatLastSeen(value?: string) {
 }
 
 export function DevicesSection({ settings }: { settings: AppSettings }) {
+  const { confirm, dialog } = useConfirmDialog();
+  const currentSettings = useRef(settings);
+  currentSettings.current = settings;
   const [devices, setDevices] = useState<DesktopEnvironment[]>([]);
   const [localDeviceId, setLocalDeviceId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -85,8 +89,15 @@ export function DevicesSection({ settings }: { settings: AppSettings }) {
 
   async function revoke(device: DesktopEnvironment) {
     const localWarning =
-      device.device_id === localDeviceId ? " 撤销此电脑后，本机远程连接会立即断开。" : "";
-    if (!window.confirm(`确定撤销“${device.name}”吗？${localWarning}`)) return;
+      device.device_id === localDeviceId ? "撤销此电脑后，本机远程连接会立即断开。" : undefined;
+    const accepted = await confirm({
+      title: `撤销“${device.name}”？`,
+      description: localWarning,
+      confirmLabel: "撤销",
+      cancelLabel: "取消",
+      tone: "destructive",
+    });
+    if (!accepted || currentSettings.current !== settings) return;
     setBusyId(device.device_id);
     setError("");
     try {
@@ -101,7 +112,13 @@ export function DevicesSection({ settings }: { settings: AppSettings }) {
 
   async function rotateToken(device: DesktopEnvironment) {
     if (device.device_id !== localDeviceId) return;
-    if (!window.confirm("确定轮换此设备的连接凭证吗？设备会立即重新连接。")) return;
+    const accepted = await confirm({
+      title: "轮换此设备的连接凭证？",
+      description: "设备会立即重新连接。",
+      confirmLabel: "轮换凭证",
+      cancelLabel: "取消",
+    });
+    if (!accepted || currentSettings.current !== settings) return;
     setBusyId(device.device_id);
     setError("");
     try {
@@ -116,6 +133,7 @@ export function DevicesSection({ settings }: { settings: AppSettings }) {
 
   return (
     <section className="space-y-4 border-t border-border/70 pt-6">
+      {dialog}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <MonitorSmartphone className="h-4 w-4 text-muted-foreground" />

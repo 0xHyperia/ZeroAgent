@@ -7,6 +7,7 @@ import type { SidebarStore } from "@liveagent/ui/lib/sidebar/store";
 import type { SidebarScope } from "@liveagent/ui/lib/sidebar/types";
 import { useSidebarSelector } from "@liveagent/ui/lib/sidebar/useSidebarSelector";
 import { invokeFs } from "@liveagent/ui/lib/tools/fsBackend";
+import { openInWorkspaceEditor } from "@liveagent/ui/lib/tools/workspaceEditors";
 import {
   assignWorkspaceProjectToGroup,
   createWorkspaceProjectFromPath,
@@ -24,6 +25,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { getProviderRuntimeBackend } from "../../../lib/providers/runtime/providerRuntimeConfig";
@@ -46,6 +48,8 @@ type UseWorkspaceProjectsParams = {
   sidebarStore: SidebarStore;
   isAgentMode: boolean;
   workdir: string;
+  canOpenInLocalEditor: boolean;
+  activeRef: MutableRefObject<boolean>;
   t: (key: string) => string;
   setErrorMessage: Dispatch<SetStateAction<string | null>>;
   setActiveView: Dispatch<SetStateAction<ApplicationViewId>>;
@@ -71,6 +75,8 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     sidebarStore,
     isAgentMode,
     workdir,
+    canOpenInLocalEditor,
+    activeRef,
     t,
     setErrorMessage,
     setActiveView,
@@ -85,6 +91,13 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     () => mergeWorkspaceProjectsWithHistory(settings.system, sidebarWorkdirs),
     [sidebarWorkdirs, settings.system],
   );
+  const workspaceProjectsRef = useRef(workspaceProjects);
+  useLayoutEffect(() => {
+    workspaceProjectsRef.current = workspaceProjects;
+    return () => {
+      workspaceProjectsRef.current = [];
+    };
+  }, [workspaceProjects]);
   const [searchNavigation, setSearchNavigation] = useState<{
     mode: typeof isAgentMode;
     cwd: string;
@@ -433,22 +446,47 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     [checkWorkspaceProjectDirectory, setErrorMessage, t],
   );
 
+  const handleOpenWorkspaceProjectInEditor = useCallback(
+    async (project: WorkspaceProject, editor: string) => {
+      if (!canOpenInLocalEditor || !(await checkWorkspaceProjectDirectory(project))) return;
+      if (
+        !activeRef.current ||
+        !workspaceProjectsRef.current.some(
+          ({ id, path }) => id === project.id && path === project.path,
+        )
+      )
+        return;
+      try {
+        await openInWorkspaceEditor(project.path, "", editor);
+      } catch (error) {
+        if (activeRef.current) {
+          setErrorMessage(asErrorMessage(error, "Could not open the project in this editor."));
+        }
+      }
+    },
+    [activeRef, canOpenInLocalEditor, checkWorkspaceProjectDirectory, setErrorMessage],
+  );
+
   const handleOpenCreateWorkspaceProject = useCallback(() => {
     setWorkspaceCreateModalOpen(true);
   }, []);
 
-  const pickWorkspaceProjectFolder = useCallback(async () => {
-    try {
-      const picked = await invoke<string | null>("system_pick_folder", {
-        initial_workdir: activeWorkspaceProjectPath || workdir,
-      });
-      const path = picked?.trim();
-      return path ? createWorkspaceProjectFromPath(path, "managed") : null;
-    } catch (error) {
-      setErrorMessage(asErrorMessage(error, "选择项目目录失败"));
-      return null;
-    }
-  }, [activeWorkspaceProjectPath, setErrorMessage, workdir]);
+  const pickWorkspaceProjectFolder = useCallback(
+    async (propagateError = false) => {
+      try {
+        const picked = await invoke<string | null>("system_pick_folder", {
+          initial_workdir: activeWorkspaceProjectPath || workdir,
+        });
+        const path = picked?.trim();
+        return path ? createWorkspaceProjectFromPath(path, "managed") : null;
+      } catch (error) {
+        if (propagateError) throw error;
+        setErrorMessage(asErrorMessage(error, "选择项目目录失败"));
+        return null;
+      }
+    },
+    [activeWorkspaceProjectPath, setErrorMessage, workdir],
+  );
 
   const handleOpenWorkspaceFolder = useCallback(async () => {
     const project = await pickWorkspaceProjectFolder();
@@ -775,6 +813,7 @@ export function useWorkspaceProjects(params: UseWorkspaceProjectsParams) {
     ensureTunnelToolTab,
     ensureSshTunnelToolTab,
     handleBrowseWorkspaceProjectInSystemFileManager,
+    handleOpenWorkspaceProjectInEditor,
     pickWorkspaceProjectFolder,
     handleOpenCreateWorkspaceProject,
     workspaceCreateModalOpen,

@@ -55,15 +55,23 @@ export function useMcpRuntimeStatus(): McpRuntimeStatusState {
   useEffect(() => {
     const supports = adapter?.supportsServerNames;
     if (!supports) return;
-    let cancelled = false;
-    supports().then(
-      (value) => {
-        if (!cancelled) setServerNames(value);
-      },
-      () => undefined,
-    );
+    let revision = 0;
+    const read = () => {
+      const current = ++revision;
+      supports().then(
+        (value) => {
+          if (revision === current) setServerNames(value);
+        },
+        () => {
+          if (revision === current) setServerNames(false);
+        },
+      );
+    };
+    read();
+    const unsubscribe = adapter.subscribe?.(read);
     return () => {
-      cancelled = true;
+      revision += 1;
+      unsubscribe?.();
     };
   }, [adapter]);
 

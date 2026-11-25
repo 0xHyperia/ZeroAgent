@@ -4,7 +4,6 @@ import { installReactDevTimelineLimit } from "@liveagent/ui/lib/system/reactDevT
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { MobileAppExperience } from "./components/mobile/MobileAppExperience";
 import { installBrowserMobileBack } from "./lib/browserMobileBack";
 import {
   bootstrapEmbeddedMobileRuntime,
@@ -25,11 +24,15 @@ import.meta.hot?.dispose(stopCatalogRefresh);
 // 渲染前写入 WebUI 运行时标记（isGatewayWebuiRuntime 的唯一权威写入点）。
 async function start() {
   await bootstrapEmbeddedMobileRuntime();
-  if (!isEmbeddedMobileRuntime() && window.matchMedia("(pointer: coarse)").matches) {
+  const mobile = isEmbeddedMobileRuntime();
+  if (!mobile && window.matchMedia("(pointer: coarse)").matches) {
     installMobileViewport();
     installBrowserMobileBack();
   }
   document.documentElement.dataset.liveagentWebui = GATEWAY_WEBUI_MARKER;
+  const MobileAppExperience = mobile
+    ? (await import("./components/mobile/MobileAppExperience")).MobileAppExperience
+    : React.Fragment;
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <MobileAppExperience>

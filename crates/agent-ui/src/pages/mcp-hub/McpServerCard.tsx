@@ -255,7 +255,7 @@ export const McpServerCard = memo(function McpServerCard(props: {
   const { label: transportLabel } = getMcpTransportMeta(transport);
   const enabled = server.enabled;
   // The display name (settings, else what the backend reports); the id stays visible.
-  const label = runtimeStatus?.label?.trim() || "";
+  const label = server.name?.trim() || runtimeStatus?.label?.trim() || "";
   const displayName = label || server.id || `Server ${idx + 1}`;
 
   const patchServer = (patch: Partial<McpServerConfig>) => {
