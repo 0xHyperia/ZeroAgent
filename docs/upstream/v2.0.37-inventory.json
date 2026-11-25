@@ -7,11 +7,11 @@
   "merge_conflicts": 170,
   "text_conflicts": 150,
   "counts": {
-    "adapt": 187,
+    "adapt": 192,
     "reject": 411,
-    "defer": 106,
-    "partial": 192,
-    "adopt": 399
+    "defer": 110,
+    "partial": 198,
+    "adopt": 384
   },
   "entries": [
     {
@@ -5169,10 +5169,10 @@
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/LiveAssistantActivityRow.tsx",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "defer",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "独立实时回复行需覆盖副窗格、查找、历史回填和本地 Git 审查。"
     },
     {
       "path": "crates/agent-gui/src/pages/chat/transcript/TranscriptList.tsx",
@@ -5473,10 +5473,10 @@
     {
       "path": "crates/agent-gui/test/chat/kbrain-failed-turns.test.mjs",
       "upstream_change": "A",
-      "decision": "adapt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "保留现有 K-brain 会话状态和发送回执。验证可用的错误、取消和推理呈现，新增历史字段随引擎升级。"
     },
     {
       "path": "crates/agent-gui/test/chat/kbrain-file-mentions.test.mjs",
@@ -5497,10 +5497,10 @@
     {
       "path": "crates/agent-gui/test/chat/kbrain-model-catalog.test.mjs",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留 USA-Zero 账户托管端点和密钥，选择性接收固定掩码及安全的模型验证消息。"
     },
     {
       "path": "crates/agent-gui/test/chat/kbrain-run-progress.test.mjs",
@@ -5529,10 +5529,10 @@
     {
       "path": "crates/agent-gui/test/chat/kbrain-settings-component.test.mjs",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
     },
     {
       "path": "crates/agent-gui/test/chat/kbrain-sse-records.test.mjs",
@@ -5545,10 +5545,10 @@
     {
       "path": "crates/agent-gui/test/chat/kbrain-turn-outcome.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留现有 K-brain 会话状态和发送回执。验证可用的错误、取消和推理呈现，新增历史字段随引擎升级。"
     },
     {
       "path": "crates/agent-gui/test/chat/live-status-width.test.mjs",
@@ -5721,10 +5721,10 @@
     {
       "path": "crates/agent-gui/test/chat/terminal-pane-close-flow.test.mjs",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
     },
     {
       "path": "crates/agent-gui/test/chat/thinking-disclosure.test.mjs",
@@ -5777,18 +5777,18 @@
     {
       "path": "crates/agent-gui/test/chat/tool-output-preview.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
     },
     {
       "path": "crates/agent-gui/test/chat/transcript-live-row-isolation.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "defer",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "独立实时回复行需覆盖副窗格、查找、历史回填和本地 Git 审查。"
     },
     {
       "path": "crates/agent-gui/test/chat/transcript-projection-memo.test.mjs",
@@ -5849,10 +5849,10 @@
     {
       "path": "crates/agent-gui/test/chat/workbench-window-session.test.mjs",
       "upstream_change": "M",
-      "decision": "adapt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
+      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
     },
     {
       "path": "crates/agent-gui/test/diagnostics/bundle.test.mjs",
@@ -6033,10 +6033,10 @@
     {
       "path": "crates/agent-gui/test/providers/kbrain-import-acceptance.test.mjs",
       "upstream_change": "M",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留 USA-Zero 账户托管端点和密钥，选择性接收固定掩码及安全的模型验证消息。"
     },
     {
       "path": "crates/agent-gui/test/sandboxed-ui/kbrain-mcp-apps-contract.test.mjs",
@@ -6185,18 +6185,18 @@
     {
       "path": "crates/agent-gui/test/settings/provider-model-discovery-error.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留 USA-Zero 账户托管端点和密钥，选择性接收固定掩码及安全的模型验证消息。"
     },
     {
       "path": "crates/agent-gui/test/settings/provider-tabs-default.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "partial",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留 USA-Zero 账户托管端点和密钥，选择性接收固定掩码及安全的模型验证消息。"
     },
     {
       "path": "crates/agent-gui/test/settings/settings-search.test.mjs",
@@ -6225,10 +6225,10 @@
     {
       "path": "crates/agent-gui/test/settings/shortcut-commands.test.mjs",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "defer",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "合入上游底层源码或回归测试，按同步报告限制产品入口。"
+      "notes": "等待在现有工作区授权、目录范围及三个设备入口上验证。"
     },
     {
       "path": "crates/agent-gui/test/settings/shortcut-controls.test.mjs",
@@ -6321,10 +6321,10 @@
     {
       "path": "crates/agent-gui/test/startup/lazy-diff-grammars.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
     },
     {
       "path": "crates/agent-gui/test/startup/startup-sequence.test.mjs",
@@ -6361,18 +6361,18 @@
     {
       "path": "crates/agent-gui/test/ui/keyboard-navigation-a11y.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
     },
     {
       "path": "crates/agent-gui/test/ui/no-native-confirm.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "defer",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "保留 ZeroAgent 当前对话框及供应商导航行为，新增规则需按当前入口验收。"
     },
     {
       "path": "crates/agent-gui/test/ui/on-demand-retry.test.mjs",
@@ -6385,10 +6385,10 @@
     {
       "path": "crates/agent-gui/test/ui/touch-targets.test.mjs",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
     },
     {
       "path": "crates/agent-gui/test/workspace/file-tree-data-refresh.test.mjs",
@@ -6545,10 +6545,10 @@
     {
       "path": "crates/agent-ui/src/components/chat/ChatEmptyState.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
     },
     {
       "path": "crates/agent-ui/src/components/chat/ChatFileLinkContextMenu.tsx",
@@ -7841,10 +7841,10 @@
     {
       "path": "crates/agent-ui/src/components/ui/toaster.tsx",
       "upstream_change": "M",
-      "decision": "partial",
+      "decision": "adapt",
       "text_conflict": true,
       "ownership": "upstream_owned",
-      "notes": "保留原有 ZeroAgent 路径，配合共享组件和宿主适配接收可独立验证的上游行为。"
+      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
     },
     {
       "path": "crates/agent-ui/src/components/ui/toggle-group.tsx",
@@ -9977,10 +9977,10 @@
     {
       "path": "crates/agent-ui/src/pages/settings/modelDiscoveryError.ts",
       "upstream_change": "A",
-      "decision": "adopt",
+      "decision": "adapt",
       "text_conflict": false,
       "ownership": "adapted",
-      "notes": "路径与官方发布树一致，保留上游变更。"
+      "notes": "适配共享组件与现有桌面宿主接口，沿用 ZeroAgent 已确认的交互和主题规范。"
     },
     {
       "path": "crates/agent-ui/src/pages/settings/modelPicker.tsx",

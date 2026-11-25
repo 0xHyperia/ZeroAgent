@@ -64,6 +64,7 @@ import {
   serializeUsageQueryDraft,
 } from "@liveagent/ui/pages/settings/providerUtils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { describeModelDiscoveryError } from "./modelDiscoveryError";
 import { ProviderModalView } from "./ProviderModalView";
 import {
   customHeaderIssueMessage,
@@ -421,7 +422,7 @@ function useProviderModalController({
         commitModelsWithNewRowsRef.current(mergedModels);
       } catch (err) {
         if (generation === modelFetchGeneration.current) {
-          setFetchError(err instanceof Error ? err.message : String(err));
+          setFetchError(describeModelDiscoveryError(err, t));
         }
       } finally {
         if (generation === modelFetchGeneration.current) setFetchingModels(false);
@@ -435,6 +436,7 @@ function useProviderModalController({
       modelsUrl,
       providerType,
       requestFormat,
+      t,
       useSystemProxy,
     ],
   );

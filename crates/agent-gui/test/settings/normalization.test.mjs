@@ -2773,7 +2773,6 @@ test("chat transcript width defaults, clamps, and updates locally", () => {
     width: value,
     expandProcessByDefault: false,
     showDetailedProgress: false,
-    htmlPreviews: true,
   });
   assert.deepEqual(settings.normalizeChatTranscriptSettings(undefined), width(768));
   assert.deepEqual(settings.normalizeChatTranscriptSettings({ width: 400 }), width(560));
@@ -2799,10 +2798,15 @@ test("detailed progress is opt-in, local, and independent of the other transcrip
 
   const current = settings.normalizeSettings({});
   assert.equal(current.customSettings.chatTranscript.showDetailedProgress, false);
-  const enabled = settings.updateShowDetailedProgress(current, true);
+  const enabled = settings.normalizeSettings({
+    ...current,
+    customSettings: {
+      ...current.customSettings,
+      chatTranscript: { ...current.customSettings.chatTranscript, showDetailedProgress: true },
+    },
+  });
   assert.equal(enabled.customSettings.chatTranscript.showDetailedProgress, true);
   assert.equal(enabled.customSettings.chatTranscript.expandProcessByDefault, false);
-  assert.equal(settings.updateShowDetailedProgress(enabled, true), enabled);
 
   const resized = settings.updateChatTranscriptWidth(
     settings.updateExpandProcessByDefault(enabled, true),

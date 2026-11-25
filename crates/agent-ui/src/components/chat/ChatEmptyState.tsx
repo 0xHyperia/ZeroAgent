@@ -117,7 +117,7 @@ export function ChatEmptyState({
         </>
       ) : (
         <>
-          <div className="text-center text-2xl font-normal leading-8 tracking-tight text-foreground">
+          <div className="text-balance text-center text-2xl font-normal leading-8 tracking-tight text-foreground">
             {t(GREETING_KEYS[period])}，{t("chat.greetingSubtitle")}
           </div>
           {onSuggestionSelect ? (

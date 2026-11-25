@@ -1,10 +1,4 @@
-// A failed model discovery explains itself: K-brain answers 502 with errorCode
-// (invalid_api_key, not_found, rate_limited, unreachable, upstream_error), plus
-// upstreamStatus and upstreamMessage when the provider answered. The desktop
-// client keeps those on the thrown Error, and the provider editor and the
-// onboarding test show "API key was rejected (401): <provider message>"
-// instead of "model discovery failed". Older backends (only `error`) keep the
-// plain message.
+// Typed discovery failures show the category and HTTP status, excluding the provider payload.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -52,7 +46,7 @@ test("the desktop client keeps a failed discovery's reason on the error", async 
   assert.equal(error.status, 502);
   assert.equal(error.errorCode, "invalid_api_key");
   assert.equal(error.upstreamStatus, 401);
-  assert.equal(error.upstreamMessage, "Incorrect API key provided: sk-bad***.");
+  assert.equal(error.upstreamMessage, undefined);
 
   const old = await discoveryError({ error: "model discovery failed", version: "kbrain.agent.v1" });
   assert.equal(old.message, "model discovery failed");
@@ -60,15 +54,15 @@ test("the desktop client keeps a failed discovery's reason on the error", async 
   assert.equal(old.upstreamStatus, undefined);
 });
 
-test("a failed discovery reads as its reason, status and provider message", async () => {
+test("a failed discovery reads as its reason and status", async () => {
   const error = await discoveryError(REJECTED);
   assert.equal(
     describeModelDiscoveryError(error, en),
-    "API key was rejected (401): Incorrect API key provided: sk-bad***.",
+    "API key was rejected (401)",
   );
   assert.equal(
     describeModelDiscoveryError(error, zh),
-    "API 密钥被拒绝（401）：Incorrect API key provided: sk-bad***.",
+    "API 密钥被拒绝（401）",
   );
   const reason = (fields) =>
     describeModelDiscoveryError(Object.assign(new Error("model discovery failed"), fields), en);
@@ -83,7 +77,7 @@ test("a failed discovery reads as its reason, status and provider message", asyn
   );
   assert.equal(
     reason({ errorCode: "upstream_error", upstreamStatus: 500, upstreamMessage: "overloaded" }),
-    "The provider returned an error (500): overloaded",
+    "The provider returned an error (500)",
   );
   // Older backends and unknown codes keep the backend's message.
   assert.equal(reason({}), "model discovery failed");
@@ -135,8 +129,7 @@ test("the provider editor shows why discovery failed", async () => {
             name: "Relay",
             type: "codex",
             baseUrl: "https://relay.example.com/v1",
-            apiKey: "",
-            apiKeyConfigured: true,
+            apiKey: "fixture-key",
             models: [],
             activeModels: [],
           },
@@ -148,7 +141,7 @@ test("the provider editor shows why discovery failed", async () => {
     await env.act(async () => sleep(1000));
     assert.equal(
       viewProps?.viewModel?.fetchError,
-      "API key was rejected (401): Incorrect API key provided: sk-bad***.",
+      "API key was rejected (401)",
     );
   } finally {
     await env.act(async () => root.unmount());

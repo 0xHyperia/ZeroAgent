@@ -79,12 +79,14 @@ test("STT connection test saves the current form and identifies the active runti
     fileURLToPath(new URL("../../../agent-ui/src/pages/settings/SettingsPage.tsx", import.meta.url)),
     "utf8",
   );
-  const zhCNSettings = readFileSync(
-    fileURLToPath(
-      new URL("../../../agent-ui/src/i18n/translations/zhCNSettings.ts", import.meta.url),
-    ),
-    "utf8",
-  );
+  const zhCNSettings = ["translations/zhCNSettings.ts", "namespaces/settingsZhCN.ts"]
+    .map((path) =>
+      readFileSync(
+        fileURLToPath(new URL(`../../../agent-ui/src/i18n/${path}`, import.meta.url)),
+        "utf8",
+      ),
+    )
+    .join("\n");
   const gatewayView = readFileSync(
     fileURLToPath(
       new URL("../../../agent-gateway/web/src/app/GatewayAppView.tsx", import.meta.url),
@@ -127,9 +129,12 @@ test("STT connection test saves the current form and identifies the active runti
   assert.match(zhCNSettings, /"settings\.stt\.saveAndTest": "保存并测试连接"/);
   assert.match(
     section,
-    /t\("settings\.stt\.runtime"\)\.replace\("\{runtime\}", service\.runtimeLabel\)/,
+    /t\("settings\.stt\.runtime"\)\.replace\(\s*"\{runtime\}",\s*t\(RUNTIME_LABEL_KEYS\[service\.runtime\]\),?\s*\)/,
   );
   assert.match(zhCNSettings, /"settings\.stt\.runtime": "当前运行端：\{runtime\}"/);
+  assert.match(zhCNSettings, /"settings\.stt\.runtimeDesktop": "此电脑"/);
+  assert.match(zhCNSettings, /"settings\.stt\.runtimeWebui": "已连接的电脑"/);
+  assert.match(zhCNSettings, /"settings\.stt\.runtimeCloud": "云端工作区"/);
   assert.match(section, /fields: \["websocketUrl", "model", "apiKey"\]/);
   assert.match(
     section,
@@ -156,10 +161,10 @@ test("STT connection test saves the current form and identifies the active runti
     webSettingsSync,
     /queueSettingsSave\(prev, next, "同步桌面端设置失败。", false\)/,
   );
-  assert.match(desktopService, /runtimeLabel: "桌面端（同步到 Gateway WebUI）"/);
+  assert.match(desktopService, /runtime: "desktop"/);
   assert.match(desktopService, /secretRevealMode: "value"/);
   assert.match(desktopService, /settings_reveal_stt_secret/);
-  assert.match(gatewayView, /runtimeLabel: "设备 WebUI"/);
+  assert.match(gatewayView, /runtime: "webui"/);
   assert.match(gatewayView, /设备 WebUI 暂不提供语音输入配置/);
   assert.match(section, /toggleSecretVisibility/);
   assert.match(section, /const SAVED_SECRET_MASK = "saved-secret-placeholder"/);
@@ -226,7 +231,7 @@ test("STT connection test saves the current form and identifies the active runti
     fileURLToPath(new URL("../../../agent-ui/src/pages/chat/useComposerStt.ts", import.meta.url)),
     "utf8",
   );
-  assert.match(composerStt, /STT供应商配置不完整/);
+  assert.match(composerStt, /t\("chat\.stt\.error\.providerIncomplete"\)/);
   assert.match(composerStt, /resetSilenceClock/);
   assert.match(composerStt, /abortActiveSession/);
   assert.match(composerStt, /if \(!current\?\.ready \|\| current\.stopping\) return;/);

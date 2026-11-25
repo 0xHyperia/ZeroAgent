@@ -731,7 +731,6 @@ export const SETTINGS_ZH_CN = {
   "settings.modelDiscoveryError.unreachable": "无法连接服务商，请检查 Base URL 和网络",
   "settings.modelDiscoveryError.upstreamError": "服务商返回了错误",
   "settings.modelDiscoveryError.withStatus": "{reason}（{status}）",
-  "settings.modelDiscoveryError.withDetail": "{reason}：{detail}",
   "settings.geminiVertexExpressNoModelList":
     "Vertex AI Express 模式没有模型列表接口，请手动添加 Gemini 模型 ID。",
   "settings.fetchHint": "填写 Base URL 和 API Key 后自动获取",

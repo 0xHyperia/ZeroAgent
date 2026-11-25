@@ -744,7 +744,6 @@ export const SETTINGS_EN_US = {
     "Could not reach the provider. Check the Base URL and your network.",
   "settings.modelDiscoveryError.upstreamError": "The provider returned an error",
   "settings.modelDiscoveryError.withStatus": "{reason} ({status})",
-  "settings.modelDiscoveryError.withDetail": "{reason}: {detail}",
   "settings.geminiVertexExpressNoModelList":
     "Vertex AI Express Mode has no model list endpoint. Add Gemini model IDs manually.",
   "settings.fetchHint": "Fill in Base URL and API Key to auto-fetch",

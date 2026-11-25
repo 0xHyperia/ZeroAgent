@@ -184,48 +184,6 @@ test("a row's own key handler can claim a key before the roving handler", async 
   }
 });
 
-test("the skip link is the first child of the sidebar wrapper and focuses the composer", async () => {
-  const env = await createDomTestEnv();
-  try {
-    stubLayout(env);
-    const { SidebarProvider, Sidebar } = env.loadModule("@liveagent/ui/components/ui/sidebar.tsx");
-    const h = env.React.createElement;
-    const host = document.createElement("div");
-    document.body.append(host);
-    const root = env.createRoot(host);
-    await env.act(async () =>
-      root.render(
-        h(
-          SidebarProvider,
-          null,
-          h(Sidebar, { collapsible: "none" }, h("button", { id: "row" }, "Row")),
-          h(
-            "div",
-            { "data-testid": "chat-composer" },
-            h("div", { id: "editor", role: "textbox", contentEditable: "true", tabIndex: 0 }),
-          ),
-        ),
-      ),
-    );
-    await settle(env);
-
-    const wrapper = document.querySelector('[data-slot="sidebar-wrapper"]');
-    const tabbables = [...wrapper.querySelectorAll("button, [tabindex]")];
-    const skip = tabbables[0];
-    assert.equal(skip.dataset.slot, "skip-to-composer", "first Tab stop");
-    assert.equal(skip.textContent, "跳到输入框");
-    assert.match(skip.className, /\bsr-only\b/, "visually hidden until focused");
-    assert.match(skip.className, /focus-visible:fixed/);
-    assert.match(skip.className, /focus-visible:\[clip-path:none\]/);
-
-    await env.act(async () => skip.click());
-    assert.equal(document.activeElement, document.getElementById("editor"));
-    await env.act(async () => root.unmount());
-  } finally {
-    env.cleanup();
-  }
-});
-
 test("focusChatComposer reports when no composer is on screen", async () => {
   const env = await createDomTestEnv();
   try {
@@ -266,38 +224,6 @@ test("a toggle group's Tab stop starts on the pressed item, not the first one", 
     assert.equal(document.getElementById("en").tabIndex, 0, "pressed item holds the stop");
     assert.equal(document.getElementById("zh").tabIndex, -1);
     await env.act(async () => root.unmount());
-  } finally {
-    env.cleanup();
-  }
-});
-
-test("the settings overlay is a modal dialog over an inert background", async () => {
-  const env = await createDomTestEnv();
-  try {
-    const { applySettingsOverlayModal } = env.loadModule(
-      "@liveagent/ui/lib/settings/useSettingsOverlayModal.ts",
-    );
-    document.body.innerHTML = `
-      <div id="shell">
-        <div id="chat"><button id="open-settings">Settings</button></div>
-        <div id="already-inert" inert></div>
-        <div id="overlay"><button id="back">Back</button></div>
-      </div>`;
-    const $ = (id) => document.getElementById(id);
-    $("open-settings").focus();
-
-    const close = applySettingsOverlayModal($("overlay"), "Settings");
-    assert.equal($("overlay").getAttribute("role"), "dialog");
-    assert.equal($("overlay").getAttribute("aria-modal"), "true");
-    assert.equal($("overlay").getAttribute("aria-label"), "Settings");
-    assert.equal($("chat").hasAttribute("inert"), true, "the chat behind is inert");
-    assert.equal(document.activeElement, $("overlay"), "focus moves into the dialog");
-
-    $("back").focus();
-    close();
-    assert.equal($("chat").hasAttribute("inert"), false);
-    assert.equal($("already-inert").hasAttribute("inert"), true, "foreign inert state is kept");
-    assert.equal(document.activeElement, $("open-settings"), "focus returns to the opener");
   } finally {
     env.cleanup();
   }

@@ -67,7 +67,7 @@ test("the truncation note follows the UI locale", () => {
 });
 
 test("zh settings navigation translates Remote and the toast region has a label", () => {
-  assert.equal(i18n.t("settings.navRemote", "zh-CN"), "远程");
+  assert.equal(i18n.t("settings.navRemote", "zh-CN"), "远程访问");
   assert.equal(i18n.t("toast.regionLabel", "en-US"), "Notifications");
   assert.equal(i18n.t("toast.regionLabel", "zh-CN"), "通知");
 });

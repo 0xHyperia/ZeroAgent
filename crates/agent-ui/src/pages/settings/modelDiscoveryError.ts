@@ -16,19 +16,18 @@ function fill(template: string, values: Record<string, string | number>): string
 
 /**
  * Text for a failed provider model discovery. K-brain answers one with a 502
- * whose errorCode says why, plus upstreamStatus and upstreamMessage when the
- * provider itself answered; the host adapters copy those onto the thrown
- * Error. Errors without a known errorCode (older backends, other failures)
- * keep their own message.
+ * containing an error code and, when available, the provider HTTP status.
  */
 export function describeModelDiscoveryError(error: unknown, t: (key: string) => string): string {
   const message = error instanceof Error ? error.message : String(error);
   const reason = (error ?? {}) as {
     errorCode?: unknown;
     upstreamStatus?: unknown;
-    upstreamMessage?: unknown;
   };
-  const key = typeof reason.errorCode === "string" ? REASON_KEYS[reason.errorCode] : undefined;
+  const key =
+    typeof reason.errorCode === "string" && Object.hasOwn(REASON_KEYS, reason.errorCode)
+      ? REASON_KEYS[reason.errorCode]
+      : undefined;
   if (!key) return message;
   let text = t(key);
   if (typeof reason.upstreamStatus === "number" && reason.upstreamStatus > 0) {
@@ -37,8 +36,5 @@ export function describeModelDiscoveryError(error: unknown, t: (key: string) => 
       status: reason.upstreamStatus,
     });
   }
-  const detail = typeof reason.upstreamMessage === "string" ? reason.upstreamMessage.trim() : "";
-  return detail
-    ? fill(t("settings.modelDiscoveryError.withDetail"), { reason: text, detail })
-    : text;
+  return text;
 }

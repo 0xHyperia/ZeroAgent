@@ -299,7 +299,7 @@ function assertBrowserWhitelist(localStorage, marker) {
   assert.ok(!raw.includes(marker), "credentials and runtime prompt text must be removed from the stored JSON");
   const saved = JSON.parse(raw);
   assert.deepEqual(Object.keys(saved).sort(), ["chatRuntimeControls", "customSettings", "locale", "system", "theme"]);
-  assert.deepEqual(Object.keys(saved.system).sort(), ["commandSafetyMode", "defaultTimeZone", "executionMode", "workdir"]);
+  assert.deepEqual(Object.keys(saved.system).sort(), ["defaultTimeZone", "executionMode", "workdir"]);
   assert.deepEqual(saved.customSettings.rightDock.projects, {});
   assert.doesNotMatch(raw, /"(?:apiKey|headers|usageQuery|password|token|providers|customProviders|agents|remote|stt|ssh)"/);
   return saved;
@@ -594,9 +594,8 @@ for (const raw of ['{"apiKey":"corrupt-key-secret",', "null", '[{"headers":{"Aut
   });
 }
 
-// New installs start at "Always ask"; any stored snapshot keeps its effective mode.
-test("safety mode defaults to ask only for a new install and never rewrites a saved choice", async () => {
-  await withSettingsFixture({}, async ({ storage, loader }) => {
+test("native command safety defaults to ask and preserves saved choices", async () => {
+  await withSettingsFixture({ browser: false }, async ({ storage, loader }) => {
     const settingsApi = loader.loadModule("src/lib/settings/index.ts");
     assert.equal(settingsApi.getDefaultSettings().system.commandSafetyMode, "ask");
     assert.equal(settingsApi.normalizeSettings({}).system.commandSafetyMode, "ask");
@@ -608,16 +607,37 @@ test("safety mode defaults to ask only for a new install and never rewrites a sa
     await storage.persistSettings(fresh, next);
     assert.equal((await storage.loadPersistedSettings()).system.commandSafetyMode, "autoEdit");
   });
-  const existing = createMemoryLocalStorage({ [BROWSER_SETTINGS_STORAGE_KEY]: JSON.stringify({ theme: "dark", system: { workdir: "" } }) });
-  await withSettingsFixture({ localStorage: existing }, async ({ storage }) => {
-    assert.equal((await storage.loadPersistedSettings()).system.commandSafetyMode, "always");
-  });
-  for (const [system, expected] of [[undefined, "ask"], [{ commandSafetyMode: "always" }, "always"], [{ commandSafetyMode: "sandbox" }, "sandbox"]]) {
+  for (const [system, expected] of [
+    [{ executionMode: "tools" }, "always"],
+    [{ commandSafetyMode: "always" }, "always"],
+    [{ commandSafetyMode: "sandbox" }, "sandbox"],
+  ]) {
     await withSettingsFixture({
       browser: false,
-      invoke: async (command) => command === "settings_load_all" ? (system ? { system } : {}) : {},
+      nativeSettings: { system },
     }, async ({ storage }) => {
       assert.equal((await storage.loadPersistedSettings()).system.commandSafetyMode, expected);
     });
   }
+});
+
+test("browser presentation cache cannot override command safety", async () => {
+  const localStorage = createMemoryLocalStorage({
+    [BROWSER_SETTINGS_STORAGE_KEY]: JSON.stringify({
+      theme: "dark",
+      system: { workdir: "", commandSafetyMode: "always" },
+    }),
+  });
+  await withSettingsFixture({ localStorage }, async ({ storage, fixture }) => {
+    const current = await storage.loadPersistedSettings();
+    assert.equal(current.system.commandSafetyMode, "ask");
+    assertBrowserWhitelist(localStorage, "commandSafetyMode");
+    await storage.persistSettings(current, {
+      ...current,
+      system: { ...current.system, commandSafetyMode: "autoEdit" },
+    });
+    assertBrowserWhitelist(localStorage, "commandSafetyMode");
+    assert.equal((await storage.loadPersistedSettings()).system.commandSafetyMode, "ask");
+    assert.ok(fixture.requests.every((request) => request.method === "GET"));
+  });
 });

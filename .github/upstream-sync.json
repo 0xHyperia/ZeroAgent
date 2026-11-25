@@ -1,14 +1,14 @@
 {
   "repository": "Stack-Cairn/LiveAgent",
-  "tag": "v2.0.27",
-  "base_commit": "19f3513ce2fed95d8c20d6069f01aca2de28fdd6",
-  "commit": "f8cc0d97e42beb840d7555e56cb88eac0125d952",
-  "integration_commit": "6d7ef6527cea64e6edfb121064e0691b8c0535b8",
-  "previous_tag": "v2.0.26",
-  "previous_upstream_commit": "2c0476ac5a3e7e0ab852fce42bf307062e5b7c07",
+  "tag": "v2.0.37",
+  "base_commit": "d2a11a94e714f073f2eb8b0a55a5866a2d424bfc",
+  "commit": "e2aa416ccb0ac1dd01fdacee7a8e46544fab36b8",
+  "integration_commit": "1fe93e731aec36b865f20393a5823204caa15f08",
+  "previous_tag": "v2.0.27",
+  "previous_upstream_commit": "f8cc0d97e42beb840d7555e56cb88eac0125d952",
   "prerelease": false,
-  "validation_status": "Desktop and WebUI frontend suites, production builds, Proto compatibility, Gateway tests/vet/Linux race/Docker readiness, Windows native checks and real Windows K-brain acknowledgement recovery passed; real-account workbench and signed cross-platform acceptance pending",
+  "validation_status": "See docs/upstream/v2.0.37.md for verified checks and platform acceptance limits",
   "channel": "stable",
-  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.27",
-  "published_at": "2026-11-19T09:57:01Z"
+  "release_url": "https://github.com/Stack-Cairn/LiveAgent/releases/tag/v2.0.37",
+  "published_at": "2026-11-24T11:02:56Z"
 }

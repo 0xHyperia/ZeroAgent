@@ -4091,6 +4091,7 @@ mod tests {
         assert!(!workdir_error.trim().is_empty());
     }
 
+    #[cfg(desktop)]
     #[test]
     fn image_preview_data_rejects_empty_invalid_and_oversized_base64() {
         assert!(decode_image_preview_base64("").is_err());
@@ -4102,6 +4103,7 @@ mod tests {
         assert!(error.contains("too large"));
     }
 
+    #[cfg(desktop)]
     #[test]
     fn image_preview_rgba_decoder_converts_png() {
         let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -4112,6 +4114,7 @@ mod tests {
         assert_eq!(rgba.len(), 4);
     }
 
+    #[cfg(desktop)]
     #[test]
     fn prepared_image_preview_clipboard_requires_matching_fresh_file_signature() {
         let now = SystemTime::now();
@@ -4156,6 +4159,7 @@ mod tests {
         ));
     }
 
+    #[cfg(desktop)]
     #[test]
     fn image_preview_save_target_is_one_time_and_expires() {
         let target = PathBuf::from("image-preview-save-target.png");

@@ -6,9 +6,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createTsModuleLoader } from "../helpers/load-ts-module.mjs";
 
-// Both release bundles (desktop and WebUI) keep the diff engine's highlight.js grammars out of
-// the startup bundle. The transform depends on the exact shape of a dependency file, so check
-// it against the installed version.
+// The optional transform depends on the exact shape of a dependency file, so check it
+// against the installed version.
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const { lazyDiffHighlightGrammars, DIFF_HIGHLIGHT_GRAMMARS_KEY } = createTsModuleLoader().loadModule(
@@ -37,11 +36,4 @@ test("the transform starts the diff highlighter without grammars and exposes a l
   assert.doesNotMatch(result.code, /from 'lowlight'/);
   assert.match(result.code, new RegExp(`Symbol\\.for\\("${DIFF_HIGHLIGHT_GRAMMARS_KEY.replace(/\./g, "\\.")}"\\)`));
   assert.match(result.code, /import\(".*all\.js"\)/);
-});
-
-test("the desktop and WebUI builds both register the transform", () => {
-  for (const config of ["crates/agent-gui/vite.config.ts", "crates/agent-gateway/web/vite.config.ts"]) {
-    const source = readFileSync(path.join(repoRoot, config), "utf8");
-    assert.match(source, /plugins:\s*\[[^\]]*lazyDiffHighlightGrammars\(\)/, config);
-  }
 });

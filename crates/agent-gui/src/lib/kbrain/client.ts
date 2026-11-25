@@ -203,9 +203,31 @@ function isCheckpointResult(value: unknown): value is KBrainCheckpointResult {
 async function readError(response: Response) {
   const body = await response.text();
   let message = body.trim();
+  let fields: { errorCode?: string; upstreamStatus?: number } = {};
   try {
-    const parsed = JSON.parse(body) as { error?: string; message?: string };
+    const parsed = JSON.parse(body) as {
+      error?: string;
+      message?: string;
+      errorCode?: unknown;
+      upstreamStatus?: unknown;
+    };
     message = parsed.error || parsed.message || message;
+    if (
+      typeof parsed.errorCode === "string" &&
+      ["invalid_api_key", "not_found", "rate_limited", "unreachable", "upstream_error"].includes(
+        parsed.errorCode,
+      )
+    ) {
+      fields = { errorCode: parsed.errorCode };
+      if (
+        typeof parsed.upstreamStatus === "number" &&
+        Number.isInteger(parsed.upstreamStatus) &&
+        parsed.upstreamStatus >= 100 &&
+        parsed.upstreamStatus <= 599
+      ) {
+        fields.upstreamStatus = parsed.upstreamStatus;
+      }
+    }
   } catch {
     // Keep the original response body for non-JSON server errors.
   }
@@ -217,6 +239,7 @@ async function readError(response: Response) {
     : Math.max(0, Date.parse(retryAfter ?? "") - Date.now());
   Object.assign(error, {
     status: response.status,
+    ...fields,
     ...(Number.isFinite(retryAfterMs) ? { retryAfterMs } : {}),
   });
   return error;
