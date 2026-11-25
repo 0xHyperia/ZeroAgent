@@ -1958,7 +1958,7 @@ export function getDefaultSettings(): AppSettings {
     system: {
       executionMode: "tools",
       workdir: "",
-      commandSafetyMode: "always",
+      commandSafetyMode: "ask",
       browserAutomationMode: "auto",
       defaultTimeZone: "",
       workspaceProjects: [],

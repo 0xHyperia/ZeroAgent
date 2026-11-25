@@ -11,8 +11,8 @@ const NOTICE_TONES = {
   info: { icon: Info, surface: "bg-foreground/[0.04]", iconColor: "text-muted-foreground" },
   warning: {
     icon: Clock3,
-    surface: "bg-amber-500/[0.10] dark:bg-amber-400/[0.12]",
-    iconColor: "text-amber-700 dark:text-amber-400",
+    surface: "bg-warning/[0.10]",
+    iconColor: "text-warning",
   },
   error: { icon: AlertCircle, surface: "bg-destructive/[0.08]", iconColor: "text-destructive" },
 } as const;
@@ -126,7 +126,7 @@ export function ComposerCommandPanel({
       </div>
       {details ? (
         // 与图标后的文字起点对齐（图标 14px + 间距 8px），右侧让出关闭按钮。
-        <div className="min-w-0 break-words pl-[22px] pr-6 text-muted-foreground">{details}</div>
+        <div className="min-w-0 break-words pl-22px pr-6 text-muted-foreground">{details}</div>
       ) : null}
     </section>
   );

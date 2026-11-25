@@ -18,7 +18,7 @@ async function chooseZoom(app,label,itemText) {
 
 async function mount(t, resource, load, options = {}) {
   let env;
-  env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { "../../lib/monacoNls": {preparePreferredMonacoNlsLocale:async()=>{},lockMonacoNlsLocale(){}}, "./ResourceSourceEditor": { default: props => env.React.createElement("pre", {"data-source-ready":"true"}, props.text) }, streamdown, "@streamdown/code": {code:undefined}, "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url": "/fixture.wasm", "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
+  env = await createWebDomTestEnv({ resolveDynamicImports: true, mocks: { "../../lib/monacoNls": {preparePreferredMonacoNlsLocale:async()=>{},lockMonacoNlsLocale(){}}, "./ResourceSourceEditor": { __esModule: true, default: props => env.React.createElement("pre", {"data-source-ready":"true"}, props.text) }, streamdown, "@streamdown/code": {code:undefined}, "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url": "/fixture.wasm", "../IconSet": new Proxy({}, {get: () => () => null}), ...options.mocks } });
   options.setup?.(env);
   const { ResourcePreview } = env.loadModule("@liveagent/ui/components/resource-preview/ResourcePreview.tsx");
   const host = document.body.appendChild(document.createElement("div"));

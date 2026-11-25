@@ -24,6 +24,7 @@ import type {
   ToolApprovalPreview,
   ToolApprovalRememberScope,
 } from "../../lib/chat/toolApprovalArgs";
+import { workspaceRelativePath } from "../../lib/chat/workspaceRelativePath";
 
 /** approve:本次放行;deny:本次拒绝;approve_session:请后端在本会话内记住这条授权范围。 */
 export type ToolApprovalDecision = "approve" | "deny" | "approve_session";
@@ -84,8 +85,10 @@ export function ToolApprovalBar({
   pending,
   onDecide,
   onDecideAll,
+  workdir,
 }: {
   pending: PendingApprovalItem[];
+  workdir?: string;
   onDecide: (
     toolCallId: string,
     decision: ToolApprovalDecision,
@@ -95,6 +98,7 @@ export function ToolApprovalBar({
 }) {
   const { t } = useLocale();
   const feedbackId = useId();
+  const titleId = useId();
   const [submittingAction, setSubmittingAction] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<{
     toolCallIds: readonly string[];
@@ -142,6 +146,8 @@ export function ToolApprovalBar({
   if (pending.length === 0) return null;
 
   const current = pending[0];
+  const previewPath = current.preview?.path;
+  const displayPreviewPath = previewPath ? workspaceRelativePath(previewPath, workdir) : undefined;
   const displayToolName =
     current.toolName.toLowerCase() === "bash" ? t("chat.toolApproval.terminal") : current.toolName;
   const errorText = submissionError?.toolCallIds.includes(current.toolCallId)
@@ -243,7 +249,8 @@ export function ToolApprovalBar({
     <section
       ref={panelRef}
       tabIndex={-1}
-      aria-label={t("chat.toolApproval.title")}
+      role="alertdialog"
+      aria-labelledby={titleId}
       onKeyDown={(event) => {
         if (
           event.defaultPrevented ||
@@ -319,14 +326,14 @@ export function ToolApprovalBar({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
         {/* Wraps instead of truncating: on phones the session-wide explanation must stay readable. */}
-        <p className="mt-2 break-words text-sm font-medium leading-1p5 text-foreground/92">
+        <p id={titleId} className="mt-2 break-words text-sm font-medium leading-1p5 text-foreground/92">
           {current.sessionWide
             ? t("chat.toolApproval.sessionWideBody")
             : t("chat.toolApproval.body").replace("{tool}", displayToolName)}
         </p>
 
         {/* Keep the command in the same scroll region as its preview. */}
-        {current.summary ? (
+        {current.summary && current.summary.trim() !== previewPath?.trim() ? (
           <pre
             data-approval-command=""
             className="mt-1.5 whitespace-pre-wrap rounded-xl bg-muted/45 px-3 py-2 font-mono text-xs leading-1p45 text-muted-foreground [overflow-wrap:anywhere]"
@@ -357,11 +364,12 @@ export function ToolApprovalBar({
                     beforeText=""
                     afterText=""
                     diffText={current.preview.diff}
-                    filePath={current.preview.path}
+                    filePath={displayPreviewPath}
+                    fullWidth
                   />
                 ) : current.preview.path ? (
                   <p className="break-all font-mono text-xs text-foreground">
-                    {current.preview.path}
+                    {displayPreviewPath}
                   </p>
                 ) : null
               ) : current.preview.split ? (
@@ -369,7 +377,7 @@ export function ToolApprovalBar({
                 <div className="space-y-2">
                   {current.preview.path ? (
                     <p className="break-all font-mono text-xs text-foreground">
-                      {current.preview.path}
+                      {displayPreviewPath}
                     </p>
                   ) : null}
                   {(
@@ -392,7 +400,8 @@ export function ToolApprovalBar({
                 <EditDiffView
                   beforeText={current.preview.before}
                   afterText={current.preview.after}
-                  filePath={current.preview.path}
+                  filePath={displayPreviewPath}
+                  fullWidth
                 />
               )}
             </div>

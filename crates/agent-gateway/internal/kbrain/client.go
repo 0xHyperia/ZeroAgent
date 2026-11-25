@@ -127,10 +127,24 @@ type Message struct {
 	HostedSearch []json.RawMessage `json:"hosted_search,omitempty"`
 	StopReason   string            `json:"stop_reason,omitempty"`
 	CreatedAt    time.Time         `json:"created_at,omitempty"`
+	// Error is why a reply that streamed part of its text stopped (stop_reason
+	// "error"); ErrorDetail classifies a failure; CancelReason says why a run
+	// was cancelled ("shutdown" when the backend restarted).
+	Error        string       `json:"error,omitempty"`
+	ErrorDetail  *ErrorDetail `json:"error_detail,omitempty"`
+	CancelReason string       `json:"cancel_reason,omitempty"`
 	// Origin is "background" on a user-role notice K-brain delivered on its own
 	// (a wait result, a process exit, a background task report).
 	Origin   string `json:"origin,omitempty"`
 	Authored bool   `json:"authored,omitempty"`
+}
+
+// ErrorDetail classifies a failed run: kind is a stable code (invalid_api_key,
+// rate_limited, context_limit, ...) and the upstream fields are optional.
+type ErrorDetail struct {
+	Kind            string `json:"kind"`
+	UpstreamStatus  int    `json:"upstream_status,omitempty"`
+	ProviderMessage string `json:"provider_message,omitempty"`
 }
 
 // OriginBackground marks a user-role message the user did not write.
@@ -535,6 +549,29 @@ func (c *Client) DiscoverProviderModels(ctx context.Context, providerID string, 
 	return c.settingsRequest(ctx, http.MethodPost, "/v1/settings/providers/"+url.PathEscape(providerID)+"/models", input)
 }
 
+// RequestFailure is a K-brain request that failed with a machine-readable
+// reason: a failed model discovery answers 502 with errorCode
+// (invalid_api_key, not_found, rate_limited, unreachable, upstream_error) and,
+// when the provider answered, its HTTP status.
+type RequestFailure struct {
+	err            error
+	Code           string
+	UpstreamStatus int
+}
+
+func (f *RequestFailure) Error() string { return f.err.Error() }
+
+func (f *RequestFailure) Unwrap() error { return f.err }
+
+func discoveryErrorCode(value string) string {
+	switch code := strings.TrimSpace(value); code {
+	case "invalid_api_key", "not_found", "rate_limited", "unreachable", "upstream_error":
+		return code
+	default:
+		return "upstream_error"
+	}
+}
+
 func (c *Client) settingsRequest(ctx context.Context, method, path string, input any) (json.RawMessage, error) {
 	resp, err := c.request(ctx, method, path, input, nil)
 	if err != nil {
@@ -542,12 +579,28 @@ func (c *Client) settingsRequest(ctx context.Context, method, path string, input
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		// K-brain explains a rejected request in {"error": ...}; keep that text.
+		// K-brain explains a rejected request in {"error": ...}; keep that text,
+		// and the reason fields of a failed model discovery.
 		var failure struct {
-			Error string `json:"error"`
+			Error          string `json:"error"`
+			ErrorCode      string `json:"errorCode"`
+			UpstreamStatus int    `json:"upstreamStatus"`
 		}
-		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&failure) == nil && strings.TrimSpace(failure.Error) != "" {
-			return nil, fmt.Errorf("kbrain settings request: %s: %s", resp.Status, strings.TrimSpace(failure.Error))
+		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&failure) == nil {
+			if strings.TrimSpace(failure.ErrorCode) != "" {
+				status := failure.UpstreamStatus
+				if status < 100 || status > 599 {
+					status = 0
+				}
+				return nil, &RequestFailure{
+					err:            fmt.Errorf("kbrain settings request: %s: model discovery failed", resp.Status),
+					Code:           discoveryErrorCode(failure.ErrorCode),
+					UpstreamStatus: status,
+				}
+			}
+			if message := strings.TrimSpace(failure.Error); message != "" {
+				return nil, fmt.Errorf("kbrain settings request: %s: %s", resp.Status, message)
+			}
 		}
 		return nil, fmt.Errorf("kbrain settings request: %s", resp.Status)
 	}

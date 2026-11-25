@@ -38,7 +38,7 @@ jobs:
           # buf breaking uses the actual PR base, including v2 integration PRs.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: crates/agent-gateway/go.mod
           cache-dependency-path: crates/agent-gateway/go.sum
@@ -77,7 +77,7 @@ jobs:
           git diff --exit-code -- crates/agent-gateway/internal/proto crates/agent-gateway/web/src/lib/proto/gen
 
       - name: Lint gateway
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
           working-directory: crates/agent-gateway
@@ -96,10 +96,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -167,7 +167,7 @@ jobs:
         working-directory: crates/agent-gui
         run: pnpm lint
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: crates/agent-gateway/go.mod
           cache-dependency-path: crates/agent-gateway/go.sum
@@ -197,7 +197,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: crates/agent-gateway/go.mod
           cache-dependency-path: crates/agent-gateway/go.sum

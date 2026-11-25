@@ -26,19 +26,16 @@
 // grows with the number of visible code blocks. The queue hands upstream one
 // block per macrotask and starts the next only after the previous delivered,
 // so frames and input run in between.
-import {
-  code as baseCodePlugin,
-  type CodeHighlighterPlugin,
-  type HighlightOptions,
-  type HighlightResult,
-} from "@streamdown/code";
+import type { CodeHighlighterPlugin, HighlightOptions, HighlightResult } from "@streamdown/code";
 import { normalizeSourceLanguage, sourceLanguages } from "./sourceLanguages";
-import { getSyntaxHighlighter } from "./syntaxHighlighter";
+import { getSyntaxHighlighter, MARKDOWN_CODE_THEMES } from "./syntaxHighlighter";
 
 // Keep the existing bounded/stream-aware wrapper, but use full TextMate rules rather than
 // the upstream forgiving JavaScript-regexp approximation for embedded/less common grammars.
-const completeCodePlugin: CodeHighlighterPlugin | undefined = baseCodePlugin && {
-  ...baseCodePlugin,
+const completeCodePlugin: CodeHighlighterPlugin = {
+  name: "shiki",
+  type: "code-highlighter",
+  getThemes: () => [...MARKDOWN_CODE_THEMES],
   supportsLanguage: (language) => normalizeSourceLanguage(language) !== undefined,
   getSupportedLanguages: () =>
     sourceLanguages.flatMap((language) => [language.id, ...language.aliases]),
@@ -179,7 +176,7 @@ function lruSet<Value>(cache: Map<string, Value>, key: string, value: Value, lim
 }
 
 export function createThrottledCodePlugin(
-  base: CodeHighlighterPlugin = completeCodePlugin ?? baseCodePlugin,
+  base: CodeHighlighterPlugin = completeCodePlugin,
   config: { schedule?: HighlightScheduler; jobTimeoutMs?: number } = {},
 ): CodeHighlighterPlugin {
   const exactCache = new Map<string, HighlightResult>();
@@ -273,8 +270,4 @@ export function createThrottledCodePlugin(
   };
 }
 
-// 测试环境会把 @streamdown/code mock 成 { code: undefined }（禁用高亮）；
-// 此时透传 undefined 给 Streamdown（= 无高亮），与 mock 意图一致。
-export const throttledCodePlugin: CodeHighlighterPlugin | undefined = completeCodePlugin
-  ? createThrottledCodePlugin(completeCodePlugin)
-  : undefined;
+export const throttledCodePlugin = createThrottledCodePlugin(completeCodePlugin);

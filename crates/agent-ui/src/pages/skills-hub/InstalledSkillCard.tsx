@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/skillsHub";
 import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
 import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import {

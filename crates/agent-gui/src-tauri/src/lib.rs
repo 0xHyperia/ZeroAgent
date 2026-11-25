@@ -1163,6 +1163,7 @@ pub fn run() {
     // 就在此建立受限令牌并运行真实命令,以其退出码退出——绝不继续初始化 Tauri。
     // 非 Windows 平台为空操作。
     runtime::windows_sandbox::run_sandbox_launcher_if_requested();
+    runtime::startup_timing::mark_launch();
 
     // 必须先于任何 tauri::async_runtime 调用:换成栈更大的 tokio 运行时,
     // 否则调试版处理 Gateway 消息时会撑爆默认 2 MiB 的 worker 栈。
@@ -1282,6 +1283,8 @@ pub fn run() {
             {
                 return;
             }
+            static FIRST_PAGE_LOAD: AtomicBool = AtomicBool::new(false);
+            runtime::startup_timing::log_once(&FIRST_PAGE_LOAD, "webview started loading");
             let app = webview.app_handle();
             #[cfg(target_os = "windows")]
             commands::integration_commands::workbench_browser::close_all();
@@ -1305,6 +1308,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let hide_after_fullscreen_exit = Arc::clone(&hide_after_fullscreen_exit);
             move |app| {
+                let setup_started = std::time::Instant::now();
                 configure_system_tray(app)?;
                 services::planning::notification::install(app.handle());
                 #[cfg(target_os = "windows")]
@@ -1328,6 +1332,11 @@ pub fn run() {
                 }
                 terminal_registry.attach_app_handle(app.handle().clone());
                 sftp_registry.attach_app_handle(app.handle().clone());
+                eprintln!(
+                    "[startup] app setup finished at {} ms (setup took {} ms)",
+                    runtime::startup_timing::since_launch_ms(),
+                    setup_started.elapsed().as_millis()
+                );
                 Ok(())
             }
         })

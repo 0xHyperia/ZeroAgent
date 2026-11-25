@@ -154,7 +154,7 @@ function UserImageAttachmentCard(props: {
                     src={imageSrc}
                     alt={file.fileName}
                     className={cn(
-                      "block w-full bg-black/[0.02] dark:bg-white/5",
+                      "block w-full bg-glass-fill/50",
                       compact ? "h-28 object-cover" : "max-h-56 object-contain",
                     )}
                     onLoad={() => setImageLoadState({ src: imageSrc, status: "loaded" })}

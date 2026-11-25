@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 // 系统工具设置:展示 Agent 模式下自动注册的内置工具,并为每个工具设置审批策略
 //(allow 直接执行 / ask 执行前询问 / deny 直接拒绝)。纯设置读写
 //(settings.system.toolPolicies),经 settings sync 自然同步到 WebUI;裁决在桌面端

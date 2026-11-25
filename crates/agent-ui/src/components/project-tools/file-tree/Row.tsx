@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/projectTools";
 // Memoized virtual-list rows for the right-dock file tree panel.
 //
 // Shared implementation owned by @liveagent/ui. Host-specific icons, settings

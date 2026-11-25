@@ -7,7 +7,7 @@ import type {
 import { type AppSettings, normalizeSttSettings } from "../../lib/settings";
 
 export const desktopSttSettingsService: SttSettingsService = {
-  runtimeLabel: "桌面端（同步到 Gateway WebUI）",
+  runtime: "desktop",
   secretRevealMode: "value",
   revealSecret(provider, field: SttSecretField) {
     return invoke<string>("settings_reveal_stt_secret", { provider, field });

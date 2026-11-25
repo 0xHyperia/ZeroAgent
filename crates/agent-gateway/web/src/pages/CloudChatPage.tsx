@@ -592,7 +592,7 @@ export function CloudChatPage({
   const embeddedWorkbench = embeddedTask || embeddedAccount;
   const disabledSttSettingsService = useMemo<SttSettingsService>(
     () => ({
-      runtimeLabel: "Cloud Chat",
+      runtime: "cloud" as const,
       get: async () => settings.stt,
       update: async () => settings.stt,
       test: async () => ({

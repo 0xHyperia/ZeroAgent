@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/projectTools";
 // Right-dock file tree panel: virtualized tree over the useFileTreeData
 // layer, reading its wiring from the right-dock tool context.
 //

@@ -1836,7 +1836,7 @@ mod tests {
                 "missingWorkspaceProjectPaths": [],
                 "archivedWorkspaceProjectPaths": [],
                 "workspaceResourceSettings": {},
-                "commandSafetyMode": "always",
+                "commandSafetyMode": "ask",
                 "browserAutomationMode": "auto",
                 "defaultTimeZone": "",
                 "systemProxy": default_system_proxy_json(),

@@ -1,8 +1,11 @@
 import {
   GenerationStoppedNotice,
+  isInterruptedByShutdown,
   isStoppedReply,
 } from "@liveagent/ui/components/chat/AssistantStatus";
 import { ChangedFilesCard } from "@liveagent/ui/components/chat/ChangedFilesCard";
+import { TurnErrorNotice } from "@liveagent/ui/components/chat/TurnErrorNotice";
+import { turnErrorDetailOf, turnErrorOf } from "@liveagent/ui/lib/chat/assistantStatus";
 import { collectChangedFiles } from "@liveagent/ui/lib/chat/changedFiles";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
 import type { ConversationMentionReference } from "@liveagent/ui/lib/chat/mentionReferences";
@@ -13,7 +16,7 @@ import type { HistoryMessageRef } from "../../../lib/chat/conversation/conversat
 import type { RetryAttemptRecord } from "../../../lib/chat/conversation/liveTranscriptStore";
 import { AssistantBubbleUnit } from "../components/AssistantBubble";
 import { AssistantRowFooter } from "./RowActions";
-import { useReplyHovered } from "./rowInteraction";
+import { useReplyHovered, useRowInteraction } from "./rowInteraction";
 import type { AssistantFooterRenderUnit, AssistantUnitRow } from "./rowModel";
 
 export type AssistantRenderUnitProps = {
@@ -47,6 +50,10 @@ const AssistantFooterUnit = memo(function AssistantFooterUnit(props: {
   const { unit, compacted, showUsage, usageContextWindow, onResendFromEdit, onBranchConversation } =
     props;
   const actionsVisible = useReplyHovered(props.replyKey);
+  const { isSending } = useRowInteraction();
+  const turnError = turnErrorOf(unit.rounds);
+  const retryTarget = unit.retryTarget;
+  const retryRef = retryTarget?.messageRef;
   const changedFiles = useMemo(
     () => (unit.hasChangedFilesCandidate ? collectChangedFiles(unit.rounds) : null),
     [unit.hasChangedFilesCandidate, unit.rounds],
@@ -67,7 +74,31 @@ const AssistantFooterUnit = memo(function AssistantFooterUnit(props: {
       data-assistant-row
       className={cn("group/assistant w-full max-w-full", compacted && "opacity-70")}
     >
-      {isStoppedReply(unit.rounds) ? <GenerationStoppedNotice className="mb-1" /> : null}
+      {isStoppedReply(unit.rounds) ? (
+        <GenerationStoppedNotice
+          className="mb-1"
+          interrupted={isInterruptedByShutdown(unit.rounds)}
+        />
+      ) : null}
+      {turnError ? (
+        <TurnErrorNotice
+          className="mb-1"
+          error={turnError}
+          errorDetail={turnErrorDetailOf(unit.rounds)}
+          retryDisabled={isSending}
+          onRetry={
+            retryTarget && retryRef
+              ? () =>
+                  onResendFromEdit(
+                    retryRef,
+                    retryTarget.text,
+                    retryTarget.attachments,
+                    retryTarget.referencedConversations,
+                  )
+              : undefined
+          }
+        />
+      ) : null}
       {changedFiles ? (
         <div className="w-full max-w-full">
           <div className="min-w-0">

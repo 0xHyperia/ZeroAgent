@@ -1,0 +1,109 @@
+name: Transcript Performance
+
+# Browser timing reports are collected on demand while ZeroAgent verifies
+# the fixture and establishes comparable runner baselines.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Select a benchmark profile
+        type: choice
+        options: [quick, full]
+        default: quick
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-${{ github.ref }}-${{ inputs.profile }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22.19.0
+  PNPM_VERSION: 10.32.1
+
+jobs:
+  scenarios:
+    name: Transcript scenarios (report only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm@${PNPM_VERSION}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter liveagent-workspace --filter zeroagent...
+
+      - uses: ./.github/actions/setup-playwright
+        id: playwright
+        with:
+          browsers: chromium
+
+      - name: Select profile
+        id: profile
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          if [[ "$PROFILE" == "full" ]]; then
+            echo "name=full" >> "$GITHUB_OUTPUT"
+            echo "args=--throttle=1,4" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=quick" >> "$GITHUB_OUTPUT"
+            echo "args=--scenarios=stream,find,scroll,editdiff,gitdiff,projection --throttle=1 --chars=6000" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The newest results saved by a main run of the same profile. The key
+      # never matches exactly (it carries the run id); restore-keys picks the
+      # most recent entry.
+      - name: Restore results from main
+        uses: actions/cache/restore@v4
+        with:
+          path: perf-baseline
+          key: perf-scenarios-${{ steps.profile.outputs.name }}-main-${{ github.run_id }}
+          restore-keys: perf-scenarios-${{ steps.profile.outputs.name }}-main-
+
+      - name: Run scenarios
+        id: run
+        continue-on-error: true
+        env:
+          CHROME_PATH: ${{ steps.playwright.outputs.chromium-path }}
+        run: |
+          mkdir -p perf-results
+          node crates/agent-gui/perf/run.mjs ${{ steps.profile.outputs.args }} --out=perf-results/results.json
+
+      - name: Write report
+        if: always()
+        run: >
+          node scripts/report-perf-scenarios.mjs
+          --current perf-results/results.json
+          --baseline perf-baseline/results.json
+          --title "Transcript performance scenarios (${{ steps.profile.outputs.name }} profile, report only)"
+
+      - name: Keep results as the main baseline
+        if: github.ref == 'refs/heads/main' && steps.run.outcome == 'success'
+        run: |
+          rm -rf perf-baseline
+          mkdir -p perf-baseline
+          cp perf-results/results.json perf-baseline/results.json
+
+      - name: Save main baseline
+        if: github.ref == 'refs/heads/main' && steps.run.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: perf-baseline
+          key: perf-scenarios-${{ steps.profile.outputs.name }}-main-${{ github.run_id }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-scenarios-${{ steps.profile.outputs.name }}-${{ github.run_id }}
+          path: perf-results/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,3 +1,5 @@
+import "@liveagent/ui/i18n/namespaces/gitReview";
+import "@liveagent/ui/i18n/namespaces/projectTools";
 import { type Ref, useCallback, useEffect, useMemo, useState } from "react";
 import { useIsMobile } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";

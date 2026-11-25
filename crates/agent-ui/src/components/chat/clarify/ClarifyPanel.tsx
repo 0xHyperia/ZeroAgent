@@ -12,6 +12,7 @@ import {
   WandSparkles,
   X,
 } from "@liveagent/ui/components/IconSet";
+import { SectionHeader } from "@liveagent/ui/components/ui/section-header";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
@@ -55,9 +56,9 @@ function RecommendedTag({ label }: { label: string }) {
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-full bg-gradient-to-r",
-        "from-amber-400/25 to-amber-500/15 px-1.5 py-0.5",
-        "text-tiny font-semibold leading-none text-amber-700 ring-1 ring-inset ring-amber-500/25",
-        "dark:from-amber-300/[0.18] dark:to-amber-400/[0.10] dark:text-amber-300 dark:ring-amber-300/20",
+        "from-warning-tint/25 to-warning-tint/15 px-1.5 py-0.5",
+        "text-tiny font-semibold leading-none text-warning ring-1 ring-inset ring-warning/25",
+        "dark:from-warning-tint/18 dark:to-warning-tint/10",
       )}
     >
       <Sparkles className="size-2.5" />
@@ -90,12 +91,12 @@ function choiceRowClassName(selected: boolean, interactive: boolean, recommended
     selected
       ? "border-primary/45 bg-primary/[0.06] dark:border-primary/40 dark:bg-primary/[0.1]"
       : recommended
-        ? "border-amber-400/45 bg-gradient-to-r from-amber-400/[0.09] to-amber-300/[0.03] dark:border-amber-300/30 dark:from-amber-300/[0.08] dark:to-amber-200/[0.02]"
-        : "border-border/40 dark:border-white/[0.07]",
+        ? "border-warning/45 bg-gradient-to-r from-warning-tint/9 to-warning-tint/3"
+        : "border-border/40 dark:border-glass-border/70",
     interactive && !selected
       ? recommended
-        ? "hover:border-amber-400/70 hover:from-amber-400/[0.14] dark:hover:border-amber-300/50"
-        : "hover:border-border/70 hover:bg-foreground/[0.03] dark:hover:border-white/[0.14]"
+        ? "hover:border-warning/70 hover:from-warning-tint/14"
+        : "hover:border-border/70 hover:bg-foreground/[0.03] dark:hover:border-glass-border-strong/70"
       : "",
     interactive ? "cursor-pointer" : "cursor-default opacity-70",
   );
@@ -215,17 +216,15 @@ function SettledRoundSummary({
 }) {
   const answersById = new Map((round.answers ?? []).map((answer) => [answer.questionId, answer]));
   return (
-    <div className="overflow-hidden rounded-xl border border-black/[0.05] bg-white/45 dark:border-white/[0.06] dark:bg-white/[0.03]">
+    <div className="overflow-hidden rounded-xl border border-glass-border/60 bg-glass/55">
       <div
         className={cn(
           "flex items-center gap-1.5",
-          "border-b border-black/[0.04] bg-muted/35 px-2.5 py-1 dark:border-white/[0.05] dark:bg-white/[0.03]",
+          "border-b border-glass-border/50 bg-muted/35 px-2.5 py-1 dark:bg-glass/50",
         )}
       >
-        <CheckCircle2 className="size-3 text-emerald-500" />
-        <span className="text-tiny font-medium uppercase tracking-wide text-muted-foreground/75">
-          {roundLabel}
-        </span>
+        <CheckCircle2 className="size-3 text-success" />
+        <SectionHeader render={<span />}>{roundLabel}</SectionHeader>
       </div>
       <div className="flex flex-col gap-2.5 px-2.5 py-2">
         {round.questions.map((question, index) => {
@@ -239,7 +238,7 @@ function SettledRoundSummary({
                 <span
                   className={cn(
                     "mt-1px inline-flex h-4 shrink-0 items-center justify-center rounded-md bg-foreground/[0.05]",
-                    "px-1 text-tiny font-semibold leading-none text-muted-foreground/80 dark:bg-white/[0.07]",
+                    "px-1 text-tiny font-semibold leading-none text-muted-foreground/80 dark:bg-glass-fill/90",
                   )}
                 >
                   Q{index + 1}
@@ -266,11 +265,11 @@ function SettledRoundSummary({
                   <span
                     className={cn(
                       "inline-flex max-w-full items-center gap-1",
-                      "rounded-full border border-dashed border-sky-500/35 bg-sky-500/[0.07] px-1.5 py-0.5",
-                      "text-xs leading-1p4 text-foreground/80 dark:border-sky-300/30 dark:bg-sky-300/[0.08]",
+                      "rounded-full border border-dashed border-info/35 bg-info/[0.07] px-1.5 py-0.5",
+                      "text-xs leading-1p4 text-foreground/80 ",
                     )}
                   >
-                    <SquarePen className="size-2.5 shrink-0 text-sky-600 dark:text-sky-300" />
+                    <SquarePen className="size-2.5 shrink-0 text-info" />
                     <span className="min-w-0 break-words">{custom}</span>
                   </span>
                 ) : null}
@@ -452,8 +451,8 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
       className={cn(
         "relative z-30 mx-auto mb-1.5 flex max-h-50vh min-h-0 w-inset-1p5rem",
         "max-w-720px shrink-0 flex-col overflow-hidden",
-        "rounded-2xl border border-black/[0.055] bg-white/80 shadow-ui-clarifypanel-22 backdrop-blur-2xl backdrop-saturate-[165%]",
-        "dark:border-white/[0.10] dark:bg-white/[0.06] dark:shadow-ui-clarifypanel-23",
+        "rounded-2xl border border-glass-border/80 bg-glass shadow-ui-clarifypanel-22 backdrop-blur-2xl backdrop-saturate-[165%]",
+        "dark:shadow-ui-clarifypanel-23",
       )}
     >
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5">
@@ -491,9 +490,9 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
         <div className="flex flex-col gap-2">
           {state.draftText ? (
             <div className="rounded-xl bg-primary/10 px-2.5 py-1.5">
-              <span className="mr-1.5 text-tiny font-medium uppercase tracking-wide text-muted-foreground/70">
+              <SectionHeader className="mr-1.5" render={<span />}>
                 {t("chat.clarify.draftLabel")}
-              </span>
+              </SectionHeader>
               <span className="line-clamp-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/80">
                 {state.draftText}
               </span>
@@ -521,7 +520,7 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
                   <div className="flex flex-col gap-2 pt-0.5">
                     {/* 一次只展示一道题：多题时顶部 tabs 切换，已作答题带对勾。 */}
                     {questionCount > 1 ? (
-                      <div className="flex items-center gap-1 overflow-x-auto border-b border-black/[0.05] pb-1.5 dark:border-white/[0.06]">
+                      <div className="flex items-center gap-1 overflow-x-auto border-b border-glass-border/60 pb-1.5">
                         {pendingRound.questions.map((question, index) => {
                           const isActive = index === safeActiveIndex;
                           const isAnswered = isDraftAnswered(draftFor(question, draftAnswers));
@@ -534,11 +533,11 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
                                 "flex shrink-0 items-center gap-1 rounded-lg px-2 py-1",
                                 "text-xs font-medium leading-none transition-colors",
                                 isActive
-                                  ? "bg-foreground/[0.07] text-foreground dark:bg-white/[0.09]"
+                                  ? "bg-foreground/[0.07] text-foreground dark:bg-glass-fill"
                                   : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground/80",
                               )}
                             >
-                              {isAnswered ? <Check className="size-3 text-emerald-500" /> : null}
+                              {isAnswered ? <Check className="size-3 text-success" /> : null}
                               {question.header || `${t("chat.clarify.tabFallback")} ${index + 1}`}
                             </button>
                           );
@@ -635,9 +634,9 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
                                     setCustomText(activeQuestion, event.currentTarget.value)
                                   }
                                   className={cn(
-                                    "h-7 w-full rounded-lg border border-black/[0.08] bg-white/65 px-2",
+                                    "h-7 w-full rounded-lg border border-glass-border bg-glass/80 px-2",
                                     "text-xs text-foreground outline-none transition-[border-color,background-color]",
-                                    "placeholder:text-muted-foreground/45 focus:border-primary/45 focus:bg-white/80 dark:border-white/[0.1] dark:bg-white/[0.05] dark:focus:border-primary/40 dark:focus:bg-white/[0.08]",
+                                    "placeholder:text-muted-foreground/45 focus:border-primary/45 focus:bg-glass dark:focus:border-primary/40",
                                   )}
                                 />
                               ) : null}
@@ -658,9 +657,9 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
                               setCustomText(activeQuestion, event.currentTarget.value)
                             }
                             className={cn(
-                              "h-8 w-full rounded-lg border border-black/[0.08] bg-white/65 px-2.5",
+                              "h-8 w-full rounded-lg border border-glass-border bg-glass/80 px-2.5",
                               "text-xs text-foreground outline-none transition-[border-color,background-color]",
-                              "placeholder:text-muted-foreground/45 focus:border-primary/45 focus:bg-white/80 dark:border-white/[0.1] dark:bg-white/[0.05] dark:focus:border-primary/40 dark:focus:bg-white/[0.08]",
+                              "placeholder:text-muted-foreground/45 focus:border-primary/45 focus:bg-glass dark:focus:border-primary/40",
                             )}
                           />
                         )}
@@ -721,8 +720,8 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
       {interactive ? (
         <div
           className={cn(
-            "flex shrink-0 items-center justify-between gap-2 border-t border-black/[0.05]",
-            "px-2.5 py-1.5 dark:border-white/[0.08]",
+            "flex shrink-0 items-center justify-between gap-2 border-t border-glass-border/70",
+            "px-2.5 py-1.5",
           )}
         >
           <span className="min-w-0 truncate text-xs tabular-nums text-muted-foreground/70">
@@ -735,9 +734,9 @@ export function ClarifyPanel(props: ClarifyPanelProps) {
               title={t("chat.clarify.generate")}
               className={cn(
                 "inline-flex h-7 items-center gap-1",
-                "rounded-full border border-black/[0.06] px-2.5",
+                "rounded-full border border-glass-border/90 px-2.5",
                 "text-xs font-medium text-muted-foreground transition-colors",
-                "hover:bg-muted/60 hover:text-foreground dark:border-white/[0.12]",
+                "hover:bg-muted/60 hover:text-foreground",
               )}
             >
               <WandSparkles className="size-3" />

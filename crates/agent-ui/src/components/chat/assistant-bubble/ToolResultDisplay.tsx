@@ -10,6 +10,7 @@ import {
   ToolSurfaceLabel,
 } from "@liveagent/ui/components/chat/ToolSurfaces";
 import { Markdown } from "@liveagent/ui/components/Markdown";
+import { CopyButton } from "@liveagent/ui/components/ui/copy-button";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import {
   type BrowserResultDetails,
@@ -21,7 +22,6 @@ import {
   isDynamicMcpToolName,
   type ListResultDetails,
   type McpManagerResultDetails,
-  previewText,
   type ReadDocumentResultDetails,
   type ReadImageResultDetails,
   type ReadNotebookResultDetails,
@@ -48,7 +48,7 @@ import type {
   SubagentCardDetails,
   SubagentMessageDetails,
 } from "@liveagent/ui/lib/subagents/protocol";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Search } from "../../IconSet";
 import {
   displayString,
@@ -62,9 +62,13 @@ import {
 } from "./assistantBubbleUtils";
 import { getSshManagerResultView } from "./SshManagerResult";
 import { getToolResultImages, ToolResultImagePreview } from "./ToolImages";
+import { TruncatedPreviewText } from "./TruncatedPreviewText";
 
 // 距底部不超过这么多像素视为“跟随最新输出”；用户上翻查看时不抢滚动位置。
 const LIVE_OUTPUT_STICK_THRESHOLD_PX = 24;
+const SHELL_PREVIEW_CHARS = 6000;
+// "Show all" still bounds what goes into the DOM; Copy always takes the whole output.
+const SHELL_FULL_CHARS = 200_000;
 
 type ShellResultDetails = {
   exit_code: number;
@@ -325,8 +329,8 @@ export function ToolArgsDisplay({ item }: { item: ToolTraceItem }) {
     if (!cmd) return null;
     return (
       <div className="flex flex-col gap-2">
-        <ToolScrollablePre className="max-h-44 bg-zinc-950/90 text-emerald-300/90 dark:bg-zinc-950/90">
-          <span className="mr-1 select-none text-emerald-500/30">$</span>
+        <ToolScrollablePre className="max-h-44 bg-terminal-surface/90 text-terminal-foreground/90">
+          <span className="mr-1 select-none text-success/30">$</span>
           {cmd}
         </ToolScrollablePre>
         {display.tags.length > 0 ? <MetaTags tags={display.tags} /> : null}
@@ -468,6 +472,7 @@ export function ShellToolDisplay({
   const isLive = liveOutput !== "";
   const preRef = useRef<HTMLPreElement>(null);
   const followRef = useRef(true);
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     const element = preRef.current;
     if (!element || !isLive) return;
@@ -484,16 +489,17 @@ export function ShellToolDisplay({
     if (!element || !liveOutput || !followRef.current) return;
     element.scrollTop = element.scrollHeight;
   }, [liveOutput]);
-  const body = output ? previewText(output, 6000) : liveOutput;
+  const body = output || liveOutput;
   const runInfo = formatToolRunInfo(readToolRunInfo(result?.details), {
     exitCode: t("chat.tool.run.exitCode"),
     timedOut: t("chat.tool.run.timedOut"),
   });
   if (!command && !body) return null;
+  const outputTruncated = output.length > SHELL_PREVIEW_CHARS;
 
   return (
     <section
-      className="overflow-hidden rounded-xl border border-border/75 bg-foreground/[0.025] dark:bg-white/[0.035]"
+      className="overflow-hidden rounded-xl border border-border/75 bg-glass-fill/50"
       aria-label="Shell"
       data-shell-tool-display=""
     >
@@ -502,20 +508,28 @@ export function ShellToolDisplay({
         {runInfo ? (
           <span
             className={cn(
-              "shrink-0 font-mono text-[11px] font-normal tabular-nums text-muted-foreground/60",
-              result?.isError && "text-red-700/75 dark:text-red-300/75",
+              "shrink-0 font-mono text-2xs font-normal tabular-nums text-muted-foreground/60",
+              result?.isError && "text-destructive/75",
             )}
             data-shell-run-info=""
           >
             {runInfo}
           </span>
         ) : null}
+        {output ? (
+          <CopyButton
+            value={output}
+            label={t("chat.tool.output.copy")}
+            copiedLabel={t("chat.tool.output.copied")}
+            className="-my-1 self-center"
+          />
+        ) : null}
       </div>
       <ToolScrollablePre
         ref={preRef}
         className={cn(
           "max-h-72 rounded-none bg-transparent px-3 pb-3 pt-1.5 text-foreground/78",
-          result?.isError && "text-red-700/90 dark:text-red-300/90",
+          result?.isError && "text-destructive/90",
         )}
       >
         {command ? (
@@ -529,10 +543,26 @@ export function ShellToolDisplay({
           <span className="text-foreground/62" data-shell-live-output="">
             {liveOutput}
           </span>
-        ) : (
-          body || null
-        )}
+        ) : output ? (
+          <TruncatedPreviewText
+            text={output}
+            maxChars={showAll ? SHELL_FULL_CHARS : SHELL_PREVIEW_CHARS}
+          />
+        ) : null}
       </ToolScrollablePre>
+      {outputTruncated ? (
+        <div className="border-t border-border/60 px-3 py-1.5">
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            aria-expanded={showAll}
+            data-shell-show-all=""
+            onClick={() => setShowAll((value) => !value)}
+          >
+            {showAll ? t("chat.tool.output.showLess") : t("chat.tool.output.showAll")}
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -546,8 +576,8 @@ function CodePreview(props: { text: string; maxChars?: number }) {
   const { text, maxChars = 4000 } = props;
   if (!/\S/.test(text)) return null;
   return (
-    <ToolScrollablePre className="max-h-56 bg-black/[0.02] dark:bg-white/[0.03]">
-      {previewText(text, maxChars)}
+    <ToolScrollablePre className="max-h-56 bg-surface-subtle">
+      <TruncatedPreviewText text={text} maxChars={maxChars} />
     </ToolScrollablePre>
   );
 }
@@ -740,7 +770,7 @@ export function ToolResultDisplay({
           />
         </ToolSurface>
         {!details.reusedExisting && images.length > 0 ? (
-          <div className="overflow-hidden rounded-lg border border-black/[0.06] bg-white/[0.55] p-2 dark:border-white/[0.08] dark:bg-white/[0.04]">
+          <div className="overflow-hidden rounded-lg border border-glass-border/75 bg-glass/70 p-2">
             {images.map((image, index) => (
               <ToolResultImagePreview
                 // biome-ignore lint/suspicious/noArrayIndexKey: 同一结果可含重复图片（内容签名会撞 key）；列表随结果整体重建，索引 key 稳定唯一。
@@ -902,7 +932,7 @@ export function ToolResultDisplay({
                 key={`${entry.kind}-${entry.path}`}
                 className={cn(
                   "flex items-start gap-2 rounded-md px-1.5 py-1 text-xs leading-1p5",
-                  "even:bg-black/[0.02] dark:even:bg-white/[0.03]",
+                  "even:bg-surface-subtle",
                 )}
               >
                 <span className="mt-1px shrink-0 text-tiny font-semibold uppercase text-muted-foreground/35">
@@ -940,7 +970,7 @@ export function ToolResultDisplay({
                 path={entry}
                 className={cn(
                   "block rounded-md px-1.5 py-1",
-                  "break-all font-mono text-xs leading-1p5 even:bg-black/[0.02] dark:even:bg-white/[0.03]",
+                  "break-all font-mono text-xs leading-1p5 even:bg-surface-subtle",
                 )}
               />
             ))}
@@ -972,7 +1002,7 @@ export function ToolResultDisplay({
               {details.files.map((file) => (
                 <div
                   key={file.path}
-                  className="space-y-1 rounded-md px-1.5 py-1 even:bg-black/[0.02] dark:even:bg-white/[0.03]"
+                  className="space-y-1 rounded-md px-1.5 py-1 even:bg-surface-subtle"
                 >
                   <PathDisplay
                     path={file.path}
@@ -996,7 +1026,7 @@ export function ToolResultDisplay({
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: multiline grep 同一行可命中多次产生字段全同的 match；列表随结果整体重建，索引 key 稳定唯一。
                 key={`${match.path}:${match.line}:${index}`}
-                className="rounded-md border border-black/[0.05] bg-white/[0.55] p-2 dark:border-white/[0.06] dark:bg-white/[0.03]"
+                className="rounded-md border border-glass-border/60 bg-glass/60 p-2"
               >
                 <div className="flex items-start gap-2">
                   <PathDisplay
@@ -1005,8 +1035,8 @@ export function ToolResultDisplay({
                   />
                   <span
                     className={cn(
-                      "shrink-0 rounded bg-black/[0.04] px-1.5 py-1px",
-                      "text-tiny font-semibold text-muted-foreground/60 dark:bg-white/[0.05]",
+                      "shrink-0 rounded bg-glass-fill/70 px-1.5 py-1px",
+                      "text-tiny font-semibold text-muted-foreground/60",
                     )}
                   >
                     line {match.line}
@@ -1209,8 +1239,8 @@ export function ToolResultDisplay({
         {details.bodyPreview ? (
           <div
             className={cn(
-              "rounded-md border border-black/[0.05] bg-white/[0.45] px-2.5 py-2 text-xs leading-1p6",
-              "dark:border-white/[0.07] dark:bg-white/[0.03]",
+              "rounded-md border border-glass-border/65 bg-glass/55 px-2.5 py-2 text-xs leading-1p6",
+              "",
             )}
           >
             <Markdown content={details.bodyPreview} />
@@ -1223,7 +1253,7 @@ export function ToolResultDisplay({
   if (images.length > 0) {
     return (
       <div className="space-y-2">
-        <div className="overflow-hidden rounded-lg border border-black/[0.06] bg-white/[0.55] p-2 dark:border-white/[0.08] dark:bg-white/[0.04]">
+        <div className="overflow-hidden rounded-lg border border-glass-border/75 bg-glass/70 p-2">
           {images.map((image, index) => (
             <ToolResultImagePreview
               // biome-ignore lint/suspicious/noArrayIndexKey: 同一结果可含重复图片（内容签名会撞 key）；列表随结果整体重建，索引 key 稳定唯一。
@@ -1298,8 +1328,8 @@ function ToolRunInfoLine({ details, isError }: { details: unknown; isError?: boo
   return (
     <div
       className={cn(
-        "font-mono text-[11px] tabular-nums text-muted-foreground/60",
-        isError && "text-red-700/75 dark:text-red-300/75",
+        "font-mono text-2xs tabular-nums text-muted-foreground/60",
+        isError && "text-destructive/75",
       )}
       data-tool-run-info=""
     >

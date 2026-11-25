@@ -525,7 +525,9 @@ export const MentionComposer = memo(
       setMentionSessionError(null);
     }, [cancelMentionRefetch]);
 
+    const mentionRecheckSeqRef = useRef(0);
     const closeMentionSession = useCallback(() => {
+      mentionRecheckSeqRef.current += 1;
       mentionActiveRef.current = false;
       setMentionMenuMode("root");
       setMentionCtx(null);
@@ -1106,8 +1108,9 @@ export const MentionComposer = memo(
       };
 
       applyContext(detectMention(el, slashSkills.length > 0, commandsEnabled));
+      const recheck = ++mentionRecheckSeqRef.current;
       window.requestAnimationFrame(() => {
-        const nextEl = editorRef.current;
+        const nextEl = recheck === mentionRecheckSeqRef.current ? editorRef.current : null;
         if (!nextEl || document.activeElement !== nextEl) return;
         applyContext(detectMention(nextEl, slashSkills.length > 0, commandsEnabled));
       });

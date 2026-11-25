@@ -10,30 +10,53 @@ import { resolveThinkingDurationMs } from "@liveagent/ui/lib/chat/thinkingDurati
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useId, useRef, useState } from "react";
-import { Brain, ChevronRight, Loader2 } from "../../IconSet";
+import { Brain, ChevronRight } from "../../IconSet";
 
-/**
- * One reasoning segment in the processing trace. Streams visibly while the
- * model is thinking ("思考中"), then settles into a collapsed "思考了 Xs" /
- * "思考过程" row whose body stays unmounted until the user expands it — the
- * reasoning text is never dropped from the transcript, only folded.
- */
-export function ThinkingDisclosure(props: {
+export type ReasoningSegment = {
+  /** Transcript-stable identity used to time the segment across remounts. */
+  key: string;
   text: string;
   durationMs?: number;
-  /** Transcript-stable identity used to time the segment across remounts. */
-  trackKey: string;
-  /** Whether this segment is the one currently receiving reasoning deltas. */
-  active: boolean;
+};
+
+/**
+ * Total settled reasoning time of a stretch of segments, advancing each
+ * segment's clock as a side effect (see resolveThinkingDurationMs; safe to
+ * call during render). Null when no segment has a measured duration yet.
+ */
+export function resolveReasoningDurationMs(
+  segments: readonly ReasoningSegment[],
+  activeKey: string | null,
+): number | null {
+  let total: number | null = null;
+  for (const segment of segments) {
+    const duration = segment.durationMs ?? resolveThinkingDurationMs(segment.key, segment.key === activeKey);
+    if (duration !== null) total = (total ?? 0) + duration;
+  }
+  return total;
+}
+
+/**
+ * The reasoning of a turn in the processing trace: all segments fold into a
+ * single "Thought for Xs" row, so a model that reasons before every tool call
+ * does not stack one row per burst. The row never carries a
+ * spinner — the turn's single status row says the model is thinking — and its
+ * body stays unmounted until the user expands it, so the reasoning text is
+ * never dropped from the transcript, only folded. With detailed progress on,
+ * a stretch that is still streaming opens to show the reasoning live.
+ */
+export function ThinkingDisclosure(props: {
+  segments: readonly ReasoningSegment[];
+  /** Key of the segment currently receiving reasoning deltas, if any. */
+  activeKey?: string | null;
   renderMode?: "streaming" | "static";
   readOnly?: boolean;
   workdir?: string;
   onOpenFileLink?: (link: ChatFileLink) => void;
 }) {
   const {
-    text,
-    trackKey,
-    active,
+    segments,
+    activeKey = null,
     renderMode = "static",
     readOnly = false,
     workdir,
@@ -42,10 +65,12 @@ export function ThinkingDisclosure(props: {
   const { t } = useLocale();
   const detailsId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
-  // A segment born streaming starts open so the reasoning is watchable; once
-  // it settles it folds back down — unless the user toggled it, after which
+  const active = activeKey !== null && segments.some((segment) => segment.key === activeKey);
+  const text = segments.map((segment) => segment.text.trim()).join("\n\n");
+  // Quiet view: folded unless the user opens it. Detailed progress: open while
+  // it streams, folded once settled — unless the user toggled it, after which
   // disclosure ownership stays with them. With "expand process by default" on,
-  // every segment starts open and stays open after it settles.
+  // every stretch starts open and stays open after it settles.
   const [open, toggleOpen] = useLiveProcessDisclosure({ live: active });
 
   // Callback ref → state so the follow engine re-binds whenever LazyCollapse
@@ -70,17 +95,18 @@ export function ThinkingDisclosure(props: {
     config: { reattachZonePx: 0 },
   });
 
-  const measuredDurationMs = resolveThinkingDurationMs(trackKey, active);
-  const durationMs = props.durationMs ?? measuredDurationMs;
+  const durationMs = resolveReasoningDurationMs(segments, activeKey);
 
   // 流式中只把尾部窗口交给 Markdown：视口 max-h-320px 本来只看得到尾部，
   // 而全文重排是 O(累计思考长度)/帧。落定（active=false）后展开渲染全文。
   const streaming = active && renderMode === "streaming";
   const revealedText = useStreamingReveal(text, streaming);
   const displayText = streaming ? sliceStreamingMarkdownTail(revealedText) : text;
+  // The settled total so far: a turn's merged row keeps its "Thought for Xs"
+  // while a later segment streams instead of flipping back to the untimed label.
   const durationLabel = durationMs !== null ? formatElapsedTime(durationMs) : "";
-  const settledLabel = durationLabel
-    ? `${t("chat.thoughtFor")} ${durationLabel}`
+  const label = durationLabel
+    ? t("chat.thoughtDuration").replace("{duration}", durationLabel)
     : t("chat.thinkingProcess");
 
   return (
@@ -90,35 +116,30 @@ export function ThinkingDisclosure(props: {
       data-thinking-active={active ? "" : undefined}
     >
       <button
-        ref={triggerRef}
         type="button"
+        ref={triggerRef}
         aria-expanded={open}
         aria-controls={detailsId}
+        aria-label={t("chat.thinkingProcess")}
         className={cn(
-          "za-chat-activity-trigger -mx-1.5 flex w-fit max-w-bleed-0p75rem cursor-pointer select-none items-center gap-1.5",
+          "-mx-1.5 flex w-fit max-w-bleed-0p75rem cursor-pointer select-none items-center gap-1.5",
           "rounded-lg px-1.5 py-1",
-          "text-left text-sm font-[450] text-foreground/60 transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground/75",
+          "text-left text-sm font-book text-foreground/60 transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground/75",
         )}
         onClick={toggleOpen}
       >
-        {active ? (
-          <Loader2
-            aria-hidden="true"
-            className="size-3 shrink-0 animate-spin text-foreground/45 motion-reduce:animate-none"
-          />
-        ) : (
-          <Brain aria-hidden="true" className="size-3 shrink-0 text-foreground/45" />
-        )}
-        <span className={cn("min-w-0 truncate", active && "shimmer")}>
-          {active ? t("chat.thinking") : settledLabel}
-        </span>
+        <Brain className="size-3 shrink-0 text-foreground/45" />
+        <span className="min-w-0 truncate">{label}</span>
         <ChevronRight
-          aria-hidden="true"
-          className={cn("za-chat-activity-chevron size-3 shrink-0", open && "rotate-90")}
+          className={cn(
+            "size-3 shrink-0 text-foreground/40 opacity-0",
+            "transition-[opacity,transform] duration-150 ease-out group-hover/thinking:opacity-100 group-focus-within/thinking:opacity-100",
+            open ? "rotate-90" : "",
+          )}
         />
       </button>
 
-      <LazyCollapse id={detailsId} triggerRef={triggerRef} open={open}>
+      <LazyCollapse id={detailsId} open={open} triggerRef={triggerRef}>
         {() => (
           <div className="-mx-3 overflow-hidden px-3 pb-1 pt-1">
             <div

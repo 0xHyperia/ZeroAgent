@@ -24,8 +24,8 @@ import { useContext, useEffect, useState, useSyncExternalStore } from "react";
 const WEB_PAGE_PATTERN = /\.(?:html?|xhtml|svg)$/i;
 
 type ChatFileLinkContextMenuHostProps = {
-  /** Desktop only: launching the host's default app means nothing to a
-   * WebUI viewer on another device. */
+  /** Desktop only: launching the host's default app (or a code editor)
+   * means nothing to a WebUI viewer on another device. */
   canOpenWithDefaultApp?: boolean;
 };
 

@@ -1,3 +1,5 @@
+import "@liveagent/ui/i18n/namespaces/mcpHub";
+import "@liveagent/ui/i18n/namespaces/skillsHub";
 import {
   type AppSettings,
   removeWorkspaceResourceReferences,
@@ -95,7 +97,12 @@ import {
   toggleBulkSelection,
   updateBulkSelection,
 } from "./skillBulkSelection";
-import { buildSkillDiscoverySignature, summarizeSkillScan } from "./skillScanSummary";
+import {
+  buildSkillDiscoverySignature,
+  type SkillScanFeedback,
+  summarizeSkillScan,
+  waitForMinimumScanDuration,
+} from "./skillScanSummary";
 import {
   buildSkillStoreCatalogKey,
   isSkillStoreCatalogFresh,
@@ -112,18 +119,6 @@ function isSkillsHubView(value: unknown): value is SkillsHubView {
 
 const STORE_PAGE_LIMIT = 24;
 const SCAN_FEEDBACK_DURATION_MS = 6500;
-const MIN_SCAN_LOADING_DURATION_MS = 600;
-
-async function waitForMinimumScanDuration(startedAt: number) {
-  const remaining = MIN_SCAN_LOADING_DURATION_MS - (Date.now() - startedAt);
-  if (remaining > 0) {
-    await new Promise<void>((resolve) => window.setTimeout(resolve, remaining));
-  }
-}
-
-type SkillScanFeedback =
-  | { status: "success"; total: number; added: number; updated: number; removed: number }
-  | { status: "error"; message: string };
 
 const INSTALLED_SORT_OPTIONS: Array<{ value: InstalledSkillSort; labelKey: string }> = [
   { value: "name-asc", labelKey: "settings.skillsInstalledSortNameAsc" },
@@ -1508,6 +1503,7 @@ export function SkillsHubPage(props: SkillsHubPageProps) {
       <div className="hub-page flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
         <HubHeader
           embedded={props.embedded}
+          settingsAnchor={props.embedded ? "skills-hub" : undefined}
           title={t("settings.skillsHubTitle")}
           subtitle={t("settings.skillsHubSubtitle")}
           prominent
@@ -1530,6 +1526,7 @@ export function SkillsHubPage(props: SkillsHubPageProps) {
       <div className="relative z-10 flex h-full min-h-0 flex-col overflow-hidden">
         <HubHeader
           embedded={props.embedded}
+          settingsAnchor={props.embedded ? "skills-hub" : undefined}
           title={t("settings.skillsHubTitle")}
           subtitle={t("settings.skillsHubSubtitle")}
           prominent
@@ -1857,7 +1854,7 @@ export function SkillsHubPage(props: SkillsHubPageProps) {
               "pointer-events-auto flex max-w-full flex-wrap items-center gap-2",
               "rounded-full border border-border/50 bg-background/95",
               "py-2 pl-4 pr-2 text-xs shadow-ui-skillshubpage-51",
-              "max-sm:justify-center max-sm:rounded-3xl max-sm:whitespace-nowrap dark:border-white/[0.1] dark:bg-popover/95",
+              "max-sm:justify-center max-sm:rounded-3xl max-sm:whitespace-nowrap dark:border-glass-border dark:bg-popover/95",
             )}
           >
             {bulkSelection.size > 0 ? (

@@ -608,7 +608,7 @@ export function GatewayAppView({
   rememberSshHostNames(settings.ssh.hosts);
   const sttSettingsService = useMemo<SttSettingsService>(
     () => ({
-      runtimeLabel: "设备 WebUI",
+      runtime: "webui" as const,
       get: async () => settings.stt,
       update: async () => settings.stt,
       test: async () => ({
@@ -685,7 +685,7 @@ export function GatewayAppView({
 
   const handleCheckpointRewound = useCallback(
     (info: CheckpointRewoundInfo) => {
-      const notice = formatCheckpointRewoundNotification(info, settings.locale === "zh-CN");
+      const notice = formatCheckpointRewoundNotification(info, settings.locale);
       addNotify(notice.level, notice.message);
     },
     [addNotify, settings.locale],

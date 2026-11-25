@@ -66,7 +66,7 @@ export function PlanModeCard({
     <div
       className={cn(
         // 边框与兄弟工具卡保持一致,状态色只由左侧脊承担一处,避免多点强调互相稀释。
-        "relative overflow-hidden rounded-xl border border-border/45 bg-background/70 dark:border-white/[0.08] dark:bg-white/[0.03]",
+        "relative overflow-hidden rounded-xl border border-border/45 bg-background/70 dark:border-glass-border/80 dark:bg-glass/50",
         // 只有仍可拍板的计划值得从转录里浮起来;已落定的一律回落成安静的历史文档。
         tone === "pending"
           ? "shadow-ui-planmodecard-9 dark:shadow-ui-planmodecard-10"
@@ -83,18 +83,18 @@ export function PlanModeCard({
             ? "bg-gradient-to-b from-emerald-400 to-emerald-500"
             : tone === "pending"
               ? "bg-gradient-to-b from-sky-400 via-sky-500 to-indigo-500 shadow-ui-planmodecard-12"
-              : "bg-border dark:bg-white/[0.12]",
+              : "bg-border",
         )}
       />
 
-      <div className="flex items-center gap-2 border-b border-border/35 px-3.5 py-2 dark:border-white/[0.05]">
+      <div className="flex items-center gap-2 border-b border-border/35 px-3.5 py-2 dark:border-glass-border/50">
         <ListChecks
           className={cn(
             "size-3.5 shrink-0",
             tone === "approved"
-              ? "text-emerald-600 dark:text-emerald-400"
+              ? "text-success"
               : tone === "pending"
-                ? "text-sky-600 dark:text-sky-400"
+                ? "text-info"
                 : "text-muted-foreground/60",
           )}
         />
@@ -106,12 +106,12 @@ export function PlanModeCard({
         <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs leading-none text-muted-foreground">
           {tone === "approved" ? (
             <>
-              <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="size-3 text-success" />
               {t("chat.planMode.approved")}
             </>
           ) : tone === "pending" ? (
             <>
-              <span className="size-1.5 rounded-full bg-sky-500 dark:bg-sky-400" />
+              <span className="size-1.5 rounded-full bg-info" />
               {t("chat.planMode.awaiting")}
             </>
           ) : (
@@ -131,7 +131,7 @@ export function PlanModeCard({
         <div
           className={cn(
             "flex flex-wrap items-center gap-x-2.5 gap-y-1.5",
-            "border-t border-border/35 bg-foreground/[0.015] px-3.5 py-2.5 dark:border-white/[0.05] dark:bg-white/[0.015]",
+            "border-t border-border/35 bg-foreground/[0.015] px-3.5 py-2.5 dark:border-glass-border/50",
           )}
         >
           <button
@@ -154,9 +154,7 @@ export function PlanModeCard({
             {submitting ? t("chat.planMode.approving") : t("chat.planMode.approve")}
           </button>
           {errorText ? (
-            <span className="min-w-0 flex-1 text-xs leading-1p5 text-[hsl(var(--chat-error))]">
-              {errorText}
-            </span>
+            <span className="min-w-0 flex-1 text-xs leading-1p5 text-destructive">{errorText}</span>
           ) : null}
         </div>
       ) : null}

@@ -13,9 +13,9 @@ import { LabelTooltip } from "../ui/label-tooltip";
 import { Meter } from "../ui/meter";
 
 const RING_STROKE_BY_LEVEL = {
-  ok: "stroke-emerald-500 dark:stroke-emerald-400",
-  warn: "stroke-amber-500 dark:stroke-amber-400",
-  danger: "stroke-red-500 dark:stroke-red-400",
+  ok: "stroke-success",
+  warn: "stroke-warning",
+  danger: "stroke-destructive",
 } as const;
 
 const COARSE_POINTER_QUERY = "(hover: none), (pointer: coarse)";
@@ -148,7 +148,7 @@ export function ContextUsageRing(props: {
           r="9.5"
           fill="none"
           strokeWidth="2.25"
-          className="stroke-foreground/10 dark:stroke-white/10"
+          className="stroke-foreground/10"
         />
         <circle
           cx="12"

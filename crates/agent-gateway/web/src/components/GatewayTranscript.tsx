@@ -95,6 +95,7 @@ type GatewayScheduledTurn = {
 
 type GatewayTranscriptProps = {
   expandProcessByDefault?: boolean;
+  detailedProgress?: boolean;
   editRequest?: { token: string; messageId: string } | null;
   onEditRequestHandled?: (token: string) => void;
   emptyState?: ReactNode;
@@ -1387,6 +1388,7 @@ export function GatewayTranscript({
   isViewportFollowing,
   viewportFollowing = false,
   expandProcessByDefault = false,
+  detailedProgress = false,
   navRef,
   onAnchorUserRowChange,
   error,
@@ -1479,6 +1481,7 @@ export function GatewayTranscript({
             never collide across conversations in the itemSizeCache. */}
         <ProcessDisclosureProvider
           expandByDefault={expandProcessByDefault}
+          detailedProgress={detailedProgress}
           isViewportFollowing={isViewportFollowing}
         >
           <GatewayTranscriptListRegion

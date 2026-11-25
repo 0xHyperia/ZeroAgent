@@ -34,9 +34,11 @@ function createHarness() {
 function rowText(row) {
   if (row.kind === "assistant") {
     return row.rounds
-      .map((round) =>
-        round.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join(""),
-      )
+      .map((round) => {
+        const text = round.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("");
+        const error = round.meta?.stopReason === "error" ? round.meta.errorMessage : "";
+        return [text, error].filter(Boolean).join("\n");
+      })
       .join("\n");
   }
   return row.text ?? "";

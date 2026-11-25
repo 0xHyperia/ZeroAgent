@@ -10,7 +10,7 @@ export type UiExtensionSlots = {
 };
 
 export type SettingsSaveState =
-  | { status: "idle" | "saving" | "saved" }
+  | { status: "idle" | "saving" | "saved" | "savedOnDevice" }
   | { status: "error"; message: string };
 
 export type SettingsSectionDefinition<Context> = {

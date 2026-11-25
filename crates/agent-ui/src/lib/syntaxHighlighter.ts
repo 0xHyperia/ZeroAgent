@@ -1,4 +1,4 @@
-import { createHighlighter, type ThemeRegistrationRaw } from "shiki";
+import type { createHighlighter, ThemeRegistrationRaw } from "shiki";
 
 export const MARKDOWN_CODE_THEMES = ["github-light", "github-dark"] as const;
 export const DEFAULT_MARKDOWN_CODE_LANGUAGE = "markdown";
@@ -92,12 +92,14 @@ const sourceDark = sourceTheme(SOURCE_DARK_THEME, "dark", {
 /** Shared grammar cache contains public syntax definitions, never documents or rendered tokens. */
 let highlighter: ReturnType<typeof createHighlighter> | undefined;
 export function getSyntaxHighlighter() {
-  highlighter ??= createHighlighter({
-    themes: [...MARKDOWN_CODE_THEMES, sourceLight, sourceDark],
-    langs: [],
-  }).catch((error) => {
-    highlighter = undefined;
-    throw error;
-  });
+  highlighter ??= import("shiki")
+    .then(({ createHighlighter }) => createHighlighter({
+      themes: [...MARKDOWN_CODE_THEMES, sourceLight, sourceDark],
+      langs: [],
+    }))
+    .catch((error) => {
+      highlighter = undefined;
+      throw error;
+    });
   return highlighter;
 }

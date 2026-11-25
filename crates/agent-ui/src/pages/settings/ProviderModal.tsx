@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import {
   discoverProviderModels,
   providerCredentialsRedacted,
@@ -104,7 +105,7 @@ const NEW_MODEL_SORT_DELAY_MS = 1_200;
 const NEW_MODEL_BADGE_DURATION_MS = 3_200;
 const NEW_MODEL_BADGE_FADE_MS = 500;
 
-const REDACTED_API_KEY_DISPLAY = "API Key";
+const REDACTED_API_KEY_DISPLAY = "••••••••";
 
 function parsePositiveInteger(input: string): number | null {
   const value = Number(input.trim());
@@ -317,6 +318,10 @@ function useProviderModalController({
   const toggleShowApiKey = useCallback(async () => {
     if (showApiKey) {
       setShowApiKey(false);
+      if (revealedApiKey !== null) {
+        if (apiKey === revealedApiKey) setApiKey(REDACTED_API_KEY_DISPLAY);
+        setRevealedApiKey(null);
+      }
       return;
     }
     setRevealApiKeyError(null);
@@ -337,7 +342,7 @@ function useProviderModalController({
     } finally {
       setRevealingApiKey(false);
     }
-  }, [apiKeyIsRedactedDisplay, initialData?.id, isGatewayWebui, showApiKey]);
+  }, [apiKey, apiKeyIsRedactedDisplay, initialData?.id, isGatewayWebui, revealedApiKey, showApiKey]);
   const persistedUsageQueryProviderId = getPersistedUsageQueryProviderId(initialData);
   const { confirm: requestConfirm, dialog: confirmDialog } = useConfirmDialog();
   const [usageQueryTest, setUsageQueryTest] = useState<{
@@ -851,10 +856,7 @@ function useProviderModalController({
           : providerType === "codex"
             ? requestFormat
             : undefined,
-      reasoning:
-        providerType === "gemini" && initialData?.reasoning === "xhigh"
-          ? "high"
-          : (initialData?.reasoning ?? "off"),
+      reasoning: initialData?.reasoning ?? "off",
       promptCachingEnabled:
         providerType === "codex"
           ? promptCacheHintMode !== "none"

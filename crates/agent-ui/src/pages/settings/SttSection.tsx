@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import type { AppSettings, SttProviderId, SttProviderSettings } from "@liveagent/app/lib/settings";
 import alibabaCloudIcon from "@liveagent/ui/assets/stt/alibaba-cloud.ico";
 import baiduCloudIcon from "@liveagent/ui/assets/stt/baidu-cloud.ico";
@@ -30,11 +31,13 @@ import {
   DialogTrigger,
 } from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
+import { StatusDot } from "@liveagent/ui/components/ui/status-dot";
 import { Switch } from "@liveagent/ui/components/ui/switch";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { errorMessageWithFallback } from "@liveagent/ui/lib/shared/value";
+import { SttSettingsRequestError } from "@liveagent/ui/lib/stt/errors";
 import type {
   SttConnectionTestResult,
   SttSecretField,
@@ -158,6 +161,12 @@ const RESULT_LABEL_KEYS: Record<SttConnectionTestResult, string> = {
 
 type ConfigStep = "providers" | "form";
 
+const RUNTIME_LABEL_KEYS: Record<NonNullable<SttSettingsService["runtime"]>, string> = {
+  desktop: "settings.stt.runtimeDesktop",
+  webui: "settings.stt.runtimeWebui",
+  cloud: "settings.stt.runtimeCloud",
+};
+
 function fieldLabel(t: Translate, provider: SttProviderId, field: keyof SttProviderSettings) {
   if (field === "appId") return provider === "tencent_cloud" ? "AppId" : "App ID";
   const key = FIELD_LABEL_KEYS[field];
@@ -179,6 +188,12 @@ function fieldPlaceholder(t: Translate, provider: SttProviderId, field: keyof St
   const key = FIELD_PLACEHOLDER_KEYS[field];
   if (key) return t(key);
   return FIELD_PLACEHOLDERS[field] ?? "";
+}
+
+/** A request failure names its HTTP status/body after the localized message of the operation. */
+function settingsErrorMessage(cause: unknown, fallback: string) {
+  if (cause instanceof SttSettingsRequestError) return `${fallback} (${cause.detail})`;
+  return errorMessageWithFallback(cause, fallback);
 }
 
 function fieldValue(provider: SttProviderSettings, field: keyof SttProviderSettings) {
@@ -282,7 +297,7 @@ export function SttSection({
         setVisibleSecrets((previous) => ({ ...previous, [field]: true }));
       } catch (cause) {
         if (revealRequestRef.current !== requestId) return;
-        setError(errorMessageWithFallback(cause, t("settings.stt.revealFailed")));
+        setError(settingsErrorMessage(cause, t("settings.stt.revealFailed")));
       } finally {
         if (revealRequestRef.current === requestId) setRevealingSecret(null);
       }
@@ -340,7 +355,7 @@ export function SttSection({
       resetSecretVisibility();
       return true;
     } catch (cause) {
-      setError(errorMessageWithFallback(cause, t("settings.stt.saveFailed")));
+      setError(settingsErrorMessage(cause, t("settings.stt.saveFailed")));
       return false;
     } finally {
       setSaving(false);
@@ -402,7 +417,7 @@ export function SttSection({
         appearance: "notice",
       });
     } catch (cause) {
-      setError(errorMessageWithFallback(cause, t("settings.stt.clearFailed")));
+      setError(settingsErrorMessage(cause, t("settings.stt.clearFailed")));
     } finally {
       setClearing(false);
     }
@@ -425,7 +440,7 @@ export function SttSection({
       if (passed) toast.success(message, options);
       else toast.error(message, options);
     } catch (cause) {
-      setError(errorMessageWithFallback(cause, t("settings.stt.testFailed")));
+      setError(settingsErrorMessage(cause, t("settings.stt.testFailed")));
     } finally {
       setTesting(false);
     }
@@ -453,13 +468,17 @@ export function SttSection({
       <SettingsSection title={t("settings.groupGeneral")}>
         <SettingsCard>
           <SettingsRow
+            data-settings-anchor="stt-enable"
             title={t("settings.stt.enable")}
             description={
               <>
                 {t("settings.stt.enableDescription")}
-                {service.runtimeLabel ? (
+                {service.runtime ? (
                   <span className="block">
-                    {t("settings.stt.runtime").replace("{runtime}", service.runtimeLabel)}
+                    {t("settings.stt.runtime").replace(
+                      "{runtime}",
+                      t(RUNTIME_LABEL_KEYS[service.runtime]),
+                    )}
                   </span>
                 ) : null}
               </>
@@ -480,7 +499,7 @@ export function SttSection({
         </SettingsCard>
       </SettingsSection>
 
-      <SettingsSection title={t("settings.stt.sectionService")}>
+      <SettingsSection data-settings-anchor="stt-service" title={t("settings.stt.sectionService")}>
         <SettingsCard>
           <SettingsRow
             title={t(definition.labelKey)}
@@ -491,15 +510,10 @@ export function SttSection({
                 <span
                   className={cn(
                     "inline-flex items-center gap-1",
-                    provider.configured && "text-emerald-600 dark:text-emerald-400",
+                    provider.configured && "text-success",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      provider.configured ? "bg-emerald-500" : "bg-muted-foreground/40",
-                    )}
-                  />
+                  <StatusDot tone={provider.configured ? "success" : "muted"} />
                   {provider.configured
                     ? t("settings.stt.configured")
                     : t("settings.stt.notConfigured")}
@@ -557,8 +571,8 @@ export function SttSection({
                                   {configured ? (
                                     <>
                                       <span aria-hidden="true">·</span>
-                                      <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                                        <span className="size-1.5 rounded-full bg-emerald-500" />
+                                      <span className="inline-flex items-center gap-1 text-success">
+                                        <StatusDot tone="success" />
                                         {t("settings.stt.configured")}
                                       </span>
                                     </>

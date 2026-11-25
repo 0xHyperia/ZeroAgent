@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import { ArrowLeft, Search } from "@liveagent/ui/components/IconSet";
 import { type CSSProperties, useEffect, useId, useMemo, useRef, useState } from "react";
 import { SidebarResizeHandle } from "../../components/ui/sidebar-resize";
@@ -52,6 +53,12 @@ function getSaveIndicator(state: SettingsSaveState, t: (key: string) => string) 
         dotClass: "bg-destructive",
         text: t("settings.saveError"),
         title: state.message,
+      };
+    case "savedOnDevice":
+      return {
+        dotClass: "bg-emerald-500",
+        text: t("settings.savedOnDevice"),
+        title: t("settings.savedOnDeviceDesc"),
       };
     case "saved":
     case "idle":

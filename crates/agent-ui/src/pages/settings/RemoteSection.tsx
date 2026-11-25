@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import {
   type AppSettings,
   MAX_REMOTE_HEARTBEAT_INTERVAL_SECONDS,

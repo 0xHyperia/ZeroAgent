@@ -154,11 +154,11 @@ export function CopyPathToast(props: { message: string }) {
       <div
         className={cn(
           "flex min-w-56 items-center gap-2",
-          "rounded-lg border border-emerald-500/25 bg-background/95 px-3 py-2",
+          "rounded-lg border border-success/25 bg-background/95 px-3 py-2",
           "text-sm font-medium text-foreground shadow-2xl backdrop-blur-xl",
         )}
       >
-        <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
+        <CheckCircle2 className="size-4 shrink-0 text-success" />
         <span>{props.message}</span>
       </div>
     </div>
@@ -268,11 +268,7 @@ export function TransferToast(props: {
   const isCompleted = transfer.status === "completed";
   const isFailed = transfer.status === "failed";
   const StatusIcon = isRunning ? Loader2 : isCompleted ? CheckCircle2 : TransferIcon;
-  const iconClass = isFailed
-    ? "text-destructive"
-    : isCompleted
-      ? "text-emerald-600 dark:text-emerald-300"
-      : "text-sky-600 dark:text-sky-300";
+  const iconClass = isFailed ? "text-destructive" : isCompleted ? "text-success" : "text-info";
 
   return (
     <div
@@ -355,8 +351,8 @@ export function DragPreview(props: {
     <div
       className={cn(
         "layer-toast pointer-events-none fixed flex w-260px max-w-viewport-inset-32px items-center gap-2",
-        "rounded-md bg-sky-500/90 px-2.5 py-2",
-        "text-xs text-white shadow-xl ring-1 ring-sky-200/50 backdrop-blur-sm",
+        "rounded-md bg-info/90 px-2.5 py-2",
+        "text-xs text-info-foreground shadow-xl ring-1 ring-info-foreground/25 backdrop-blur-sm",
       )}
       style={{
         left: x + 18,
@@ -364,25 +360,25 @@ export function DragPreview(props: {
         transform: "translateY(-50%)",
       }}
     >
-      <span className="flex size-7 shrink-0 items-center justify-center rounded bg-white/15 text-white">
-        {entryIcon(previewEntry, "size-4 text-white")}
+      <span className="flex size-7 shrink-0 items-center justify-center rounded bg-info-foreground/15">
+        {entryIcon(previewEntry, "size-4")}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium leading-4">
           {previewEntry.name}
           {count > 1 ? ` +${count - 1}` : ""}
         </span>
-        <span className="block truncate text-tiny leading-3 text-white/75">
+        <span className="block truncate text-tiny leading-3 text-info-foreground/75">
           {typeLabel(previewEntry)}
           {previewEntry.kind === "directory" ? "" : ` · ${formatBytes(previewEntry.sizeBytes)}`}
         </span>
       </span>
       {count > 1 ? (
-        <span className="shrink-0 rounded bg-white/15 px-1.5 py-0.5 font-mono text-tiny text-white/90">
+        <span className="shrink-0 rounded bg-info-foreground/15 px-1.5 py-0.5 font-mono text-tiny text-info-foreground/90">
           {count}
         </span>
       ) : previewEntry.kind === "directory" ? null : (
-        <span className="shrink-0 rounded bg-white/15 px-1.5 py-0.5 font-mono text-tiny text-white/90">
+        <span className="shrink-0 rounded bg-info-foreground/15 px-1.5 py-0.5 font-mono text-tiny text-info-foreground/90">
           {formatBytes(previewEntry.sizeBytes)}
         </span>
       )}

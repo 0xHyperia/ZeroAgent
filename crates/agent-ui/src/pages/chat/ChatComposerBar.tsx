@@ -581,6 +581,7 @@ export const ChatComposerBar = memo(function ChatComposerBar(props: ChatComposer
     hidden,
     onError: onSttError,
     onConfigurationRequired: handleSttConfigurationRequired,
+    t,
   });
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [composerHasOverflow, setComposerHasOverflow] = useState(false);

@@ -55,6 +55,9 @@ func (c *browserConn) handleAgentList(requestID string) {
 	known := make(map[string]bool, len(statuses))
 	agents := make([]*gatewayv2.StatusEvent, 0, len(statuses)+len(registeredByID))
 	for _, status := range statuses {
+		if session.IsLocalWorkspaceActivityOwnerID(status.AgentID) {
+			continue
+		}
 		if c.srv.accounts != nil {
 			if _, allowed := registeredByID[status.AgentID]; !allowed {
 				continue

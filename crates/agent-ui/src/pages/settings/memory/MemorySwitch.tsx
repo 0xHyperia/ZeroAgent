@@ -3,6 +3,7 @@
 //
 // Shared implementation owned by @liveagent/ui.
 
+import "@liveagent/ui/i18n/namespaces/settings";
 import { SettingsRow } from "@liveagent/ui/components/settings/SettingsLayout";
 import { Switch } from "@liveagent/ui/components/ui/switch";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
@@ -99,6 +100,7 @@ export function MemorySwitch({ kbrain }: { kbrain: KBrainSettingsAdapter }) {
   if (enabled === null) return null;
   return (
     <SettingsRow
+      data-settings-anchor="memory-switch"
       data-testid="memory-master-switch"
       aria-busy={saving}
       title={t("settings.memorySwitchTitle")}

@@ -1,10 +1,13 @@
 import { retainRunningToolContent } from "@liveagent/adapters/assistantBubble";
-import { AssistantStatus } from "@liveagent/ui/components/chat/AssistantStatus";
 import { LazyCollapse } from "@liveagent/ui/components/chat/LazyCollapse";
-import { useLiveProcessDisclosure } from "@liveagent/ui/components/chat/processDisclosure";
+import {
+  useDetailedProgress,
+  useLiveProcessDisclosure,
+} from "@liveagent/ui/components/chat/processDisclosure";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import type { ToolTraceItem } from "@liveagent/ui/lib/chat/assistantBubbleAdapter";
 import type { ChatFileLink } from "@liveagent/ui/lib/chat/chatFileLinks";
+import { isPermissionDeniedToolResult } from "@liveagent/ui/lib/chat/toolPermissionDenied";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, useId, useMemo, useRef } from "react";
 import {
@@ -48,26 +51,20 @@ function getToolGroupCounts(items: ToolTraceItem[], runningToolCallIds: string[]
   let failed = 0;
   let completed = 0;
   let waiting = 0;
-  let unknown = 0;
-  let cancelled = 0;
+  let denied = 0;
 
   for (const item of items) {
-    if (item.publicStatus) {
-      const state = item.publicStatus.state;
-      if (state === "succeeded") completed += 1;
-      else if (state === "failed") failed += 1;
-      else if (state === "cancelled") cancelled += 1;
-      else if (state === "unknown" || !runningIds.has(item.toolCall.id)) unknown += 1;
-      else if (state === "prepared") waiting += 1;
-      else running += 1;
-      continue;
-    }
     if (item.toolCall.id && runningIds.has(item.toolCall.id)) {
       running += 1;
       continue;
     }
     if (!item.toolResult) {
       waiting += 1;
+      continue;
+    }
+    // A call the user denied never ran: it neither failed nor completed.
+    if (isPermissionDeniedToolResult(item.toolResult)) {
+      denied += 1;
       continue;
     }
     // A shell command that exited non-zero or timed out failed even when the
@@ -80,7 +77,7 @@ function getToolGroupCounts(items: ToolTraceItem[], runningToolCallIds: string[]
     completed += 1;
   }
 
-  return { running, failed, completed, waiting, unknown, cancelled };
+  return { running, failed, completed, waiting, denied };
 }
 
 export function getToolBatchCounts(items: ToolTraceItem[]) {
@@ -115,12 +112,7 @@ const TOOL_BATCH_ICONS: Record<ToolActivityCategory, IconComponent> = {
   other: Wrench,
 };
 
-function getRunningToolActivity(item: ToolTraceItem, t: (key: string) => string) {
-  if (item.publicStatus)
-    return {
-      category: getToolActivityCategory(item.toolCall.name),
-      label: item.publicStatus.label,
-    };
+export function getRunningToolActivity(item: ToolTraceItem, t: (key: string) => string) {
   const fileOperation = getFileOperationDisplay(item);
   const category = getToolActivityCategory(item.toolCall.name);
   const action = t(
@@ -172,6 +164,10 @@ function ToolTraceGroupInner(props: {
   readOnly?: boolean;
   redactToolContent?: boolean;
   onOpenFileLink?: (link: ChatFileLink) => void;
+  /**
+   * The batch is the latest one of a running turn. The turn's single status row
+   * already says a tool is running, so the header drops its own running status.
+   */
   showTurnStatus?: boolean;
 }) {
   const {
@@ -184,13 +180,18 @@ function ToolTraceGroupInner(props: {
     showTurnStatus = false,
   } = props;
   const { locale, t } = useLocale();
-  const detailsId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const detailedProgress = useDetailedProgress();
   const counts = useMemo(
     () => getToolGroupCounts(items, runningToolCallIds),
     [items, runningToolCallIds],
   );
-  const batchCounts = useMemo(() => getToolBatchCounts(items), [items]);
+  // Denied calls did nothing, so the batch is named after the calls that ran; a batch
+  // of denied calls only reads "Denied".
+  const deniedOnly = counts.denied > 0 && counts.denied === items.length;
+  const batchCounts = useMemo(() => {
+    const ran = items.filter((item) => !isPermissionDeniedToolResult(item.toolResult));
+    return getToolBatchCounts(ran.length > 0 ? ran : items);
+  }, [items]);
   const activeCategories = useMemo(
     () => getActiveToolCategories(items, runningToolCallIds),
     [items, runningToolCallIds],
@@ -202,107 +203,104 @@ function ToolTraceGroupInner(props: {
   // Open while the batch is live so its output shows as it happens; folded once
   // done. A batch with a failed call stays open when it settles so the error
   // stays in view; on history reload it mounts folded with its failed count.
+  const detailsId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, toggleOpen] = useLiveProcessDisclosure({
     live: trailingLive || counts.running > 0,
     keepOpenWhenSettled: counts.failed > 0,
     attentionRequired,
   });
 
-  // The latest live batch drops the count prefix ("运行中" instead of
-  // "1 运行中"), nothing more. Idle phases render no filler status here:
-  // an active reasoning segment shows its own 思考中 row and the turn-level
-  // sparkle covers the gaps in between.
+  // The latest live batch shows no running status at all: the turn's single
+  // status row already says what is running, and a second spinner here would
+  // stack two live indicators. Older batches still running (background
+  // processes) keep a plain "1 运行中" count.
   const statusLabel =
     counts.failed > 0
       ? `${counts.failed} ${t("chat.tool.failed")}`
-      : counts.unknown > 0
-        ? `${counts.unknown} ${t("chat.tool.unknown")}`
-        : counts.cancelled > 0 && counts.running === 0
-          ? `${counts.cancelled} ${t("chat.tool.cancelled")}`
-          : counts.running > 0
-            ? showTurnStatus
-              ? t("chat.tool.running")
-              : `${counts.running} ${t("chat.tool.running")}`
-            : counts.waiting > 0
-              ? `${counts.waiting} ${t("chat.tool.waiting")}`
-              : t("chat.tool.success");
+      : counts.running > 0
+        ? showTurnStatus
+          ? null
+          : `${counts.running} ${t("chat.tool.running")}`
+        : counts.waiting > 0
+          ? `${counts.waiting} ${t("chat.tool.waiting")}`
+          : counts.denied > 0 && !deniedOnly
+            ? `${counts.denied} ${t("chat.tool.denied")}`
+            : t("chat.tool.success");
 
   // A category with a call still running reads in the present tense ("正在运行命令"),
   // and switches to the past tense once its calls are done. Calls without a result
   // that are not running belong to a settled or interrupted turn, so they read as past.
   // 中文标签之间没有天然的词边界（"读取了文件运行了命令"会黏成一句），
   // 用全角竖线分隔；全角字符自带留白，两侧不再加空格。
-  const countLabel = batchCounts
-    .map(({ category }) =>
-      activeCategories.has(category)
-        ? t(`chat.tool.batch.${category}.running`)
-        : t(`chat.tool.batch.${category}`),
-    )
-    .join(locale === "zh-CN" ? "｜" : " | ");
+  const countLabel = deniedOnly
+    ? t("chat.tool.denied")
+    : batchCounts
+        .map(({ category }) =>
+          activeCategories.has(category)
+            ? t(`chat.tool.batch.${category}.running`)
+            : t(`chat.tool.batch.${category}`),
+        )
+        .join(locale === "zh-CN" ? "｜" : " | ");
   // Collapsed, the header stands in for the batch: it names the call that is running
   // and carries the batch status. Expanded, every call shows its own row with its
   // running or failed status, so the header only labels the batch; repeating the
   // running call there would show one command as two running rows. Rows carry no
   // waiting status, so the header keeps that one.
+  // The quiet view names the running call in the turn's status row instead.
   const runningActivity = useMemo(() => {
-    if (open) return null;
+    if (open || !detailedProgress) return null;
     const item = findLatestRunningTool(items, runningToolCallIds);
     return item ? getRunningToolActivity(item, t) : null;
-  }, [items, open, runningToolCallIds, t]);
+  }, [detailedProgress, items, open, runningToolCallIds, t]);
   const headerLabel = runningActivity?.label ?? countLabel;
-  const showStatus = open
-    ? counts.failed === 0 && counts.running === 0 && counts.waiting > 0
-    : counts.failed > 0 ||
-      counts.running > 0 ||
-      counts.waiting > 0 ||
-      counts.unknown > 0 ||
-      counts.cancelled > 0;
+  const showStatus =
+    statusLabel !== null &&
+    (open
+      ? counts.failed === 0 && counts.running === 0 && counts.waiting > 0
+      : counts.failed > 0 ||
+        counts.running > 0 ||
+        counts.waiting > 0 ||
+        (counts.denied > 0 && !deniedOnly));
   const BatchIcon =
     TOOL_BATCH_ICONS[runningActivity?.category ?? batchCounts[0]?.category ?? "other"];
 
   return (
     <div className="group/tool-trace min-w-0 max-w-full">
       <button
-        ref={triggerRef}
         type="button"
+        ref={triggerRef}
         aria-expanded={open}
         aria-controls={detailsId}
+        aria-label={open ? t("chat.tool.collapseActivity") : t("chat.tool.expandActivity")}
         className={cn(
           "za-chat-activity-trigger -mx-1.5 flex w-fit max-w-bleed-0p75rem cursor-pointer select-none items-center gap-1.5",
           "rounded-lg px-1.5 py-1",
-          "text-left text-sm font-[450] text-foreground/60 transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground/75",
+          "text-left text-sm font-book text-foreground/60 transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground/75",
         )}
         onClick={toggleOpen}
       >
-        <BatchIcon aria-hidden="true" className="size-3 shrink-0 text-foreground/45" />
-        <span className="min-w-0 truncate" title={runningActivity?.title ?? headerLabel}>
+        <BatchIcon className="size-3 shrink-0 text-foreground/45" />
+        <span className="min-w-0 truncate" title={runningActivity?.title}>
           {headerLabel}
         </span>
         <ChevronRight
           aria-hidden="true"
-          className={cn("za-chat-activity-chevron size-3 shrink-0", open && "rotate-90")}
+          className={cn(
+            "za-chat-activity-chevron size-3 shrink-0",
+            open ? "rotate-90" : "",
+          )}
         />
         {showStatus ? (
-          <span className="shrink-0 text-xs text-foreground/45">
-            {showTurnStatus && counts.running > 0 ? (
-              <AssistantStatus
-                className="min-h-0 text-xs text-foreground/45"
-                iconClassName="size-3"
-              >
-                {statusLabel}
-              </AssistantStatus>
-            ) : (
-              statusLabel
-            )}
-          </span>
+          <span className="shrink-0 text-xs text-foreground/45">{statusLabel}</span>
         ) : null}
       </button>
 
       <LazyCollapse
         id={detailsId}
-        triggerRef={triggerRef}
         open={open}
         retainWhileClosed={retainRunningToolContent && counts.running > 0}
+        triggerRef={triggerRef}
       >
         {() => (
           // 横向内缩与折叠头按钮同口径（外扩量恒等于内补量），组内每行的图标
@@ -314,6 +312,9 @@ function ToolTraceGroupInner(props: {
               className={cn(
                 "-mx-3 flex max-h-400px flex-col gap-1 overflow-y-auto overscroll-contain px-3",
                 "[scrollbar-gutter:stable]",
+                // An MCP App view or HTML preview card sizes itself; it is not squeezed
+                // into the scrolling trace.
+                "has-[[data-sandboxed-view]]:max-h-none",
               )}
             >
               {items.map((item, index) => (

@@ -2,6 +2,7 @@ package kbrain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -44,5 +45,41 @@ func TestSettingsRequestKeepsKBrainErrorExplanation(t *testing.T) {
 	}
 	if strings.Contains(message, "secret-token") || strings.Contains(message, server.URL) {
 		t.Fatalf("error leaks the token or backend URL: %q", message)
+	}
+}
+
+// A failed model discovery carries the code and status as a RequestFailure.
+// The browser-facing error omits private provider response text.
+func TestProviderModelsKeepsDiscoveryFailureReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		if req.URL.Path == "/v1/settings/providers/legacy/models" {
+			fmt.Fprint(w, `{"error":"model discovery failed","version":"kbrain.agent.v1"}`)
+			return
+		}
+		fmt.Fprint(w, `{"error":"upstream echoed a private credential","errorCode":"invalid_api_key","upstreamStatus":401,"upstreamMessage":"private provider response","version":"kbrain.agent.v1"}`)
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "secret-token", server.Client())
+	relay, _ := NewRelay(client, "target", ModelRef{}, "")
+	defer relay.Close()
+
+	_, err := relay.ProviderModels(context.Background(), &gatewayv2.ProviderModelsRequest{ProviderType: "codex", BaseUrl: "https://models.example.invalid/v1"})
+	var failure *RequestFailure
+	if !errors.As(err, &failure) {
+		t.Fatalf("err = %v, want a RequestFailure", err)
+	}
+	if failure.Code != "invalid_api_key" || failure.UpstreamStatus != 401 {
+		t.Fatalf("failure = %+v", failure)
+	}
+	if message := err.Error(); !strings.Contains(message, "502") || !strings.Contains(message, "model discovery failed") {
+		t.Fatalf("error = %q", message)
+	}
+
+	// Older backends send only the error text.
+	_, err = relay.ProviderModels(context.Background(), &gatewayv2.ProviderModelsRequest{ProviderId: "legacy", ProviderType: "codex", BaseUrl: "https://models.example.invalid/v1"})
+	if err == nil || errors.As(err, &failure) || !strings.Contains(err.Error(), "model discovery failed") {
+		t.Fatalf("old backend err = %v", err)
 	}
 }

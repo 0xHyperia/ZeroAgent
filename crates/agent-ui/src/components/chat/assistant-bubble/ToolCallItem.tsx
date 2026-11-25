@@ -25,7 +25,6 @@ import {
 import {
   deriveFileChangeStats,
   FILE_TOOL_TEXT_FIELDS,
-  previewText,
   type ToolResultMessage,
   type ToolTraceItem,
   toolResultMessageToText,
@@ -48,6 +47,7 @@ import {
   KBRAIN_SUBAGENT_FOLLOWUP_TOOL_NAME,
   subagentControlAction,
 } from "@liveagent/ui/lib/chat/subagentControlTools";
+import { isPermissionDeniedToolResult } from "@liveagent/ui/lib/chat/toolPermissionDenied";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronRight } from "../../IconSet";
@@ -68,10 +68,12 @@ import {
 } from "./assistantBubbleUtils";
 import { PublicToolActivity } from "./PublicToolActivity";
 import { getConciseToolTarget } from "./conciseToolTarget";
+import { useMcpServerLabel } from "./McpServerLabelsContext";
 import { SubagentControlToolCall, SubagentToolCall } from "./SubagentToolCard";
 import { ToolElicitations } from "./ToolElicitations";
 import { ToolPermissionMarker } from "./ToolPermissionMarker";
 import { ShellToolDisplay, ToolArgsDisplay, ToolResultDisplay } from "./ToolResultDisplay";
+import { TruncatedPreviewText } from "./TruncatedPreviewText";
 
 // 折叠摘要里行内命令的展示上限:远超任何实际窗口一行可容纳的字符数,视觉
 // 省略仍由 CSS truncate 决定;仅防御超长单行命令(如内联脚本)把常驻 DOM
@@ -154,6 +156,8 @@ function ToolCallItem({
   const shellSessionStatus = shellSessionDetails?.status;
   const shellSessionFailed = shellSessionStatus === "failed" || shellSessionStatus === "timed_out";
   const displayIsRunning = Boolean(isRunning);
+  // The user (or a policy) refused the call, so it never ran: no failure, no change.
+  const permissionDenied = isPermissionDeniedToolResult(result);
   const isRedactedToolContent = redactToolContent && isBuiltinShareToolName(item.toolCall.name);
   const isAskUser = !isRedactedToolContent && item.toolCall.name === ASK_USER_QUESTION_TOOL_NAME;
   const askDetails = isAskUser ? parseAskUserQuestionResultDetails(result?.details) : null;
@@ -276,12 +280,13 @@ function ToolCallItem({
   const fileChangeArgsFinal = fileChangeArgsDefinitive || quiescentArgs === item.toolCall.arguments;
   const fileChangeStats = useMemo(
     () =>
-      isRedactedToolContent
+      isRedactedToolContent || permissionDenied
         ? undefined
         : deriveFileChangeStats(item.toolCall, { preferEstimate: !fileChangeArgsFinal }),
-    [fileChangeArgsFinal, isRedactedToolContent, item.toolCall],
+    [fileChangeArgsFinal, isRedactedToolContent, item.toolCall, permissionDenied],
   );
   const fileOperation = useMemo(() => getFileOperationDisplay(item), [item]);
+  const mcpServerLabel = useMcpServerLabel(item.toolCall.name);
   const meta = getToolMeta(item.toolCall.name);
   const ToolIcon = meta.Icon;
   const activityPhase =
@@ -304,12 +309,14 @@ function ToolCallItem({
     : isPlanCard
       ? { name: t("chat.planMode.cardTitle"), action: "" }
       : isRedactedToolContent
-        ? { name: getToolDisplayName(item.toolCall.name), action: "" }
-        : localizedFileOperationTitle
-          ? { name: localizedFileOperationTitle, action: "" }
-          : localizedActivityTitle
-            ? { name: localizedActivityTitle, action: "" }
-            : getToolDisplayTitle(item.toolCall);
+        ? { name: getToolDisplayName(item.toolCall.name, mcpServerLabel), action: "" }
+        : permissionDenied
+          ? { name: t("chat.tool.denied"), action: "" }
+          : localizedFileOperationTitle
+            ? { name: localizedFileOperationTitle, action: "" }
+            : localizedActivityTitle
+              ? { name: localizedActivityTitle, action: "" }
+              : getToolDisplayTitle(item.toolCall, mcpServerLabel);
 
   // Successful/running path-based file operations are deliberately a single
   // IDE link row. Failed operations retain the disclosure so the error stays
@@ -344,8 +351,8 @@ function ToolCallItem({
   const statusLabel = subagentControl?.outcome?.text ?? genericStatusLabel;
 
   const statusTextClass =
-    result?.isError || shellSessionFailed || subagentControl?.outcome?.failed
-      ? "text-[hsl(var(--chat-error))]"
+    (result?.isError && !permissionDenied) || shellSessionFailed || subagentControl?.outcome?.failed
+      ? "text-destructive"
       : "text-foreground/45";
 
   const liveOutputSettledOk = Boolean(result) && !result?.isError && !shellSessionFailed;
@@ -380,6 +387,9 @@ function ToolCallItem({
     (shouldShowArgs || Boolean(result) || (isAskUser && askQuestions.length > 0));
   const effectiveOpen = canExpand && open;
   const summaryTitleName = title.name;
+  // A server label replaces the name key, so the raw tool name stays in the tooltip.
+  const summaryTitleTooltip =
+    mcpServerLabel && summaryTitleName !== item.toolCall.name ? item.toolCall.name : undefined;
   const compactChipText = simpleFileOperation ? "" : inlineTarget || title.action;
   // Inside a batch the row body skips the request arguments; when the concise
   // target dropped part of the request (a long command, a search path), show
@@ -398,7 +408,7 @@ function ToolCallItem({
       <ToolIcon className="size-3 shrink-0 text-foreground/45" />
       <span
         className={cn(
-          "shrink-0 font-[450] text-foreground/62",
+          "shrink-0 font-book text-foreground/62",
           compactChip ? "text-sm" : "text-sm",
           displayIsRunning && "animate-pulse",
         )}
@@ -430,7 +440,9 @@ function ToolCallItem({
     <>
       <ToolIcon aria-hidden="true" className="size-3 shrink-0 text-foreground/45" />
 
-      <span className="shrink-0 text-sm font-[450] text-foreground/62">{summaryTitleName}</span>
+      <span className="shrink-0 text-sm font-book text-foreground/62" title={summaryTitleTooltip}>
+        {summaryTitleName}
+      </span>
 
       {compactChipText || fileChangeStats ? (
         <span
@@ -457,7 +469,10 @@ function ToolCallItem({
       )}
 
       <ToolPermissionMarker marker={permissionAutoResolved} />
-      {displayIsRunning || result?.isError || shellSessionFailed || subagentControl?.outcome ? (
+      {displayIsRunning ||
+      (result?.isError && !permissionDenied) ||
+      shellSessionFailed ||
+      subagentControl?.outcome ? (
         <span className={cn("shrink-0 text-tiny", statusTextClass)}>{statusLabel}</span>
       ) : null}
       {canExpand ? (
@@ -481,7 +496,10 @@ function ToolCallItem({
           className="min-w-0 truncate font-mono text-xs leading-5 text-foreground/48"
           title={inlineTargetTitle || undefined}
         >
-          <span className="font-sans text-sm font-[450] text-foreground/62 group-hover/tool:text-foreground/75">
+          <span
+            className="font-sans text-sm font-book text-foreground/62 group-hover/tool:text-foreground/75"
+            title={summaryTitleTooltip}
+          >
             {summaryTitleName}
             {title.action ? (
               <span className="font-mono text-xs font-normal text-foreground/48">
@@ -508,7 +526,7 @@ function ToolCallItem({
           >
             {statusLabel}
           </AssistantStatus>
-        ) : (
+        ) : permissionDenied ? null : (
           <span className={cn("text-xs", statusTextClass)}>{statusLabel}</span>
         )}
         {canExpand ? (
@@ -537,8 +555,8 @@ function ToolCallItem({
 
           if (readOnly) {
             return (
-              <ToolScrollablePre className="max-h-56 bg-black/[0.02] dark:bg-white/[0.03]">
-                {previewText(resultText, 6000)}
+              <ToolScrollablePre className="max-h-56 bg-surface-subtle">
+                <TruncatedPreviewText text={resultText} maxChars={6000} />
               </ToolScrollablePre>
             );
           }
@@ -547,8 +565,14 @@ function ToolCallItem({
           // collapsed "view return" toggle.
           if (result.isError) {
             return (
-              <ToolScrollablePre className="max-h-56 bg-destructive/10 text-destructive">
-                {previewText(resultText, 6000)}
+              <ToolScrollablePre
+                className={
+                  permissionDenied
+                    ? "max-h-56 bg-surface-subtle text-muted-foreground"
+                    : "max-h-56 bg-destructive/10 text-destructive"
+                }
+              >
+                <TruncatedPreviewText text={resultText} maxChars={6000} />
               </ToolScrollablePre>
             );
           }
@@ -564,8 +588,8 @@ function ToolCallItem({
                 <ChevronRight className="size-2.5 transition-transform duration-200 group-open/result:rotate-90" />
                 {t("chat.tool.viewReturn")}
               </summary>
-              <ToolScrollablePre className="mt-1.5 max-h-56 bg-black/[0.02] dark:bg-white/[0.03]">
-                {previewText(resultText, 6000)}
+              <ToolScrollablePre className="mt-1.5 max-h-56 bg-surface-subtle">
+                <TruncatedPreviewText text={resultText} maxChars={6000} />
               </ToolScrollablePre>
             </details>
           );

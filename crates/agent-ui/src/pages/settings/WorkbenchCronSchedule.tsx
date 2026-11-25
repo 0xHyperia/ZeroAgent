@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/scheduledTasks";
 import { useId, useRef } from "react";
 import { timeZoneDisplayName } from "../../components/settings/TimeZonePicker";
 import { Input } from "../../components/ui/input";

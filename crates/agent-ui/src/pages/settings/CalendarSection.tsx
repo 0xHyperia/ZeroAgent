@@ -1,3 +1,5 @@
+import "@liveagent/ui/i18n/namespaces/planning";
+import "@liveagent/ui/i18n/namespaces/settings";
 import { updateCustomSettings } from "@liveagent/app/lib/settings";
 import type { SettingsSectionProps } from "@liveagent/app/pages/settings/types";
 import { useState } from "react";
@@ -85,6 +87,7 @@ export function CalendarSection({
     <div className="mx-auto w-full max-w-920px space-y-8">
       <SettingsGroup title={t("planner.settings.entry")}>
         <SettingsRow
+          data-settings-anchor="planner-sidebar"
           title={t("planner.settings.showInSidebar")}
           description={t("planner.settings.showInSidebarHint")}
           control={
@@ -108,6 +111,7 @@ export function CalendarSection({
 
       <SettingsGroup title={t("planner.display.title")}>
         <SettingsRow
+          data-settings-anchor="planner-week-start"
           title={t("planner.display.weekStart")}
           description={t("planner.settings.displayLocalHint")}
           control={
@@ -128,7 +132,11 @@ export function CalendarSection({
             </SettingsToggleGroup>
           }
         />
-        <SettingsRow title={t("planner.display.weekNumbers")} control={toggle("showWeekNumbers")} />
+        <SettingsRow
+          data-settings-anchor="planner-week-numbers"
+          title={t("planner.display.weekNumbers")}
+          control={toggle("showWeekNumbers")}
+        />
         {planningLunarAvailable(locale) && (
           <SettingsRow title={t("planner.display.lunar")} control={toggle("showLunar")} />
         )}
@@ -145,6 +153,7 @@ export function CalendarSection({
         />
         {preferences.workHoursOnly && (
           <SettingsRow
+            data-settings-anchor="planner-work-hours"
             title={t("planner.settings.workHours")}
             control={
               <div className="flex items-center gap-2">
@@ -274,7 +283,10 @@ function DeviceCalendarSettings({ cronColor }: Pick<CalendarPreferences, "cronCo
         />
       </SettingsGroup>
 
-      <SettingsGroup title={t("planner.subscription.title")}>
+      <SettingsGroup
+        data-settings-anchor="planner-subscriptions"
+        title={t("planner.subscription.title")}
+      >
         {snapshot?.calendars
           .filter((calendar) => calendar.sourceKind === "subscription")
           .map((calendar) => {

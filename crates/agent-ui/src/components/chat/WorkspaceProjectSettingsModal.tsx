@@ -1,3 +1,6 @@
+import "@liveagent/ui/i18n/namespaces/projectTools";
+import "@liveagent/ui/i18n/namespaces/settings";
+import "@liveagent/ui/i18n/namespaces/workspaceProject";
 import { useDirectoryPicker } from "@liveagent/adapters/directoryPicker";
 import {
   type AppSettings,
@@ -7,6 +10,7 @@ import {
   type WorkspaceResourceSettingsMode,
   workspaceProjectPathKey,
 } from "@liveagent/app/lib/settings";
+import type { WorkspaceFolderTrustClient } from "@liveagent/ui/contracts/workspaceFolderTrust";
 import type {
   WorkspaceProjectRootAccess,
   WorkspaceProjectRootClient,
@@ -69,6 +73,8 @@ export function WorkspaceProjectSettingsModal(props: {
   onClose: () => void;
   rootClient?: WorkspaceProjectRootClient;
   rootClientUnavailableDescription?: string;
+  /** Folder trust adapter; the trust section is hidden without one. */
+  trustClient?: WorkspaceFolderTrustClient;
 }) {
   const {
     project,
@@ -79,6 +85,7 @@ export function WorkspaceProjectSettingsModal(props: {
     onClose,
     rootClient,
     rootClientUnavailableDescription,
+    trustClient,
   } = props;
   const { t } = useLocale();
   const { suspendsParentModal, pickDirectory, directoryPickerElement } = useDirectoryPicker();
@@ -374,6 +381,7 @@ export function WorkspaceProjectSettingsModal(props: {
                 projectNameInvalid={projectNameInvalid}
                 saving={saving}
                 onProjectNameChange={setProjectName}
+                trustClient={trustClient}
               />
             ) : null}
 

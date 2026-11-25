@@ -145,7 +145,7 @@ jobs:
           workspaces: . -> target
           cache-on-failure: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: crates/agent-gateway/go.mod
           cache-dependency-path: crates/agent-gateway/go.sum
@@ -302,7 +302,7 @@ jobs:
           workspaces: . -> target
           cache-on-failure: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: crates/agent-gateway/go.mod
           cache-dependency-path: crates/agent-gateway/go.sum
@@ -595,7 +595,7 @@ jobs:
           workspaces: . -> target
           cache-on-failure: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: crates/agent-gateway/go.mod
           cache-dependency-path: crates/agent-gateway/go.sum

@@ -27,6 +27,7 @@ import {
   EXIT_PLAN_MODE_APPROVED_ARG,
   EXIT_PLAN_MODE_PENDING_ARG,
 } from "@liveagent/ui/lib/chat/planMode";
+import type { RoundMeta } from "@liveagent/ui/lib/chat/roundMeta";
 import {
   TOOL_APPROVAL_ALLOW_SESSION_ARG,
   TOOL_APPROVAL_DEADLINE_ARG,
@@ -101,7 +102,7 @@ export type UiRoundContentBlock =
 export type UiRound = {
   round: number;
   blocks: UiRoundContentBlock[];
-  meta?: {
+  meta?: Pick<RoundMeta, "errorMessage" | "errorDetail" | "cancelReason"> & {
     provider?: string;
     model?: string;
     api?: string;
@@ -1644,6 +1645,9 @@ export function buildUiMessages(messages: Message[]): UiMessage[] {
             model: String(assistant.model ?? ""),
             api: String(assistant.api ?? ""),
             stopReason: String(assistant.stopReason ?? ""),
+            errorMessage: assistant.errorMessage,
+            errorDetail: assistant.errorDetail,
+            cancelReason: assistant.cancelReason,
             usage: assistant.usage as Usage | undefined,
           },
         });

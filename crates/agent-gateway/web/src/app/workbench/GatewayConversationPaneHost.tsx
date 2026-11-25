@@ -1176,6 +1176,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
   const transcriptTree = (
     <GatewayTranscript
       expandProcessByDefault={context.settings.customSettings.chatTranscript.expandProcessByDefault}
+      detailedProgress={context.settings.customSettings.chatTranscript.showDetailedProgress}
       conversationId={conversationId}
       rows={transcript.rows}
       liveStartIndex={transcript.liveStartIndex}

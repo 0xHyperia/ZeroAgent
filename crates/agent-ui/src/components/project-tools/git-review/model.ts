@@ -3,6 +3,7 @@
 // Shared implementation owned by @liveagent/ui. Host-specific Git operations
 // and optional platform capabilities enter through the shared contracts.
 
+import "@liveagent/ui/i18n/namespaces/gitReview";
 import type {
   GitClient,
   GitCommitDetails,
@@ -496,10 +497,10 @@ export function shouldPageWorkspaceReview(
 
 export function statusTone(entry: GitStatusEntry) {
   if (entry.conflicted) return "text-destructive";
-  if (entry.untracked) return "text-sky-600 dark:text-sky-300";
-  if (isDeletedStatusEntry(entry)) return "text-rose-600 dark:text-rose-300";
-  if (entry.staged) return "text-emerald-600 dark:text-emerald-300";
-  return "text-amber-600 dark:text-amber-300";
+  if (entry.untracked) return "text-info";
+  if (isDeletedStatusEntry(entry)) return "text-destructive";
+  if (entry.staged) return "text-success";
+  return "text-warning";
 }
 
 export function isDeletedStatusEntry(entry: GitStatusEntry) {
@@ -522,10 +523,10 @@ export function statusLabel(entry: GitStatusEntry) {
 
 export function commitFileStatusTone(file: GitCommitFile) {
   const status = file.status.charAt(0).toUpperCase();
-  if (status === "A") return "text-emerald-600 dark:text-emerald-300";
-  if (status === "D") return "text-rose-600 dark:text-rose-300";
-  if (status === "R" || status === "C") return "text-sky-600 dark:text-sky-300";
-  return "text-amber-600 dark:text-amber-300";
+  if (status === "A") return "text-success";
+  if (status === "D") return "text-destructive";
+  if (status === "R" || status === "C") return "text-info";
+  return "text-warning";
 }
 
 export function commitFileStatusLabel(file: GitCommitFile) {

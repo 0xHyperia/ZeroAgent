@@ -23,6 +23,7 @@ import {
 } from "./configurationVersion";
 import type { KBrainPromptSnapshot } from "./prompts";
 import { createKBrainQueueClient } from "./queueClient";
+import { createSseRecordSplitter } from "./sseRecords";
 import { fetchKBrain, KBrainTransportError } from "./transport";
 import {
   KBRAIN_PROTOCOL_VERSION,
@@ -1181,7 +1182,7 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
     if (!response.body) throw new Error("ZeroAgent engine event stream has no body");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    const records = createSseRecordSplitter();
     let lastSeq = afterSeq;
     const abortReader = () => {
       void reader.cancel().catch(() => undefined);
@@ -1221,13 +1222,12 @@ export function createKBrainClient(inputOptions: KBrainClientOptions = {}) {
       while (true) {
         const next = await reader.read();
         if (next.done) break;
-        buffer += decoder.decode(next.value, { stream: true });
-        const records = buffer.split(/\r?\n\r?\n/);
-        buffer = records.pop() ?? "";
-        for (const record of records) consume(record);
+        for (const record of records.push(decoder.decode(next.value, { stream: true }))) {
+          consume(record);
+        }
       }
-      buffer += decoder.decode();
-      if (buffer.trim())
+      for (const record of records.push(decoder.decode())) consume(record);
+      if (records.rest().trim())
         throw new Error("ZeroAgent engine event stream ended with an incomplete event");
     } finally {
       signal?.removeEventListener("abort", abortReader);

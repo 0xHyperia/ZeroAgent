@@ -1,3 +1,5 @@
+import "@liveagent/ui/i18n/namespaces/scheduledTasks";
+import "@liveagent/ui/i18n/namespaces/skillsHub";
 import { GlassPanel } from "@liveagent/ui/components/hub/HubChrome";
 import {
   FrostSpinner,
@@ -14,6 +16,7 @@ import {
   SkillIcon,
 } from "@liveagent/ui/components/IconSet";
 import { Button } from "@liveagent/ui/components/ui/button";
+import { SectionHeader } from "@liveagent/ui/components/ui/section-header";
 import { Separator } from "@liveagent/ui/components/ui/separator";
 import {
   Sheet,
@@ -482,9 +485,7 @@ function SkillsStorePreviewPopup(props: {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {t("settings.skillsStorePreviewTitle")}
-          </div>
+          <SectionHeader size="xs">{t("settings.skillsStorePreviewTitle")}</SectionHeader>
           <SheetTitle className="mt-1 truncate">{data.displayName}</SheetTitle>
           <div
             className={cn(

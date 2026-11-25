@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### 优化改进
+
+- 同步 LiveAgent v2.0.37，优化长对话的事件解析和消息列表渲染。桌面和设备 WebUI 可在设置中开启详细进度。
+- 无历史设置的新安装默认启用「变更前确认」。已有权限配置继续按原设置执行。
+
+### Bug 修复
+
+- 修复 Gateway 并发入队时任务可能被乱序取出的问题。模型验证返回可识别的错误类别和 HTTP 状态。
+
 ## v1.0.0-beta.1 - 2026-11-19
 
 ZeroAgent 1.0 的首个公开 Beta，同步 LiveAgent v2.0.27。以下记录自上一公开版 v0.3.23 以来的变化。公开版默认关闭云端工作区，可通过 Web 和 Android 继续控制已授权的电脑。云端能力的启用条件见 [ADR 0080](docs/product/decisions/0080-cloud-workspace-release-availability.md)。

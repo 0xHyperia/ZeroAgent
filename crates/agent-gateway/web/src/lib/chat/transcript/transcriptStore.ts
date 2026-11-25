@@ -28,6 +28,7 @@ import {
 import {
   applyEventToTurn,
   createTurn,
+  entryErrorText,
   optimisticUserEntryId,
   rebuildTurnFromSnapshot,
   seededUserEntryId,
@@ -339,9 +340,21 @@ export function createTranscriptStore(options?: {
     return null;
   };
 
+  // replaceTurn runs for every streamed event. It writes into a private copy
+  // of `turns` instead of mapping the whole list each time: the first replace
+  // after `turns` was reassigned copies it once, later ones are O(1) for the
+  // usual target (the newest turn; the lookup scans from the end). Every
+  // other assignment yields a new array, so it is never this private copy.
+  let ownedTurns: Turn[] | null = null;
   const replaceTurn = (previous: Turn, next: Turn) => {
     if (previous === next) return;
-    turns = turns.map((turn) => (turn === previous ? next : turn));
+    const index = turns.lastIndexOf(previous);
+    if (index < 0) return;
+    if (turns !== ownedTurns) {
+      turns = turns.slice();
+      ownedTurns = turns;
+    }
+    turns[index] = next;
   };
 
   // Binds a turn to its run. If a separate turn already exists for that run
@@ -803,12 +816,10 @@ export function createTranscriptStore(options?: {
         ? adoptRun(turn, runId)
         : rebuildTurnFromSnapshot(adoptRun(turn, runId), parsed);
     if (realErrorEntries.length > 0) {
-      const errorTexts = new Set(
-        next.entries
-          .filter((entry) => entry.kind === "error" || entry.kind === "assistant")
-          .map((entry) => entry.text),
+      const errorTexts = new Set(next.entries.map(entryErrorText));
+      const missingErrors = realErrorEntries.filter(
+        (entry) => !errorTexts.has(entryErrorText(entry)),
       );
-      const missingErrors = realErrorEntries.filter((entry) => !errorTexts.has(entry.text));
       if (missingErrors.length > 0) {
         next = { ...next, entries: [...next.entries, ...missingErrors] };
       }
@@ -1345,6 +1356,8 @@ export function createTranscriptStore(options?: {
     }) => {
       const preRebaseHistoryEntries = historyEntries;
       const preRebaseTurns = turns;
+      // The stash may keep this array: replaceTurn must copy before writing.
+      if (ownedTurns === preRebaseTurns) ownedTurns = null;
       const rebased = baseMessageRef ? rebaseFromMessageRef(baseMessageRef) : false;
       if (rebased) {
         // Both arrays are replaced (never mutated) by the truncation, so the
@@ -1417,12 +1430,7 @@ export function createTranscriptStore(options?: {
     appendLocalError: (message) => {
       const alreadyShown = turns.some(
         (turn) =>
-          !turn.folded &&
-          turn.entries.some(
-            (entry) =>
-              (entry.kind === "assistant" || entry.kind === "error") &&
-              entry.text.trim() === message.trim(),
-          ),
+          !turn.folded && turn.entries.some((entry) => entryErrorText(entry) === message.trim()),
       );
       if (alreadyShown) {
         return;

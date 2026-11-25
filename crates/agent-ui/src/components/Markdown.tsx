@@ -6,7 +6,6 @@ import {
   showChatUrlContextMenu,
   withChatFileLinkMenuIntent,
 } from "@liveagent/ui/lib/chat/chatFileLinkContextMenuStore";
-import { math } from "@streamdown/math";
 import {
   type ComponentProps,
   cloneElement,
@@ -50,12 +49,14 @@ import {
   resolveCodeBlockRenderPolicy,
 } from "../lib/markdownCodeBlockPolicy";
 import { throttledCodePlugin } from "../lib/markdownCodeHighlight";
+import { hasMarkdownMath, markdownMathPlugin } from "../lib/markdownMath";
 import {
   cjkDoubleTildeStrikethrough,
   withDoubleTildeStrikethrough,
 } from "../lib/markdownStrikethrough";
 import { normalizeLatexDelimiters } from "../lib/normalizeLatexDelimiters";
 import { copyTextToClipboard } from "../lib/shared/clipboard";
+import { useLazyModule } from "../lib/shared/lazyModule";
 import { cn } from "../lib/shared/utils";
 import { DEFAULT_MARKDOWN_CODE_LANGUAGE, MARKDOWN_CODE_THEMES } from "../lib/syntaxHighlighter";
 import { createStreamingBlockParser } from "../lib/streamingMarkdownBlocks";
@@ -236,7 +237,14 @@ export type MarkdownProps = {
 
 // code 走包装插件：有界 LRU + 流式增长块 300ms 节流（见 markdownCodeHighlight.ts）。
 // 删除线只认 `~~text~~`，单个 `~` 按普通字符显示（见 markdownStrikethrough.ts）。
-const streamdownPlugins = { code: throttledCodePlugin, math, cjk: cjkDoubleTildeStrikethrough };
+const streamdownPlugins = { code: throttledCodePlugin, cjk: cjkDoubleTildeStrikethrough };
+type MathPlugin = NonNullable<ReturnType<typeof markdownMathPlugin.get>>;
+let streamdownPluginsWithMath: (typeof streamdownPlugins & { math: MathPlugin }) | undefined;
+function streamdownPluginsFor(math: MathPlugin | null) {
+  if (!math) return streamdownPlugins;
+  streamdownPluginsWithMath ??= { ...streamdownPlugins, math };
+  return streamdownPluginsWithMath;
+}
 // Streamdown folds these props into the value of the context every block,
 // code block and table reads. Fresh literals per render would hand that
 // context a new value on each streaming update, re-rendering the consumers in
@@ -944,6 +952,11 @@ export const Markdown = memo(function Markdown(props: MarkdownProps) {
       ),
     [citationAtDocumentEnd, content, showCaret, streaming],
   );
+  const mathWanted = hasMarkdownMath(normalizedContent);
+  const { value: math } = useLazyModule(markdownMathPlugin, mathWanted);
+  const [initiallyMathReady] = useState(() => markdownMathPlugin.get() !== null);
+  // Streamdown can retain the first static parse until its instance is replaced.
+  const streamdownKey = !initiallyMathReady && mathWanted && math ? "math" : "text";
   const components = useMemo(() => {
     const baseComponents = readOnly ? markdownReadOnlyComponents : markdownComponents;
     const fileLinkComponents: Components =
@@ -968,6 +981,7 @@ export const Markdown = memo(function Markdown(props: MarkdownProps) {
   return (
     <div>
       <Streamdown
+        key={streamdownKey}
         className={cn(
           "chat-markdown max-w-none break-words",
           CHAT_MARKDOWN_CLASS,
@@ -980,7 +994,7 @@ export const Markdown = memo(function Markdown(props: MarkdownProps) {
           showCaret ? "chat-markdown--caret-on" : "chat-markdown--caret-off",
           className,
         )}
-        plugins={streamdownPlugins}
+        plugins={streamdownPluginsFor(mathWanted ? math : null)}
         remarkPlugins={onOpenFileLink ? chatRemarkPlugins : remarkPlugins}
         {...(rehypePlugins ? { rehypePlugins } : {})}
         components={components}

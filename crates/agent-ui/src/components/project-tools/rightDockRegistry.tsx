@@ -1,11 +1,8 @@
 import { FolderTree, GitBranch, Globe, Key } from "@liveagent/ui/components/IconSet";
-import { FileTreePanel } from "@liveagent/ui/components/project-tools/file-tree/index";
-import { GitReviewPanel } from "@liveagent/ui/components/project-tools/git-review/index";
 import type { ReactNode } from "react";
-import { LocalTunnelPanel } from "./LocalTunnelPanel";
+import { FileTreePanel, GitReviewPanel, LocalTunnelPanel, SshTunnelPanel } from "./lazyToolPanels";
 import { type RightDockToolContextValue, useRightDockToolContext } from "./RightDockContext";
 import type { RightDockSingletonTabKind } from "./rightDockModel";
-import { SshTunnelPanel } from "./SshTunnelPanel";
 
 export type { RightDockSingletonTabKind } from "./rightDockModel";
 

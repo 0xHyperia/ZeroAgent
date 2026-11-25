@@ -1297,6 +1297,7 @@ export default function App() {
               <>
                 <ProcessDisclosureProvider
                   expandByDefault={settings.customSettings.chatTranscript.expandProcessByDefault}
+                  detailedProgress={settings.customSettings.chatTranscript.showDetailedProgress}
                 >
                   <ChatPage
                     settingsNavigation={settingsNavigation}

@@ -163,6 +163,8 @@ export type ChatTranscriptSettings = {
   width: number;
   /** Start thinking segments and tool-trace groups expanded (#1154). */
   expandProcessByDefault: boolean;
+  /** Show live tool and reasoning details with timing. */
+  showDetailedProgress?: boolean;
 };
 
 /**

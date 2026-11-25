@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import { getUsagePlanDisplay } from "@liveagent/app/lib/providers/usageQuery";
 import {
   CODEX_REQUEST_FORMAT_LABELS,
@@ -512,7 +513,7 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                         <Input
                           variant="plain"
                           id="modal-apikey"
-                          type={showApiKey ? "text" : "password"}
+                          type={showApiKey || apiKeyIsRedactedDisplay ? "text" : "password"}
                           value={apiKey}
                           className="h-10 pr-9 shadow-none"
                           onChange={(event) => setApiKey(event.currentTarget.value)}

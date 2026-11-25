@@ -1356,6 +1356,22 @@
       ]
     },
     {
+      "glob": "crates/agent-gui/{e2e,perf}/.gitignore",
+      "ownership": "adapted",
+      "risk": "low",
+      "checks": [
+        "检查性能报告与隔离测试目录的产物规则"
+      ]
+    },
+    {
+      "glob": "knip.config.ts",
+      "ownership": "adapted",
+      "risk": "low",
+      "checks": [
+        "保留报告用途，核对 ZeroAgent 的入口、公开导出及基线"
+      ]
+    },
+    {
       "glob": "tsconfig*.json",
       "ownership": "upstream_owned",
       "risk": "medium",

@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import {
   buildFontFamilySelectOptions,
   FONT_FAMILY_CUSTOM_SELECT_VALUE,
@@ -483,6 +484,31 @@ export function SystemSettingsForm(
           />
         ) : null}
       </SettingsGroup>
+
+      {showLocalRuntimeSettings ? (
+        <SettingsGroup title={t("settings.navAgents")}>
+          <SettingsRow
+            title={t("settings.showDetailedProgress")}
+            description={t("settings.showDetailedProgressDesc")}
+            control={
+              <AgentActivationSwitch
+                checked={settings.customSettings.chatTranscript.showDetailedProgress === true}
+                title={t("settings.showDetailedProgress")}
+                onToggle={() =>
+                  setSettings((previous) =>
+                    updateCustomSettings(previous, {
+                      chatTranscript: {
+                        ...previous.customSettings.chatTranscript,
+                        showDetailedProgress: !previous.customSettings.chatTranscript.showDetailedProgress,
+                      },
+                    }),
+                  )
+                }
+              />
+            }
+          />
+        </SettingsGroup>
+      ) : null}
 
       <SidebarShortcutsSection settings={settings} setSettings={setSettings} />
 

@@ -247,6 +247,18 @@ test("web settings initialize from browser language and normalize invalid saved 
   });
 });
 
+test("fresh WebUI settings ask while existing snapshots keep their permission mode", () => {
+  const storage = installWindow();
+  const key = "liveagent.gateway.webui.settings.v1";
+  assert.equal(webSettings.loadWebSettings("token").system.commandSafetyMode, "ask");
+  storage.set(key, JSON.stringify({ locale: "en-US" }));
+  assert.equal(webSettings.loadWebSettings("token").system.commandSafetyMode, "always");
+  storage.set(key, JSON.stringify({ system: { executionMode: "tools" } }));
+  assert.equal(webSettings.loadWebSettings("token").system.commandSafetyMode, "always");
+  storage.set(key, JSON.stringify({ system: { commandSafetyMode: "autoEdit" } }));
+  assert.equal(webSettings.loadWebSettings("token").system.commandSafetyMode, "autoEdit");
+});
+
 test("web settings preserve normalized MCP additional information", () => {
   const normalized = settings.normalizeMcpSettings({
     servers: [

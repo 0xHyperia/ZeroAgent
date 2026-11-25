@@ -35,17 +35,19 @@ export function loadWebSettings(token: string): AppSettings {
       return fallback;
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings> | null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
     const normalized = redactSettingsForWebStorage(
       normalizeSettings({
         ...fallback,
-        ...(parsed ?? {}),
+        ...parsed,
+        system: parsed.system ?? { ...fallback.system, commandSafetyMode: "always" },
         kbrainWebSearch: undefined,
         remote: {
           ...fallback.remote,
-          ...(parsed?.remote ?? {}),
+          ...(parsed.remote ?? {}),
           gatewayUrl: fallback.remote.gatewayUrl,
           token: "",
-          enabled: token.trim() !== "" || parsed?.remote?.enabled === true,
+          enabled: token.trim() !== "" || parsed.remote?.enabled === true,
         },
       }),
     );

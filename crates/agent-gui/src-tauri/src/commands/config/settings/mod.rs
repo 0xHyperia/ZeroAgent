@@ -211,3 +211,4 @@ include!("webdav_backup_tests.rs");
 include!("ssh/mod.rs");
 include!("commands.rs");
 include!("tests.rs");
+include!("command_safety_default_tests.rs");

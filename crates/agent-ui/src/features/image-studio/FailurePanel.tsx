@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/imageStudio";
 import { useState } from "react";
 import { AlertTriangle, ImageOff } from "../../components/IconSet";
 import { Button } from "../../components/ui/button";
@@ -84,7 +85,7 @@ export function FailurePanel({
     <div className="my-auto flex max-h-full w-full max-w-lg flex-col gap-4 overflow-y-auto px-6 py-5 lg:py-10">
       <div className="flex items-start gap-3">
         <span
-          className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg ${mayBeBilled ? "bg-amber-500/15 text-amber-600 dark:text-amber-300" : "bg-muted text-muted-foreground"}`}
+          className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg ${mayBeBilled ? "bg-warning/15 text-warning " : "bg-muted text-muted-foreground"}`}
         >
           {mayBeBilled ? (
             <AlertTriangle className="size-5" strokeWidth={1.75} />
@@ -124,7 +125,7 @@ export function FailurePanel({
         </p>
       )}
       {mayBeBilled && (
-        <p className="text-xs text-amber-700 dark:text-amber-300">
+        <p className="text-xs text-warning">
           {t(
             lostOutput ? "imageStudio.failure.savedBilling" : "imageStudio.failure.billingWarning",
           )}

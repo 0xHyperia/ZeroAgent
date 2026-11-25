@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { parse } from "@babel/parser";
 import { transformSync } from "@babel/core";
+import transformDynamicImport from "@babel/plugin-transform-dynamic-import";
 import transformTypeScript from "@babel/plugin-transform-typescript";
 import transformJsx from "@babel/plugin-transform-react-jsx";
 import transformModules from "@babel/plugin-transform-modules-commonjs";
@@ -106,6 +107,7 @@ export function transpileTypeScriptModule(source, filePath) {
       plugins: [
         ...(loader === "ts" || loader === "tsx" ? [[transformTypeScript, { isTSX: loader === "tsx", allowDeclareFields: true }]] : []),
         ...(loader === "jsx" || loader === "tsx" ? [[transformJsx, { runtime: "automatic" }]] : []),
+        transformDynamicImport,
         transformModules,
       ],
     }).code;

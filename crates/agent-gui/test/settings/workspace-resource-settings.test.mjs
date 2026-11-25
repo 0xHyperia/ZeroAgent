@@ -100,6 +100,11 @@ const webRemotePathPicker = readFileSync(
   new URL("../../../agent-gateway/web/src/components/RemotePathPickerModal.tsx", import.meta.url),
   "utf8",
 );
+// The hook that opens the picker; the modal itself loads on demand.
+const webRemotePathPickerHook = readFileSync(
+  new URL("../../../agent-gateway/web/src/components/useRemotePathPicker.tsx", import.meta.url),
+  "utf8",
+);
 const sharedSkillsHub = readFileSync(
   new URL("../../../agent-ui/src/pages/skills-hub/SkillsHubPage.tsx", import.meta.url),
   "utf8",
@@ -169,16 +174,16 @@ test("workspace configuration uses one entry and one shared two-column modal", (
   assert.match(webDirectoryPickerAdapter, /useRemotePathPicker/);
   assert.match(webDirectoryPickerAdapter, /suspendsParentModal: true/);
   assert.doesNotMatch(sharedProjectSettings, /window\.requestAnimationFrame/);
-  assert.match(webRemotePathPicker, /selectedPathRef\.current = path/);
-  assert.match(webRemotePathPicker, /pending\.resolve\(selectedPathRef\.current\)/);
+  assert.match(webRemotePathPickerHook, /selectedPathRef\.current = path/);
+  assert.match(webRemotePathPickerHook, /pending\.resolve\(selectedPathRef\.current\)/);
   assert.match(webRemotePathPicker, /h-dialog-650px-vh/);
   assert.match(webRemotePathPicker, /max-h-92vh/);
   assert.match(webRemotePathPicker, /max-w-4xl/);
   assert.doesNotMatch(webRemotePathPicker, /forceRender/);
   assert.doesNotMatch(webRemotePathPicker, /overlayClassName|viewportClassName|z-\[\d+\]/);
   assert.ok(
-    webRemotePathPicker.indexOf("selectedPathRef.current = path") <
-      webRemotePathPicker.indexOf("pending.resolve(selectedPathRef.current)"),
+    webRemotePathPickerHook.indexOf("selectedPathRef.current = path") <
+      webRemotePathPickerHook.indexOf("pending.resolve(selectedPathRef.current)"),
   );
   assert.doesNotMatch(webGatewayApp, /useDirectoryPicker|directoryPickerElement/);
   assert.match(sharedResourceTabs, /<TabsList[\s\S]*<TabsTrigger/);
@@ -215,8 +220,8 @@ test("prompt templates expose global and project scopes with append or replace e
 
 test("global and project prompt cards share row and action layout", () => {
   const projectCards = sharedAgentsSection.slice(sharedAgentsSection.indexOf("{projects.map"));
-  const previewButton = projectCards.indexOf('title={t("settings.agentsShowPrompt")}');
-  const editButton = projectCards.indexOf('title={t("settings.agentsProjectEdit")}');
+  const previewButton = projectCards.indexOf('label={t("settings.agentsShowPrompt")}');
+  const editButton = projectCards.indexOf('label={t("settings.agentsProjectEdit")}');
 
   assert.match(projectCards, /settings-card-row flex items-center gap-3 px-4 py-3/);
   assert.match(projectCards, /settings-card-actions flex items-center gap-1\.5/);
@@ -225,7 +230,7 @@ test("global and project prompt cards share row and action layout", () => {
   assert.match(projectCards, /disabled=\{!configured\}/);
   assert.match(
     projectCards,
-    /size="icon-sm"[\s\S]*title=\{t\("settings\.agentsProjectEdit"\)\}/,
+    /<IconButton[\s\S]*label=\{t\("settings\.agentsProjectEdit"\)\}/,
   );
   assert.doesNotMatch(
     projectCards,

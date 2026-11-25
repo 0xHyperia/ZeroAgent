@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import type { ReactNode } from "react";
 import { ImageIcon, Video, WandSparkles } from "../../components/IconSet";
 import { Button } from "../../components/ui/button";

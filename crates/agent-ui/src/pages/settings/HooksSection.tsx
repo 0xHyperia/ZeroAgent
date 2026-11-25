@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import type { SettingsSectionProps } from "@liveagent/app/pages/settings/types";
 import { Plus, SquarePen, Trash2 } from "@liveagent/ui/components/IconSet";
 import { SettingsNotice } from "@liveagent/ui/components/settings/SettingsNotice";
@@ -85,7 +86,10 @@ export function HooksSection(_props: SettingsSectionProps) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div
+        data-settings-anchor="hooks-lifecycle"
+        className="flex flex-wrap items-center justify-between gap-3"
+      >
         <p className="text-sm text-muted-foreground">{t("settings.hooksDesc")}</p>
         <span className="text-xs text-muted-foreground">
           {t("settings.hooksActiveHooks")} {enabledCount} / {hooks.length}

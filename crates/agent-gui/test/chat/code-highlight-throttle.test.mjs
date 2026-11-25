@@ -237,3 +237,41 @@ test("an upstream call that never delivers does not stall the queue", async (t) 
   assert.deepEqual(calls, ["broken();", "const fine = true;"]);
   assert.equal(delivered?.tokens[0][0].content, "const fine = true;");
 });
+
+test("the default plugin loads the highlighter on the first code block", async () => {
+  let loads = 0;
+  const calls = [];
+  const lazyLoader = createTsModuleLoader({
+    mocks: {
+      shiki: {
+        __esModule: true,
+        async createHighlighter() {
+          loads += 1;
+          return {
+            loadLanguage: async (language) => calls.push(language),
+            loadTheme: async () => {},
+            codeToTokens: (code) => ({ tokens: [[{ content: code }]], fg: "", bg: "" }),
+          };
+        },
+      },
+    },
+  });
+  const { throttledCodePlugin } = lazyLoader.loadModule(
+    "@liveagent/ui/lib/markdownCodeHighlight.ts",
+  );
+  // Streamdown asks for the themes up front; that must not load shiki.
+  assert.deepEqual(throttledCodePlugin.getThemes(), ["github-light", "github-dark"]);
+  assert.equal(throttledCodePlugin.supportsLanguage("sql"), true);
+  assert.equal(loads, 0);
+
+  let delivered = null;
+  const code = "SELECT name FROM items;";
+  const immediate = throttledCodePlugin.highlight({ ...OPTS(code), language: "sql" }, (result) => {
+    delivered = result;
+  });
+  assert.equal(immediate, null, "nothing to show until the highlighter has loaded");
+  for (let attempt = 0; attempt < 20 && !delivered; attempt += 1) await sleep(5);
+  assert.equal(loads, 1);
+  assert.deepEqual(calls, ["sql"]);
+  assert.equal(delivered?.tokens[0][0].content, code);
+});

@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/projectTools";
 import { useRef, useState } from "react";
 import { useLocale } from "../../../i18n";
 import { copyTextToClipboard } from "../../../lib/shared/clipboard";

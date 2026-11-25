@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/mcpHub";
 import { type AppSettings, type McpServerConfig, updateMcp } from "@liveagent/app/lib/settings";
 import { Cloud, Download, Plus, RefreshCw, Search, Server } from "@liveagent/ui/components/IconSet";
 import { ResourceTabsList } from "@liveagent/ui/components/resources/ResourceTabsList";
@@ -91,6 +92,7 @@ export function McpHubPage(props: McpHubPageProps) {
       <div className="relative z-10 flex h-full min-h-0 flex-col overflow-hidden">
         <HubHeader
           embedded={props.embedded}
+          settingsAnchor={props.embedded ? "mcp-servers" : undefined}
           title="MCP Hub"
           subtitle={t("mcpHub.subtitle")}
           prominent

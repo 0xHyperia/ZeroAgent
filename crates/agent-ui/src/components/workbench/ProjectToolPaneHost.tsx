@@ -11,9 +11,7 @@ import { ensureManagedProcessInit } from "../../lib/managed-process/store";
 import type { TerminalSession, TerminalSnapshot } from "../../lib/terminal/types";
 import type { ProjectToolWorkbenchSurface } from "../../lib/workbench/types";
 import { BackgroundTasksPanel } from "../project-tools/BackgroundTasksPanel";
-import { FileTreePaneSurface } from "../project-tools/file-tree/index";
-import { GitReviewPanel } from "../project-tools/git-review/index";
-import { LocalTunnelPanel } from "../project-tools/LocalTunnelPanel";
+import { FileTreePaneSurface, GitReviewPanel, LocalTunnelPanel, SshTunnelPanel } from "../project-tools/lazyToolPanels";
 import {
   type RightDockGitContext,
   type RightDockToolCapabilities,
@@ -21,7 +19,6 @@ import {
   RightDockToolContext,
   type RightDockToolContextValue,
 } from "../project-tools/RightDockContext";
-import { SshTunnelPanel } from "../project-tools/SshTunnelPanel";
 import { UnsupportedPaneSurface } from "./surfaces/UnsupportedPaneSurface";
 
 const NO_EXTERNAL_ROOTS: readonly never[] = [];

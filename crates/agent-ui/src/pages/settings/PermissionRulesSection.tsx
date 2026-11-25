@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/settings";
 import { workspaceProjectPathKey } from "@liveagent/app/lib/settings";
 import type { SettingsSectionProps } from "@liveagent/app/pages/settings/types";
 import { Trash2 } from "@liveagent/ui/components/IconSet";
@@ -231,7 +232,7 @@ export function PermissionRulesSection({
               className={
                 rule.effect === "deny"
                   ? "shrink-0 rounded-md bg-destructive/10 px-1.5 py-0.5 text-tiny text-destructive"
-                  : "shrink-0 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-tiny text-emerald-700 dark:text-emerald-400"
+                  : "shrink-0 rounded-md bg-success/10 px-1.5 py-0.5 text-tiny text-success"
               }
             >
               {t(`settings.permissions.${rule.effect}`)}
@@ -259,6 +260,7 @@ export function PermissionRulesSection({
 
   return (
     <SettingsSection
+      data-settings-anchor="permission-rules"
       title={t("settings.permissions.title")}
       description={t("settings.permissions.description")}
       data-testid="permission-rules-settings"

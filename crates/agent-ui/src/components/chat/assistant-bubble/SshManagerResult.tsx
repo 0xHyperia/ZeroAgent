@@ -11,8 +11,8 @@ import {
   parseSshExecResult,
   parseSshTransferResult,
 } from "@liveagent/ui/lib/chat/sshManagerDisplay";
-import { previewText } from "@liveagent/ui/lib/chat/uiMessages";
 import { cn } from "@liveagent/ui/lib/shared/utils";
+import { TruncatedPreviewText } from "./TruncatedPreviewText";
 
 const STREAM_PREVIEW_CHARS = 8000;
 
@@ -22,11 +22,11 @@ function StreamBlock({ label, text, tone }: { label: string; text: string; tone?
       <ToolSurfaceLabel label={label} />
       <ToolScrollablePre
         className={cn(
-          "max-h-56 bg-black/[0.02] font-mono dark:bg-white/[0.03]",
-          tone === "error" && "text-red-700/85 dark:text-red-300/85",
+          "max-h-56 bg-surface-subtle font-mono",
+          tone === "error" && "text-destructive/85",
         )}
       >
-        {previewText(text.replace(/\n+$/, ""), STREAM_PREVIEW_CHARS)}
+        <TruncatedPreviewText text={text.replace(/\n+$/, "")} maxChars={STREAM_PREVIEW_CHARS} />
       </ToolScrollablePre>
     </ToolSurface>
   );
@@ -84,9 +84,7 @@ export function getSshManagerResultView(toolName: string, text: string, isError?
           </div>
         ) : null}
         {transfer.error ? (
-          <div className="break-words text-xs text-red-700/85 dark:text-red-300/85">
-            {transfer.error}
-          </div>
+          <div className="break-words text-xs text-destructive/85">{transfer.error}</div>
         ) : null}
       </div>
     );

@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/imageStudio";
 import { useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, Package } from "../../components/IconSet";
 import { ModelPickerContent } from "../../components/models/ModelPickerContent";

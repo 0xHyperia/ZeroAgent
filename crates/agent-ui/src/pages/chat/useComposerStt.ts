@@ -1,22 +1,18 @@
 import type { SttProviderId } from "@liveagent/app/lib/settings";
 import type { MentionComposerHandle } from "@liveagent/ui/components/chat/MentionComposer";
-import { errorMessageWithFallback } from "@liveagent/ui/lib/shared/value";
-import {
-  appendTailSilence,
-  type PcmChunk,
-  pcm16ToLittleEndianBytes,
-  STT_CONNECT_TIMEOUT_MS,
-  STT_SAMPLES_PER_CHUNK,
-  STT_SEND_QUEUE_TIMEOUT_MS,
-  SttAudioCapture,
-  SttPcmFifo,
-} from "@liveagent/ui/lib/stt/audio";
+import type { PcmChunk, SttAudioCapture, SttPcmFifo } from "@liveagent/ui/lib/stt/audio";
+import { SttError, type SttErrorCode, sttErrorMessage } from "@liveagent/ui/lib/stt/errors";
 import type { SttRuntimeEvent, SttTransport, SttUiState } from "@liveagent/ui/lib/stt/types";
 import type { MutableRefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+// Microphone capture loads when voice input starts, not with the composer.
+type SttAudio = typeof import("@liveagent/ui/lib/stt/audio");
+const loadSttAudio = (): Promise<SttAudio> => import("@liveagent/ui/lib/stt/audio");
+
 type ActiveSttSession = {
   id: string;
+  audio: SttAudio;
   capture: SttAudioCapture;
   fifo: SttPcmFifo;
   ready: boolean;
@@ -40,8 +36,10 @@ export function useComposerStt(options: {
   sessionKey?: string;
   /** 输入区被挂起（如轨迹页）时取消识别，避免用户无法点停止。 */
   hidden?: boolean;
-  /** 错误上报回调（如麦克风不可用）；由宿主决定展示方式（toast 等）。 */
+  /** 错误上报回调（如麦克风不可用），消息已按 `t` 本地化；由宿主决定展示方式（toast 等）。 */
   onError?: (message: string) => void;
+  /** Translates the `chat.stt.error.*` messages of coded failures. */
+  t: (key: string) => string;
   /** 供应商缺少必要配置；与运行时错误分流，供界面展示配置引导。 */
   onConfigurationRequired?: () => void;
 }) {
@@ -55,6 +53,7 @@ export function useComposerStt(options: {
     hidden = false,
     onError,
     onConfigurationRequired,
+    t,
   } = options;
   const [state, setState] = useState<SttUiState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -76,9 +75,10 @@ export function useComposerStt(options: {
   );
 
   const fail = useCallback(
-    (message: string, expectedSessionId?: string) => {
+    (cause: unknown, fallback: SttErrorCode, expectedSessionId?: string) => {
       const active = activeRef.current;
       if (expectedSessionId && active?.id !== expectedSessionId) return;
+      const message = sttErrorMessage(cause, fallback, t);
       if (active) void transport?.cancel(active.id).catch(() => undefined);
       const preserve = Boolean(active?.lastText.trim());
       cleanup(preserve);
@@ -86,7 +86,7 @@ export function useComposerStt(options: {
       setState("error");
       onError?.(message);
     },
-    [cleanup, onError, transport],
+    [cleanup, onError, t, transport],
   );
 
   const sendChunk = useCallback(
@@ -95,9 +95,11 @@ export function useComposerStt(options: {
       if (!active || !transport) return;
       const sessionId = active.id;
       active.queue = active.queue
-        .then(() => transport.sendAudio(sessionId, sequence, pcm16ToLittleEndianBytes(pcm)))
+        .then(() =>
+          transport.sendAudio(sessionId, sequence, active.audio.pcm16ToLittleEndianBytes(pcm)),
+        )
         .catch((cause) => {
-          fail(errorMessageWithFallback(cause, "发送语音数据失败"), sessionId);
+          fail(cause, "sendAudioFailed", sessionId);
         });
     },
     [fail, transport],
@@ -111,7 +113,7 @@ export function useComposerStt(options: {
       if (active.ready) {
         sendChunk(chunk.sequence, chunk.pcm);
       } else if (!active.fifo.push(chunk)) {
-        fail("云连接超时，语音缓存已达到 10 秒上限");
+        fail(null, "bufferFull");
       }
     },
     [fail, sendChunk],
@@ -136,13 +138,13 @@ export function useComposerStt(options: {
           active.queue,
           new Promise<never>((_, reject) => {
             queueTimer = window.setTimeout(
-              () => reject(new Error("发送语音数据超时")),
-              STT_SEND_QUEUE_TIMEOUT_MS,
+              () => reject(new SttError("sendAudioTimeout")),
+              active.audio.STT_SEND_QUEUE_TIMEOUT_MS,
             );
           }),
         ]);
       } catch (cause) {
-        fail(errorMessageWithFallback(cause, "发送语音数据超时"), active.id);
+        fail(cause, "sendAudioTimeout", active.id);
         return;
       } finally {
         window.clearTimeout(queueTimer);
@@ -150,12 +152,9 @@ export function useComposerStt(options: {
       if (activeRef.current !== active) return;
       try {
         await transport.stop(active.id);
-        active.finalTimer = window.setTimeout(
-          () => fail("识别结束超时，已保留最后转写内容"),
-          5_000,
-        );
+        active.finalTimer = window.setTimeout(() => fail(null, "finalTimeout"), 5_000);
       } catch (cause) {
-        fail(errorMessageWithFallback(cause, "停止识别失败"));
+        fail(cause, "stopFailed");
       }
     },
     [fail, transport],
@@ -183,9 +182,10 @@ export function useComposerStt(options: {
     try {
       await active.capture.stop();
     } catch (cause) {
-      fail(errorMessageWithFallback(cause, "停止麦克风失败"));
+      fail(cause, "stopMicrophoneFailed");
       return;
     }
+    const { appendTailSilence, STT_SAMPLES_PER_CHUNK } = active.audio;
     const tail = appendTailSilence();
     for (let offset = 0; offset < tail.length; offset += STT_SAMPLES_PER_CHUNK) {
       const pcm = tail.slice(offset, offset + STT_SAMPLES_PER_CHUNK);
@@ -225,10 +225,10 @@ export function useComposerStt(options: {
         cleanup(true);
         setState("idle");
       } else if (event.type === "error") {
-        fail(event.message || "语音识别失败");
+        fail(event.message, "recognitionFailed");
       } else if (event.type === "closed") {
         if (!active.stopping) {
-          fail("语音识别连接意外关闭");
+          fail(null, "connectionClosed");
         } else {
           cleanup(Boolean(active.lastText.trim()));
           setState("idle");
@@ -241,7 +241,7 @@ export function useComposerStt(options: {
   const start = useCallback(async () => {
     if (!transport || !provider || disabled || activeRef.current) return;
     if (providerConfigured === false) {
-      const message = "STT供应商配置不完整";
+      const message = t("chat.stt.error.providerIncomplete");
       setError(message);
       setState("error");
       if (onConfigurationRequired) onConfigurationRequired();
@@ -251,26 +251,28 @@ export function useComposerStt(options: {
     setError(null);
     setState("requesting-permission");
     if (!composerRef.current?.beginTransientText()) {
+      const message = t("chat.stt.error.composerLocked");
       setState("error");
-      setError("无法锁定当前输入位置");
-      onError?.("无法锁定当前输入位置");
+      setError(message);
+      onError?.(message);
       return;
     }
 
     try {
-      await transport.requestPermission?.();
-      const fifo = new SttPcmFifo();
-      const capture = new SttAudioCapture({
+      const [audio] = await Promise.all([loadSttAudio(), transport.requestPermission?.()]);
+      const fifo = new audio.SttPcmFifo();
+      const capture = new audio.SttAudioCapture({
         onChunk: (chunk) => queueChunk(chunk),
         onSilenceTimeout: () => {
           const current = activeRef.current;
           if (!current?.ready || current.stopping) return;
           void stop();
         },
-        onCaptureError: (message) => fail(message),
+        onCaptureError: (error) => fail(error, "microphoneStartFailed"),
       });
       const active: ActiveSttSession = {
         id: crypto.randomUUID(),
+        audio,
         capture,
         fifo,
         ready: false,
@@ -292,10 +294,13 @@ export function useComposerStt(options: {
         return;
       }
       setState("buffering");
-      active.connectTimer = window.setTimeout(() => fail("云端连接超时"), STT_CONNECT_TIMEOUT_MS);
+      active.connectTimer = window.setTimeout(
+        () => fail(null, "connectTimeout"),
+        audio.STT_CONNECT_TIMEOUT_MS,
+      );
       await transport.open({ sessionId: active.id, provider, onEvent });
     } catch (cause) {
-      fail(errorMessageWithFallback(cause, "无法启动语音识别"));
+      fail(cause, "startFailed");
     }
   }, [
     composerRef,
@@ -308,6 +313,7 @@ export function useComposerStt(options: {
     providerConfigured,
     queueChunk,
     stop,
+    t,
     transport,
   ]);
 

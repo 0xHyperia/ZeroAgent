@@ -83,3 +83,23 @@ test("extracted TypeScript function bodies retain their return statement", () =>
   );
   assert.equal(new Function("input", code)(41), 42);
 });
+
+test("dynamic imports resolve lazily through the test loader", async () => {
+  const code = transpileTypeScriptModule(
+    'export const load = () => import("fixture");',
+    path.resolve("dynamic.ts"),
+  );
+  const module = { exports: {} };
+  const calls = [];
+  vm.runInNewContext(code, {
+    module,
+    exports: module.exports,
+    require(name) {
+      calls.push(name);
+      return { __esModule: true, value: "mock" };
+    },
+  });
+  assert.deepEqual(calls, []);
+  assert.equal((await module.exports.load()).value, "mock");
+  assert.deepEqual(calls, ["fixture"]);
+});

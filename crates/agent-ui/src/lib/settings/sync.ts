@@ -99,6 +99,8 @@ export type GatewaySettingsSyncPayload = {
   appliedClientSeqs?: GatewaySettingsAppliedClientSeqs;
   /** 桌面端 → WebUI：快照对应的缓存版本；epoch 每个桌面进程一个，generation 单调递增。 */
   settingsSyncVersion?: GatewaySettingsSyncVersion;
+  /** Gateway relay → WebUI: fields the target cannot persist; the browser keeps them locally. */
+  browserLocalSettings?: string[];
 };
 export type GatewaySettingsSyncVersion = { epoch: string; generation: number };
 export type GatewaySettingsSyncClient = { id: string; seq: number };
@@ -559,7 +561,11 @@ function syncableCustomSettings(
     interfaceFontFamily: "",
     chatFontFamily: "",
     codeFontFamily: "",
-    chatTranscript: { width: DEFAULT_CHAT_TRANSCRIPT_WIDTH, expandProcessByDefault: false },
+    chatTranscript: {
+      width: DEFAULT_CHAT_TRANSCRIPT_WIDTH,
+      expandProcessByDefault: false,
+      showDetailedProgress: false,
+    },
     runNotifications: true,
     fontScale: { sidebar: 1, chat: 1, rightDock: 1, settings: 1 },
   };

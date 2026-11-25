@@ -1,3 +1,4 @@
+import "@liveagent/ui/i18n/namespaces/scheduledTasks";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { StatusNotice } from "../../components/ui/status-notice";
