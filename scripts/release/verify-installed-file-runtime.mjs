@@ -84,6 +84,9 @@ try {
       ![proof.docx, proof.pdf, proof.word_render, proof.word_pdf].every((result) => result === "passed")) {
     throw new Error("Installed file runtime returned an incomplete acceptance result");
   }
+  if (manifest.wheel_sources && ![proof.xlsx, proof.pptx].every((result) => result === "passed")) {
+    throw new Error("Installed file runtime did not verify its workbook and presentation libraries");
+  }
   console.log(JSON.stringify(proof));
 } catch (error) {
   console.error(error.message);

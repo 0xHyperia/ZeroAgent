@@ -50,6 +50,7 @@ import { useWorkspaceTabs } from "@liveagent/ui/components/project-tools/useWork
 import { DeviceWorkbenchLayout } from "@liveagent/ui/components/project-tools/WorkspacePanels";
 import { ConversationReaderWorkbench } from "@liveagent/ui/components/resource-preview/ConversationReaderWorkbench";
 import type { ConversationImageEditReceipt } from "@liveagent/ui/components/resource-preview/conversationImageAnnotation";
+import { ResourcePreviewReadingSession } from "@liveagent/ui/components/resource-preview/readingSession";
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
@@ -189,6 +190,11 @@ import {
 } from "react";
 import { loadComposerUploadedImagePreview } from "../agent-ui-adapters/composerImagePreview";
 import { desktopDevicePlugins, useDesktopDevicePlugins } from "../agent-ui-adapters/devicePlugins";
+import {
+  canManageLocalFileRuntime,
+  checkDesktopFileRuntime,
+  localFileRuntimeCommentRecovery,
+} from "../agent-ui-adapters/fileRuntime";
 import { settingsHostAdapter } from "../agent-ui-adapters/kbrainSettings";
 import { useMcpServerLabels } from "../lib/kbrain/useMcpServerLabels";
 import { workspaceTrustFromDevicePlugins } from "@liveagent/ui/lib/plugins/devicePlugins";
@@ -498,6 +504,10 @@ function ChatPageContent(props: ChatPageProps) {
   const { activeView, setActiveView, projectSettingsProject, setProjectSettingsProject } =
     useApplicationViewState<WorkspaceProject>();
   const workspaceOwner = String(props.relayUser.id);
+  const fileRuntimeCommentRecovery = useMemo(
+    () => localFileRuntimeCommentRecovery(workspaceOwner),
+    [workspaceOwner],
+  );
   const mcpServerLabels = useMcpServerLabels(workspaceOwner, active && kBrainBackendEnabled);
   const projectSettingsPath = projectSettingsProject?.path;
   const projectTrustClient = useMemo(
@@ -2053,7 +2063,12 @@ function ChatPageContent(props: ChatPageProps) {
         workspaceRoot: displayedConversationWorkdir,
         canSend,
         locale: settings.locale,
-        checkFileRuntime: () => invoke<boolean>("kbrain_file_runtime_ready"),
+        checkFileRuntime: canManageLocalFileRuntime()
+          ? checkDesktopFileRuntime
+          : () => invoke<boolean>("kbrain_file_runtime_ready"),
+        openFileRuntimeSetup: canManageLocalFileRuntime()
+          ? () => onOpenSettings("system", undefined, "file-runtime")
+          : undefined,
         importSources: (sources) =>
           importReadableFiles(
             sources,
@@ -2106,6 +2121,7 @@ function ChatPageContent(props: ChatPageProps) {
       displayedConversationWorkdir,
       importReadableFiles,
       isConversationRunning,
+      onOpenSettings,
       requestActiveConversationStop,
       settings.locale,
       workspaceOverlays.workspaceViewScope,
@@ -5285,6 +5301,7 @@ function ChatPageContent(props: ChatPageProps) {
       settingsExcludedAnchors: [
         ...(isTauriHost() ? [] : ["desktop-setup-guide", "run-completion-sound"]),
         ...(supportsNativeWorkspaceEditors() ? [] : ["preferred-workspace-editor"]),
+        ...(canManageLocalFileRuntime() ? [] : ["file-runtime"]),
         ...(isTauriHost() && settingsHostAdapter.devicePlugins?.readSurface ? [] : ["html-previews"]),
       ],
       onOpenWorkspace: isAgentMode ? handleOpenCreateWorkspaceProject : undefined,
@@ -6016,5 +6033,16 @@ function ChatPageContent(props: ChatPageProps) {
       ) : null}
     </WorkbenchShell>
   );
-  return <McpServerLabelsProvider value={mcpServerLabels}>{workspace}</McpServerLabelsProvider>;
+  return (
+    <McpServerLabelsProvider value={mcpServerLabels}>
+      {canManageLocalFileRuntime() ? (
+        <ResourcePreviewReadingSession
+          scope={`desktop:${workspaceOwner}`}
+          commentRecovery={active && !isDraftConversation ? fileRuntimeCommentRecovery : undefined}
+        >
+          {workspace}
+        </ResourcePreviewReadingSession>
+      ) : workspace}
+    </McpServerLabelsProvider>
+  );
 }

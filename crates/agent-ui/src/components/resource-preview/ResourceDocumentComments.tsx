@@ -1,3 +1,5 @@
+import "@liveagent/ui/i18n/namespaces/projectTools";
+import { useLocale } from "@liveagent/ui/i18n/index";
 import { type RefObject, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -26,6 +28,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { TooltipButton } from "../ui/tooltip-button";
+import { WorkspaceFileRuntimeError } from "../workspace-editor/requestWorkspaceRevision";
 import { DocumentCommentEditor } from "./DocumentCommentEditor";
 import type {
   DocumentPageGeometry,
@@ -34,7 +37,7 @@ import type {
   DocumentSelectionAnchor,
 } from "./docxReaderDocument";
 import { PreviewIdentityContext } from "./PreviewChrome";
-import { usePreviewReadingState } from "./readingSession";
+import { usePreviewReadingState, useRetainDocumentComments } from "./readingSession";
 import { useReaderFloatingPosition } from "./useReaderFloatingPosition";
 
 export type DocumentRevisionTarget =
@@ -121,7 +124,9 @@ export function ResourceDocumentComments(props: {
   sheetSelection?: boolean;
 }) {
   const { onRequestRevision } = useContext(PreviewIdentityContext);
+  const { t } = useLocale();
   const [comments, setComments] = usePreviewReadingState("documentComments", []);
+  const retainComments = useRetainDocumentComments();
   const [input, setInput] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const editedItem = editing ? comments.find((comment) => comment.id === editing) : undefined;
@@ -142,7 +147,7 @@ export function ResourceDocumentComments(props: {
   const [index, setIndex] = useState(0);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ message: string; openSetup?: () => boolean }>();
   const [listSource, setListSource] = useState<"toolbar" | "queue" | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const floating = useReaderFloatingPosition(props.enabled || !!selection || comments.length > 0);
@@ -311,16 +316,25 @@ export function ResourceDocumentComments(props: {
       return;
     inFlight.current = true;
     setBusy(true);
-    setError("");
+    setError(undefined);
     try {
       const evidence = await props.prepareEvidence?.(batch);
       if (await onRequestRevision(batch, evidence)) {
         publish([]);
         props.onSelection(null);
         props.onEnabled(false);
-      } else setError("批注尚未发送，请先检查当前对话状态。批注已保留。");
+      } else setError({ message: t("workspaceFilePreview.revisionNotSent") });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "未能发送，批注已保留。");
+      setError(
+        cause instanceof WorkspaceFileRuntimeError
+          ? cause
+          : {
+              message:
+                cause instanceof Error
+                  ? cause.message
+                  : t("workspaceFilePreview.revisionSendFailed"),
+            },
+      );
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -605,9 +619,32 @@ export function ResourceDocumentComments(props: {
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="za-document-comment-error">
-          {error}
-        </p>
+        <div className="za-document-comment-error flex flex-wrap items-center gap-2">
+          <span role="alert" className="min-w-32 flex-1">
+            {error.message}
+          </span>
+          {error.openSetup ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (!error.openSetup?.()) return;
+                const retained = retainComments(comments);
+                setError({
+                  message: t(
+                    retained
+                      ? "workspaceFilePreview.fileRuntimeDraftRetained"
+                      : "workspaceFilePreview.fileRuntimeDraftVolatile",
+                  ),
+                  openSetup: error.openSetup,
+                });
+              }}
+            >
+              {t("workspaceFilePreview.fileRuntimePrepare")}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <AlertDialogContent>

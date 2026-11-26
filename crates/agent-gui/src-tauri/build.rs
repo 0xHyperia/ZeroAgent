@@ -37,6 +37,7 @@ fn main() {
     // Freeze capability metadata into the app, rather than trusting a mutable
     // runtime JSON file to decide whether a sidecar may receive a host secret.
     let target = std::env::var("TARGET").expect("TARGET");
+    embed_file_runtime_descriptor(&target, &app_version);
     let suffix = if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         ".exe"
     } else {
@@ -121,6 +122,47 @@ fn main() {
     } else {
         tauri_build::build();
     }
+}
+
+fn embed_file_runtime_descriptor(target: &str, app_version: &str) {
+    const DESCRIPTOR: &str = "ZEROAGENT_FILE_RUNTIME_DESCRIPTOR";
+    println!("cargo:rerun-if-env-changed={DESCRIPTOR}");
+    let embedded = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"))
+        .join("file-runtime.json");
+    let descriptor = if target == "x86_64-pc-windows-msvc" {
+        std::env::var_os(DESCRIPTOR).map(|path| {
+            let path = std::path::PathBuf::from(path);
+            assert!(path.is_absolute(), "{DESCRIPTOR} must be an absolute path");
+            assert!(
+                !path.components().any(|part| {
+                    part.as_os_str()
+                        .to_string_lossy()
+                        .to_ascii_lowercase()
+                        .contains("licensee")
+                }),
+                "file runtime descriptor is not an allowed input"
+            );
+            println!("cargo:rerun-if-changed={}", path.display());
+            let len = std::fs::metadata(&path).expect("locate the file runtime descriptor").len();
+            assert!(len <= 4096, "file runtime descriptor is too large");
+            let descriptor: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(path).expect("read the file runtime descriptor"),
+            )
+            .expect("parse the file runtime descriptor");
+            assert_eq!(descriptor["format"].as_u64(), Some(1), "invalid descriptor format");
+            assert_eq!(descriptor["target"].as_str(), Some(target), "wrong runtime target");
+            assert_eq!(
+                descriptor["version"].as_str(),
+                Some(format!("v{app_version}").as_str()),
+                "file runtime belongs to another application version"
+            );
+            serde_json::to_vec(&descriptor).expect("write the file runtime descriptor")
+        })
+    } else {
+        None
+    };
+    std::fs::write(embedded, descriptor.unwrap_or_default())
+        .expect("embed file runtime descriptor");
 }
 
 fn embed_file_skill_packages(gateway_root: &std::path::Path) {

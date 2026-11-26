@@ -335,11 +335,21 @@ jobs:
           name: file-runtime-x86_64-pc-windows-msvc
           path: ${{ runner.temp }}/za-runtime-pack
 
-      - name: Stage verified Windows file runtime
-        shell: bash
+      - name: Stage the Windows file tools companion and embed its descriptor
+        shell: pwsh
         env:
-          ZEROAGENT_FILE_RUNTIME_PACK_DIR: ${{ runner.temp }}/za-runtime-pack
-        run: node scripts/release/stage-file-runtime.mjs x86_64-pc-windows-msvc "$RUNNER_TEMP/zeroagent-file-runtime"
+          ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY: ${{ needs.release-metadata.outputs.publish_public == 'true' && !inputs.artifacts_only && env.RELEASE_REPOSITORY || '' }}
+        run: |
+          $runtime = Join-Path $env:RUNNER_TEMP 'zeroagent-file-runtime'
+          $pack = Join-Path $env:RUNNER_TEMP 'za-runtime-pack'
+          $arguments = @($pack, $runtime, $env:ZEROAGENT_RELEASE_TAG)
+          if ($env:ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY) {
+              $arguments += $env:ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY
+          }
+          node scripts/release/file-runtime/stage-windows-managed.mjs @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $descriptor = Join-Path $runtime 'descriptor.json'
+          "ZEROAGENT_FILE_RUNTIME_DESCRIPTOR=$descriptor" >> $env:GITHUB_ENV
 
       - name: Build Windows bundles
         working-directory: crates/agent-gui
@@ -351,9 +361,7 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          node ../../scripts/release/file-runtime/prepare-windows-nsis.mjs "$RUNNER_TEMP/zeroagent-nsis" \
-            "$(node -p 'require("@tauri-apps/cli/package.json").version')"
-          pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --config "$RUNNER_TEMP/zeroagent-nsis/tauri.nsis.conf.json" --target x86_64-pc-windows-msvc 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri build --config src-tauri/tauri.windows.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target x86_64-pc-windows-msvc 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
@@ -376,13 +384,13 @@ jobs:
           cp "$msi_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Windows-x64.msi.sig"
           cp "$exe_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Windows-x64-Setup.exe"
           cp "$exe_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Windows-x64-Setup.exe.sig"
+          cp "$RUNNER_TEMP/zeroagent-file-runtime/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Windows-x64-file-tools.zip" dist/
           mkdir -p dist/portable/ZeroAgent
           cp "$portable_exe_path" dist/portable/ZeroAgent/ZeroAgent.exe
           cp crates/agent-gui/src-tauri/binaries/k-brain-x86_64-pc-windows-msvc.exe dist/portable/ZeroAgent/k-brain.exe
           cp crates/agent-gui/src-tauri/binaries/k-brain-computer-x86_64-pc-windows-msvc.exe dist/portable/ZeroAgent/k-brain-computer.exe
           cp crates/agent-gui/src-tauri/binaries/liveagent-gateway-x86_64-pc-windows-msvc.exe dist/portable/ZeroAgent/liveagent-gateway.exe
           cp -R crates/agent-gui/browser-extension dist/portable/ZeroAgent/browser-extension
-          cp -R "$RUNNER_TEMP/zeroagent-file-runtime/file-runtime" dist/portable/ZeroAgent/file-runtime
           node scripts/release/verify-kbrain-packaging.mjs --target x86_64-pc-windows-msvc --binary-dir crates/agent-gui/src-tauri/binaries --bundle-dir dist/portable/ZeroAgent --patch-manifest patches/kbrain/manifest.json
           portable_zip="dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Windows-x64-portable.zip"
           powershell -NoProfile -Command "Compress-Archive -Path 'dist/portable/ZeroAgent/*' -DestinationPath '$portable_zip' -Force"
@@ -408,7 +416,7 @@ jobs:
           if-no-files-found: error
 
   windows-file-qa:
-    name: Windows x64 Offline (${{ matrix.package }})
+    name: Windows x64 Slim Package (${{ matrix.package }})
     runs-on: windows-latest
     needs: [release-metadata, windows]
     strategy:
@@ -417,7 +425,6 @@ jobs:
         package: [msi, nsis, portable]
     env:
       ZEROAGENT_APP_VERSION: ${{ needs.release-metadata.outputs.app_version }}
-      ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -436,7 +443,7 @@ jobs:
       - name: Test the Windows package on a disposable runner
         timeout-minutes: 35
         shell: pwsh
-        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:ZEROAGENT_APP_VERSION" -RequireFileRuntime -Package '${{ matrix.package }}'
+        run: ./scripts/release/test-windows-installers.ps1 -ArtifactDir "$env:GITHUB_WORKSPACE/dist" -ReportDir "$env:RUNNER_TEMP/zeroagent-installer-acceptance" -ExpectedVersion "$env:ZEROAGENT_APP_VERSION" -ExpectExternalFileRuntime -Package '${{ matrix.package }}'
 
       - uses: actions/upload-artifact@v7
         if: always()

@@ -39,6 +39,7 @@ export function createSettingsExtension(props: SettingsPageProps): {
     excludedSearchAnchors: [
       ...(isTauriHost() ? [] : ["desktop-setup-guide", "run-completion-sound"]),
       ...(supportsNativeWorkspaceEditors() ? [] : ["preferred-workspace-editor"]),
+      ...(props.settingsHost?.fileRuntime ? [] : ["file-runtime"]),
     ],
     iconClassName: "size-3.5",
     slots: {

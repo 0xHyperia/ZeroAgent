@@ -107,6 +107,30 @@ def render_word(root):
     assert "Unchanged second Word page" in pages[1].extract_text()
 
 
+def verify_windows_office_libraries(root):
+    import openpyxl
+    import pptx
+
+    for module in (openpyxl, pptx):
+        if not Path(module.__file__).resolve(strict=True).is_relative_to(runtime):
+            raise RuntimeError(f"{module.__name__} loaded from outside the installed runtime")
+
+    workbook = openpyxl.Workbook()
+    workbook.active["A1"] = "Bundled workbook"
+    xlsx = root / "check.xlsx"
+    workbook.save(xlsx)
+    with xlsx.open("rb") as source:
+        assert openpyxl.load_workbook(source).active["A1"].value == "Bundled workbook"
+
+    presentation = pptx.Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[0])
+    slide.shapes.title.text = "Bundled presentation"
+    deck = root / "check.pptx"
+    presentation.save(deck)
+    assert pptx.Presentation(deck).slides[0].shapes.title.text == "Bundled presentation"
+
+
+extra_proof = {}
 with TemporaryDirectory(prefix="zeroagent-installed-reader-") as directory:
     root = Path(directory)
     document = docx.Document()
@@ -146,6 +170,9 @@ with TemporaryDirectory(prefix="zeroagent-installed-reader-") as directory:
     assert pages[1].extract_text().strip() == "Unchanged page"
     call_tool(root, "pdf", "render", {"source": "revised.pdf", "output": "revised.png", "page": 1})
     render_word(root)
+    if "wheel_sources" in manifest:
+        verify_windows_office_libraries(root)
+        extra_proof.update(xlsx="passed", pptx="passed")
 
 new_bytecode = sorted(
     item for path in runtime.rglob("*.pyc")
@@ -160,4 +187,5 @@ print(json.dumps({
     "docx": "passed", "pdf": "passed", "word_render": "passed", "word_pdf": "passed",
     "runtime_bytecode": "clean",
     "python_network": "blocked-by-audit-hook", "libreoffice": str(soffice),
+    **extra_proof,
 }))

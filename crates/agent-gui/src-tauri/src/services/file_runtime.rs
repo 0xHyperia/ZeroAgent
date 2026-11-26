@@ -4,6 +4,63 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub(super) mod managed;
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeSetupStatus {
+    pub(super) phase: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    download_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    downloaded_bytes: Option<u64>,
+    can_download: bool,
+    can_import: bool,
+    enabled: bool,
+    can_manage: bool,
+    can_remove: bool,
+    external: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<&'static str>,
+    ready: bool,
+}
+
+impl RuntimeSetupStatus {
+    pub(super) fn unavailable(ready: bool) -> Self {
+        Self {
+            phase: if ready { "ready" } else { "unavailable" },
+            version: None,
+            download_bytes: None,
+            downloaded_bytes: None,
+            can_download: false,
+            can_import: false,
+            enabled: ready,
+            can_manage: false,
+            can_remove: false,
+            external: false,
+            error: None,
+            ready,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RuntimeSetupSource {
+    Download,
+    Offline,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RuntimeManagementAction {
+    Enable,
+    Disable,
+    Remove,
+}
+
 const VARIABLES: [&str; 13] = [
     "ZEROAGENT_FILE_PYTHON",
     "ZEROAGENT_FILE_TOOL",
@@ -114,6 +171,7 @@ fn runtime_paths(root: &Path, require_complete: bool) -> Option<FileRuntime> {
     Some(FileRuntime { python, bindings })
 }
 
+#[derive(Clone)]
 pub(super) struct FileRuntime {
     python: PathBuf,
     bindings: Vec<(&'static str, PathBuf)>,
@@ -151,6 +209,10 @@ pub(super) fn configure(command: &mut Command, resource_dir: Option<&Path>) -> O
     for variable in VARIABLES {
         command.env_remove(variable);
     }
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    if managed::disabled_at_startup() {
+        return None;
+    }
     let installed = resource_dir.map(|path| path.join("file-runtime"));
     let portable = if cfg!(windows) {
         std::env::current_exe()
@@ -159,21 +221,28 @@ pub(super) fn configure(command: &mut Command, resource_dir: Option<&Path>) -> O
     } else {
         None
     };
-    let development = if cfg!(debug_assertions) {
-        Some(
-            std::env::var_os("ZEROAGENT_DEV_FILE_RUNTIME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
+    #[cfg(debug_assertions)]
+    let explicit_development = std::env::var_os("ZEROAGENT_DEV_FILE_RUNTIME").map(PathBuf::from);
+    #[cfg(not(debug_assertions))]
+    let explicit_development: Option<PathBuf> = None;
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    let managed_runtime = managed::bound_runtime;
+    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+    let managed_runtime = || None;
+    let runtime = managed_runtime()
+        .or_else(|| {
+            explicit_development
+                .filter(|root| root.is_absolute())
+                .and_then(|root| runtime_paths(&root, false))
+        })
+        .or_else(|| {
+            cfg!(debug_assertions)
+                .then(|| {
                     Path::new(env!("CARGO_MANIFEST_DIR"))
                         .join("../../../.zeroagent/file-runtime/desktop-dev")
-                }),
-        )
-    } else {
-        None
-    };
-    let runtime = development
-        .filter(|root| root.is_absolute())
-        .and_then(|root| runtime_paths(&root, false))
+                })
+                .and_then(|root| runtime_paths(&root, false))
+        })
         .or_else(|| {
             [installed, portable]
                 .into_iter()

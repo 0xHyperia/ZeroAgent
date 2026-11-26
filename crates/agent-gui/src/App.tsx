@@ -34,6 +34,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { canManageLocalFileRuntime, desktopFileRuntime } from "./agent-ui-adapters/fileRuntime";
 import { useDesktopImageStudioHost } from "./agent-ui-adapters/imageStudio";
 import { kbrainMcpStatusAdapter } from "./agent-ui-adapters/kbrainMcpStatus";
 import { settingsHostAdapter } from "./agent-ui-adapters/kbrainSettings";
@@ -47,7 +48,7 @@ import { ReleaseAnnouncementDialog } from "./components/ReleaseAnnouncementDialo
 import { RelayAccessGate } from "./components/relay/RelayAccessGate";
 import { WindowsSettingsHeader } from "./components/WindowsSettingsHeader";
 import { WindowsTitleBar } from "./components/WindowsTitleBar";
-import { useAppUpdateController } from "./lib/appUpdates";
+import { requestAppRestart, useAppUpdateController } from "./lib/appUpdates";
 import { isKBrainBrowserHost, isTauriHost } from "./lib/host";
 import { backendProfileMatchesAccount } from "./lib/kbrain/profile";
 import { requestPlanning } from "./lib/planning/kbrain";
@@ -1115,6 +1116,17 @@ export default function App() {
       preferCancel: true,
     });
   }, [requestRestartConfirm, settings.locale]);
+  const localFileRuntime = useMemo(
+    () => ({
+      ...desktopFileRuntime,
+      restart: () =>
+        requestAppRestart({
+          beforeRestart: beforeAppRestart,
+          restart: () => invoke("app_restart"),
+        }),
+    }),
+    [beforeAppRestart],
+  );
 
   const handleRunningConversationCountChange = useCallback((count: number) => {
     runningConversationCountRef.current = count;
@@ -1459,6 +1471,10 @@ export default function App() {
                     settings={settings}
                     settingsHost={{
                       ...settingsHostAdapter,
+                      fileRuntime:
+                        localExecutionSelected && !cloudSelected && canManageLocalFileRuntime()
+                          ? localFileRuntime
+                          : undefined,
                       usageScope: relayUserId,
                       permissionRulesScope:
                         localExecutionSelected && !cloudSelected && isTauriHost()

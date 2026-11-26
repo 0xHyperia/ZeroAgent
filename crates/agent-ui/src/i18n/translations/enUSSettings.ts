@@ -199,6 +199,77 @@ export const EN_US_SETTINGS_TRANSLATIONS = {
   "settings.workspaceEditorAutomatic": "Automatic",
   "settings.workspaceEditorNoneDetected": "No supported editor was detected on this computer.",
   "settings.workspaceEditorRefresh": "Find installed editors",
+  "settings.fileRuntime.group": "Workspace tools",
+  "settings.fileRuntime.title": "File tools",
+  "settings.fileRuntime.description":
+    "Prepare this computer to revise and export documents, spreadsheets, presentations, and PDFs.",
+  "settings.fileRuntime.version": "Version {version}",
+  "settings.fileRuntime.size": "Download size {size}",
+  "settings.fileRuntime.missing": "Setup required",
+  "settings.fileRuntime.unavailable": "File tools are unavailable on this computer.",
+  "settings.fileRuntime.ready": "Ready",
+  "settings.fileRuntime.externalSource":
+    "These tools come from your development environment or the app bundle.",
+  "settings.fileRuntime.downloading": "Downloading file tools",
+  "settings.fileRuntime.verifying": "Verifying and preparing file tools",
+  "settings.fileRuntime.pending_restart":
+    "Restart ZeroAgent when your tasks are finished to use the new file tools.",
+  "settings.fileRuntime.pending_enable": "Restart ZeroAgent to enable file tools.",
+  "settings.fileRuntime.pending_disable":
+    "Restart ZeroAgent to disable file tools. Installed tools will be kept.",
+  "settings.fileRuntime.pending_removal":
+    "Restart ZeroAgent when your tasks are finished to remove file tools.",
+  "settings.fileRuntime.disabled": "Disabled",
+  "settings.fileRuntime.failed": "Setup failed. Please try again.",
+  "settings.fileRuntime.previousReady": "The existing file tools are still available.",
+  "settings.fileRuntime.checking": "Checking file tools",
+  "settings.fileRuntime.checkFailed": "Could not check file tools.",
+  "settings.fileRuntime.restartFailed":
+    "Could not restart ZeroAgent. Please restart it when convenient.",
+  "settings.fileRuntime.requestFailed":
+    "The operation could not finish. Check the status and try again.",
+  "settings.fileRuntime.download_failed":
+    "The download failed. Check your connection and try again.",
+  "settings.fileRuntime.archive_invalid":
+    "The package is invalid. Choose a ZeroAgent file tools package for this version.",
+  "settings.fileRuntime.verification_failed":
+    "Package verification failed. Retry the download or use a verified package.",
+  "settings.fileRuntime.storage_unavailable":
+    "Could not save file tools. Check available storage and folder permissions.",
+  "settings.fileRuntime.file_selection_failed":
+    "Could not open the package picker. Please try again.",
+  "settings.fileRuntime.prepare": "Download and prepare",
+  "settings.fileRuntime.retry": "Retry download",
+  "settings.fileRuntime.repair": "Reinstall",
+  "settings.fileRuntime.installTitle": "Install file tools",
+  "settings.fileRuntime.installDescription":
+    "Install file tools for the current ZeroAgent version.",
+  "settings.fileRuntime.installDisabled":
+    "Enable file tools before installing them for this version.",
+  "settings.fileRuntime.installUnavailable":
+    "This build is missing the manifest needed to verify a file tools package.",
+  "settings.fileRuntime.import": "Choose offline package",
+  "settings.fileRuntime.restart": "Restart ZeroAgent",
+  "settings.fileRuntime.check": "Diagnose",
+  "settings.fileRuntime.checkTitle": "Check file tools",
+  "settings.fileRuntime.checkDescription": "Check whether the current file tools are ready.",
+  "settings.fileRuntime.checkReady": "Check complete. File tools are ready.",
+  "settings.fileRuntime.checkNotReady": "Check complete. File tools are unavailable.",
+  "settings.fileRuntime.remove": "Remove",
+  "settings.fileRuntime.removeTitle": "Remove file tools",
+  "settings.fileRuntime.removeDescription":
+    "Free space used by file tools and downloads managed by ZeroAgent on this computer.",
+  "settings.fileRuntime.removeConfirmTitle": "Remove file tools?",
+  "settings.fileRuntime.removeConfirmDescription":
+    "ZeroAgent will clear tools and downloads after restarting. Project files, saved annotations, and the original ZIP are kept.",
+  "settings.fileRuntime.removeConfirm": "Confirm removal",
+  "settings.fileRuntime.removeUnavailable":
+    "There are no app-installed file tools or downloads to remove.",
+  "settings.fileRuntime.detach": "Disconnect",
+  "settings.fileRuntime.detachDescription":
+    "ZeroAgent stops using these tools after restart. The source files are kept.",
+  "settings.fileRuntime.detachConfirmTitle": "Disconnect file tools?",
+  "settings.fileRuntime.detachConfirm": "Confirm disconnection",
   "settings.runNotifications": "Background conversation notifications",
   "settings.runNotificationsDesc":
     "When ZeroAgent is in the background, send a system notification (click to open the conversation) and show a Dock badge when a conversation finishes or needs your approval or answer. Replies that finish in other conversations get an unread dot in the sidebar. Saved on this device only.",

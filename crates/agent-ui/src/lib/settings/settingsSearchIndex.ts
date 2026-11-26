@@ -121,6 +121,12 @@ const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
   },
   {
     section: "system",
+    anchor: "file-runtime",
+    labelKey: "settings.fileRuntime.title",
+    keywords: "file tools runtime offline setup repair 文档 初始化 离线 修复",
+  },
+  {
+    section: "system",
     anchor: "html-previews",
     labelKey: "settings.htmlPreviews",
     keywords: "html preview session widget render 预览",

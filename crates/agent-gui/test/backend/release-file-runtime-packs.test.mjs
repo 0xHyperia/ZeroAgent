@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -20,16 +21,23 @@ test("desktop release consumes Actions runtime packs for all four native targets
   assert.match(pack, /pack\.mjs[\s\S]*actions\/upload-artifact/);
   assert.match(desktop, /uses: \.\/\.github\/workflows\/file-runtime-packs\.yml/);
   assert.equal([...desktop.matchAll(/needs: \[release-metadata, file-runtime\]/g)].length, 3);
-  assert.equal([...desktop.matchAll(/ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"/g)].length, 3);
+  assert.equal([...desktop.matchAll(/ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"/g)].length, 2);
+  assert.match(pack, /name: Verify the Windows companion ZIP in a clean offline profile[\s\S]*ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"[\s\S]*windows_managed\.py restore[\s\S]*verify-installed-file-runtime\.mjs/);
   assert.doesNotMatch(desktop, /vars\.ZEROAGENT_FILE_RUNTIME_PACKS/);
 });
 
-test("desktop publishing waits for independent offline Windows package checks", () => {
+test("desktop publishing waits for separate Windows tools and slim installer checks", () => {
   const workflow = read(".github/workflows/desktop-release.yml");
-  const windows = workflow.split("  windows-file-qa:")[1]?.split("  windows-upgrade:")[0];
+  const build = workflow.split("  windows:")[1]?.split("  windows-file-qa:")[0];
+  const check = workflow.split("  windows-file-qa:")[1]?.split("  windows-upgrade:")[0];
   const publish = workflow.split("  publish:")[1];
-  assert.match(windows, /package: \[msi, nsis, portable\]/);
-  assert.match(windows, /-RequireFileRuntime -Package/);
+  assert.match(build, /needs: \[release-metadata, file-runtime\]/);
+  assert.match(build, /publish_public == 'true' && !inputs\.artifacts_only && env\.RELEASE_REPOSITORY/);
+  assert.match(build, /stage-windows-managed\.mjs[\s\S]*ZEROAGENT_FILE_RUNTIME_DESCRIPTOR/);
+  assert.match(build, /Windows-x64-file-tools\.zip" dist\//);
+  assert.doesNotMatch(build, /tauri\.file-runtime\.conf\.json|dist\/portable\/ZeroAgent\/file-runtime/);
+  assert.match(check, /package: \[msi, nsis, portable\]/);
+  assert.match(check, /-ExpectExternalFileRuntime -Package/);
   assert.match(publish, /needs:[\s\S]*- windows-file-qa/);
 });
 
@@ -46,16 +54,24 @@ test("the AppImage receives the file runtime after linuxdeploy finishes", () => 
 });
 
 test("every runtime dependency uses a verified HTTPS input", () => {
+  const windows = JSON.parse(read("scripts/release/file-runtime/windows-managed.lock.json"));
   const assets = [
     ...Object.values(lock.shared),
     ...Object.values(lock.targets).flatMap(Object.values),
     ...Object.values(lock.conda).flat(),
+    windows.python,
+    ...windows.wheels,
   ];
   for (const { url, sha256 } of assets) {
     const parsed = new URL(url);
     assert.equal(parsed.protocol, "https:", url);
     assert.equal(parsed.username + parsed.password, "", url);
     assert.match(sha256, /^[a-f0-9]{64}$/, url);
+  }
+  assert.equal(new URL(windows.python.url).hostname, "www.python.org");
+  assert.ok(windows.wheels.every((wheel) => new URL(wheel.url).hostname === "files.pythonhosted.org"));
+  for (const name of ["python-docx", "pypdf", "openpyxl", "python-pptx"]) {
+    assert.equal(windows.wheels.filter((wheel) => wheel.name === name).length, 1);
   }
   for (const packages of Object.values(lock.conda)) {
     for (const name of ["poppler", "tesseract", "libarchive"]) {
@@ -107,4 +123,60 @@ test("release staging rejects the wrong source commit and a corrupted hosted pac
   const corrupted = stage();
   assert.equal(corrupted.status, 1);
   assert.match(corrupted.stderr, /archive checksum mismatch/);
+});
+
+test("Windows companion descriptors bind the exact asset and omit private download URLs", (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "za-windows-runtime-receipt-"));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL("scripts/release/file-runtime/stage-windows-managed.mjs", root));
+  const cwd = fileURLToPath(root);
+  const source = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" }).stdout.trim();
+  const target = "x86_64-pc-windows-msvc";
+  const archive = Buffer.from("synthetic archive");
+  const receipt = {
+    format: 1, target, source_sha: source, bytes: archive.length,
+    sha256: createHash("sha256").update(archive).digest("hex"),
+  };
+  writeFileSync(join(scratch, "file-runtime.zip"), archive);
+  const stage = (label, tag, ...args) => {
+    writeFileSync(join(scratch, "receipt.json"), JSON.stringify(receipt));
+    return spawnSync(process.execPath, [script, scratch, join(scratch, label), tag, ...args], {
+      cwd, encoding: "utf8",
+    });
+  };
+  for (const [label, tag, repository] of [
+    ["beta", "v1.0.0-beta.1", "example/releases"],
+    ["stable", "v1.0.0", "example/releases"],
+    ["private", "v1.0.0-rc.2", null],
+    ["preview", "v1.0.0-beta.1", null],
+  ]) {
+    const result = stage(label, tag, ...(repository ? [repository] : []));
+    assert.equal(result.status, 0, result.stderr);
+    const directory = join(scratch, label);
+    const name = `ZeroAgent-${tag}-Windows-x64-file-tools.zip`;
+    const url = `https://github.com/${repository}/releases/download/${tag}/${name}`;
+    assert.deepEqual(JSON.parse(readFileSync(join(directory, "descriptor.json"), "utf8")), {
+      format: 1, target, version: tag,
+      archive: { name, bytes: receipt.bytes, sha256: receipt.sha256, ...(repository ? { url } : {}) },
+    });
+    assert.deepEqual(readFileSync(join(directory, name)), archive);
+  }
+  const privateUrl = stage("private-url", "v1.0.0-alpha.1", "example/releases");
+  assert.equal(privateUrl.status, 1);
+  assert.match(privateUrl.stderr, /requires a public release tag/);
+  receipt.source_sha = "0".repeat(40);
+  const wrongCommit = stage("wrong-commit", "v1.0.0");
+  assert.equal(wrongCommit.status, 1);
+  assert.match(wrongCommit.stderr, /different source commit/);
+  receipt.source_sha = source;
+  receipt.bytes += 1;
+  const wrongSize = stage("wrong-size", "v1.0.0");
+  assert.equal(wrongSize.status, 1);
+  assert.match(wrongSize.stderr, /does not match the recorded size/);
+  receipt.bytes = archive.length;
+  receipt.sha256 = "0".repeat(64);
+  const corrupt = stage("corrupt", "v1.0.0");
+  assert.equal(corrupt.status, 1);
+  assert.match(corrupt.stderr, /checksum mismatch/);
+  assert.equal(existsSync(join(scratch, "corrupt")), false);
 });

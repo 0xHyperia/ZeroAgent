@@ -17,6 +17,7 @@ description: 阅读、生成、填写、批注和检查 PDF，包括 AcroForms�
 Use the ZeroAgent file runtime in the current execution workspace. The host provides the absolute paths RUNTIME_NODE, RUNTIME_PYTHON, RUNTIME_NODE_MODULES and ZEROAGENT_FILE_SKILL_ROOT. Package paths in this guide are relative to this skill. Locate executable helpers under the installed skill directory and run them from the writable work area with the configured interpreter.
 
 Use the absolute runtime interpreter in the command examples below.
+If a desktop tool task is missing RUNTIME_PYTHON or ZEROAGENT_FILE_TOOL, keep the requested work pending and direct the user to Settings → System Settings → Workspace tools on the executing computer.
 
 On a device, open the source authorized in the current conversation. In CloudChat, materialize the exact attachment or artifact version with load_uploaded_file and use the returned workspace path. Match reader annotations to the source version and the format-specific anchors before editing. Create a working copy and preserve content outside the requested edits. Recheck the source version before any authorized write-back.
 

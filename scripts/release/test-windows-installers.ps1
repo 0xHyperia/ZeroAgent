@@ -27,7 +27,8 @@ param(
     [string]$UpdaterConfig,
     [ValidateSet('msi', 'nsis', 'portable')][string]$Package,
     [switch]$DryRun,
-    [switch]$RequireFileRuntime
+    [switch]$RequireFileRuntime,
+    [switch]$ExpectExternalFileRuntime
 )
 
 Set-StrictMode -Version Latest
@@ -287,6 +288,10 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
         [long]$limit = if ($null -ne $runtimeManifest) { 4GB } else { 2GB }
         foreach ($entry in $zip.Entries) {
             $name = $entry.FullName.Replace('\', '/')
+            if ($ExpectExternalFileRuntime -and !$PreviousRelease -and $name -match '^file-runtime(?:/|$)') {
+                throw 'Portable ZIP contains the separately installed file tools'
+            }
+            if ($name -match '(?i)licensee') { throw 'Portable ZIP contains a protected filename' }
             if ($name -match '^/|:|(^|/)\.\.?(/|$)|//|[\x00-\x1f]' -or
                 (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) { throw "Unsafe portable ZIP entry: $name" }
             if ($seen.ContainsKey($name)) { throw "Duplicate portable ZIP entry: $name" }
@@ -427,6 +432,7 @@ function Assert-UpgradeDataFixtures($Fixtures) {
 }
 
 function Get-OwnedFileRecord($File, [string]$Relative, [switch]$NamesOnly) {
+    if ($Relative -match '(?i)licensee') { throw 'Installed payload contains a protected filename' }
     $record = [ordered]@{ relativePath = $Relative }
     if (-not $NamesOnly) {
         $record.bytes = $File.Length
@@ -440,6 +446,7 @@ function Get-OwnedRuntimeFiles([string]$Directory, [string]$Relative, [string]$I
     foreach ($item in Get-ChildItem -LiteralPath $Directory -Force) {
         Assert-Below $item.FullName $InstallDir
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Installed runtime contains a reparse point' }
+        if ($item.Name -match '(?i)licensee') { throw 'Installed runtime contains a protected filename' }
         $child = "$Relative/$($item.Name)"
         if ($item.PSIsContainer) {
             Get-OwnedRuntimeFiles $item.FullName $child $InstallDir -NamesOnly:$NamesOnly

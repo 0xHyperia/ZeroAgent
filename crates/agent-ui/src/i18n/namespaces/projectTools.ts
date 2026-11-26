@@ -384,6 +384,26 @@ registerTranslations({
     "workspaceFilePreview.openExternalFailed": "用默认应用打开失败",
     "workspaceFilePreview.openInSystemImageViewer": "用系统图片查看器打开",
     "workspaceFilePreview.reload": "重新加载",
+    "workspaceFilePreview.fileRuntimeMissingLocal": "此电脑的文件运行时尚未就绪。批注已保留。",
+    "workspaceFilePreview.fileRuntimeMissingDevice":
+      "执行设备的文件运行时尚未就绪。请到执行设备的 ZeroAgent 设置中准备文件工具。批注已保留。",
+    "workspaceFilePreview.fileRuntimePreparing":
+      "正在准备执行设备的文件运行时。批注已保留，请在工具就绪后重试。",
+    "workspaceFilePreview.fileRuntimePendingRestart":
+      "文件工具已安装。请在方便时重启执行设备上的 ZeroAgent。批注已保留。",
+    "workspaceFilePreview.fileRuntimeUnreadable":
+      "无法核对执行设备的文件运行时。批注已保留，请重试。",
+    "workspaceFilePreview.fileRuntimeUnavailable": "执行设备暂未提供文件运行时。批注已保留。",
+    "workspaceFilePreview.fileRuntimeDisabled":
+      "执行设备的文件工具已停用或等待移除。批注已保留，请到该电脑的设置查看状态。",
+    "workspaceFilePreview.fileRuntimePendingEnable":
+      "文件工具等待启用。请重启执行设备上的 ZeroAgent，批注已保留。",
+    "workspaceFilePreview.fileRuntimePrepare": "准备文件工具",
+    "workspaceFilePreview.fileRuntimeDraftRetained":
+      "批注已保存在本机。重启后可在原对话中打开同一版本的文件并继续发送。",
+    "workspaceFilePreview.fileRuntimeDraftVolatile": "批注保留在当前阅读器。重启前请复制批注内容。",
+    "workspaceFilePreview.revisionNotSent": "批注尚未发送。请检查当前对话状态后重试。",
+    "workspaceFilePreview.revisionSendFailed": "未能发送。批注已保留。",
     "workspaceFilePreview.close": "关闭预览",
     "workspaceFilePreview.openFailed": "打开预览失败",
     "workspaceFilePreview.renderFailed": "渲染预览失败",
@@ -802,6 +822,30 @@ registerTranslations({
     "workspaceFilePreview.openExternalFailed": "Failed to open in default app",
     "workspaceFilePreview.openInSystemImageViewer": "Open in Default Image Viewer",
     "workspaceFilePreview.reload": "Reload",
+    "workspaceFilePreview.fileRuntimeMissingLocal":
+      "File tools on this computer are not ready. Your annotations are saved.",
+    "workspaceFilePreview.fileRuntimeMissingDevice":
+      "File tools on the execution device are not ready. Prepare them in ZeroAgent settings on that computer. Your annotations are saved.",
+    "workspaceFilePreview.fileRuntimePreparing":
+      "File tools are being prepared on the execution device. Your annotations are saved. Try again when the tools are ready.",
+    "workspaceFilePreview.fileRuntimePendingRestart":
+      "File tools are installed. Restart ZeroAgent on the execution device when convenient. Your annotations are saved.",
+    "workspaceFilePreview.fileRuntimeUnreadable":
+      "Could not check file tools on the execution device. Your annotations are saved. Please try again.",
+    "workspaceFilePreview.fileRuntimeUnavailable":
+      "The execution device does not provide file tools. Your annotations are saved.",
+    "workspaceFilePreview.fileRuntimeDisabled":
+      "File tools on the execution device are disabled or pending removal. Your annotations are kept. Check the status in ZeroAgent settings on that computer.",
+    "workspaceFilePreview.fileRuntimePendingEnable":
+      "Restart ZeroAgent on the execution device to enable file tools. Your annotations are kept.",
+    "workspaceFilePreview.fileRuntimePrepare": "Prepare file tools",
+    "workspaceFilePreview.fileRuntimeDraftRetained":
+      "Your annotations are saved on this computer. After restarting, reopen the same file version in the original conversation to send them.",
+    "workspaceFilePreview.fileRuntimeDraftVolatile":
+      "Your annotations are in the current reader. Copy them before restarting.",
+    "workspaceFilePreview.revisionNotSent":
+      "Annotations were not sent. Check the current conversation and try again.",
+    "workspaceFilePreview.revisionSendFailed": "Could not send. Your annotations are saved.",
     "workspaceFilePreview.close": "Close preview",
     "workspaceFilePreview.openFailed": "Failed to open preview",
     "workspaceFilePreview.renderFailed": "Failed to render preview",

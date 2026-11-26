@@ -70,6 +70,7 @@ jobs:
           zstd --version
 
       - name: Assemble locked file runtime
+        if: runner.os != 'Windows'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
@@ -79,10 +80,30 @@ jobs:
             --downloads "$RUNNER_TEMP/za-runtime-downloads" --scratch "$RUNNER_TEMP"
 
       - name: Verify in a clean offline profile and package
+        if: runner.os != 'Windows'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: node scripts/release/file-runtime/pack.mjs "$TARGET" "$RUNNER_TEMP/za-runtime-tree" "$RUNNER_TEMP/za-runtime-pack"
+
+      - name: Assemble and package the separate Windows file tools
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B scripts/release/file-runtime/windows_managed.py assemble "$RUNNER_TEMP/za-runtime-tree" \
+            --downloads "$RUNNER_TEMP/za-runtime-downloads" --scratch "$RUNNER_TEMP"
+          python -B scripts/release/file-runtime/windows_managed.py pack "$RUNNER_TEMP/za-runtime-tree" "$RUNNER_TEMP/za-runtime-pack"
+
+      - name: Verify the Windows companion ZIP in a clean offline profile
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
+        run: |
+          set -euo pipefail
+          python -B scripts/release/file-runtime/windows_managed.py restore "$RUNNER_TEMP/za-runtime-pack" "$RUNNER_TEMP/za-runtime-verify"
+          node scripts/release/verify-installed-file-runtime.mjs "$RUNNER_TEMP/za-runtime-verify"
 
       - name: Store verified pack and receipt in the source repository
         uses: actions/upload-artifact@v7

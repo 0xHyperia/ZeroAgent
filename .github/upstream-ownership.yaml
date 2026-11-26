@@ -2,12 +2,13 @@
   "schema_version": 1,
   "rules": [
     {
-      "glob": "{crates/file-runtime/**,crates/agent-gui/src-tauri/src/services/file_runtime.rs,crates/agent-gateway/internal/account/skills/{documents,pdf,spreadsheet,presentations}/**,scripts/release/file-runtime/**,.github/workflows/file-runtime-packs.yml,scripts/release/{prepare-file-runtime.mjs,stage-file-runtime.mjs,verify-installed-file-runtime.mjs,verify-file-runtime.py}}",
+      "glob": "{crates/file-runtime/**,crates/agent-gui/src-tauri/src/services/file_runtime.rs,crates/agent-gui/src-tauri/src/services/file_runtime/**,crates/agent-gateway/internal/account/skills/{documents,pdf,spreadsheet,presentations}/**,scripts/release/file-runtime/**,.github/workflows/file-runtime-packs.yml,scripts/release/{prepare-file-runtime.mjs,stage-file-runtime.mjs,verify-installed-file-runtime.mjs,verify-file-runtime.py}}",
       "ownership": "zeroagent_owned",
       "risk": "high",
       "checks": [
         "文件技能正文和任务指南在桌面与 CloudChat 共用",
-        "执行目标继续校验账户和工作区归属，核对原件版本及输出，发布前逐平台验收实际随附依赖"
+        "执行目标继续校验账户和工作区归属，核对原件版本及输出，发布前逐平台验收实际交付依赖",
+        "Windows 按需工具包由签名应用固定来源和摘要，本机显式安装，隔离暂存、自检、保留可用版本，远程只读"
       ]
     },
     {

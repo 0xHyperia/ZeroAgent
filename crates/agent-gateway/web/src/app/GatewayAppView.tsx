@@ -62,6 +62,7 @@ import type { WorkspaceDocumentRevision } from "@liveagent/ui/components/workspa
 import { WorkspaceOverlayHost } from "@liveagent/ui/components/workspace-editor/WorkspaceOverlayHost";
 import { isWorkspacePreviewPath } from "@liveagent/ui/components/workspace-editor/workspaceImagePreview";
 import { DEVICE_COMPOSER_CAPABILITIES } from "@liveagent/ui/contracts/composerPresentation";
+import type { FileRuntimeSummary } from "@liveagent/ui/contracts/fileRuntime";
 import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { LocaleContext, t as translate } from "@liveagent/ui/i18n/index";
 import type { ProjectToolTextGenerationClient } from "@liveagent/ui/lib/ai/projectToolTextGeneration";
@@ -1338,9 +1339,9 @@ export function GatewayAppView({
       canSend,
       locale: settings.locale,
       checkFileRuntime: async () => {
-        const status = await api.manageSkill<{ ready: boolean }>({ action: "file-runtime-status" });
+        const status = await api.manageSkill<FileRuntimeSummary>({ action: "file-runtime-status" });
         if (typeof status?.ready !== "boolean") throw new Error("Missing file runtime status");
-        return status.ready;
+        return status;
       },
       importSources: (sources) =>
         importDeviceConversationFiles(terminalProjectPath, sources, AbortSignal.timeout(60_000)),

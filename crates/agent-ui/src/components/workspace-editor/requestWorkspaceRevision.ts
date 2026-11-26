@@ -1,3 +1,6 @@
+import "@liveagent/ui/i18n/namespaces/projectTools";
+import type { FileRuntimeSummary } from "@liveagent/ui/contracts/fileRuntime";
+import { type Locale, t as translate } from "@liveagent/ui/i18n/index";
 import {
   buildDocumentRevisionMessage,
   MAX_REVISION_EVIDENCE,
@@ -6,34 +9,67 @@ import type { PendingUploadedFile } from "../../lib/chat/uploadedFiles";
 import { workspaceGitRelativePath } from "../project-tools/workspaceGitPaths";
 import type { WorkspaceDocumentRevision } from "./WorkspaceFilePreviewOverlay";
 
+export class WorkspaceFileRuntimeError extends Error {
+  constructor(
+    message: string,
+    readonly openSetup?: () => boolean,
+  ) {
+    super(message);
+  }
+}
+
 export async function requestWorkspaceRevision(
   { source, comments, assertCurrent, workspacePath, evidence = [] }: WorkspaceDocumentRevision,
   host: {
     workspaceRoot: string;
     canSend: () => boolean;
-    locale: string;
-    checkFileRuntime: () => Promise<boolean>;
+    locale: Locale;
+    checkFileRuntime: () => Promise<boolean | FileRuntimeSummary>;
+    openFileRuntimeSetup?: () => void;
     importSources: (sources: File[]) => Promise<PendingUploadedFile[] | null | undefined>;
     send: (text: string, files: PendingUploadedFile[]) => Promise<boolean>;
   },
 ) {
   if (!comments.length || comments.length > 20 || !host.canSend()) return false;
   assertCurrent();
-  const zh = host.locale === "zh-CN";
-  const ready = await host.checkFileRuntime().catch(() => null);
+  const status = await host.checkFileRuntime().catch(() => null);
   if (!host.canSend()) return false;
   assertCurrent();
+  const ready = typeof status === "boolean" ? status : status?.ready;
   if (ready !== true) {
-    throw new Error(
-      ready === null
-        ? zh ? "无法核对执行设备的文件运行时。批注已保留，请重试。" : "Could not check the device file runtime. Your comments are kept. Try again."
-        : zh ? "执行设备的 ZeroAgent 文件运行时不可用。请检查运行时配置并重启该设备的 ZeroAgent，批注已保留。" : "The device's ZeroAgent file runtime is unavailable. Check its runtime configuration and restart ZeroAgent on that device. Your comments are kept.",
-    );
+    const phase = typeof status === "object" ? status?.phase : undefined;
+    const openSetup = host.openFileRuntimeSetup;
+    const setupAction =
+      status !== null && phase !== "unavailable" && openSetup
+        ? () => {
+            if (!host.canSend()) return false;
+            try {
+              assertCurrent();
+            } catch {
+              return false;
+            }
+            openSetup();
+            return true;
+          }
+        : undefined;
+    let message = setupAction
+      ? "workspaceFilePreview.fileRuntimeMissingLocal"
+      : "workspaceFilePreview.fileRuntimeMissingDevice";
+    if (status === null) message = "workspaceFilePreview.fileRuntimeUnreadable";
+    if (phase === "unavailable") message = "workspaceFilePreview.fileRuntimeUnavailable";
+    if (phase === "pending_restart") message = "workspaceFilePreview.fileRuntimePendingRestart";
+    if (phase === "pending_enable") message = "workspaceFilePreview.fileRuntimePendingEnable";
+    if (phase === "disabled" || phase === "pending_disable" || phase === "pending_removal") {
+      message = "workspaceFilePreview.fileRuntimeDisabled";
+    }
+    if (phase === "downloading" || phase === "verifying") {
+      message = "workspaceFilePreview.fileRuntimePreparing";
+    }
+    throw new WorkspaceFileRuntimeError(translate(message, host.locale), setupAction);
   }
   const selectedEvidence = evidence.slice(0, MAX_REVISION_EVIDENCE);
   const files = await host.importSources([source, ...selectedEvidence]);
-  if (!files?.some(({ fileName }) => fileName === source.name) || !host.canSend())
-    return false;
+  if (!files?.some(({ fileName }) => fileName === source.name) || !host.canSend()) return false;
   assertCurrent();
   const text = buildDocumentRevisionMessage(source.name, comments, {
     workspacePath:

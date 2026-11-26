@@ -114,6 +114,16 @@ try {
     Assert-True ($report.status -eq 'failed' -and $report.error -match 'missing the required file runtime') 'Release accepted a portable package without its runtime'
     $script:passed++
 
+    $external = @{ ExpectExternalFileRuntime = $true; Package = 'portable' }
+    $report = Invoke-Case 'external-runtime-clean' $valid $true $external
+    Assert-True ($report.status -eq 'dry-run' -and -not $report.plan[0].bundledRuntime) 'Slim portable package was refused'
+    $script:passed++
+
+    $bundled = New-ArtifactFixture 'unexpected-bundled-runtime' -ExtraEntry 'file-runtime/runtime.json'
+    $report = Invoke-Case 'external-runtime-bundled' $bundled $true $external
+    Assert-True ($report.status -eq 'failed' -and $report.error -match 'separately installed file tools') 'Slim portable package accepted a bundled runtime'
+    $script:passed++
+
     $report = Invoke-Case 'host-refusal' $valid $false
     Assert-True ($report.status -eq 'failed' -and $report.error -match 'Refusing actual installation') 'Non-hosted actual execution must fail before reading/installing artifacts'
     $script:passed++

@@ -122,9 +122,55 @@ function validCommentGeometry(item: DocumentRevisionComment) {
   );
 }
 
+export type DocumentCommentRecovery = {
+  read(key: string): unknown;
+  write(key: string, comments: readonly DocumentRevisionComment[]): boolean;
+};
+
+function validDocumentComments(value: unknown): value is DocumentRevisionComment[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 20 &&
+    value.every((candidate: unknown) => {
+      if (!candidate || typeof candidate !== "object") return false;
+      const item = candidate as DocumentRevisionComment;
+      return (
+        boundedText(item.id, 80) &&
+        !!item.id &&
+        boundedText(item.quote, 2000) &&
+        boundedText(item.comment, 2000) &&
+        boundedText(item.block, item.target ? 256 : 80) &&
+        Number.isSafeInteger(item.page) &&
+        item.page >= 1 &&
+        item.page <= 1000 &&
+        Number.isSafeInteger(item.start) &&
+        Number.isSafeInteger(item.end) &&
+        item.start >= 0 &&
+        item.end >= item.start &&
+        (item.kind === undefined || item.kind === "image") &&
+        validCommentGeometry(item) &&
+        (item.anchors === undefined ||
+          (Array.isArray(item.anchors) &&
+            item.anchors.length <= 20 &&
+            item.anchors.every(
+              (anchor) =>
+                anchor &&
+                boundedText(anchor.id, 80) &&
+                Number.isSafeInteger(anchor.start) &&
+                Number.isSafeInteger(anchor.end) &&
+                anchor.start >= 0 &&
+                anchor.end > anchor.start &&
+                anchor.end - anchor.start <= 2000,
+            )))
+      );
+    })
+  );
+}
+
 /** Only small presentation values are retained. Never store file bytes or authority here. */
 export function createReadingSnapshotStore() {
   const entries = new Map<string, Partial<ReadingSnapshot>>();
+  const retainedComments = new Set<string>();
   return {
     read(key: string) {
       const snapshot = entries.get(key);
@@ -134,7 +180,37 @@ export function createReadingSnapshotStore() {
       }
       return snapshot;
     },
-    write<K extends keyof ReadingSnapshot>(key: string, field: K, value: ReadingSnapshot[K]) {
+    readDocumentComments(key: string, recovery?: DocumentCommentRecovery) {
+      const current = entries.get(key)?.documentComments;
+      if (current) return current;
+      const saved = recovery?.read(key);
+      if (validDocumentComments(saved)) {
+        retainedComments.add(key);
+        return saved;
+      }
+    },
+    retainDocumentComments(
+      key: string,
+      value: readonly DocumentRevisionComment[],
+      recovery?: DocumentCommentRecovery,
+    ) {
+      if (
+        !recovery ||
+        !value.length ||
+        !validDocumentComments(value) ||
+        !recovery.write(key, value)
+      ) {
+        return false;
+      }
+      retainedComments.add(key);
+      return true;
+    },
+    write<K extends keyof ReadingSnapshot>(
+      key: string,
+      field: K,
+      value: ReadingSnapshot[K],
+      recovery?: DocumentCommentRecovery,
+    ) {
       if (field === "markdownPosition") {
         const position = value as MarkdownReadingPosition;
         if (
@@ -151,41 +227,12 @@ export function createReadingSnapshotStore() {
         )
           return;
       }
-      if (
-        field === "documentComments" &&
-        (!Array.isArray(value) ||
-          value.length > 20 ||
-          value.some(
-            (item) =>
-              !item ||
-              typeof item !== "object" ||
-              typeof item.quote !== "string" ||
-              item.quote.length > 2000 ||
-              typeof item.comment !== "string" ||
-              item.comment.length > 2000 ||
-              typeof item.block !== "string" ||
-              item.block.length > (item.target ? 256 : 80) ||
-              !Number.isSafeInteger(item.page) ||
-              item.page < 1 ||
-              item.page > 1000 ||
-              !validCommentGeometry(item) ||
-              (item.anchors !== undefined &&
-                (!Array.isArray(item.anchors) ||
-                  item.anchors.length > 20 ||
-                  item.anchors.some(
-                    (anchor) =>
-                      !anchor ||
-                      typeof anchor.id !== "string" ||
-                      anchor.id.length > 80 ||
-                      !Number.isSafeInteger(anchor.start) ||
-                      !Number.isSafeInteger(anchor.end) ||
-                      anchor.start < 0 ||
-                      anchor.end <= anchor.start ||
-                      anchor.end - anchor.start > 2000,
-                  ))),
-          ))
-      )
-        return;
+      if (field === "documentComments") {
+        if (!validDocumentComments(value)) return;
+        if (recovery && retainedComments.has(key) && recovery.write(key, value) && !value.length) {
+          retainedComments.delete(key);
+        }
+      }
       if (typeof value === "string" && value.length > 128) return;
       const maximum = field === "sourceLine" || field === "sourceLeft" ? 10_000_000 : 10_000;
       if (typeof value === "number" && (!Number.isFinite(value) || Math.abs(value) > maximum))
@@ -195,7 +242,10 @@ export function createReadingSnapshotStore() {
       entries.set(key, snapshot);
       while (entries.size > 20) {
         const oldest = entries.keys().next().value;
-        if (oldest !== undefined) entries.delete(oldest);
+        if (oldest !== undefined) {
+          entries.delete(oldest);
+          retainedComments.delete(oldest);
+        }
       }
     },
   };
@@ -204,18 +254,22 @@ export function createReadingSnapshotStore() {
 const Session = createContext<{
   scope: string;
   store: ReturnType<typeof createReadingSnapshotStore>;
+  commentRecovery?: DocumentCommentRecovery;
 } | null>(null);
 const Target = createContext<{
   key: string;
   store: ReturnType<typeof createReadingSnapshotStore>;
+  commentRecovery?: DocumentCommentRecovery;
 } | null>(null);
 
 /** The host supplies its account lifetime. Replacing it immediately retires all old snapshots. */
 export function ResourcePreviewReadingSession({
   scope,
+  commentRecovery,
   children,
 }: {
   scope: string;
+  commentRecovery?: DocumentCommentRecovery;
   children: ReactNode;
 }) {
   const current = useRef<{ scope: string; store: ReturnType<typeof createReadingSnapshotStore> }>(
@@ -223,7 +277,12 @@ export function ResourcePreviewReadingSession({
   );
   if (!current.current || current.current.scope !== scope)
     current.current = { scope, store: createReadingSnapshotStore() };
-  return <Session.Provider value={current.current}>{children}</Session.Provider>;
+  const store = current.current.store;
+  const session = useMemo(
+    () => ({ scope, store, commentRecovery }),
+    [scope, store, commentRecovery],
+  );
+  return <Session.Provider value={session}>{children}</Session.Provider>;
 }
 
 export function usePreviewReadingScope() {
@@ -239,7 +298,10 @@ export function PreviewReadingTarget({
 }) {
   const session = useContext(Session);
   const target = useMemo(
-    () => (session ? { key: identity, store: session.store } : null),
+    () =>
+      session
+        ? { key: identity, store: session.store, commentRecovery: session.commentRecovery }
+        : null,
     [identity, session],
   );
   return <Target.Provider value={target}>{children}</Target.Provider>;
@@ -249,11 +311,23 @@ export function usePreviewReadingSnapshot<K extends keyof ReadingSnapshot>(field
   const target = useContext(Target);
   return useMemo(
     () => ({
-      read: () => target?.store.read(target.key)?.[field],
-      write: (value: ReadingSnapshot[K]) => target?.store.write(target.key, field, value),
+      read: () =>
+        field === "documentComments"
+          ? (target?.store.readDocumentComments(target.key, target.commentRecovery) as
+              | ReadingSnapshot[K]
+              | undefined)
+          : target?.store.read(target.key)?.[field],
+      write: (value: ReadingSnapshot[K]) =>
+        target?.store.write(target.key, field, value, target.commentRecovery),
     }),
     [field, target],
   );
+}
+
+export function useRetainDocumentComments() {
+  const target = useContext(Target);
+  return (comments: readonly DocumentRevisionComment[]) =>
+    target?.store.retainDocumentComments(target.key, comments, target.commentRecovery) ?? false;
 }
 
 export function usePreviewReadingState<K extends keyof ReadingSnapshot>(

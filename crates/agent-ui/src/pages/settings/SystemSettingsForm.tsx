@@ -47,6 +47,7 @@ import {
 } from "@liveagent/ui/components/ui/dialog";
 import { Input } from "@liveagent/ui/components/ui/input";
 import { Select, SelectItem, SelectValue } from "@liveagent/ui/components/ui/select";
+import type { FileRuntimeControls } from "@liveagent/ui/contracts/fileRuntime";
 import { type Locale, SUPPORTED_LOCALES, useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import {
@@ -56,6 +57,7 @@ import {
 } from "@liveagent/ui/pages/settings/shared";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { type DetectedProxy, DetectedProxyList } from "./DetectedProxyList";
+import { FileRuntimeSettings } from "./FileRuntimeSettings";
 import { PlanningTimeZoneSetting } from "./PlanningTimeZoneSetting";
 import { SidebarShortcutsSection } from "./SidebarShortcutsSection";
 import { parseSystemProxyPortDraft } from "./systemProxyInput";
@@ -130,6 +132,7 @@ export function SystemSettingsForm(
   props: SettingsSectionProps & {
     showLocalRuntimeSettings?: boolean;
     htmlPreviewsAvailable?: boolean;
+    fileRuntime?: FileRuntimeControls;
   },
 ) {
   const { settings, setSettings } = props;
@@ -735,6 +738,7 @@ export function SystemSettingsForm(
       ) : null}
 
       <SystemSettingsExtensions settings={settings} setSettings={setSettings} />
+      {props.fileRuntime && <FileRuntimeSettings controls={props.fileRuntime} />}
 
       <SettingsGroup title={t("settings.fontFamily")} data-settings-anchor="font-family">
         {FONT_FAMILY_FIELDS.map(({ key, labelKey }) => {

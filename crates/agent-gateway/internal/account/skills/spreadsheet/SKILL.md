@@ -1,6 +1,6 @@
 ---
 name: spreadsheet
-description: 创建、编辑、分析和检查 XLSX、XLS、CSV 和 TSV。使用 Artifact Tool 构建工作簿、公式、表格、图表及模拟运算，重算并核对实际结果。
+description: 创建、编辑、分析和检查 XLSX、XLS、CSV 和 TSV。核对工作簿、公式、表格、图表及重算结果。
 ---
 
 # 表格
@@ -8,7 +8,7 @@ Read entirely for spreadsheet creation, editing, analysis, or visualization.
 
 ## File formats
 
-Author editable workbooks with Artifact Tool. Read CSV and TSV as data, and convert legacy XLS through the bundled Office runtime when necessary.
+Author editable workbooks with the configured workbook tools. Read CSV and TSV as data, and convert legacy XLS through the bundled Office runtime when necessary.
 
 ## Important Instructions
 - For new workbooks or authorized redesigns, plan the simplest correct workbook that meets the task, audience, actual data and domain. If formulas become hard to read, first reconsider whether the workbook’s structure, layout, or logic is overcomplicated before simplifying individual formulas. Remove unnecessary or duplicated logic while preserving calculation correctness, required business relationships, and financial reconciliation
@@ -19,12 +19,15 @@ Author editable workbooks with Artifact Tool. Read CSV and TSV as data, and conv
 Use the ZeroAgent file runtime in the current execution workspace. The host provides the absolute paths RUNTIME_NODE, RUNTIME_PYTHON, RUNTIME_NODE_MODULES and ZEROAGENT_FILE_SKILL_ROOT. Package paths in this guide are relative to this skill. Locate executable helpers under the installed skill directory and run them from the writable work area with the configured interpreter.
 
 Use the absolute runtime interpreter in the command examples below.
+If a desktop tool task is missing RUNTIME_PYTHON or ZEROAGENT_FILE_TOOL, keep the requested work pending and direct the user to Settings → System Settings → Workspace tools on the executing computer.
 
 On a device, open the source authorized in the current conversation. In CloudChat, materialize the exact attachment or artifact version with load_uploaded_file and use the returned workspace path. Match reader annotations to the source version and the format-specific anchors before editing. Create a working copy and preserve content outside the requested edits. Recheck the source version before any authorized write-back.
 
 Keep drafts, intermediate renders, QA reports and final outputs separate. Deliver the verified device file through its workspace link. In CloudChat use publish_artifact and cite the ready immutable version. Pass the existing artifact family for a revision. Report any source mismatch or failed validation and preserve the original.
 
-Use the bundled @oai/artifact-tool JavaScript API. Import it through the ZeroAgent loader, loadArtifactTool, in artifact_tool.mjs alongside ZEROAGENT_FILE_TOOL. This resolves the configured package independent of the workspace node_modules. Run authored .mjs files with RUNTIME_NODE. Keep authoring scripts, inputs and outputs within the workspace.
+When ZEROAGENT_FILE_ARTIFACT_ENTRY is available, use the bundled @oai/artifact-tool JavaScript API. Import it through the ZeroAgent loader, loadArtifactTool, in artifact_tool.mjs alongside ZEROAGENT_FILE_TOOL. This resolves the configured package independent of the workspace node_modules. Run authored .mjs files with RUNTIME_NODE. Keep authoring scripts, inputs and outputs within the workspace.
+
+With the standard workspace tools, use ZEROAGENT_FILE_TOOL with RUNTIME_PYTHON for spreadsheet inspect, create, edit, convert and render. It supports standard tables, formulas, bar and line charts, and exact-version edits. Use the bundled Office engine for formula recalculation and page exports. Preserve existing native PivotTable parts during scoped edits. If the request needs new PivotTables or another feature unavailable on this device, identify the specific limitation before choosing a different representation.
 
 The package supplies the API guides for templates, formulas or slide objects, and preview and export. Reopen the final file to verify it. For format conversion or an exact source-version edit that must preserve untouched OOXML parts, use the workspace file tool when the operation calls for it.
 - Prefer to patch/rerun one `.mjs` builder. No heredocs or duplicate builders.
@@ -333,7 +336,7 @@ For any task that requires modifying or creating a workbook:
 Keep underlying dates numeric and sortable. A display format does not change the period represented or authorize aggregation. Fit the final display so dates do not truncate or show `####`.
 
 ### Verification Rules
-Use Artifact Tool to verify requested features and results within the authorized changes and their affected dependencies. Match coverage to the scope, complexity and risk. Report unrelated pre-existing defects without repairing them. Reuse checks for unchanged content and keep authoring-only tests out of the delivered workbook.
+Verify requested features and results within the authorized changes and their affected dependencies using the configured toolset. Match coverage to the scope, complexity and risk. Report unrelated pre-existing defects without repairing them. Reuse checks for unchanged content and keep authoring-only tests out of the delivered workbook.
 
 After completing all edits, call `workbook.recalculate()` once before the final checks below and export. If you make further edits, recalculate again before repeating affected checks and exporting.
 ```js

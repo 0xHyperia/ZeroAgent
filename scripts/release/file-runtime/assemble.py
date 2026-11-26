@@ -56,11 +56,15 @@ def download(asset, directory):
     return filename
 
 
-def extract_tar(archive, destination, prefixes=(), *, copy_python_aliases=False):
+def extract_tar(archive, destination, prefixes=(), *, copy_python_aliases=False, refuse_private=False):
     with tarfile.open(archive) as source:
         members = (member for member in source if not prefixes or member.name.startswith(prefixes))
 
         def filter_member(member, path):
+            if refuse_private and (
+                "licensee" in member.name.casefold() or "licensee" in member.linkname.casefold()
+            ):
+                raise ValueError("A public runtime dependency contains a protected filename")
             # CPython uses absolute aliases for some ABI libraries and terminfo data.
             # Rebase the known build prefix within the component, then apply the data filter.
             python_prefix = COMPONENT_PATH + "python/"
@@ -75,22 +79,28 @@ def extract_tar(archive, destination, prefixes=(), *, copy_python_aliases=False)
         source.extractall(destination, members=members, filter=filter_member)
 
 
-def copy_component(source, destination):
+def copy_component(source, destination, *, refuse_private=False):
     # A runtime can be installed in any directory. Materialize aliases while the
     # entire verified dependency tree is still available.
-    shutil.copytree(
-        source, destination,
-        ignore=shutil.ignore_patterns(
-            "__pycache__", "*.pyc", "*.pyo", "LibreOffice_*.msi",
-            # Spreadsheet and presentation skills run the Node distribution.
-            "artifact_tool_v2", "artifact_tool_v2-*.dist-info",
-        ),
+    ignore_patterns = shutil.ignore_patterns(
+        "__pycache__", "*.pyc", "*.pyo", "LibreOffice_*.msi",
+        # Spreadsheet and presentation skills run the Node distribution.
+        "artifact_tool_v2", "artifact_tool_v2-*.dist-info",
     )
 
+    def ignore_names(directory, names):
+        if refuse_private and any("licensee" in name.casefold() for name in names):
+            raise ValueError("A public runtime dependency contains a protected filename")
+        return ignore_patterns(directory, names)
 
-def unpack_conda(archive, prefix, notices, scratch):
+    shutil.copytree(source, destination, ignore=ignore_names)
+
+
+def unpack_conda(archive, prefix, notices, scratch, *, refuse_private=False):
     if archive.suffix == ".conda":
         with ZipFile(archive) as package:
+            if refuse_private and any("licensee" in name.casefold() for name in package.namelist()):
+                raise ValueError("A public runtime dependency contains a protected filename")
             for kind in ("pkg-", "info-"):
                 member, = [name for name in package.namelist() if name.startswith(kind)]
                 if Path(member).name != member:
@@ -104,10 +114,14 @@ def unpack_conda(archive, prefix, notices, scratch):
                     subprocess.run(["zstd", "-q", "-d", payload, "-o", tar], check=True)
                     payload.unlink()
                     payload = tar
+                if refuse_private:
+                    listing = subprocess.check_output(["tar", "-tvf", payload])
+                    if b"licensee" in listing.lower():
+                        raise ValueError("A public runtime dependency contains a protected filename")
                 subprocess.run(["tar", "-xf", payload, "-C", destination], check=True)
                 payload.unlink()
     else:
-        extract_tar(archive, scratch)
+        extract_tar(archive, scratch, refuse_private=refuse_private)
         for entry in scratch.iterdir():
             if entry.name != "info":
                 if entry.is_dir():
@@ -116,17 +130,26 @@ def unpack_conda(archive, prefix, notices, scratch):
                     shutil.copy2(entry, prefix / entry.name, follow_symlinks=False)
     licenses = scratch / "info" / "licenses"
     if licenses.is_dir():
-        copy_component(licenses, notices / archive.name)
+        copy_component(licenses, notices / archive.name, refuse_private=refuse_private)
 
 
-def unpack_office(archive, destination, system, scratch):
+def unpack_office(archive, destination, system, scratch, *, refuse_private=False):
     if system == "Windows":
+        if refuse_private:
+            script = Path(__file__).with_name("check-office-msi.ps1")
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                 "-File", script, "-Archive", archive],
+                check=True, timeout=60,
+            )
         # msiexec exits before the install if invoked through the shell.
         result = subprocess.run(["msiexec.exe", "/a", archive, "/qn", "REBOOT=ReallySuppress", f"TARGETDIR={scratch}"])
         if result.returncode not in (0, 3010):
             raise RuntimeError(f"LibreOffice administrative extraction exited {result.returncode}")
         suite = next(path.parent.parent for path in scratch.rglob("soffice.com")
                      if (path.parent.parent / "LICENSE.html").is_file())
+        if refuse_private and any("licensee" in path.name.casefold() for path in suite.rglob("*")):
+            raise ValueError("A public runtime dependency contains a protected filename")
         # Headless conversion does not use optional spelling dictionaries.
         # Registering all of them against an empty Windows profile delays the first render.
         for dictionary in (suite / "share/extensions").glob("dict-*"):
@@ -138,7 +161,7 @@ def unpack_office(archive, destination, system, scratch):
             if (translations.is_dir() and not translations.name.startswith(("en_", "zh_"))
                     and any(translations.glob("*.mo"))):
                 shutil.rmtree(translations)
-        copy_component(suite, destination)
+        copy_component(suite, destination, refuse_private=refuse_private)
         return "office/program/soffice.com", "office/Fonts/LiberationSans-Regular.ttf"
     if system == "Darwin":
         mount = scratch / "dmg"

@@ -442,6 +442,12 @@ macro_rules! app_invoke_handler {
             #[cfg(desktop)]
             services::device_plugins::surface::device_ui_surface_operation,
             services::kbrain_backend::kbrain_file_runtime_ready,
+            #[cfg(desktop)]
+            services::kbrain_backend::file_runtime_status,
+            #[cfg(desktop)]
+            services::kbrain_backend::file_runtime_prepare,
+            #[cfg(desktop)]
+            services::kbrain_backend::file_runtime_manage,
             services::kbrain_backend::kbrain_backend_activate_profile,
             services::kbrain_backend::kbrain_managed_credentials_replace,
         ];
@@ -1314,6 +1320,8 @@ pub fn run() {
                 let setup_started = std::time::Instant::now();
                 configure_system_tray(app)?;
                 services::planning::notification::install(app.handle());
+                #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+                services::kbrain_backend::initialize_managed_file_runtime(app.handle());
                 #[cfg(target_os = "windows")]
                 configure_windows_window_chrome(app)?;
                 #[cfg(target_os = "macos")]

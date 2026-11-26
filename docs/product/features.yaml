@@ -816,28 +816,36 @@
       "name": "内置文件技能与独立工具",
       "status": "active",
       "owner": "zeroagent",
-      "surfaces": ["desktop", "webui", "gateway"],
+      "surfaces": ["desktop", "webui", "android", "gateway"],
       "entrypoints": [
         "crates/file-runtime/file_tool.py",
+        "crates/file-runtime/check_workspace_tools.py",
         "crates/agent-gui/src-tauri/src/services/file_runtime.rs",
+        "crates/agent-gui/src-tauri/src/services/file_runtime/managed.rs",
         "crates/agent-gui/src-tauri/src/services/skills/builtin.rs",
         "crates/agent-gateway/internal/account/cloud_extension_manifest.go",
         "crates/cloud-executor/sandbox/template/build.mjs",
         "crates/agent-ui/src/lib/chat/documentRevisionMessage.ts",
+        "crates/agent-ui/src/components/workspace-editor/requestWorkspaceRevision.ts",
+        "crates/agent-ui/src/pages/settings/FileRuntimeSettings.tsx",
         "scripts/release/stage-file-runtime.mjs",
         "scripts/release/file-runtime/assemble.py",
         "scripts/release/file-runtime/dependencies.lock.json",
+        "scripts/release/file-runtime/stage-windows-managed.mjs",
+        "scripts/release/file-runtime/windows_managed.py",
+        "scripts/release/file-runtime/windows-managed.lock.json",
         ".github/workflows/file-runtime-packs.yml"
       ],
       "tests": [
         "crates/file-runtime/test_file_tool.py",
         "crates/agent-gateway/internal/account/cloud_builtin_release_test.go",
         "crates/agent-gui/test/chat/device-right-workspace.test.mjs",
+        "crates/agent-gui/test/backend/release-file-runtime-packs.test.mjs",
         "crates/agent-gui/test/skills/skills-markdown-preview.test.mjs",
         "crates/cloud-executor/sandbox/template/build.test.mjs",
         "scripts/release/verify-installed-file-runtime.mjs"
       ],
-      "security": "工具运行于现有设备执行权限或账户隔离环境。输入使用工作区相对引用，编辑校验源 SHA-256。通过临时副本重读校验并独占发布新文件。设备阅读器批注沿用原对话和授权，执行设备缺少独立运行时则保留批注并停止提交。开发与桌面发行均从运行时清单解析绝对路径，发行构建校验完整依赖。桌面安装和真实候选镜像需单独验收。",
+      "security": "工具运行于现有设备执行权限或账户隔离环境。输入使用工作区相对引用，编辑校验源 SHA-256。通过临时副本重读校验并独占发布新文件。设备阅读器批注沿用原对话和授权，执行设备缺少独立运行时则保留批注并停止提交。Windows x64 由 Native 核对签名应用固定的包摘要和有界目录，显式安装并自检后准备重启启用，保留上一版。设备 WebUI、Android 和桌面远程只读取目标设备状态。桌面依赖及真实候选镜像需单独验收。",
       "upstream_relation": "adapt"
     },
     {

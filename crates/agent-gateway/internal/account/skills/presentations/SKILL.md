@@ -1,6 +1,6 @@
 ---
 name: presentations
-description: 创建、编辑和审阅可编辑的 PowerPoint 演示文稿。使用 Artifact Tool 操作模板、母版、幻灯片、图表、表格和备注，逐页检查版式并导出。
+description: 创建、编辑和审阅 PowerPoint 演示文稿。处理幻灯片、图表、表格和备注，逐页检查版式并导出。
 ---
 
 # 演示文稿
@@ -14,12 +14,15 @@ Proceed when the request is clear. Ask only when missing information would chang
 Use the ZeroAgent file runtime in the current execution workspace. The host provides the absolute paths RUNTIME_NODE, RUNTIME_PYTHON, RUNTIME_NODE_MODULES and ZEROAGENT_FILE_SKILL_ROOT. Package paths in this guide are relative to this skill. Locate executable helpers under the installed skill directory and run them from the writable work area with the configured interpreter.
 
 Use the absolute runtime interpreter in the command examples below.
+If a desktop tool task is missing RUNTIME_PYTHON or ZEROAGENT_FILE_TOOL, keep the requested work pending and direct the user to Settings → System Settings → Workspace tools on the executing computer.
 
 On a device, open the source authorized in the current conversation. In CloudChat, materialize the exact attachment or artifact version with load_uploaded_file and use the returned workspace path. Match reader annotations to the source version and the format-specific anchors before editing. Create a working copy and preserve content outside the requested edits. Recheck the source version before any authorized write-back.
 
 Keep drafts, intermediate renders, QA reports and final outputs separate. Deliver the verified device file through its workspace link. In CloudChat use publish_artifact and cite the ready immutable version. Pass the existing artifact family for a revision. Report any source mismatch or failed validation and preserve the original.
 
-Use the bundled @oai/artifact-tool JavaScript API. Import it through the ZeroAgent loader, loadArtifactTool, in artifact_tool.mjs alongside ZEROAGENT_FILE_TOOL. This resolves the configured package independent of the workspace node_modules. Run authored .mjs files with RUNTIME_NODE. Keep authoring scripts, inputs and outputs within the workspace.
+When ZEROAGENT_FILE_ARTIFACT_ENTRY is available, use the bundled @oai/artifact-tool JavaScript API. Import it through the ZeroAgent loader, loadArtifactTool, in artifact_tool.mjs alongside ZEROAGENT_FILE_TOOL. This resolves the configured package independent of the workspace node_modules. Run authored .mjs files with RUNTIME_NODE. Keep authoring scripts, inputs and outputs within the workspace.
+
+With the standard workspace tools, use ZEROAGENT_FILE_TOOL with RUNTIME_PYTHON for presentations inspect, create, edit, convert and render. It supports layouts from an existing deck, text, images, shapes, tables, standard charts and notes. Use the bundled Office engine for PDF or page preview. When an advanced master or object edit exceeds the available operations, identify the limitation and preserve the original presentation.
 
 The package supplies the API guides for templates, formulas or slide objects, and preview and export. Reopen the final file to verify it. For format conversion or an exact source-version edit that must preserve untouched OOXML parts, use the workspace file tool when the operation calls for it.
 

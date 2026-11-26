@@ -1850,7 +1850,12 @@ pub async fn handle_skill_manage(
         crate::services::kbrain_backend::kbrain_backend_connection(app.clone(), backend).await?;
     let response = if payload.get("action").and_then(Value::as_str) == Some("file-runtime-status") {
         let state = app.state::<Arc<KBrainBackendState>>();
-        json!({ "ready": state.file_runtime_ready().await })
+        let ready = state.file_runtime_ready().await;
+        #[cfg(desktop)]
+        let status = json!({ "ready": ready, "phase": state.file_runtime_setup_phase(ready) });
+        #[cfg(mobile)]
+        let status = json!({ "ready": ready });
+        status
     } else {
         kbrain_skill_manage(&connection, payload).await?
     };

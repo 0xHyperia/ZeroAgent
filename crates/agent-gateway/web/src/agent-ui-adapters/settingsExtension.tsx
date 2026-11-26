@@ -33,6 +33,7 @@ export const WEB_SETTINGS_EXCLUDED_ANCHORS = [
   ...BROWSER_UNSUPPORTED_SHORTCUTS.map(shortcutCommandSettingsAnchor),
   "run-completion-sound",
   "preferred-workspace-editor",
+  "file-runtime",
 ];
 
 const ShortcutCommandsSection = onDemand<ShortcutCommandsSectionProps>(

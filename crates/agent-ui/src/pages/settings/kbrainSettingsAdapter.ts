@@ -1,3 +1,4 @@
+import type { FileRuntimeControls } from "@liveagent/ui/contracts/fileRuntime";
 import type { KBrainHealth } from "@liveagent/ui/lib/kbrain/health";
 import type { DevicePluginsClient } from "@liveagent/ui/lib/plugins/devicePlugins";
 import type { UsageStatsAnswer, UsageStatsQuery } from "@liveagent/ui/lib/usage/usageStats";
@@ -147,6 +148,7 @@ export type SettingsHostAdapter = {
   devicePlugins?: DevicePluginsClient;
   devicePluginScope?: string | number;
   devicePluginWorkdir?: string;
+  fileRuntime?: FileRuntimeControls;
   runtimeConnection?: () => KBrainRuntimeConnection | null;
   kbrain?: KBrainSettingsAdapter;
 };

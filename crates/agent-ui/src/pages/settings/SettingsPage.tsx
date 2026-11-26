@@ -119,6 +119,7 @@ export function SettingsPage(props: SettingsPageProps) {
             setSettings={setSettings}
             showLocalRuntimeSettings={showLocalRuntimeSettings}
             htmlPreviewsAvailable={Boolean(devicePlugins?.readSurface)}
+            fileRuntime={props.settingsHost?.fileRuntime}
           />
         ),
       },
