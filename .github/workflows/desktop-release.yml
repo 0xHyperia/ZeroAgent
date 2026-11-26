@@ -579,7 +579,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            cpio \
             curl \
             file \
             libayatana-appindicator3-dev \
@@ -589,7 +588,6 @@ jobs:
             libxdo-dev \
             patchelf \
             rpm \
-            rpm2cpio \
             wget
 
       - name: Install repository-pinned Protoc
@@ -714,7 +712,7 @@ jobs:
         run: |
           set -euo pipefail
           dpkg-deb --contents dist/*.deb > "$RUNNER_TEMP/zeroagent-deb-files"
-          rpm2cpio dist/*.rpm | cpio -it --quiet > "$RUNNER_TEMP/zeroagent-rpm-files"
+          rpm -qpl dist/*.rpm > "$RUNNER_TEMP/zeroagent-rpm-files"
           if grep -Eq '(^|/)file-runtime(/|$)' "$RUNNER_TEMP/zeroagent-deb-files" "$RUNNER_TEMP/zeroagent-rpm-files"; then
             echo "A Linux installer contains the optional file runtime" >&2
             exit 1

@@ -48,6 +48,7 @@ test("macOS and Linux installers omit the tools and publish a matching companion
   assert.match(workflow, /Linux-x86_64-file-tools\.zip" dist\//);
   assert.match(workflow, /Verify the macOS disk image and updater omit file tools/);
   assert.match(workflow, /Verify Linux package payloads omit file tools/);
+  assert.match(workflow, /rpm -qpl dist\/\*\.rpm/);
   assert.match(workflow, /postprocess-linux-appimage\.sh "\$appimage_path"[\s\S]*tauri signer sign/);
   assert.match(postprocess, /test ! -e "\$verified_app_dir\/usr\/lib\/ZeroAgent\/file-runtime"/);
 });
