@@ -14,10 +14,10 @@ from assemble import TARGETS, digest
 
 
 ARCHIVE_NAME = "file-runtime.zip"
-ENTRY_LIMIT = 50_000
+ENTRY_LIMIT = 60_000
 ARCHIVE_LIMIT = 2 * 1024**3
 FILE_LIMIT = 768 * 1024**2
-TREE_LIMIT = 4 * 1024**3
+TREE_LIMIT = 5 * 1024**3
 MANIFEST_LIMIT = 16 * 1024**2
 DEVICE_NAME = re.compile(r"(?i)^(con|prn|aux|nul|clock\$|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(?: *\.|$)")
 
@@ -37,7 +37,7 @@ def safe_parts(name):
     return parts
 
 
-def inventory(root):
+def inventory(root, *, case_sensitive=False):
     """Traverse without opening protected files or following reparse points."""
     def entries(directory):
         for filename in sorted(directory.iterdir()):
@@ -62,9 +62,11 @@ def inventory(root):
     seen = set()
     total = 0
     for name, filename, size in entries(root):
-        key = name.casefold()
-        if key in seen or len(files) >= ENTRY_LIMIT or size > FILE_LIMIT:
-            raise ValueError("Duplicate or oversized runtime member")
+        key = name if case_sensitive else name.casefold()
+        if key in seen:
+            raise ValueError(f"File runtime contains a path collision: {name}")
+        if len(files) >= ENTRY_LIMIT or size > FILE_LIMIT:
+            raise ValueError(f"File runtime member exceeds the file count or size limit: {name}")
         seen.add(key)
         total += size
         if total > TREE_LIMIT:
@@ -73,7 +75,7 @@ def inventory(root):
     return files
 
 
-def expand_runtime(archive, destination):
+def expand_runtime(target, archive, destination):
     with ZipFile(archive) as source:
         members = source.infolist()
         if len(members) > ENTRY_LIMIT or sum(item.file_size for item in members) > TREE_LIMIT:
@@ -82,10 +84,11 @@ def expand_runtime(archive, destination):
         for item in members:
             parts = safe_parts(item.filename)
             mode = item.external_attr >> 16
+            key = item.filename if target.endswith("-linux-gnu") else item.filename.casefold()
             if (item.is_dir() or stat.S_IFMT(mode) != stat.S_IFREG or item.file_size > FILE_LIMIT
-                    or item.filename.casefold() in paths):
+                    or key in paths):
                 raise ValueError("Invalid runtime ZIP entry")
-            paths[item.filename.casefold()] = (item, parts, mode)
+            paths[key] = (item, parts, mode)
         for item, parts, mode in paths.values():
             path = destination.joinpath(*parts)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -96,7 +99,7 @@ def expand_runtime(archive, destination):
 
 
 def verify_tree(target, runtime):
-    files = inventory(runtime)
+    files = inventory(runtime, case_sensitive=target.endswith("-linux-gnu"))
     manifest_file = files.pop("runtime.json")
     if manifest_file.stat().st_size > MANIFEST_LIMIT:
         raise ValueError("The runtime manifest exceeds its size bound")
@@ -149,7 +152,7 @@ def restore_runtime(target, pack, destination):
     ):
         raise ValueError("The file runtime ZIP does not match its receipt")
     destination.mkdir()
-    expand_runtime(archive, destination)
+    expand_runtime(target, archive, destination)
     verify_tree(target, destination)
 
 

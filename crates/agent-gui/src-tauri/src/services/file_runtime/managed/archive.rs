@@ -142,6 +142,12 @@ pub(super) fn extract(
             .map_err(|_| Failure::ArchiveInvalid)?;
         let name = entry.name();
         let is_directory = entry.is_dir();
+        let relative_name = name.trim_end_matches('/');
+        let identity = if cfg!(target_os = "linux") {
+            relative_name.to_owned()
+        } else {
+            relative_name.to_lowercase()
+        };
         relative_path(if is_directory {
             name.strip_suffix('/').ok_or(Failure::ArchiveInvalid)?
         } else {
@@ -152,7 +158,7 @@ pub(super) fn extract(
                 let kind = mode & 0o170000;
                 kind != 0 && kind != if is_directory { 0o040000 } else { 0o100000 }
             })
-            || !identities.insert(name.trim_end_matches('/').to_lowercase())
+            || !identities.insert(identity)
             || entry.size() > MAX_FILE_BYTES
         {
             return Err(Failure::ArchiveInvalid);
@@ -348,6 +354,20 @@ mod tests {
             assert_eq!(extract(archive, root.path()), Err(Failure::ArchiveInvalid));
             assert!(!root.path().join(MANIFEST_NAME).exists());
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_companions_preserve_case_distinct_files() {
+        let fixture = fixture(
+            &[("a.txt", b"lower"), ("A.txt", b"upper")],
+            serde_json::json!({"a.txt": sha256(b"lower"), "A.txt": sha256(b"upper")}),
+        );
+        let archive = ZipArchive::new(fixture).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        extract(archive, root.path()).unwrap();
+        assert_eq!(fs::read(root.path().join("a.txt")).unwrap(), b"lower");
+        assert_eq!(fs::read(root.path().join("A.txt")).unwrap(), b"upper");
     }
 
     #[test]
