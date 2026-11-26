@@ -16,21 +16,21 @@
     "partial": 183,
     "reject": 411
   },
-  "forkChangedPaths": 3266,
+  "forkChangedPaths": 3268,
   "forkStatusCounts": {
-    "M": 974,
+    "M": 976,
     "D": 650,
     "A": 1642
   },
   "ownershipRules": ".github/upstream-ownership.yaml: first matching glob in file order, with a one-based rule number",
   "forkOwnershipCounts": {
-    "adapted": 2012,
+    "adapted": 2014,
     "zeroagent_owned": 976,
     "upstream_owned": 278
   },
   "forkOwnershipByStatus": {
     "M": {
-      "adapted": 789,
+      "adapted": 791,
       "upstream_owned": 181,
       "zeroagent_owned": 4
     },
@@ -1446,6 +1446,7 @@
     ["M","crates/agent-gateway/web/src/lib/proto/gen/proto/v2/gateway_ws_pb.ts","adapted",129],
     ["A","crates/agent-gateway/web/src/lib/relay/client.ts","zeroagent_owned",105],
     ["A","crates/agent-gateway/web/src/lib/relay/providers.ts","zeroagent_owned",105],
+    ["M","crates/agent-gateway/web/src/lib/sidebar/webSidebarBackend.ts","adapted",129],
     ["M","crates/agent-gateway/web/src/lib/storage.ts","adapted",129,"partial"],
     ["D","crates/agent-gateway/web/src/lib/stt/webSttSettingsService.ts","adapted",129,"partial"],
     ["D","crates/agent-gateway/web/src/lib/stt/webSttTransport.ts","adapted",129,"partial"],
@@ -1584,6 +1585,7 @@
     ["M","crates/agent-gateway/web/test/turn-error-rows.test.mjs","adapted",129,"adapt"],
     ["A","crates/agent-gateway/web/test/user-menu-navigation.test.mjs","adapted",129],
     ["D","crates/agent-gateway/web/test/web-search-fallback-settings.test.mjs","adapted",129],
+    ["M","crates/agent-gateway/web/test/web-sidebar-mutation-sync.test.mjs","adapted",129],
     ["M","crates/agent-gateway/web/test/workbench-chrome.test.mjs","adapted",129],
     ["M","crates/agent-gateway/web/test/workbench-composer-input-state.test.mjs","adapted",129,"partial"],
     ["A","crates/agent-gateway/web/test/workspace-handoff.test.mjs","zeroagent_owned",8],

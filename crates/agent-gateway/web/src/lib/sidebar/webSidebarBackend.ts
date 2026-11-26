@@ -201,7 +201,12 @@ export function createWebSidebarBackend(deps: WebSidebarBackendDeps): SidebarBac
     done(conversation: SidebarConversation | undefined | null): void;
   };
   const mutationWaiters = new Map<string, Set<MutationWaiter>>();
-  let mutationResync: Promise<GatewayHistorySyncSnapshot> | null = null;
+  let mutationReceipts = 0;
+  let pendingConfirmations = 0;
+  let mutationResync: {
+    coveredThrough: number;
+    promise: Promise<GatewayHistorySyncSnapshot>;
+  } | null = null;
 
   const setSyncHealthy = (healthy: boolean) => {
     if (syncHealthy === healthy) return;
@@ -263,22 +268,27 @@ export function createWebSidebarBackend(deps: WebSidebarBackendDeps): SidebarBac
     fallback: SidebarConversation | undefined,
     matches: (conversation: SidebarConversation | undefined) => boolean,
     observed: Promise<SidebarConversation | undefined | null>,
+    receipt: number,
   ): Promise<SidebarConversation | undefined> => {
-    if (!api.requestHistoryResync || !api.acknowledgeHistoryResync) return fallback;
+    const requestResync = api.requestHistoryResync;
+    if (!requestResync || !api.acknowledgeHistoryResync) return fallback;
     const eventResult = await observed;
     if (eventResult !== null) return eventResult;
-    mutationResync ??= api
-      .requestHistoryResync("")
-      .then(async (snapshot) => {
-        await api.acknowledgeHistoryResync?.(snapshot, snapshot.cut_delivery_seq);
-        return snapshot;
-      })
-      .finally(() => {
-        setTimeout(() => {
-          mutationResync = null;
-        }, 0);
-      });
-    const snapshot = await mutationResync;
+    if (!mutationResync || mutationResync.coveredThrough < receipt) {
+      const previous = mutationResync?.promise;
+      mutationResync = {
+        coveredThrough: mutationReceipts,
+        promise: (async () => {
+          // The request only covers mutations already acknowledged when it is
+          // queued. Serialize later snapshots so their acknowledgments cannot race.
+          await previous?.catch(() => undefined);
+          const snapshot = await requestResync.call(api, "");
+          await api.acknowledgeHistoryResync?.(snapshot, snapshot.cut_delivery_seq);
+          return snapshot;
+        })(),
+      };
+    }
+    const snapshot = await mutationResync.promise;
     const raw = snapshot.conversations.find((item) => item.id === id);
     const conversation = raw ? normalizeGatewayConversationSummary(raw) : undefined;
     if (matches(conversation)) return conversation;
@@ -291,6 +301,7 @@ export function createWebSidebarBackend(deps: WebSidebarBackendDeps): SidebarBac
     mutate: () => Promise<ConversationSummary | undefined>,
   ): Promise<SidebarConversation | undefined> => {
     const confirmation = beginMutationConfirmation(id, matches);
+    if (confirmation.enabled) pendingConfirmations += 1;
     try {
       const response = await mutate();
       const fallback = response ? normalizeGatewayConversationSummary(response) : undefined;
@@ -298,10 +309,18 @@ export function createWebSidebarBackend(deps: WebSidebarBackendDeps): SidebarBac
         confirmation.cancel();
         return fallback;
       }
-      return await confirmRemoteMutation(id, fallback, matches, confirmation.promise);
+      return await confirmRemoteMutation(
+        id,
+        fallback,
+        matches,
+        confirmation.promise,
+        ++mutationReceipts,
+      );
     } catch (error) {
       confirmation.cancel();
       throw error;
+    } finally {
+      if (confirmation.enabled && --pendingConfirmations === 0) mutationResync = null;
     }
   };
 

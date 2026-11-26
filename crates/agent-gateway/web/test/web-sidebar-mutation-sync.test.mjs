@@ -199,7 +199,9 @@ test(
   },
 );
 
-test("concurrent mutation confirmations share one authoritative snapshot fallback", async () => {
+test("concurrent mutation confirmations share one authoritative snapshot fallback", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
   const historySyncListeners = new Set();
   let resyncCalls = 0;
   let initialized = false;
@@ -251,14 +253,19 @@ test("concurrent mutation confirmations share one authoritative snapshot fallbac
       },
     });
   }
-  await new Promise((resolve) => setTimeout(resolve, 0));
   try {
+    t.mock.timers.tick(0);
+    await flush();
     resyncCalls = 0;
     initialized = true;
-    const [one, two] = await Promise.all([
-      backend.renameConversation("one", "one"),
-      backend.renameConversation("two", "two"),
-    ]);
+    const first = backend.renameConversation("one", "one");
+    t.mock.timers.tick(2);
+    const second = backend.renameConversation("two", "two");
+    await flush();
+    t.mock.timers.tick(3);
+    const one = await first;
+    t.mock.timers.tick(2);
+    const two = await second;
     assert.equal(one.id, "one");
     assert.equal(two.id, "two");
     assert.equal(resyncCalls, 1);
