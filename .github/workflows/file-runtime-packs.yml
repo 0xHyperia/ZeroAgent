@@ -79,7 +79,7 @@ jobs:
           python scripts/release/file-runtime/assemble.py "$TARGET" "$RUNNER_TEMP/za-runtime-tree" \
             --downloads "$RUNNER_TEMP/za-runtime-downloads" --scratch "$RUNNER_TEMP"
 
-      - name: Verify in a clean offline profile and package
+      - name: Verify the full runtime and package it separately
         if: runner.os != 'Windows'
         shell: bash
         env:
@@ -91,18 +91,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -B scripts/release/file-runtime/windows_managed.py assemble "$RUNNER_TEMP/za-runtime-tree" \
+          python -B scripts/release/file-runtime/windows_managed.py "$RUNNER_TEMP/za-runtime-tree" \
             --downloads "$RUNNER_TEMP/za-runtime-downloads" --scratch "$RUNNER_TEMP"
-          python -B scripts/release/file-runtime/windows_managed.py pack "$RUNNER_TEMP/za-runtime-tree" "$RUNNER_TEMP/za-runtime-pack"
+          python -B scripts/release/file-runtime/managed_pack.py pack x86_64-pc-windows-msvc "$RUNNER_TEMP/za-runtime-tree" "$RUNNER_TEMP/za-runtime-pack"
 
-      - name: Verify the Windows companion ZIP in a clean offline profile
-        if: runner.os == 'Windows'
+      - name: Verify the companion ZIP in a clean offline profile
         shell: bash
         env:
           ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
+          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          python -B scripts/release/file-runtime/windows_managed.py restore "$RUNNER_TEMP/za-runtime-pack" "$RUNNER_TEMP/za-runtime-verify"
+          python -B scripts/release/file-runtime/managed_pack.py restore "$TARGET" "$RUNNER_TEMP/za-runtime-pack" "$RUNNER_TEMP/za-runtime-verify"
           node scripts/release/verify-installed-file-runtime.mjs "$RUNNER_TEMP/za-runtime-verify"
 
       - name: Store verified pack and receipt in the source repository

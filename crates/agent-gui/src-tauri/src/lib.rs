@@ -1320,7 +1320,6 @@ pub fn run() {
                 let setup_started = std::time::Instant::now();
                 configure_system_tray(app)?;
                 services::planning::notification::install(app.handle());
-                #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
                 services::kbrain_backend::initialize_managed_file_runtime(app.handle());
                 #[cfg(target_os = "windows")]
                 configure_windows_window_chrome(app)?;

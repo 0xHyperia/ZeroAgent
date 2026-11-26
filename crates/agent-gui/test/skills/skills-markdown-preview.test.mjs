@@ -32,7 +32,7 @@ test("Skill and workspace files share the document Markdown presentation", () =>
 });
 
 test("native file skills navigate package references through the shared skill reader", () => {
-  assert.match(skillDrawerSource, /<SkillReaderMarkdown file=\{filePath\} content=\{shownContent\}/);
+  assert.match(skillDrawerSource, /<SkillReaderMarkdown\s+file=\{filePath\}\s+content=\{shownContent\}/);
   assert.match(skillDrawerSource, /readSkillText\(\{ path, offset: 0,/);
   for (const id of ["documents", "pdf", "spreadsheet", "presentations"]) {
     const root = new URL(`../../../agent-gateway/internal/account/skills/${id}/`, import.meta.url);

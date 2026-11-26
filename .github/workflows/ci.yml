@@ -340,10 +340,12 @@ jobs:
         timeout-minutes: 5
         run: |
           vault_home="$RUNNER_TEMP/zeroagent-native-vault"
-          mkdir -p "$vault_home"
-          env HOME="$vault_home" XDG_DATA_HOME="$vault_home/data" \
-            xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- bash -c '
-            gnome-keyring-daemon --start --components=secrets >/dev/null
+          install -d -m 700 "$vault_home/runtime"
+          env HOME="$vault_home" XDG_DATA_HOME="$vault_home/data" XDG_RUNTIME_DIR="$vault_home/runtime" \
+            xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- bash -euc '
+            gnome-keyring-daemon --foreground --components=secrets &
+            trap "kill $!" EXIT
+            gdbus wait --session --timeout 15 org.freedesktop.secrets
             node scripts/smoke-desktop-native.mjs target/debug/zeroagent \
               crates/agent-gui/src-tauri/binaries/k-brain-x86_64-unknown-linux-gnu
           '

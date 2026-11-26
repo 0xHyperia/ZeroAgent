@@ -8,23 +8,16 @@ import platform
 import re
 import shutil
 import stat
-import subprocess
 from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZipFile
 
 from assemble import LOCK, copy_component, digest, download, extract_tar, unpack_conda, unpack_office
+from managed_pack import ENTRY_LIMIT, FILE_LIMIT, TREE_LIMIT, inventory, safe_parts
 
 
 TARGET = "x86_64-pc-windows-msvc"
 WINDOWS_LOCK = Path(__file__).with_name("windows-managed.lock.json")
-ARCHIVE_NAME = "file-runtime.zip"
-ENTRY_LIMIT = 50_000
-ARCHIVE_LIMIT = 2 * 1024**3
-FILE_LIMIT = 768 * 1024**2
-TREE_LIMIT = 4 * 1024**3
-MANIFEST_LIMIT = 16 * 1024**2
-DEVICE_NAME = re.compile(r"(?i)^(con|prn|aux|nul|clock\$|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(?: *\.|$)")
 WHEEL_DIRECTORIES = {
     "platlib": ("Lib", "site-packages"),
     "purelib": ("Lib", "site-packages"),
@@ -32,57 +25,6 @@ WHEEL_DIRECTORIES = {
     "headers": ("Include",),
     "data": (),
 }
-
-
-def safe_parts(name):
-    parts = name.removesuffix("/").split("/")
-    if len(name.encode("utf-8")) > 2048 or any(
-        part in {"", ".", ".."}
-        or len(part.encode("utf-16-le")) > 510
-        or part.endswith((".", " "))
-        or DEVICE_NAME.match(part)
-        or "licensee" in part.casefold()
-        or any(ord(char) < 32 or 127 <= ord(char) <= 159 or char in '\\:<>|"*?' for char in part)
-        for part in parts
-    ):
-        raise ValueError("A runtime path is invalid, unsupported or protected")
-    return parts
-
-
-def inventory(root):
-    """Traverse without opening protected files or following reparse points."""
-    def entries(directory):
-        for filename in sorted(directory.iterdir()):
-            name = filename.relative_to(root).as_posix()
-            safe_parts(name)
-            details = filename.lstat()
-            if getattr(details, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-                raise ValueError("A runtime member is a reparse point")
-            if stat.S_ISDIR(details.st_mode):
-                yield from entries(filename)
-            elif stat.S_ISREG(details.st_mode):
-                yield name, filename, details.st_size
-            else:
-                raise ValueError("A runtime member is not a regular file")
-
-    root_details = root.lstat()
-    if not stat.S_ISDIR(root_details.st_mode) or (
-        getattr(root_details, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
-    ):
-        raise ValueError("The runtime root is a link")
-    files = {}
-    seen = set()
-    total = 0
-    for name, filename, size in entries(root):
-        key = name.casefold()
-        if key in seen or len(files) >= ENTRY_LIMIT or size > FILE_LIMIT:
-            raise ValueError("Duplicate or oversized runtime member")
-        seen.add(key)
-        total += size
-        if total > TREE_LIMIT:
-            raise ValueError("Expanded runtime exceeds its size bound")
-        files[name] = filename
-    return files
 
 
 def expand_zip(archive, destination, *, wheel=False):
@@ -262,80 +204,10 @@ def assemble_runtime(destination, downloads, scratch):
     (destination / "runtime.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
-def verify_tree(runtime):
-    files = inventory(runtime)
-    manifest_file = files.pop("runtime.json")
-    if manifest_file.stat().st_size > MANIFEST_LIMIT:
-        raise ValueError("The runtime manifest exceeds its size bound")
-    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-    if (
-        manifest.get("format") != 1
-        or manifest.get("target") != TARGET
-        or manifest.get("artifact_tool") is not None
-        or manifest["files"] != {name: digest(path) for name, path in files.items()}
-    ):
-        raise ValueError("The managed runtime manifest does not match this tree")
-    return manifest_file, files
-
-
-def pack_runtime(runtime, output):
-    manifest_file, files = verify_tree(runtime)
-    output.mkdir()
-    archive = output / ARCHIVE_NAME
-    with ZipFile(archive, "x", ZIP_DEFLATED) as bundle:
-        for name, path in {"runtime.json": manifest_file, **files}.items():
-            entry = ZipInfo(name)
-            entry.compress_type = ZIP_DEFLATED
-            entry.file_size = path.stat().st_size
-            entry.external_attr = (stat.S_IFREG | 0o644) << 16
-            with path.open("rb") as source, bundle.open(entry, "w") as destination:
-                shutil.copyfileobj(source, destination, length=1024 * 1024)
-    archive_size = archive.stat().st_size
-    if not 0 < archive_size <= ARCHIVE_LIMIT:
-        raise ValueError("The companion ZIP exceeds its size bound")
-    receipt = {
-        "format": 1,
-        "target": TARGET,
-        "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-        "bytes": archive_size,
-        "sha256": digest(archive),
-    }
-    (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-
-
-def restore_runtime(pack, destination):
-    receipt = json.loads((pack / "receipt.json").read_text(encoding="utf-8"))
-    archive = pack / ARCHIVE_NAME
-    if (
-        receipt.get("format") != 1
-        or receipt.get("target") != TARGET
-        or receipt.get("bytes") != archive.stat().st_size
-        or not 0 < receipt["bytes"] <= ARCHIVE_LIMIT
-        or receipt.get("sha256") != digest(archive)
-    ):
-        raise ValueError("The Windows file runtime ZIP does not match its receipt")
-    destination.mkdir()
-    expand_zip(archive, destination)
-    verify_tree(destination)
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    subcommands = parser.add_subparsers(dest="command", required=True)
-    assembly = subcommands.add_parser("assemble")
-    assembly.add_argument("destination", type=Path)
-    assembly.add_argument("--downloads", type=Path, required=True)
-    assembly.add_argument("--scratch", type=Path, required=True)
-    packer = subcommands.add_parser("pack")
-    packer.add_argument("runtime", type=Path)
-    packer.add_argument("output", type=Path)
-    restore = subcommands.add_parser("restore")
-    restore.add_argument("pack", type=Path)
-    restore.add_argument("destination", type=Path)
+    parser.add_argument("destination", type=Path)
+    parser.add_argument("--downloads", type=Path, required=True)
+    parser.add_argument("--scratch", type=Path, required=True)
     options = parser.parse_args()
-    if options.command == "assemble":
-        assemble_runtime(options.destination, options.downloads, options.scratch)
-    elif options.command == "pack":
-        pack_runtime(options.runtime, options.output)
-    else:
-        restore_runtime(options.pack, options.destination)
+    assemble_runtime(options.destination, options.downloads, options.scratch)

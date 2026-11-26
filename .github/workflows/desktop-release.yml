@@ -190,11 +190,15 @@ jobs:
           name: file-runtime-${{ matrix.target }}
           path: ${{ runner.temp }}/za-runtime-pack
 
-      - name: Stage verified macOS file runtime
+      - name: Stage macOS file tools and embed the companion descriptor
         shell: bash
         env:
-          ZEROAGENT_FILE_RUNTIME_PACK_DIR: ${{ runner.temp }}/za-runtime-pack
-        run: node scripts/release/stage-file-runtime.mjs "${{ matrix.target }}" "$RUNNER_TEMP/zeroagent-file-runtime"
+          ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY: ${{ needs.release-metadata.outputs.publish_public == 'true' && !inputs.artifacts_only && env.RELEASE_REPOSITORY || '' }}
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/zeroagent-file-runtime"
+          node scripts/release/file-runtime/stage-managed.mjs "${{ matrix.target }}" "$RUNNER_TEMP/za-runtime-pack" "$runtime" "$ZEROAGENT_RELEASE_TAG" "$ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY"
+          echo "ZEROAGENT_FILE_RUNTIME_DESCRIPTOR=$runtime/descriptor.json" >> "$GITHUB_ENV"
 
       - name: Build macOS bundles
         working-directory: crates/agent-gui
@@ -205,7 +209,7 @@ jobs:
           ZEROAGENT_UPDATE_REPOSITORY: ${{ env.RELEASE_REPOSITORY }}
         run: |
           set -euo pipefail
-          pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target ${{ matrix.target }} --bundles app 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri build --config src-tauri/tauri.macos.conf.json --config src-tauri/tauri.macos.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target ${{ matrix.target }} --bundles app 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
@@ -229,20 +233,25 @@ jobs:
             "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.dmg"
           cp "$updater_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz"
           cp "$updater_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}.app.tar.gz.sig"
+          cp "$RUNNER_TEMP/zeroagent-file-runtime/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-macOS-${{ matrix.suffix }}-file-tools.zip" dist/
 
-      - name: Exercise file runtime from the macOS disk image
+      - name: Verify the macOS disk image and updater omit file tools
         shell: bash
-        env:
-          ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
         run: |
           set -euo pipefail
           mount="$RUNNER_TEMP/zeroagent-dmg"
-          installed="$RUNNER_TEMP/zeroagent-installed"
-          mkdir -p "$mount" "$installed"
+          mkdir -p "$mount"
           hdiutil attach dist/*.dmg -nobrowse -readonly -mountpoint "$mount"
           trap 'hdiutil detach "$mount"' EXIT
-          ditto "$mount/ZeroAgent.app" "$installed/ZeroAgent.app"
-          node scripts/release/verify-installed-file-runtime.mjs "$installed/ZeroAgent.app/Contents/Resources/file-runtime"
+          binary="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$mount/ZeroAgent.app/Contents/Info.plist")"
+          test -n "$binary"
+          test -x "$mount/ZeroAgent.app/Contents/MacOS/$binary"
+          test ! -e "$mount/ZeroAgent.app/Contents/Resources/file-runtime"
+          tar -tf dist/*.app.tar.gz > "$RUNNER_TEMP/zeroagent-app-files"
+          if grep -Eq '(^|/)file-runtime(/|$)' "$RUNNER_TEMP/zeroagent-app-files"; then
+            echo "The macOS updater bundle contains the optional file runtime" >&2
+            exit 1
+          fi
 
       - name: Verify updater asset signatures
         shell: bash
@@ -346,7 +355,7 @@ jobs:
           if ($env:ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY) {
               $arguments += $env:ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY
           }
-          node scripts/release/file-runtime/stage-windows-managed.mjs @arguments
+          node scripts/release/file-runtime/stage-managed.mjs x86_64-pc-windows-msvc @arguments
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $descriptor = Join-Path $runtime 'descriptor.json'
           "ZEROAGENT_FILE_RUNTIME_DESCRIPTOR=$descriptor" >> $env:GITHUB_ENV
@@ -635,11 +644,15 @@ jobs:
           name: file-runtime-x86_64-unknown-linux-gnu
           path: ${{ runner.temp }}/za-runtime-pack
 
-      - name: Stage verified Linux file runtime
+      - name: Stage Linux file tools and embed the companion descriptor
         shell: bash
         env:
-          ZEROAGENT_FILE_RUNTIME_PACK_DIR: ${{ runner.temp }}/za-runtime-pack
-        run: node scripts/release/stage-file-runtime.mjs x86_64-unknown-linux-gnu "$RUNNER_TEMP/zeroagent-file-runtime"
+          ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY: ${{ needs.release-metadata.outputs.publish_public == 'true' && !inputs.artifacts_only && env.RELEASE_REPOSITORY || '' }}
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/zeroagent-file-runtime"
+          node scripts/release/file-runtime/stage-managed.mjs x86_64-unknown-linux-gnu "$RUNNER_TEMP/za-runtime-pack" "$runtime" "$ZEROAGENT_RELEASE_TAG" "$ZEROAGENT_FILE_RUNTIME_PUBLIC_REPOSITORY"
+          echo "ZEROAGENT_FILE_RUNTIME_DESCRIPTOR=$runtime/descriptor.json" >> "$GITHUB_ENV"
 
       - name: Build Linux bundles
         working-directory: crates/agent-gui
@@ -651,9 +664,8 @@ jobs:
         run: |
           set -euo pipefail
           # linuxdeploy rewrites and resolves native libraries in the AppDir.
-          # Add the already relocatable runtime after that pass, during repacking.
           pnpm tauri build --verbose --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target x86_64-unknown-linux-gnu --bundles appimage 2>&1 | tee "$RUNNER_TEMP/zeroagent-bundle-build.log"
-          pnpm tauri bundle --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --config "$RUNNER_TEMP/zeroagent-file-runtime/tauri.file-runtime.conf.json" --target x86_64-unknown-linux-gnu --bundles deb,rpm 2>&1 | tee -a "$RUNNER_TEMP/zeroagent-bundle-build.log"
+          pnpm tauri bundle --config src-tauri/tauri.linux.release.conf.json --config "$ZEROAGENT_TAURI_VERSION_CONFIG" --target x86_64-unknown-linux-gnu --bundles deb,rpm 2>&1 | tee -a "$RUNNER_TEMP/zeroagent-bundle-build.log"
           if grep -F "does not match the public key from" "$RUNNER_TEMP/zeroagent-bundle-build.log"; then
             echo "Refusing updater artifacts with a mismatched embedded public key." >&2
             exit 1
@@ -662,7 +674,7 @@ jobs:
       - name: Verify Linux GLIBC baseline
         run: bash scripts/release/verify-linux-glibc-baseline.sh target/x86_64-unknown-linux-gnu/release/zeroagent
 
-      - name: Install the file runtime, strip bundled Wayland libraries and re-sign AppImage
+      - name: Strip bundled Wayland libraries and re-sign AppImage
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -671,7 +683,7 @@ jobs:
           appimage_path="$(find crates/agent-gui/src-tauri/target target -type f -name '*.AppImage' -path '*bundle*' -print -quit 2>/dev/null || true)"
           test -n "$appimage_path"
           appimage_path="$(realpath "$appimage_path")"
-          scripts/release/postprocess-linux-appimage.sh "$appimage_path" "$RUNNER_TEMP/zeroagent-file-runtime/file-runtime"
+          scripts/release/postprocess-linux-appimage.sh "$appimage_path"
           test ! -e "$appimage_path.sig"
           pnpm --dir crates/agent-gui tauri signer sign "$appimage_path"
           test -s "$appimage_path.sig"
@@ -695,33 +707,18 @@ jobs:
           cp "$deb_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Linux-x86_64.deb.sig"
           cp "$rpm_path" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Linux-x86_64.rpm"
           cp "$rpm_path.sig" "dist/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Linux-x86_64.rpm.sig"
+          cp "$RUNNER_TEMP/zeroagent-file-runtime/ZeroAgent-${ZEROAGENT_RELEASE_TAG}-Linux-x86_64-file-tools.zip" dist/
 
-      - name: Exercise the runtime from each Linux package payload
+      - name: Verify Linux package payloads omit file tools
         shell: bash
-        env:
-          ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"
         run: |
           set -euo pipefail
-          root="$(mktemp -d "$RUNNER_TEMP/zeroagent-linux-payloads.XXXXXX")"
-          trap 'rm -rf -- "$root"' EXIT
-          runtime="$RUNNER_TEMP/zeroagent-file-runtime/file-runtime"
-          reader="$(node -p 'require(process.argv[1]).unzip' "$runtime/runtime.json")"
-          appimage="$(realpath dist/*.AppImage)"
-          for format in deb rpm appimage; do
-            echo "Checking the $format file runtime payload"
-            payload="$root/$format"
-            mkdir "$payload"
-            case "$format" in
-              deb) dpkg-deb --extract dist/*.deb "$payload" ;;
-              rpm) "$runtime/$reader" -xf dist/*.rpm -C "$payload" ;;
-              appimage) (cd "$payload" && "$appimage" --appimage-extract >/dev/null)
-                        payload="$payload/squashfs-root" ;;
-            esac
-            installed="$payload/usr/lib/ZeroAgent/file-runtime"
-            test -s "$installed/runtime.json" || { echo "Missing $format runtime manifest at $installed" >&2; exit 1; }
-            node scripts/release/verify-installed-file-runtime.mjs "$installed"
-            rm -rf -- "$root/$format"
-          done
+          dpkg-deb --contents dist/*.deb > "$RUNNER_TEMP/zeroagent-deb-files"
+          rpm2cpio dist/*.rpm | cpio -it --quiet > "$RUNNER_TEMP/zeroagent-rpm-files"
+          if grep -Eq '(^|/)file-runtime(/|$)' "$RUNNER_TEMP/zeroagent-deb-files" "$RUNNER_TEMP/zeroagent-rpm-files"; then
+            echo "A Linux installer contains the optional file runtime" >&2
+            exit 1
+          fi
 
       - name: Verify updater asset signatures
         shell: bash

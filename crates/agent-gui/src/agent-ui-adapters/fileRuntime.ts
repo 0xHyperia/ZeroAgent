@@ -2,11 +2,10 @@ import { invoke } from "@liveagent/app/shims/tauriCore";
 import type { DocumentCommentRecovery } from "@liveagent/ui/components/resource-preview/readingSession";
 import type { FileRuntimeControls, FileRuntimeStatus } from "@liveagent/ui/contracts/fileRuntime";
 import { resolveWorkbenchLayoutStorage } from "@liveagent/ui/lib/workbench/layoutStorage";
-import { isTauriHost } from "../lib/host";
-import { inferRuntimePlatform } from "../lib/runtimePlatform";
+import { supportsNativeWorkspaceEditors } from "../lib/host";
 
 export function canManageLocalFileRuntime() {
-  return isTauriHost() && inferRuntimePlatform() === "windows";
+  return supportsNativeWorkspaceEditors();
 }
 
 export const desktopFileRuntime: FileRuntimeControls = {

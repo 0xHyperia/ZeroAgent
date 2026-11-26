@@ -334,7 +334,6 @@ function desktopFileRuntime() {
         stdio: "inherit",
       });
       if (result.status !== 0) throw new Error("Failed to prepare the desktop file runtime", { cause: result.error });
-      rmSync(join(staging, "tauri.file-runtime.conf.json"));
       try {
         renameSync(staging, cache);
       } catch (error) {

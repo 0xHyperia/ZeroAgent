@@ -68,6 +68,9 @@ const actual = new Set();
 async function checkTree(directory, prefix = "") {
   for (const entry of await readdir(directory)) {
     const relative = prefix + entry;
+    if (relative.toLowerCase().includes("licensee")) {
+      throw new Error("The file runtime contains a protected path");
+    }
     if (relative === "runtime.json") continue;
     if (relative === "tools" || !/^[^:\\]+$/.test(entry) || entry.endsWith(".") || entry.endsWith(" ")) {
       throw new Error(`Invalid dependency path: ${relative}`);
@@ -155,6 +158,7 @@ try {
 }
 const runtime = path.join(stage, "file-runtime");
 await copyRuntime(runtime);
-await writeFile(path.join(stage, "tauri.file-runtime.conf.json"), JSON.stringify({
-  bundle: { resources: { [runtime]: "file-runtime" } },
-}) + "\n", { flag: "wx" });
+for (const name of await readdir(path.join(runtime, "tools"))) {
+  expected[`tools/${name}`] = await hashFile(path.join(runtime, "tools", name));
+}
+await writeFile(path.join(runtime, "runtime.json"), JSON.stringify(manifest, null, 2) + "\n");

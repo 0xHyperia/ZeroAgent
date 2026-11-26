@@ -1772,23 +1772,19 @@ pub async fn kbrain_file_runtime_ready(
     Ok(state.file_runtime_ready().await)
 }
 
-#[cfg(all(desktop, target_os = "windows", target_arch = "x86_64"))]
+#[cfg(desktop)]
 pub(crate) fn initialize_managed_file_runtime(app: &AppHandle) {
     super::file_runtime::managed::initialize(app);
 }
 
-#[cfg(all(desktop, target_os = "windows", target_arch = "x86_64"))]
+#[cfg(desktop)]
 pub(crate) fn release_managed_file_runtime_for_restart() {
     super::file_runtime::managed::release_usage_for_restart();
 }
 
 #[cfg(desktop)]
 fn file_runtime_setup_status(ready: bool) -> super::file_runtime::RuntimeSetupStatus {
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    return super::file_runtime::managed::status(ready);
-
-    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
-    super::file_runtime::RuntimeSetupStatus::unavailable(ready)
+    super::file_runtime::managed::status(ready)
 }
 
 #[cfg(desktop)]
@@ -1797,14 +1793,11 @@ pub async fn file_runtime_status(
     state: State<'_, Arc<KBrainBackendState>>,
     fresh: Option<bool>,
 ) -> Result<super::file_runtime::RuntimeSetupStatus, String> {
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     if fresh != Some(true) {
         if let Some(status) = super::file_runtime::managed::status_while_preparing() {
             return Ok(status);
         }
     }
-    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
-    let _ = fresh;
     Ok(file_runtime_setup_status(state.file_runtime_ready().await))
 }
 
@@ -1818,14 +1811,7 @@ pub async fn file_runtime_prepare(
     if window.label() != crate::MAIN_WINDOW_LABEL || !state.allows_profile_commands() {
         return Err("unavailable".into());
     }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    return super::file_runtime::managed::prepare(source, state.file_runtime_ready().await).await;
-
-    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
-    {
-        let _ = source;
-        Err("unavailable".into())
-    }
+    super::file_runtime::managed::prepare(source, state.file_runtime_ready().await).await
 }
 
 #[cfg(desktop)]
@@ -1838,14 +1824,7 @@ pub async fn file_runtime_manage(
     if window.label() != crate::MAIN_WINDOW_LABEL || !state.allows_profile_commands() {
         return Err("unavailable".into());
     }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    return super::file_runtime::managed::manage(action, state.file_runtime_ready().await);
-
-    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
-    {
-        let _ = action;
-        Err("unavailable".into())
-    }
+    super::file_runtime::managed::manage(action, state.file_runtime_ready().await)
 }
 
 #[tauri::command]

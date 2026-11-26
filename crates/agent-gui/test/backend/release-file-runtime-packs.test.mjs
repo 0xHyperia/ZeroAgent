@@ -21,8 +21,7 @@ test("desktop release consumes Actions runtime packs for all four native targets
   assert.match(pack, /pack\.mjs[\s\S]*actions\/upload-artifact/);
   assert.match(desktop, /uses: \.\/\.github\/workflows\/file-runtime-packs\.yml/);
   assert.equal([...desktop.matchAll(/needs: \[release-metadata, file-runtime\]/g)].length, 3);
-  assert.equal([...desktop.matchAll(/ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"/g)].length, 2);
-  assert.match(pack, /name: Verify the Windows companion ZIP in a clean offline profile[\s\S]*ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"[\s\S]*windows_managed\.py restore[\s\S]*verify-installed-file-runtime\.mjs/);
+  assert.match(pack, /name: Verify the companion ZIP in a clean offline profile[\s\S]*ZEROAGENT_REQUIRE_OFFLINE_FILE_QA: "1"[\s\S]*managed_pack\.py restore[\s\S]*verify-installed-file-runtime\.mjs/);
   assert.doesNotMatch(desktop, /vars\.ZEROAGENT_FILE_RUNTIME_PACKS/);
 });
 
@@ -33,7 +32,7 @@ test("desktop publishing waits for separate Windows tools and slim installer che
   const publish = workflow.split("  publish:")[1];
   assert.match(build, /needs: \[release-metadata, file-runtime\]/);
   assert.match(build, /publish_public == 'true' && !inputs\.artifacts_only && env\.RELEASE_REPOSITORY/);
-  assert.match(build, /stage-windows-managed\.mjs[\s\S]*ZEROAGENT_FILE_RUNTIME_DESCRIPTOR/);
+  assert.match(build, /stage-managed\.mjs[\s\S]*ZEROAGENT_FILE_RUNTIME_DESCRIPTOR/);
   assert.match(build, /Windows-x64-file-tools\.zip" dist\//);
   assert.doesNotMatch(build, /tauri\.file-runtime\.conf\.json|dist\/portable\/ZeroAgent\/file-runtime/);
   assert.match(check, /package: \[msi, nsis, portable\]/);
@@ -41,16 +40,16 @@ test("desktop publishing waits for separate Windows tools and slim installer che
   assert.match(publish, /needs:[\s\S]*- windows-file-qa/);
 });
 
-test("the AppImage receives the file runtime after linuxdeploy finishes", () => {
+test("macOS and Linux installers omit the tools and publish a matching companion", () => {
   const workflow = read(".github/workflows/desktop-release.yml");
   const postprocess = read("scripts/release/postprocess-linux-appimage.sh");
-  const appImageBuild = workflow.split(/\r?\n/).find((line) => line.includes("--bundles appimage "));
-  assert.ok(appImageBuild);
-  assert.doesNotMatch(appImageBuild, /tauri\.file-runtime\.conf\.json/);
-  assert.match(workflow, /pnpm tauri bundle .*tauri\.file-runtime\.conf\.json.*--bundles deb,rpm/);
-  assert.match(workflow, /postprocess-linux-appimage\.sh "\$appimage_path" .*\/file-runtime"[\s\S]*tauri signer sign/);
-  assert.match(postprocess, /cp -a -- "\$runtime_dir" "\$resource_dir\/file-runtime"[\s\S]*repacked_path=/);
-  assert.match(postprocess, /cmp -- .*"\$verified_app_dir\/usr\/lib\/ZeroAgent\/file-runtime\/runtime\.json"/);
+  assert.doesNotMatch(workflow, /tauri\.file-runtime\.conf\.json/);
+  assert.match(workflow, /macOS-\$\{\{ matrix.suffix \}\}-file-tools\.zip" dist\//);
+  assert.match(workflow, /Linux-x86_64-file-tools\.zip" dist\//);
+  assert.match(workflow, /Verify the macOS disk image and updater omit file tools/);
+  assert.match(workflow, /Verify Linux package payloads omit file tools/);
+  assert.match(workflow, /postprocess-linux-appimage\.sh "\$appimage_path"[\s\S]*tauri signer sign/);
+  assert.match(postprocess, /test ! -e "\$verified_app_dir\/usr\/lib\/ZeroAgent\/file-runtime"/);
 });
 
 test("every runtime dependency uses a verified HTTPS input", () => {
@@ -125,22 +124,27 @@ test("release staging rejects the wrong source commit and a corrupted hosted pac
   assert.match(corrupted.stderr, /archive checksum mismatch/);
 });
 
-test("Windows companion descriptors bind the exact asset and omit private download URLs", (t) => {
-  const scratch = mkdtempSync(join(tmpdir(), "za-windows-runtime-receipt-"));
+test("Desktop companion descriptors bind the exact asset and omit private download URLs", (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "za-managed-runtime-receipt-"));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
-  const script = fileURLToPath(new URL("scripts/release/file-runtime/stage-windows-managed.mjs", root));
+  const script = fileURLToPath(new URL("scripts/release/file-runtime/stage-managed.mjs", root));
   const cwd = fileURLToPath(root);
   const source = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" }).stdout.trim();
-  const target = "x86_64-pc-windows-msvc";
+  const targets = {
+    "x86_64-pc-windows-msvc": "Windows-x64",
+    "x86_64-apple-darwin": "macOS-x64",
+    "aarch64-apple-darwin": "macOS-aarch64",
+    "x86_64-unknown-linux-gnu": "Linux-x86_64",
+  };
   const archive = Buffer.from("synthetic archive");
   const receipt = {
-    format: 1, target, source_sha: source, bytes: archive.length,
+    format: 1, target: "x86_64-pc-windows-msvc", source_sha: source, bytes: archive.length,
     sha256: createHash("sha256").update(archive).digest("hex"),
   };
   writeFileSync(join(scratch, "file-runtime.zip"), archive);
-  const stage = (label, tag, ...args) => {
+  const stage = (label, tag, repository, target = receipt.target) => {
     writeFileSync(join(scratch, "receipt.json"), JSON.stringify(receipt));
-    return spawnSync(process.execPath, [script, scratch, join(scratch, label), tag, ...args], {
+    return spawnSync(process.execPath, [script, target, scratch, join(scratch, label), tag, ...(repository ? [repository] : [])], {
       cwd, encoding: "utf8",
     });
   };
@@ -150,17 +154,24 @@ test("Windows companion descriptors bind the exact asset and omit private downlo
     ["private", "v1.0.0-rc.2", null],
     ["preview", "v1.0.0-beta.1", null],
   ]) {
-    const result = stage(label, tag, ...(repository ? [repository] : []));
-    assert.equal(result.status, 0, result.stderr);
-    const directory = join(scratch, label);
-    const name = `ZeroAgent-${tag}-Windows-x64-file-tools.zip`;
-    const url = `https://github.com/${repository}/releases/download/${tag}/${name}`;
-    assert.deepEqual(JSON.parse(readFileSync(join(directory, "descriptor.json"), "utf8")), {
-      format: 1, target, version: tag,
-      archive: { name, bytes: receipt.bytes, sha256: receipt.sha256, ...(repository ? { url } : {}) },
-    });
-    assert.deepEqual(readFileSync(join(directory, name)), archive);
+    for (const [target, suffix] of Object.entries(targets)) {
+      receipt.target = target;
+      const key = `${label}-${suffix}`;
+      const result = stage(key, tag, repository);
+      assert.equal(result.status, 0, result.stderr);
+      const directory = join(scratch, key);
+      const name = `ZeroAgent-${tag}-${suffix}-file-tools.zip`;
+      const url = `https://github.com/${repository}/releases/download/${tag}/${name}`;
+      assert.deepEqual(JSON.parse(readFileSync(join(directory, "descriptor.json"), "utf8")), {
+        format: 1, target, version: tag,
+        archive: { name, bytes: receipt.bytes, sha256: receipt.sha256, ...(repository ? { url } : {}) },
+      });
+      assert.deepEqual(readFileSync(join(directory, name)), archive);
+    }
   }
+  const otherTarget = stage("wrong-target", "v1.0.0", null, "aarch64-apple-darwin");
+  assert.equal(otherTarget.status, 1);
+  assert.match(otherTarget.stderr, /different source commit or target/);
   const privateUrl = stage("private-url", "v1.0.0-alpha.1", "example/releases");
   assert.equal(privateUrl.status, 1);
   assert.match(privateUrl.stderr, /requires a public release tag/);

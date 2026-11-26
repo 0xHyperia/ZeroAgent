@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+#[cfg(desktop)]
 pub(super) mod managed;
 
 #[derive(serde::Serialize)]
@@ -209,7 +209,7 @@ pub(super) fn configure(command: &mut Command, resource_dir: Option<&Path>) -> O
     for variable in VARIABLES {
         command.env_remove(variable);
     }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[cfg(desktop)]
     if managed::disabled_at_startup() {
         return None;
     }
@@ -225,9 +225,9 @@ pub(super) fn configure(command: &mut Command, resource_dir: Option<&Path>) -> O
     let explicit_development = std::env::var_os("ZEROAGENT_DEV_FILE_RUNTIME").map(PathBuf::from);
     #[cfg(not(debug_assertions))]
     let explicit_development: Option<PathBuf> = None;
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[cfg(desktop)]
     let managed_runtime = managed::bound_runtime;
-    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+    #[cfg(not(desktop))]
     let managed_runtime = || None;
     let runtime = managed_runtime()
         .or_else(|| {

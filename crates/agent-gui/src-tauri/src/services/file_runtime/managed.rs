@@ -3,16 +3,22 @@ mod transfer;
 
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Read, Seek};
-use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-use std::path::{Component, Path, PathBuf, Prefix};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+#[cfg(windows)]
+use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+#[cfg(windows)]
+use std::path::{Component, Prefix};
 use tauri::{AppHandle, Manager};
 use tempfile::NamedTempFile;
+#[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ,
 };
@@ -21,7 +27,7 @@ use super::{
     runtime_paths, FileRuntime, RuntimeManagementAction, RuntimeSetupSource, RuntimeSetupStatus,
 };
 
-const TARGET: &str = "x86_64-pc-windows-msvc";
+const TARGET: &str = env!("ZEROAGENT_TARGET_TRIPLE");
 const DESCRIPTOR: &str = include_str!(concat!(env!("OUT_DIR"), "/file-runtime.json"));
 const MAX_DESCRIPTOR_BYTES: u64 = 4096;
 const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -84,7 +90,7 @@ impl Descriptor {
         (value.format == 1
             && value.target == TARGET
             && is_version(&value.version)
-            && archive.name == format!("ZeroAgent-{}-Windows-x64-file-tools.zip", value.version)
+            && archive.name == companion_name(&value.version)?
             && (1..=MAX_ARCHIVE_BYTES).contains(&archive.bytes)
             && archive::is_sha256(&archive.sha256)
             && archive.url.as_deref().is_none_or(|value| {
@@ -96,6 +102,17 @@ impl Descriptor {
             }))
         .then_some(value)
     }
+}
+
+fn companion_name(version: &str) -> Option<String> {
+    let platform = match TARGET {
+        "x86_64-pc-windows-msvc" => "Windows-x64",
+        "x86_64-apple-darwin" => "macOS-x64",
+        "aarch64-apple-darwin" => "macOS-aarch64",
+        "x86_64-unknown-linux-gnu" => "Linux-x86_64",
+        _ => return None,
+    };
+    Some(format!("ZeroAgent-{version}-{platform}-file-tools.zip"))
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -165,8 +182,20 @@ struct Installer {
 }
 
 fn is_link(metadata: &Metadata) -> bool {
+    #[cfg(windows)]
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return true;
+    }
     metadata.file_type().is_symlink()
-        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+fn is_protected_path(path: &Path) -> bool {
+    path.components().any(|part| {
+        part.as_os_str()
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains("licensee")
+    })
 }
 
 fn ensure_directory(path: &Path) -> Result<(), Failure> {
@@ -180,12 +209,7 @@ fn real_directory(path: &Path) -> Option<()> {
 }
 
 fn read_bounded(path: &Path, limit: u64) -> Option<Vec<u8>> {
-    if path.components().any(|part| {
-        part.as_os_str()
-            .to_string_lossy()
-            .to_ascii_lowercase()
-            .contains("licensee")
-    }) {
+    if is_protected_path(path) {
         return None;
     }
     let info = fs::symlink_metadata(path).ok()?;
@@ -210,9 +234,17 @@ fn lock_writable_file(path: &Path, exclusive: bool) -> Result<File, Failure> {
     }
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
-    if exclusive {
-        options.share_mode(0);
+    #[cfg(windows)]
+    {
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        if exclusive {
+            options.share_mode(0);
+        }
     }
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    #[cfg(not(windows))]
+    let _ = exclusive;
     options.open(path).map_err(|_| Failure::StorageUnavailable)
 }
 
@@ -698,29 +730,34 @@ fn publish_selection(root: &Path, selection: &Selection) -> Result<(), Failure> 
 }
 
 fn copy_selected_archive(path: &Path, expected: u64, directory: &Path) -> Result<File, Failure> {
-    let local_volume = matches!(
+    #[cfg(windows)]
+    if !matches!(
         path.components().next(),
         Some(Component::Prefix(prefix))
             if matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
-    );
+    ) {
+        return Err(Failure::FileSelectionFailed);
+    }
     if !path.is_absolute()
-        || !local_volume
         || !path
             .extension()
             .is_some_and(|value| value.eq_ignore_ascii_case("zip"))
-        || path.components().any(|part| {
-            part.as_os_str()
-                .to_string_lossy()
-                .to_ascii_lowercase()
-                .contains("licensee")
-        })
+        || is_protected_path(path)
+        || path
+            .canonicalize()
+            .map_or(true, |resolved| is_protected_path(&resolved))
     {
         return Err(Failure::FileSelectionFailed);
     }
-    let source = OpenOptions::new()
-        .read(true)
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    options
         .share_mode(FILE_SHARE_READ)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let source = options
         .open(path)
         .map_err(|_| Failure::FileSelectionFailed)?;
     let info = source
@@ -751,14 +788,33 @@ fn check_workspace_tools(runtime: &FileRuntime, directory: &Path) -> Result<(), 
         .canonicalize()
         .map_err(|_| Failure::VerificationFailed)?;
     let profile = tempfile::tempdir().map_err(|_| Failure::StorageUnavailable)?;
-    let root = std::env::var_os("SystemRoot")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .ok_or(Failure::VerificationFailed)?;
-    let path = std::env::join_paths([root.join("System32"), root.clone()])
-        .map_err(|_| Failure::VerificationFailed)?;
     let mut probe = Command::new(&runtime.python);
+    probe.env_clear();
     crate::runtime::process::configure_child_process_group(&mut probe);
+    #[cfg(windows)]
+    {
+        let root = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .ok_or(Failure::VerificationFailed)?;
+        let path = std::env::join_paths([root.join("System32"), root.clone()])
+            .map_err(|_| Failure::VerificationFailed)?;
+        probe
+            .env("PATH", path)
+            .env("SystemRoot", &root)
+            .env("WINDIR", &root)
+            .env("TEMP", profile.path())
+            .env("TMP", profile.path())
+            .env("USERPROFILE", profile.path())
+            .env("APPDATA", profile.path())
+            .env("LOCALAPPDATA", profile.path());
+    }
+    #[cfg(unix)]
+    probe
+        .env("PATH", "/usr/bin:/bin")
+        .env("TMPDIR", profile.path())
+        .env("XDG_CONFIG_HOME", profile.path())
+        .env("XDG_CACHE_HOME", profile.path());
     probe
         .args([
             "-IB",
@@ -767,16 +823,7 @@ fn check_workspace_tools(runtime: &FileRuntime, directory: &Path) -> Result<(), 
         ])
         .arg(directory)
         .current_dir(profile.path())
-        .env_clear()
-        .env("PATH", path)
-        .env("SystemRoot", &root)
-        .env("WINDIR", &root)
-        .env("TEMP", profile.path())
-        .env("TMP", profile.path())
-        .env("USERPROFILE", profile.path())
         .env("HOME", profile.path())
-        .env("APPDATA", profile.path())
-        .env("LOCALAPPDATA", profile.path())
         .envs(runtime.bindings.iter().map(|(name, path)| (*name, path)))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -850,7 +897,7 @@ mod tests {
             "target": TARGET,
             "version": "v1.0.0-beta.2",
             "archive": {
-                "name": "ZeroAgent-v1.0.0-beta.2-Windows-x64-file-tools.zip",
+                "name": companion_name("v1.0.0-beta.2").unwrap(),
                 "bytes": 4096,
                 "sha256": archive::sha256(b"synthetic runtime"),
             },
@@ -866,6 +913,9 @@ mod tests {
         )
         .into();
         assert!(parse(&descriptor).is_some());
+        descriptor["target"] = "different-target".into();
+        assert!(parse(&descriptor).is_none());
+        descriptor["target"] = TARGET.into();
         descriptor["archive"]["bytes"] = (MAX_ARCHIVE_BYTES + 1).into();
         assert!(parse(&descriptor).is_none());
     }

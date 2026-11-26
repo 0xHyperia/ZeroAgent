@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Drive the built Tauri app through tauri-driver and WebKitWebDriver on Linux.
 import { spawn } from "node:child_process";
-import { access, mkdir, mkdtemp } from "node:fs/promises";
+import { access, mkdtemp } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,8 +15,6 @@ const application = resolve(binary);
 const engine = resolve(backend);
 await Promise.all([access(application), access(engine)]);
 const home = await mkdtemp(join(tmpdir(), "zeroagent-native-smoke-"));
-const runtime = join(home, "runtime");
-await mkdir(runtime, { mode: 0o700 });
 
 const origin = "http://127.0.0.1:19373";
 const driverUrl = "http://127.0.0.1:4444";
@@ -45,7 +43,6 @@ const driver = spawn("tauri-driver", ["--port", "4444", "--native-port", "4445"]
     XDG_CONFIG_HOME: join(home, "config"),
     XDG_DATA_HOME: join(home, "data"),
     XDG_CACHE_HOME: join(home, "cache"),
-    XDG_RUNTIME_DIR: runtime,
     ZEROAGENT_DEV_HOME: home,
     ZEROAGENT_CONFIG_DIR: join(home, "zeroagent"),
     ZEROAGENT_BACKEND_BINARY: engine,
@@ -97,6 +94,23 @@ try {
   }), 90_000, "Tauri signed-out account screen");
   if (!publicSettingsRequested) throw new Error("Native account screen did not use the loopback fixture");
   console.log("Linux native ZeroAgent startup and signed-out account gate passed");
+} catch (error) {
+  if (session) {
+    const startup = await request("POST", `${session}/execute/sync`, {
+      script: `return {
+        protocol: location.protocol,
+        native: Boolean(window.__TAURI_INTERNALS__),
+        readyState: document.readyState,
+        hasRoot: Boolean(document.querySelector('#root')),
+        hasStartupError: Boolean(document.querySelector('[data-boot-failed]')),
+        hasEmailField: Boolean(document.querySelector('#relay-email')),
+        hasPasswordField: Boolean(document.querySelector('#relay-password')),
+      };`,
+      args: [],
+    }, 5_000).catch(() => null);
+    console.error("Native signed-out gate state", { publicSettingsRequested, startup });
+  }
+  throw error;
 } finally {
   if (session) await request("DELETE", session, undefined, 8_000).catch(() => undefined);
   driver.kill();

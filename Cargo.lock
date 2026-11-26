@@ -8885,6 +8885,7 @@ dependencies = [
  "jni 0.21.1",
  "keyring",
  "leveldb-core",
+ "libc",
  "lopdf",
  "notify",
  "objc2 0.6.4",

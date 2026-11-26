@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## v1.0.1-alpha.2 - 2026-11-26
+
+### 优化改进
+
+- Windows x64、macOS Intel、Apple Silicon 和 Linux x64 的文件工具统一按需准备。桌面安装包和更新包只携带应用与工具清单。可从设置导入对应平台的工具 ZIP，确认重启后启用。已准备的文件工具可离线使用。
+
+### Bug 修复
+
+- 修复内置技能阅读器测试对 JSX 换行的误报。Linux 原生启动测试使用独立系统钥匙串，超时时报告实际加载状态。
+
 ## v1.0.1-alpha.1 - 2026-11-26
 
 此版本用于 Alpha 验证。后续 Beta 和正式版的公开下载入口迁至 [USA0-Zero/ZeroAgent](https://github.com/USA0-Zero/ZeroAgent/releases)。

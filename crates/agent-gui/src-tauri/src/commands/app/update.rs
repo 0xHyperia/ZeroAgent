@@ -762,7 +762,6 @@ pub fn app_restart(app: AppHandle) -> Result<(), String> {
     if let Err(error) = app.save_window_state(crate::WINDOW_STATE_FLAGS) {
         eprintln!("failed to save window state before restart: {error}");
     }
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     crate::services::kbrain_backend::release_managed_file_runtime_for_restart();
     // restart() spawns the replacement before this process exits; if the new
     // process reaches single-instance init while we still hold the lock, it

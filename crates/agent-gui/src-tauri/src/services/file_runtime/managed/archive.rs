@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -160,10 +162,10 @@ pub(super) fn extract(
             return Err(Failure::ArchiveInvalid);
         }
         if !is_directory {
-            files.insert(name.to_owned(), (index, entry.size()));
+            files.insert(name.to_owned(), (index, entry.size(), entry.unix_mode()));
         }
     }
-    let (manifest_index, size) = files.remove(MANIFEST_NAME).ok_or(Failure::ArchiveInvalid)?;
+    let (manifest_index, size, _) = files.remove(MANIFEST_NAME).ok_or(Failure::ArchiveInvalid)?;
     if size > MAX_MANIFEST_BYTES {
         return Err(Failure::ArchiveInvalid);
     }
@@ -189,7 +191,7 @@ pub(super) fn extract(
         }
     }
 
-    for (name, (index, size)) in files {
+    for (name, (index, size, mode)) in files {
         let path = destination.join(relative_path(&name)?);
         fs::create_dir_all(path.parent().ok_or(Failure::ArchiveInvalid)?)
             .map_err(|_| Failure::StorageUnavailable)?;
@@ -216,6 +218,20 @@ pub(super) fn extract(
         if count != size || hex_digest(&writer.digest.finalize()) != manifest.files[&name] {
             return Err(Failure::ArchiveInvalid);
         }
+        #[cfg(unix)]
+        {
+            let permissions = if mode.is_some_and(|mode| mode & 0o111 != 0) {
+                0o700
+            } else {
+                0o600
+            };
+            writer
+                .inner
+                .set_permissions(fs::Permissions::from_mode(permissions))
+                .map_err(|_| Failure::StorageUnavailable)?;
+        }
+        #[cfg(not(unix))]
+        let _ = mode;
     }
     OpenOptions::new()
         .write(true)
@@ -271,6 +287,51 @@ mod tests {
             fs::read(root.path().join("tools/example.txt")).unwrap(),
             bytes
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_companions_restore_only_owner_executable_permissions() {
+        let mut writer = ZipWriter::new(tempfile::tempfile().unwrap());
+        let script = b"#!/bin/sh\nexit 0\n";
+        writer
+            .start_file(MANIFEST_NAME, SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(
+                &serde_json::to_vec(&serde_json::json!({
+                    "format": 1, "target": TARGET,
+                    "files": {"bin/launch": sha256(script), "README.txt": sha256(b"read me")}
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        writer
+            .start_file(
+                "bin/launch",
+                SimpleFileOptions::default().unix_permissions(0o755),
+            )
+            .unwrap();
+        writer.write_all(script).unwrap();
+        writer
+            .start_file(
+                "README.txt",
+                SimpleFileOptions::default().unix_permissions(0o644),
+            )
+            .unwrap();
+        writer.write_all(b"read me").unwrap();
+        let archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        extract(archive, root.path()).unwrap();
+        let permission_bits = |name| {
+            fs::metadata(root.path().join(name))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777
+        };
+        assert_eq!(permission_bits("bin/launch"), 0o700);
+        assert_eq!(permission_bits("README.txt"), 0o600);
     }
 
     #[test]
