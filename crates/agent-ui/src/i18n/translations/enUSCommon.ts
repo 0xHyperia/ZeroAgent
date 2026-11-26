@@ -1,6 +1,7 @@
 export const EN_US_COMMON_TRANSLATIONS = {
   "settings.diagnostics.title": "Application diagnostics",
-  "settings.diagnostics.description": "Review the application version, device engine status, and protocol version.",
+  "settings.diagnostics.description":
+    "Review the application version, device engine status, and protocol version.",
   "settings.diagnostics.preview": "Preview diagnostics",
   "settings.diagnostics.loading": "Checking the device engine…",
   "settings.diagnostics.copy": "Copy diagnostics",
@@ -942,8 +943,10 @@ export const EN_US_COMMON_TRANSLATIONS = {
   "chat.composer.add": "Add",
   "chat.composer.filesAndFolders": "Files and folders",
   "chat.composer.filesAndFoldersHint": "Reference files or folders in this workspace",
-  "chat.composer.fileIndexFailed": "Could not list workspace files. Try opening the file picker again.",
-  "chat.composer.fileIndexMissingWorkspace": "The workspace folder is unavailable. Select an existing folder.",
+  "chat.composer.fileIndexFailed":
+    "Could not list workspace files. Try opening the file picker again.",
+  "chat.composer.fileIndexMissingWorkspace":
+    "The workspace folder is unavailable. Select an existing folder.",
   "chat.composer.fileIndexUnavailable": "Files cannot be listed for this workspace.",
   "chat.composer.conversations": "Previous conversations",
   "chat.composer.conversationsHint": "Reference information from an earlier conversation",

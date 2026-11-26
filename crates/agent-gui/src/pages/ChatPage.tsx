@@ -576,6 +576,7 @@ function ChatPageContent(props: ChatPageProps) {
     prepareComposerForConversationChangeActionRef,
   });
   const setupProjectPickerRef = props.setupProjectPickerRef;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Changing owners must invalidate the outstanding project picker.
   useEffect(() => {
     if (!active || !setupProjectPickerRef) return;
     const pickProject = async () => {

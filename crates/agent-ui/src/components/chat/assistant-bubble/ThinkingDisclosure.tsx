@@ -30,7 +30,8 @@ export function resolveReasoningDurationMs(
 ): number | null {
   let total: number | null = null;
   for (const segment of segments) {
-    const duration = segment.durationMs ?? resolveThinkingDurationMs(segment.key, segment.key === activeKey);
+    const duration =
+      segment.durationMs ?? resolveThinkingDurationMs(segment.key, segment.key === activeKey);
     if (duration !== null) total = (total ?? 0) + duration;
   }
   return total;

@@ -277,7 +277,7 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
     const segmentKey = traceKey ?? block.key;
     content = redactToolContent ? null : (
       <ThinkingDisclosure
-          segments={[{ key: segmentKey, text: block.text, durationMs: block.durationMs }]}
+        segments={[{ key: segmentKey, text: block.text, durationMs: block.durationMs }]}
         activeKey={isLive && thinkingOpen && isLatestThinking ? segmentKey : null}
         renderMode={renderMode}
         readOnly={readOnly}
@@ -290,12 +290,13 @@ export const RoundBlockContent = memo(function RoundBlockContent(props: {
       redactToolContent && isBuiltinShareToolName(block.item.toolCall.name);
     const displayImagePayload = getNativeDisplayImagePayload(block.item);
     if (isConversationImageTool(block.item.toolCall.name)) {
-      content = !readOnly && !redactToolContent ? (
-        <ConversationImageTool
-          result={block.item.toolResult}
-          running={isLive && runningToolCallIds.includes(block.item.toolCall.id)}
-        />
-      ) : null;
+      content =
+        !readOnly && !redactToolContent ? (
+          <ConversationImageTool
+            result={block.item.toolResult}
+            running={isLive && runningToolCallIds.includes(block.item.toolCall.id)}
+          />
+        ) : null;
     } else if (!isRedactedToolContent && displayImagePayload) {
       content = <NativeDisplayImageBlock payload={displayImagePayload} readOnly={readOnly} />;
     } else if (

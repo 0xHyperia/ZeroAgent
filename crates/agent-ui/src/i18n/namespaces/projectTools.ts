@@ -402,7 +402,7 @@ registerTranslations({
     "workspaceFilePreview.fileRuntimeDraftRetained":
       "批注已保存在本机。重启后可在原对话中打开同一版本的文件并继续发送。",
     "workspaceFilePreview.fileRuntimeDraftVolatile": "批注保留在当前阅读器。重启前请复制批注内容。",
-    "workspaceFilePreview.revisionNotSent": "批注尚未发送。请检查当前对话状态后重试。",
+    "workspaceFilePreview.revisionNotSent": "批注尚未发送。批注已保留，请检查当前对话状态后重试。",
     "workspaceFilePreview.revisionSendFailed": "未能发送。批注已保留。",
     "workspaceFilePreview.close": "关闭预览",
     "workspaceFilePreview.openFailed": "打开预览失败",
@@ -844,7 +844,7 @@ registerTranslations({
     "workspaceFilePreview.fileRuntimeDraftVolatile":
       "Your annotations are in the current reader. Copy them before restarting.",
     "workspaceFilePreview.revisionNotSent":
-      "Annotations were not sent. Check the current conversation and try again.",
+      "Annotations were not sent. Your annotations are kept. Check the current conversation and try again.",
     "workspaceFilePreview.revisionSendFailed": "Could not send. Your annotations are saved.",
     "workspaceFilePreview.close": "Close preview",
     "workspaceFilePreview.openFailed": "Failed to open preview",

@@ -303,6 +303,7 @@ export const ChatTranscript = memo(function ChatTranscript(props: ChatTranscript
       className="@container relative min-h-0 flex-1"
       onContextMenu={handleTranscriptContextMenu}
     >
+      {/* biome-ignore lint/a11y/useSemanticElements: The shared transcript scroll viewport is bound to an HTMLDivElement ref. */}
       <div
         ref={setScrollViewport}
         data-scroll-viewport

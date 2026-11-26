@@ -7,8 +7,8 @@ import { ZoneFontScaleContext } from "../../components/ui/zone-font-scale";
 import type { SettingsSaveState, UiExtensionRegistry } from "../../contracts/registry";
 import { GATEWAY_COMPACT_VIEWPORT_QUERY } from "../../hooks/use-mobile";
 import { useLocale } from "../../i18n";
-import { PLATFORM_BACK_EVENT } from "../../lib/platformBack";
 import { COMMAND_PALETTE_SUPPRESSED_ATTRIBUTE } from "../../lib/chat/commandPalette";
+import { PLATFORM_BACK_EVENT } from "../../lib/platformBack";
 import { searchSettingsIndex } from "../../lib/settings/settingsSearchIndex";
 import { useSettingsEscapeToClose } from "../../lib/settings/useSettingsEscapeToClose";
 import { cn } from "../../lib/shared/utils";
@@ -97,7 +97,10 @@ export function SettingsShell<Context>(props: SettingsShellProps<Context>) {
     initialAnchor ? { section: initialSection, anchor: initialAnchor } : undefined,
   );
   // Synchronize before children commit, so a deep link never paints the old section.
-  if (initialRoute.initialSection !== initialSection || initialRoute.initialAnchor !== initialAnchor) {
+  if (
+    initialRoute.initialSection !== initialSection ||
+    initialRoute.initialAnchor !== initialAnchor
+  ) {
     setInitialRoute({ initialSection, initialAnchor });
     setSection(initialSection);
     setSearchTarget(initialAnchor ? { section: initialSection, anchor: initialAnchor } : undefined);

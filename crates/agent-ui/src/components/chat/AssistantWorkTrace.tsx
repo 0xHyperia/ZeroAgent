@@ -182,10 +182,7 @@ export function AssistantWorkTrace({
       {hasDetails ? (
         <ChevronDown
           aria-hidden="true"
-          className={cn(
-            "za-chat-activity-chevron size-3 shrink-0",
-            !expanded && "-rotate-90",
-          )}
+          className={cn("za-chat-activity-chevron size-3 shrink-0", !expanded && "-rotate-90")}
         />
       ) : null}
       <span aria-hidden="true" className="h-px min-w-8 flex-1 bg-foreground/10" />

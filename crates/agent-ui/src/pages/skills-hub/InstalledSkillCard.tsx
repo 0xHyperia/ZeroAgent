@@ -1,6 +1,5 @@
 import "@liveagent/ui/i18n/namespaces/skillsHub";
 import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
-import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import {
   type Activity,
   BookOpen,
@@ -52,6 +51,7 @@ import { SearchHighlight } from "@liveagent/ui/components/ui/search-highlight";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import type { ClawHubCategorySlug } from "@liveagent/ui/lib/skills/clawHubCategories";
+import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import type { SkillSummary } from "@liveagent/ui/lib/skills/index";
 import { skillPackName } from "@liveagent/ui/lib/skills/packs";
 import {
@@ -200,8 +200,8 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
   const CardIcon = fileSkill
     ? getFileTypeIcon(`skill.${fileSkill.extension}`, "file")
     : alwaysEnabled
-    ? SkillIcon
-    : INSTALLED_SKILL_CARD_ICONS[cardIdentity?.iconName ?? "circleHelp"];
+      ? SkillIcon
+      : INSTALLED_SKILL_CARD_ICONS[cardIdentity?.iconName ?? "circleHelp"];
   const metadataSource = getInstalledSkillCardSource(skill);
   const MetadataIcon =
     metadataSource === "built-in" ? Lock : metadataSource === "clawhub" ? Cloud : Folder;

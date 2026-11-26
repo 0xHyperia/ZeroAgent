@@ -204,11 +204,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
   // 压缩」live tail：把它并入可见性 gate（只影响 live tail 是否显示，不改动
   // 其他 isSending 语义）。
   // biome-ignore lint/correctness/useExhaustiveDependencies: liveShape invalidates the structure when the store's visible tail changes.
-  const {
-    rows,
-    liveStartIndex,
-    getRowKey: getTranscriptRowKey,
-  } = useMemo(
+  const rowStructure = useMemo(
     () =>
       rowModel.build(historyItems, {
         ...liveTranscriptStore.getSnapshot(),
@@ -217,6 +213,7 @@ export const TranscriptList = memo(function TranscriptList(props: TranscriptList
       }),
     [rowModel, historyItems, liveTranscriptStore, liveShape, isSending, isCompactionRunning],
   );
+  const { rows, liveStartIndex, getRowKey: getTranscriptRowKey } = rowStructure;
   const liveActivity = useMemo(
     () => ({ rowModel, historyItems, store: liveTranscriptStore, isSending, findSource }),
     [rowModel, historyItems, liveTranscriptStore, isSending, findSource],

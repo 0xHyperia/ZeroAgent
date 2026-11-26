@@ -55,7 +55,8 @@ export const WORKBENCH_TRANSLATIONS = {
     "shortcuts.command.zoomOut": "Zoom out",
     "shortcuts.command.zoomReset": "Reset application zoom",
     "settings.runCompletionSound": "Conversation completion sound",
-    "settings.runCompletionSoundDesc": "Play a sound when a conversation finishes in the background.",
+    "settings.runCompletionSoundDesc":
+      "Play a sound when a conversation finishes in the background.",
     "settings.search.entry.mcpServers": "MCP servers",
     "settings.search.entry.hooks": "Lifecycle hooks",
     "settings.search.entry.cronTasks": "Scheduled tasks",

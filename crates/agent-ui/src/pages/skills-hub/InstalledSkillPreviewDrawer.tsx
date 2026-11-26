@@ -1,7 +1,13 @@
 import "@liveagent/ui/i18n/namespaces/scheduledTasks";
 import "@liveagent/ui/i18n/namespaces/skillsHub";
-import { AlertTriangle, ArrowLeft, BookOpen, Lock, SkillIcon } from "@liveagent/ui/components/IconSet";
 import { getFileTypeIcon } from "@liveagent/ui/components/chat/fileTypeIcons";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  BookOpen,
+  Lock,
+  SkillIcon,
+} from "@liveagent/ui/components/IconSet";
 import { DocumentMarkdown } from "@liveagent/ui/components/markdown/DocumentMarkdown";
 import { Badge } from "@liveagent/ui/components/ui/badge";
 import { Button } from "@liveagent/ui/components/ui/button";
@@ -14,11 +20,15 @@ import {
   SheetTitle,
 } from "@liveagent/ui/components/ui/sheet";
 import { Skeleton } from "@liveagent/ui/components/ui/skeleton";
+import { SkillReaderMarkdown } from "@liveagent/ui/features/extensions/SkillReaderFiles";
 import { useLocale } from "@liveagent/ui/i18n/index";
 import { cn } from "@liveagent/ui/lib/shared/utils";
-import { isAlwaysEnabledSkillName, readSkillText, type SkillSummary } from "@liveagent/ui/lib/skills/index";
 import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
-import { SkillReaderMarkdown } from "@liveagent/ui/features/extensions/SkillReaderFiles";
+import {
+  isAlwaysEnabledSkillName,
+  readSkillText,
+  type SkillSummary,
+} from "@liveagent/ui/lib/skills/index";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDrawerPresence } from "./useDrawerPresence";
 
@@ -270,10 +280,18 @@ function InstalledSkillPreviewPopup(props: {
       })
       .catch((error) => {
         if (!cancelled) {
-          setReference({ skillFile: path, content: "", truncated: false, loading: false, error: String(error) });
+          setReference({
+            skillFile: path,
+            content: "",
+            truncated: false,
+            loading: false,
+            error: String(error),
+          });
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [filePath, skill.baseDir]);
   const selectedPath = `${skill.baseDir}/${filePath}`;
   const selectedReference = reference?.skillFile === selectedPath ? reference : null;
@@ -281,7 +299,9 @@ function InstalledSkillPreviewPopup(props: {
   const shownPreview = atEntry ? preview : selectedReference;
   const shownContent = atEntry ? previewContent : (selectedReference?.content ?? "");
   const displayName = fileSkill?.[locale === "en-US" ? "en" : "zh"] ?? skill.name;
-  const PreviewIcon = fileSkill ? getFileTypeIcon(`skill.${fileSkill.extension}`, "file") : SkillIcon;
+  const PreviewIcon = fileSkill
+    ? getFileTypeIcon(`skill.${fileSkill.extension}`, "file")
+    : SkillIcon;
   const alwaysEnabled = isAlwaysEnabledSkillName(skill.name);
   const source = skill.source;
   const description = skill.description.trim();
@@ -409,7 +429,12 @@ function InstalledSkillPreviewPopup(props: {
             </div>
 
             {!atEntry ? (
-              <Button variant="ghost" size="sm" className="mb-3 pointer-coarse:min-h-11" onClick={() => navigateToFile("SKILL.md")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mb-3 pointer-coarse:min-h-11"
+                onClick={() => navigateToFile("SKILL.md")}
+              >
                 <ArrowLeft className="size-4" aria-hidden="true" />
                 {displayName}
               </Button>
@@ -433,7 +458,11 @@ function InstalledSkillPreviewPopup(props: {
                 {shownContent ? (
                   previewIsMarkdown ? (
                     fileSkill ? (
-                      <SkillReaderMarkdown file={filePath} content={shownContent} onFollow={navigateToFile} />
+                      <SkillReaderMarkdown
+                        file={filePath}
+                        content={shownContent}
+                        onFollow={navigateToFile}
+                      />
                     ) : (
                       <DocumentMarkdown content={shownContent} />
                     )

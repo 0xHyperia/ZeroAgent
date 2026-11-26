@@ -21,9 +21,7 @@ import {
   updateCustomSettings,
   updateModelFailover,
 } from "@liveagent/app/lib/settings";
-import type {
-  SettingsSectionProps,
-} from "@liveagent/app/pages/settings/types";
+import type { SettingsSectionProps } from "@liveagent/app/pages/settings/types";
 import {
   Activity,
   ChevronDown,
@@ -1065,12 +1063,7 @@ export function ProvidersSection(
   },
 ) {
   const { t } = useLocale();
-  const {
-    settings,
-    setSettings,
-    initialProviderId,
-    onInitialProviderHandled,
-  } = props;
+  const { settings, setSettings, initialProviderId, onInitialProviderHandled } = props;
   const [activeTab, setActiveTab] = useState<ProviderId>("claude_code");
   const [modalOpen, setModalOpen] = useState(false);
   const [servicePickerOpen, setServicePickerOpen] = useState(false);
@@ -1205,7 +1198,6 @@ export function ProvidersSection(
           </TabsContent>
         ))}
       </Tabs>
-
 
       {servicePickerOpen && (
         <Dialog

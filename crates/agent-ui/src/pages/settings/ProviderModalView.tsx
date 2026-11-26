@@ -624,7 +624,10 @@ export function ProviderModalView({ viewModel }: { viewModel: ProviderModalViewM
                           <Funnel className="size-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" variant="soft" className="w-48">
-                          <ModelTypeFilterItems value={modelTypeFilter} onChange={setModelTypeFilter} />
+                          <ModelTypeFilterItems
+                            value={modelTypeFilter}
+                            onChange={setModelTypeFilter}
+                          />
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>

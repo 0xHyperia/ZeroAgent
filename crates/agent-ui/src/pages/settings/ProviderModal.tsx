@@ -343,7 +343,14 @@ function useProviderModalController({
     } finally {
       setRevealingApiKey(false);
     }
-  }, [apiKey, apiKeyIsRedactedDisplay, initialData?.id, isGatewayWebui, revealedApiKey, showApiKey]);
+  }, [
+    apiKey,
+    apiKeyIsRedactedDisplay,
+    initialData?.id,
+    isGatewayWebui,
+    revealedApiKey,
+    showApiKey,
+  ]);
   const persistedUsageQueryProviderId = getPersistedUsageQueryProviderId(initialData);
   const { confirm: requestConfirm, dialog: confirmDialog } = useConfirmDialog();
   const [usageQueryTest, setUsageQueryTest] = useState<{
@@ -917,7 +924,8 @@ function useProviderModalController({
     () =>
       orderedModels.filter(
         (model) =>
-          (!modelTypeFilter || modelTypesFor(model.id, model).some((type) => type === modelTypeFilter)) &&
+          (!modelTypeFilter ||
+            modelTypesFor(model.id, model).some((type) => type === modelTypeFilter)) &&
           model.id.toLowerCase().includes(modelSearchQuery),
       ),
     [orderedModels, modelSearchQuery, modelTypeFilter],

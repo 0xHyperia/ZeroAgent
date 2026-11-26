@@ -16,21 +16,21 @@
     "partial": 183,
     "reject": 411
   },
-  "forkChangedPaths": 3262,
+  "forkChangedPaths": 3263,
   "forkStatusCounts": {
-    "M": 973,
+    "M": 974,
     "D": 650,
     "A": 1639
   },
   "ownershipRules": ".github/upstream-ownership.yaml: first matching glob in file order, with a one-based rule number",
   "forkOwnershipCounts": {
-    "adapted": 2009,
+    "adapted": 2010,
     "zeroagent_owned": 975,
     "upstream_owned": 278
   },
   "forkOwnershipByStatus": {
     "M": {
-      "adapted": 788,
+      "adapted": 789,
       "upstream_owned": 181,
       "zeroagent_owned": 4
     },
@@ -1119,6 +1119,7 @@
     ["M","crates/agent-gateway/internal/kbrain/history_messages_test.go","adapted",129,"adapt"],
     ["M","crates/agent-gateway/internal/kbrain/interactive_test.go","adapted",129],
     ["M","crates/agent-gateway/internal/kbrain/mcp_settings_test.go","adapted",129,"partial"],
+    ["M","crates/agent-gateway/internal/kbrain/queue_persistence_test.go","adapted",129],
     ["M","crates/agent-gateway/internal/kbrain/settings.go","adapted",129,"partial"],
     ["M","crates/agent-gateway/internal/kbrain/settings_contract_test.go","adapted",129,"partial"],
     ["M","crates/agent-gateway/internal/kbrain/settings_error_test.go","adapted",129,"adapt"],

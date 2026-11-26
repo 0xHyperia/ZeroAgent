@@ -286,10 +286,7 @@ function ToolTraceGroupInner(props: {
         </span>
         <ChevronRight
           aria-hidden="true"
-          className={cn(
-            "za-chat-activity-chevron size-3 shrink-0",
-            open ? "rotate-90" : "",
-          )}
+          className={cn("za-chat-activity-chevron size-3 shrink-0", open ? "rotate-90" : "")}
         />
         {showStatus ? (
           <span className="shrink-0 text-xs text-foreground/45">{statusLabel}</span>

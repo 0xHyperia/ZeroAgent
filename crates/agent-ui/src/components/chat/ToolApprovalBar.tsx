@@ -94,7 +94,7 @@ export function ToolApprovalBar({
     decision: ToolApprovalDecision,
     options?: ToolApprovalAnswerOptions,
   ) => Promise<ToolApprovalSubmitOutcome>;
-  onDecideAll?: (decision: "approve" | "deny") => Promise<void | ToolApprovalSubmitOutcome>;
+  onDecideAll?: (decision: "approve" | "deny") => Promise<ToolApprovalSubmitOutcome | undefined>;
 }) {
   const { t } = useLocale();
   const feedbackId = useId();
@@ -172,7 +172,7 @@ export function ToolApprovalBar({
 
   const runGuarded = async (
     action: string,
-    task: () => Promise<ToolApprovalSubmitOutcome | void>,
+    task: () => Promise<ToolApprovalSubmitOutcome | undefined>,
     toolCallIds = [current.toolCallId],
   ) => {
     if (submitInFlight.current) return;
@@ -316,17 +316,19 @@ export function ToolApprovalBar({
           </span>
         )}
       </header>
-      <div
+      <section
         key={current.toolCallId}
         data-approval-details=""
-        role="region"
         aria-label={t("chat.toolApproval.details")}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll long approval details.
         tabIndex={0}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
         {/* Wraps instead of truncating: on phones the session-wide explanation must stay readable. */}
-        <p id={titleId} className="mt-2 break-words text-sm font-medium leading-1p5 text-foreground/92">
+        <p
+          id={titleId}
+          className="mt-2 break-words text-sm font-medium leading-1p5 text-foreground/92"
+        >
           {current.sessionWide
             ? t("chat.toolApproval.sessionWideBody")
             : t("chat.toolApproval.body").replace("{tool}", displayToolName)}
@@ -447,7 +449,7 @@ export function ToolApprovalBar({
             </Button>
           </div>
         ) : null}
-      </div>
+      </section>
 
       {errorText ? (
         <StatusNotice

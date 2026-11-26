@@ -307,7 +307,8 @@ export const SETTINGS_ZH_CN = {
   "settings.auto": "自动",
   "settings.showDetailedProgress": "显示详细进度",
   "settings.htmlPreviews": "HTML 预览",
-  "settings.htmlPreviewsDesc": "在对话中以沙盒预览显示 HTML 代码和工具生成的 HTML 内容。关闭后会显示源码。",
+  "settings.htmlPreviewsDesc":
+    "在对话中以沙盒预览显示 HTML 代码和工具生成的 HTML 内容。关闭后会显示源码。",
   "settings.showDetailedProgressDesc":
     "回复进行中时显示每个后端阶段及其耗时，并自动展开正在进行的思考和工具输出。关闭时只保留一行状态，细节可点开查看。",
   "settings.defaultTimeZoneAuto": "自动（跟随系统：{zone}）",
@@ -1101,8 +1102,7 @@ export const SETTINGS_ZH_CN = {
   "settings.stt.testing": "正在测试…",
   "settings.stt.saveAndTest": "保存并测试连接",
   "settings.webSearch.title": "联网搜索",
-  "settings.webSearch.description":
-    "开启联网后，无法原生搜索的模型会通过此处配置的服务搜索网页。",
+  "settings.webSearch.description": "开启联网后，无法原生搜索的模型会通过此处配置的服务搜索网页。",
   "settings.webSearch.upgrade": "请将当前执行设备上的 ZeroAgent 更新到支持第三方联网搜索的版本。",
   "settings.webSearch.providerNone": "未选择",
   "settings.webSearch.service.bocha": "博查 Bocha",
@@ -1119,7 +1119,8 @@ export const SETTINGS_ZH_CN = {
   "settings.webSearch.baseUrlHint": "可选，留空使用服务的官方地址。",
   "settings.webSearch.baseUrlHintSearxng":
     "必填：SearXNG 实例地址。实例需在 settings.yml 的 search.formats 中启用 json。",
-  "settings.webSearch.baseUrlInvalid": "请输入 HTTP 或 HTTPS 地址，地址中不能包含凭据、查询参数或片段。",
+  "settings.webSearch.baseUrlInvalid":
+    "请输入 HTTP 或 HTTPS 地址，地址中不能包含凭据、查询参数或片段。",
   "settings.webSearch.baseUrlRequired": "SearXNG 需要填写服务地址。",
   "settings.webSearch.maxResultsInvalid": "结果数量须为 1 到 10 之间的整数。",
   "settings.webSearch.statusAvailable":

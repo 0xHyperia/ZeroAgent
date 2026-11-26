@@ -1,5 +1,8 @@
 import type { ComposerCommand, ComposerCommandHost } from "@liveagent/ui/lib/chat/composerCommands";
-import type { ComposerComment, ComposerCommentInput } from "@liveagent/ui/lib/chat/composerComments";
+import type {
+  ComposerComment,
+  ComposerCommentInput,
+} from "@liveagent/ui/lib/chat/composerComments";
 import type { ConversationReferenceInsertResult } from "@liveagent/ui/lib/chat/conversationReferenceDrag";
 import type {
   CodeMentionReference,

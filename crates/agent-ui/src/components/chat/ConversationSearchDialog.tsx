@@ -329,10 +329,12 @@ export function ConversationSearchDialog({
   const actions = useMemo(
     () =>
       open && palette && actionScope
-        ? filterCommandPaletteActions(palette.getActions(returnFocus?.current), parsed.query).map((action) => ({
-            ...action,
-            title: action.label,
-          }))
+        ? filterCommandPaletteActions(palette.getActions(returnFocus?.current), parsed.query).map(
+            (action) => ({
+              ...action,
+              title: action.label,
+            }),
+          )
         : [],
     [actionScope, open, palette, parsed.query, returnFocus],
   );

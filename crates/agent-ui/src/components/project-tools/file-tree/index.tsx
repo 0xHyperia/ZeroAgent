@@ -487,6 +487,7 @@ export function FileTreeSurface(props: FileTreeSurfaceProps) {
       return [...extra.reverse(), ...visible];
     },
   });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new row height invalidates the virtualizer's cached measurements.
   useEffect(() => rowVirtualizer.measure(), [rowHeight, rowVirtualizer]);
   const virtualRows = rowVirtualizer.getVirtualItems();
   useEffect(() => {

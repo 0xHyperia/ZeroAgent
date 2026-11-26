@@ -34,7 +34,6 @@ import { Switch } from "@liveagent/ui/components/ui/switch";
 import { Tabs, TabsContent } from "@liveagent/ui/components/ui/tabs";
 import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import { rankFuzzySearchResults } from "@liveagent/ui/lib/shared/fuzzySearch";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import {
@@ -45,6 +44,7 @@ import {
   resolveClawHubSkillOwner,
 } from "@liveagent/ui/lib/skills/clawHub";
 import type { ClawHubCategorySlug } from "@liveagent/ui/lib/skills/clawHubCategories";
+import { builtinFileSkillPresentation } from "@liveagent/ui/lib/skills/fileSkillPresentation";
 import {
   discoverSkills,
   type ExternalSkillEntry,

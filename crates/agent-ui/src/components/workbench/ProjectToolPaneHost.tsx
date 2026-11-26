@@ -11,7 +11,12 @@ import { ensureManagedProcessInit } from "../../lib/managed-process/store";
 import type { TerminalSession, TerminalSnapshot } from "../../lib/terminal/types";
 import type { ProjectToolWorkbenchSurface } from "../../lib/workbench/types";
 import { BackgroundTasksPanel } from "../project-tools/BackgroundTasksPanel";
-import { FileTreePaneSurface, GitReviewPanel, LocalTunnelPanel, SshTunnelPanel } from "../project-tools/lazyToolPanels";
+import {
+  FileTreePaneSurface,
+  GitReviewPanel,
+  LocalTunnelPanel,
+  SshTunnelPanel,
+} from "../project-tools/lazyToolPanels";
 import {
   type RightDockGitContext,
   type RightDockToolCapabilities,

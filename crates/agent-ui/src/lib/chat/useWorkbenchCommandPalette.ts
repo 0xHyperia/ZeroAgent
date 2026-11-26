@@ -105,7 +105,8 @@ export function useWorkbenchCommandPalette(options: WorkbenchPaletteOptions) {
             ? buildCommandPaletteActions({
                 ...options.actions,
                 onCloseActiveContext:
-                  options.resolveCloseActiveContext?.(origin) ?? options.actions.onCloseActiveContext,
+                  options.resolveCloseActiveContext?.(origin) ??
+                  options.actions.onCloseActiveContext,
                 isMac: isMacLikePlatform(),
                 navigation,
               })
@@ -129,9 +130,11 @@ export function useWorkbenchCommandPalette(options: WorkbenchPaletteOptions) {
     const handleKey = (event: KeyboardEvent) => {
       if (isKeyEventHandledElsewhere(event) || isCommandPaletteSuppressed()) return;
       const origin = event.target instanceof Element ? event.target : null;
-      if (origin?.closest(
-        '[hidden], [inert], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
-      )) {
+      if (
+        origin?.closest(
+          '[hidden], [inert], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+        )
+      ) {
         return;
       }
       const command = PALETTE_KEY_COMMANDS.find((id) => matchesShortcutCommand(event, id, isMac));

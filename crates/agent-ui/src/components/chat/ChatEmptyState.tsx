@@ -82,7 +82,10 @@ export function ChatEmptyState({
   const compact = useIsMobile() && variant === "start-chat";
 
   return (
-    <div className="conversation-starter-container relative flex w-full flex-col items-center" data-compact-starters={compact ? "" : undefined}>
+    <div
+      className="conversation-starter-container relative flex w-full flex-col items-center"
+      data-compact-starters={compact ? "" : undefined}
+    >
       <BrandMark
         alt=""
         aria-hidden="true"
@@ -121,7 +124,12 @@ export function ChatEmptyState({
             {t(GREETING_KEYS[period])}，{t("chat.greetingSubtitle")}
           </div>
           {onSuggestionSelect ? (
-            <div className={cn("conversation-starter-grid w-full", compact ? "mt-3" : "mt-7 max-w-768px px-4")}>
+            <div
+              className={cn(
+                "conversation-starter-grid w-full",
+                compact ? "mt-3" : "mt-7 max-w-768px px-4",
+              )}
+            >
               {SUGGESTION_CARDS.map((card) => (
                 <ConversationStarter
                   key={card.key}

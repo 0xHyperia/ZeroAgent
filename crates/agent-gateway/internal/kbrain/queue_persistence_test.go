@@ -18,6 +18,9 @@ import (
 func TestRelayQueueStateRestoresQueuedItemsAndCurrentRun(t *testing.T) {
 	var mu sync.Mutex
 	runCount := 0
+	replayReady := make(chan struct{})
+	var replayOnce sync.Once
+	releaseReplay := func() { replayOnce.Do(func() { close(replayReady) }) }
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch req.URL.Path {
@@ -34,6 +37,11 @@ func TestRelayQueueStateRestoresQueuedItemsAndCurrentRun(t *testing.T) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			after := req.URL.Query().Get("after_seq")
 			if after == "4" {
+				select {
+				case <-replayReady:
+				case <-req.Context().Done():
+					return
+				}
 				_, _ = w.Write([]byte(`data: {"version":"kbrain.agent.v1","seq":5,"conversation_id":"session-1","run_id":"backend-1","type":"run.accepted"}` + "\n\n"))
 				_, _ = w.Write([]byte(`data: {"version":"kbrain.agent.v1","seq":6,"conversation_id":"session-1","run_id":"backend-1","type":"run.completed"}` + "\n\n"))
 			} else {
@@ -45,6 +53,7 @@ func TestRelayQueueStateRestoresQueuedItemsAndCurrentRun(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	defer releaseReplay()
 
 	path := filepath.Join(t.TempDir(), "queue.json")
 	client, err := New(server.URL, "", server.Client())
@@ -81,6 +90,7 @@ func TestRelayQueueStateRestoresQueuedItemsAndCurrentRun(t *testing.T) {
 	if err := json.Unmarshal([]byte(got.SnapshotJSON), &snapshot); err != nil || len(snapshot.Items) != 1 || snapshot.Current == nil || snapshot.Current.BackendRunID != "backend-1" {
 		t.Fatalf("restored snapshot = %#v, err=%v", snapshot, err)
 	}
+	releaseReplay()
 	select {
 	case event := <-controls:
 		if event.Type != "started" || event.RequestId != "active" {

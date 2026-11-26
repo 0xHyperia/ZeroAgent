@@ -285,7 +285,8 @@ export const SETTINGS_EN_US = {
   "settings.auto": "Auto",
   "settings.showDetailedProgress": "Show detailed progress",
   "settings.htmlPreviews": "HTML previews",
-  "settings.htmlPreviewsDesc": "Show sandboxed previews of HTML code and tool-generated HTML in your conversations. Turn off to see the source.",
+  "settings.htmlPreviewsDesc":
+    "Show sandboxed previews of HTML code and tool-generated HTML in your conversations. Turn off to see the source.",
   "settings.showDetailedProgressDesc":
     "While a reply is running, name every backend stage with its timings and open reasoning and tool output as they stream. When off, a single status line is shown and the details stay one click away.",
   "settings.defaultTimeZoneAuto": "Automatic (system: {zone})",
@@ -1146,7 +1147,8 @@ export const SETTINGS_EN_US = {
   "settings.webSearch.baseUrlHint": "Optional; leave empty for the service's official endpoint.",
   "settings.webSearch.baseUrlHintSearxng":
     "Required: your SearXNG instance. Enable json under search.formats in its settings.yml.",
-  "settings.webSearch.baseUrlInvalid": "Enter an HTTP or HTTPS URL without credentials, a query, or a fragment.",
+  "settings.webSearch.baseUrlInvalid":
+    "Enter an HTTP or HTTPS URL without credentials, a query, or a fragment.",
   "settings.webSearch.baseUrlRequired": "SearXNG needs a base URL.",
   "settings.webSearch.maxResultsInvalid": "Results per search must be a whole number from 1 to 10.",
   "settings.webSearch.statusAvailable":
@@ -1169,7 +1171,8 @@ export const SETTINGS_EN_US = {
   "settings.webSearch.saved": "Saved",
   "settings.webSearch.unsaved": "Unsaved changes",
   "settings.webSearch.discard": "Discard unsaved changes and reload?",
-  "settings.webSearch.connectionChanged": "The connected device or account changed. Reload before saving.",
+  "settings.webSearch.connectionChanged":
+    "The connected device or account changed. Reload before saving.",
   "settings.usage.description":
     "Token usage recorded by the ZeroAgent engine across sessions, in this device's time zone.",
   "settings.usage.refresh": "Refresh",

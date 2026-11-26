@@ -1097,7 +1097,13 @@
     var(--ui-color-hsl-220-22-10-0p12);
   --spacing-gateway-transcript-bottom-spacer-h: max(
     var(--gateway-transcript-bottom-minimum, 12rem),
-    calc(var(--gateway-transcript-composer-reserve, var(--gateway-chat-composer-overlay-height, var(--spacing-176px))) + var(--spacing-18px))
+    calc(
+      var(
+        --gateway-transcript-composer-reserve,
+        var(--gateway-chat-composer-overlay-height, var(--spacing-176px))
+      ) +
+      var(--spacing-18px)
+    )
   );
   --shadow-chat-user-bubble-editor:
     0 var(--spacing-1px) var(--spacing-2px) var(--ui-color-hsl-220-22-10-0p04),

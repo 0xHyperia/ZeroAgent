@@ -353,7 +353,7 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
   const streamAlreadySubscribed = isStreamAlreadySubscribed?.(conversationId) === true;
   const composerKey = composerScopeId ?? conversationId;
   const taskFileInputRef = useRef<HTMLInputElement | null>(null);
-  const { api, registry } = context;
+  const { api, registry, replacePendingUpload } = context;
   // context 里的部分函数(sendChat 等)每次渲染都是新引用;凡按 conversationId
   // 维度运行的 effect 一律经 ref 读取,避免身份抖动触发误重置。
   const contextRef = useRef(context);
@@ -1487,9 +1487,9 @@ export function GatewayConversationPaneHost(props: GatewayConversationPaneHostPr
               usePrimary && primary ? primary.pendingUploadedFiles : pendingUploads
             }
             onReplacePendingUpload={
-              context.replacePendingUpload && workdir
+              replacePendingUpload && workdir
                 ? (relativePath, replacement) =>
-                    context.replacePendingUpload!(relativePath, replacement, {
+                    replacePendingUpload(relativePath, replacement, {
                       conversationId: composerKey,
                       workdir,
                     })

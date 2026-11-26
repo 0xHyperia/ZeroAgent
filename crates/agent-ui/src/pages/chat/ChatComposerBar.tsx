@@ -78,7 +78,6 @@ import { toast } from "@liveagent/ui/components/ui/toast-manager";
 import { TooltipButton as Button } from "@liveagent/ui/components/ui/tooltip-button";
 import { useIsMobile } from "@liveagent/ui/hooks/use-mobile";
 import { useLocale } from "@liveagent/ui/i18n/index";
-import { useComposerShortcuts } from "../../lib/shortcuts/useComposerShortcuts";
 import { requestCheckpointRewindLatest } from "@liveagent/ui/lib/chat/checkpointRewind";
 import type { ComposerCommandHost } from "@liveagent/ui/lib/chat/composerCommands";
 import { measureComposerOverlay } from "@liveagent/ui/lib/chat/composerOverlayMetrics";
@@ -124,6 +123,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useComposerImageAnnotation } from "../../components/chat/image-annotation/useComposerImageAnnotation";
 import { ConversationComposerPlacement } from "../../components/resource-preview/ConversationComposerPlacement";
 import { ConversationFocusComposer } from "../../components/resource-preview/conversationReaderLayout";
 import {
@@ -133,14 +133,14 @@ import {
   resolveComposerPresentation,
 } from "../../contracts/composerPresentation";
 import { useEscapeToStopRun } from "../../lib/chat/escapeStopRun";
+import type { ReplacePendingUpload } from "../../lib/chat/uploadedFiles";
 import {
   type UploadedImagePreviewLoader,
   useUploadedImagePreview,
 } from "../../lib/chat/uploadedImagePreview";
 import type { PendingUploadedFile } from "../../lib/chat/uploadTypes";
-import type { ReplacePendingUpload } from "../../lib/chat/uploadedFiles";
-import { useComposerImageAnnotation } from "../../components/chat/image-annotation/useComposerImageAnnotation";
 import type { WebSearchFallbackState } from "../../lib/providers/webSearchFallback";
+import { useComposerShortcuts } from "../../lib/shortcuts/useComposerShortcuts";
 import { useComposerStt } from "./useComposerStt";
 
 function PendingComposerAttachment(props: {

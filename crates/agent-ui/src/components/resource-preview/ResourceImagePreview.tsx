@@ -546,10 +546,11 @@ function ImageCanvas(props: Props) {
     </>
   );
   const canvas = (
+    // biome-ignore lint/a11y/useSemanticElements: This group labels the image and its zoom and overlay controls.
     <div
       ref={canvasRef}
       className="za-image-canvas"
-      role={props.conversation?.interactiveOverlay ? "group" : "img"}
+      role="group"
       aria-label={
         zh
           ? `${props.name}，${Math.round(scale * 100)}%，可缩放和平移`

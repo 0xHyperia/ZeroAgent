@@ -3,7 +3,6 @@ import {
   type WorkspaceProject,
   workspaceProjectPathKey,
 } from "@liveagent/app/lib/settings";
-import { WorkspaceEditorMenuItems } from "@liveagent/ui/components/project-tools/WorkspaceEditorMenuItems";
 import {
   Archive,
   ArchiveRestore,
@@ -28,6 +27,7 @@ import {
   Trash2,
   X,
 } from "@liveagent/ui/components/IconSet";
+import { WorkspaceEditorMenuItems } from "@liveagent/ui/components/project-tools/WorkspaceEditorMenuItems";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { ContextMenuPopup } from "@liveagent/ui/components/ui/context-menu";
 import {

@@ -416,7 +416,10 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
         document.activeElement instanceof HTMLElement
           ? document.activeElement
           : conversationSearchTrigger.current;
-      setPaletteRequest({ scope: paletteScope, query: quickOpen ? "@" : searchConversations ? "#" : "" });
+      setPaletteRequest({
+        scope: paletteScope,
+        query: quickOpen ? "@" : searchConversations ? "#" : "",
+      });
       setConversationSearchOpen(true);
     };
     window.addEventListener("keydown", openPalette);
@@ -662,7 +665,9 @@ export const ChatHistorySidebar = memo(function ChatHistorySidebar(props: ChatHi
       if (isKeyEventHandledElsewhere(event) || isCommandPaletteSuppressed()) return;
       const delta = matchesShortcutCommand(event, "previousConversation", isMac)
         ? -1
-        : matchesShortcutCommand(event, "nextConversation", isMac) ? 1 : 0;
+        : matchesShortcutCommand(event, "nextConversation", isMac)
+          ? 1
+          : 0;
       if (!delta) return;
       const index = orderedConversationIds.indexOf(currentConversationId);
       const target = index < 0 ? undefined : orderedConversationIds[index + delta];

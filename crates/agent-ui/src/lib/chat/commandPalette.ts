@@ -36,7 +36,9 @@ export type CommandPaletteAction = {
 };
 
 /** Read lazily when the palette opens so hosts never re-render the sidebar for it. */
-export type CommandPaletteActionsProvider = (origin?: Element | null) => readonly CommandPaletteAction[];
+export type CommandPaletteActionsProvider = (
+  origin?: Element | null,
+) => readonly CommandPaletteAction[];
 
 export type CommandPaletteCapability = {
   scopeKey: string;

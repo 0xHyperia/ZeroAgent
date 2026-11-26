@@ -329,7 +329,11 @@ export function SettingsPage(props: SettingsPageProps) {
         icon: <Clock3 className={extension.iconClassName} />,
         render: () =>
           onOpenScheduledTasks ? (
-            <Button data-settings-anchor="cron-tasks" variant="outline" onClick={onOpenScheduledTasks}>
+            <Button
+              data-settings-anchor="cron-tasks"
+              variant="outline"
+              onClick={onOpenScheduledTasks}
+            >
               {t("settings.openScheduledTasks")}
             </Button>
           ) : (

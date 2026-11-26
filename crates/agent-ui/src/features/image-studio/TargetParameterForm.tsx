@@ -94,7 +94,7 @@ export function TargetParameterForm({
               <select
                 {...common}
                 className={selectClass}
-                value={spec.enum.findIndex((value) => value === values[spec.key])}
+                value={(spec.enum as readonly unknown[]).indexOf(values[spec.key])}
                 onChange={(event) => set(spec.key, spec.enum?.[Number(event.target.value)])}
               >
                 <option value={-1}>

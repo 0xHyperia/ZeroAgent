@@ -93,10 +93,12 @@ const sourceDark = sourceTheme(SOURCE_DARK_THEME, "dark", {
 let highlighter: ReturnType<typeof createHighlighter> | undefined;
 export function getSyntaxHighlighter() {
   highlighter ??= import("shiki")
-    .then(({ createHighlighter }) => createHighlighter({
-      themes: [...MARKDOWN_CODE_THEMES, sourceLight, sourceDark],
-      langs: [],
-    }))
+    .then(({ createHighlighter }) =>
+      createHighlighter({
+        themes: [...MARKDOWN_CODE_THEMES, sourceLight, sourceDark],
+        langs: [],
+      }),
+    )
     .catch((error) => {
       highlighter = undefined;
       throw error;
