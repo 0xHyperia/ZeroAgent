@@ -343,7 +343,10 @@ export default function App() {
     () =>
       settings.customProviders.some((provider) =>
         provider.activeModels.some((model) =>
-          modelTypesFor(model, provider.models?.find((item) => item.id === model)).includes("text"),
+          modelTypesFor(
+            model,
+            provider.models?.find((item) => item.id === model),
+          ).includes("text"),
         ),
       ),
     [settings.customProviders],
@@ -1271,8 +1274,11 @@ export default function App() {
   const localExecutionSelected = selectedExecutionEnvironment?.device_id === localDeviceId;
   const setupGuideAvailable = localExecutionSelected && !cloudSelected && isTauriHost();
   const setupProjectName =
-    settings.system.workspaceProjects.find((project) => project.id === settings.system.activeWorkspaceProjectId)
-      ?.name ?? settings.system.workdir.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+    settings.system.workspaceProjects.find(
+      (project) => project.id === settings.system.activeWorkspaceProjectId,
+    )?.name ??
+    settings.system.workdir.split(/[\\/]/).filter(Boolean).at(-1) ??
+    "";
   const selectedRemoteLease = selectedExecutionEnvironment
     ? remoteSelectionLeases.get(selectedExecutionEnvironment.device_id)
     : undefined;
@@ -1538,12 +1544,19 @@ export default function App() {
             onClose={() => setModelPreferencesOpen(false)}
           />
         ) : null}
-        {setupGuideAvailable && backgroundHostsReady && (setupGuideOwner === relayUser.id || !hasSetupModel) ? (
+        {setupGuideAvailable &&
+        backgroundHostsReady &&
+        (setupGuideOwner === relayUser.id || !hasSetupModel) ? (
           <Suspense fallback={null}>
             <FirstRunOnboarding
               key={relayUser.id}
               userId={relayUser.id}
-              autoOpen={!settingsOpen && !modelPreferencesOpen && !releaseAnnouncement.open && !hasSetupModel}
+              autoOpen={
+                !settingsOpen &&
+                !modelPreferencesOpen &&
+                !releaseAnnouncement.open &&
+                !hasSetupModel
+              }
               requested={setupGuideOwner === relayUser.id}
               hasModel={hasSetupModel}
               projectName={setupProjectName}

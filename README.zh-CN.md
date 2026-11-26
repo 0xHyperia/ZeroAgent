@@ -67,7 +67,7 @@ ZeroAgent Gateway + 内嵌 WebUI
 
 ## 下载
 
-桌面安装包和 Android APK 可从 [GitHub Releases](https://github.com/USA-Zero/ZeroAgent/releases/latest) 下载。
+桌面安装包和 Android APK 可从 [GitHub Releases](https://github.com/USA0-Zero/ZeroAgent/releases) 下载。
 
 | 平台 | 安装包 |
 |---|---|

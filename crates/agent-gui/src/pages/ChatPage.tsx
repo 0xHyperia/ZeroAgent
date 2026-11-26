@@ -25,6 +25,7 @@ import {
   conversationImageDeliverables,
   parseConversationImageResult,
 } from "@liveagent/ui/components/chat/assistant-bubble/ConversationImageTool";
+import { McpServerLabelsProvider } from "@liveagent/ui/components/chat/assistant-bubble/McpServerLabelsContext";
 import { ConversationViewTabs } from "@liveagent/ui/components/chat/ConversationViewTabs";
 import type { RunClarifyTurn } from "@liveagent/ui/components/chat/clarify/clarifyTypes";
 import { HistoryShareModal } from "@liveagent/ui/components/chat/HistoryShareModal";
@@ -36,8 +37,6 @@ import { NavigationHistoryButtons } from "@liveagent/ui/components/chat/Navigati
 import { SharedHistoryManagerModal } from "@liveagent/ui/components/chat/SharedHistoryManagerModal";
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
-import { McpServerLabelsProvider } from "@liveagent/ui/components/chat/assistant-bubble/McpServerLabelsContext";
-import { SkipToComposerLink } from "@liveagent/ui/components/ui/skip-link";
 import { PanelLeft, SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
@@ -54,6 +53,7 @@ import { ResourcePreviewReadingSession } from "@liveagent/ui/components/resource
 import { ThemeToggleButton } from "@liveagent/ui/components/ThemeToggleButton";
 import { useConfirmDialog } from "@liveagent/ui/components/ui/confirm-dialog";
 import { SidebarProvider, useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import { SkipToComposerLink } from "@liveagent/ui/components/ui/skip-link";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { TooltipButton } from "@liveagent/ui/components/ui/tooltip-button";
 import { PaneChrome } from "@liveagent/ui/components/workbench/PaneChrome";
@@ -92,6 +92,7 @@ import {
   type QuickOpenFileListing,
 } from "@liveagent/ui/lib/chat/fileQuickOpenSearch";
 import { rememberSshHostNames } from "@liveagent/ui/lib/chat/sshManagerDisplay";
+import { nextThinkingLevel } from "@liveagent/ui/lib/chat/thinkingLevels";
 import { toolResultMessageToText } from "@liveagent/ui/lib/chat/uiMessages";
 import { useChangedFilesActions } from "@liveagent/ui/lib/chat/useChangedFilesActions";
 import { useChatFileLinkNavigation } from "@liveagent/ui/lib/chat/useChatFileLinkNavigation";
@@ -102,23 +103,23 @@ import {
 } from "@liveagent/ui/lib/chat/useComposerActions";
 import { useMentionApps } from "@liveagent/ui/lib/chat/useMentionApps";
 import { useWorkbenchCommandPalette } from "@liveagent/ui/lib/chat/useWorkbenchCommandPalette";
-import { nextThinkingLevel } from "@liveagent/ui/lib/chat/thinkingLevels";
+import { WorkbenchBrowserLink } from "@liveagent/ui/lib/chat/workbenchBrowserLink";
 import {
   activateRightDockTab,
   isFocusInRightDock,
+  RIGHT_DOCK_TERMINAL_LAUNCHER,
   resolveCloseContextTarget,
   resolveTerminalToggle,
-  RIGHT_DOCK_TERMINAL_LAUNCHER,
 } from "@liveagent/ui/lib/chat/workbenchCommands";
-import { WorkbenchBrowserLink } from "@liveagent/ui/lib/chat/workbenchBrowserLink";
 import { parseExtensionReference } from "@liveagent/ui/lib/extensions/reference";
 import { useThinkingLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
 import { setPreferredMonacoNlsLocale } from "@liveagent/ui/lib/monacoNls";
+import { workspaceTrustFromDevicePlugins } from "@liveagent/ui/lib/plugins/devicePlugins";
 import { releaseProjectToolFromDock } from "@liveagent/ui/lib/projectTools/releaseProjectToolFromDock";
 import { useConversationRightDock } from "@liveagent/ui/lib/projectTools/useConversationRightDock";
 import { useRightDockSettings } from "@liveagent/ui/lib/projectTools/useRightDockSettings";
-import type { ChatRuntimeControls } from "@liveagent/ui/lib/settings/types";
 import { getWorkbenchSettingsSections } from "@liveagent/ui/lib/settings/settingsSearchIndex";
+import type { ChatRuntimeControls } from "@liveagent/ui/lib/settings/types";
 import { buildGatewayPublicBaseUrl } from "@liveagent/ui/lib/shared/gatewayPublicUrl";
 import { createUuid } from "@liveagent/ui/lib/shared/id";
 import { cn } from "@liveagent/ui/lib/shared/utils";
@@ -195,10 +196,7 @@ import {
   checkDesktopFileRuntime,
   localFileRuntimeCommentRecovery,
 } from "../agent-ui-adapters/fileRuntime";
-import { settingsHostAdapter } from "../agent-ui-adapters/kbrainSettings";
-import { useMcpServerLabels } from "../lib/kbrain/useMcpServerLabels";
-import { workspaceTrustFromDevicePlugins } from "@liveagent/ui/lib/plugins/devicePlugins";
-import { kbrainSettingsAdapter } from "../agent-ui-adapters/kbrainSettings";
+import { kbrainSettingsAdapter, settingsHostAdapter } from "../agent-ui-adapters/kbrainSettings";
 import { createTauriTrajectoryHost } from "../agent-ui-adapters/trajectory";
 import { WorkspaceCloneTaskOverlayAdapter } from "../agent-ui-adapters/workspaceCloneTasks";
 import { desktopWorkspaceProjectRootClient } from "../agent-ui-adapters/workspaceProjectRoots";
@@ -229,15 +227,15 @@ import {
   isTauriHost,
   supportsNativeWorkspaceEditors,
 } from "../lib/host";
-import { useRunCompletionSound } from "../lib/notifications/useRunCompletionSound";
-import { useWebviewZoom } from "../lib/system/webviewZoom";
 import { useKBrainCatalogSettings } from "../lib/kbrain/catalog";
 import { createKBrainClient } from "../lib/kbrain/client";
 import { publishGoalState } from "../lib/kbrain/goalStore";
 import { resolveKBrainLocalId } from "../lib/kbrain/history";
 import { subscribeHistoryImported } from "../lib/kbrain/manualHistoryImport";
 import { getKBrainSessionId } from "../lib/kbrain/mapping";
+import { useMcpServerLabels } from "../lib/kbrain/useMcpServerLabels";
 import { watchKBrainHistory } from "../lib/kbrain/watchHistory";
+import { useRunCompletionSound } from "../lib/notifications/useRunCompletionSound";
 import { createProviderRuntimeConfig, toModelValue } from "../lib/providers/llm";
 import {
   applyConversationThinking,
@@ -267,6 +265,7 @@ import { createGuiSidebarBackend } from "../lib/sidebar/guiSidebarBackend";
 import { desktopSttTransport } from "../lib/stt/desktopSttTransport";
 import { createSubagentStoreManager } from "../lib/subagents";
 import { loadKBrainSubagents } from "../lib/subagents/kbrainSubagentStore";
+import { useWebviewZoom } from "../lib/system/webviewZoom";
 import { tauriTerminalClient } from "../lib/terminal/tauriTerminalClient";
 import { cancelPendingAskUserQuestionsForConversation } from "../lib/tools/askUserQuestionTools";
 import {
@@ -589,7 +588,13 @@ function ChatPageContent(props: ChatPageProps) {
     return () => {
       if (setupProjectPickerRef.current === pickProject) setupProjectPickerRef.current = null;
     };
-  }, [active, activateWorkspaceProject, pickWorkspaceProjectFolder, setupProjectPickerRef, workspaceOwner]);
+  }, [
+    active,
+    activateWorkspaceProject,
+    pickWorkspaceProjectFolder,
+    setupProjectPickerRef,
+    workspaceOwner,
+  ]);
   useEffect(() => {
     onImageStudioWorkspaceChange?.(activeWorkspaceProject?.path.trim() ?? workdir);
   }, [activeWorkspaceProject?.path, workdir, onImageStudioWorkspaceChange]);
@@ -5253,13 +5258,14 @@ function ChatPageContent(props: ChatPageProps) {
       }
     };
   };
-  const nextThinking = activeView === "chat"
-    ? nextThinkingLevel({
-        reasoningOptions: chatRuntimeReasoningOptions,
-        thinkingAlwaysOn: chatRuntimeThinkingAlwaysOn,
-        controls: chatRuntimeControlsForCurrentProvider,
-      })
-    : null;
+  const nextThinking =
+    activeView === "chat"
+      ? nextThinkingLevel({
+          reasoningOptions: chatRuntimeReasoningOptions,
+          thinkingAlwaysOn: chatRuntimeThinkingAlwaysOn,
+          controls: chatRuntimeControlsForCurrentProvider,
+        })
+      : null;
   const webviewZoom = useWebviewZoom();
   const { commandPalette, navigation: deviceNavigation } = useWorkbenchCommandPalette({
     scopeKey: active ? JSON.stringify([workspaceOwner, "local"]) : undefined,
@@ -5292,44 +5298,50 @@ function ChatPageContent(props: ChatPageProps) {
         usage: Boolean(settingsHostAdapter.kbrain?.getUsageStats),
         devicePlugins: isTauriHost() && Boolean(settingsHostAdapter.devicePlugins),
         webSearch: Boolean(settingsHostAdapter.kbrain),
-        permissions: isTauriHost() && Boolean(
-          settingsHostAdapter.kbrain?.listPermissionRules &&
-            settingsHostAdapter.kbrain.addPermissionRule &&
-            settingsHostAdapter.kbrain.deletePermissionRule,
-        ),
+        permissions:
+          isTauriHost() &&
+          Boolean(
+            settingsHostAdapter.kbrain?.listPermissionRules &&
+              settingsHostAdapter.kbrain.addPermissionRule &&
+              settingsHostAdapter.kbrain.deletePermissionRule,
+          ),
       }),
       settingsExcludedAnchors: [
         ...(isTauriHost() ? [] : ["desktop-setup-guide", "run-completion-sound"]),
         ...(supportsNativeWorkspaceEditors() ? [] : ["preferred-workspace-editor"]),
         ...(canManageLocalFileRuntime() ? [] : ["file-runtime"]),
-        ...(isTauriHost() && settingsHostAdapter.devicePlugins?.readSurface ? [] : ["html-previews"]),
+        ...(isTauriHost() && settingsHostAdapter.devicePlugins?.readSurface
+          ? []
+          : ["html-previews"]),
       ],
       onOpenWorkspace: isAgentMode ? handleOpenCreateWorkspaceProject : undefined,
       sidebar: { open: sidebarOpen, onToggle: handleToggleSidebar },
       theme: { current: settings.theme, onToggle: onToggleTheme },
-      projectTools: !projectToolsDisabledMessage && activeView === "chat"
-        ? { open: rightDockOpen, onToggle: () => setRightDockOpen((open) => !open) }
-        : undefined,
-      onToggleTerminal: deviceFilesAvailable && !terminalDisabledMessage
-        ? () => {
-            const target = resolveTerminalToggle({
-              open: activeView === "chat" && rightDockOpen && !desktopTabs.view.activeId,
-              activeTabId: rightDockProjectState.activeTabId,
-              tabOrder: rightDockProjectState.tabOrder,
-              sessions: projectTerminalSessions,
-            });
-            if (target.kind === "close") {
-              setRightDockOpen(false);
-              return;
+      projectTools:
+        !projectToolsDisabledMessage && activeView === "chat"
+          ? { open: rightDockOpen, onToggle: () => setRightDockOpen((open) => !open) }
+          : undefined,
+      onToggleTerminal:
+        deviceFilesAvailable && !terminalDisabledMessage
+          ? () => {
+              const target = resolveTerminalToggle({
+                open: activeView === "chat" && rightDockOpen && !desktopTabs.view.activeId,
+                activeTabId: rightDockProjectState.activeTabId,
+                tabOrder: rightDockProjectState.tabOrder,
+                sessions: projectTerminalSessions,
+              });
+              if (target.kind === "close") {
+                setRightDockOpen(false);
+                return;
+              }
+              setActiveView("chat");
+              desktopTabs.activate(null);
+              setRightDockOpen(true);
+              handleRightDockProjectStateChange((current) =>
+                activateRightDockTab(current, target.sessionId ?? RIGHT_DOCK_TERMINAL_LAUNCHER),
+              );
             }
-            setActiveView("chat");
-            desktopTabs.activate(null);
-            setRightDockOpen(true);
-            handleRightDockProjectStateChange((current) =>
-              activateRightDockTab(current, target.sessionId ?? RIGHT_DOCK_TERMINAL_LAUNCHER),
-            );
-          }
-        : undefined,
+          : undefined,
       onCycleThinking: nextThinking
         ? () => handleChatRuntimeControlsChange(nextThinking.patch)
         : undefined,
@@ -6042,7 +6054,9 @@ function ChatPageContent(props: ChatPageProps) {
         >
           {workspace}
         </ResourcePreviewReadingSession>
-      ) : workspace}
+      ) : (
+        workspace
+      )}
     </McpServerLabelsProvider>
   );
 }

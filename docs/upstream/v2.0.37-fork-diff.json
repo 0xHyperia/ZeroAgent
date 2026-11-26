@@ -16,15 +16,15 @@
     "partial": 183,
     "reject": 411
   },
-  "forkChangedPaths": 3261,
+  "forkChangedPaths": 3262,
   "forkStatusCounts": {
     "M": 973,
     "D": 650,
-    "A": 1638
+    "A": 1639
   },
   "ownershipRules": ".github/upstream-ownership.yaml: first matching glob in file order, with a one-based rule number",
   "forkOwnershipCounts": {
-    "adapted": 2008,
+    "adapted": 2009,
     "zeroagent_owned": 975,
     "upstream_owned": 278
   },
@@ -39,7 +39,7 @@
       "upstream_owned": 33
     },
     "A": {
-      "adapted": 603,
+      "adapted": 604,
       "zeroagent_owned": 971,
       "upstream_owned": 64
     }
@@ -531,6 +531,7 @@
     ["A",".github/release-notes/v0.3.23.md","adapted",122],
     ["A",".github/release-notes/v0.4.0-beta.2.md","adapted",122],
     ["A",".github/release-notes/v1.0.0-beta.1.md","adapted",122],
+    ["A",".github/release-notes/v1.0.1-alpha.1.md","adapted",122],
     ["A",".github/upstream-ownership.yaml","adapted",122],
     ["A",".github/upstream-sync.json","adapted",122],
     ["A",".github/workflows/android-release.yml","zeroagent_owned",108],

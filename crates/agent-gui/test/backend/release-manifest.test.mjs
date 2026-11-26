@@ -89,7 +89,7 @@ test("release updater manifest can target a separate public repository", () => {
       env: {
         ...process.env,
         GITHUB_REPOSITORY: "private-owner/private-source",
-        RELEASE_REPOSITORY: "USA-Zero/ZeroAgent",
+        RELEASE_REPOSITORY: "USA0-Zero/ZeroAgent",
         RELEASE_TAG: "v9.9.9",
       },
       encoding: "utf8",
@@ -104,7 +104,7 @@ test("release updater manifest can target a separate public repository", () => {
     const manifest = JSON.parse(readFileSync(outputPath, "utf8"));
     assert.equal(
       manifest.platforms["linux-x86_64-appimage"].url,
-      "https://github.com/USA-Zero/ZeroAgent/releases/download/v9.9.9/ZeroAgent-v9.9.9-Linux-x86_64.AppImage",
+      "https://github.com/USA0-Zero/ZeroAgent/releases/download/v9.9.9/ZeroAgent-v9.9.9-Linux-x86_64.AppImage",
     );
   } finally {
     rmSync(dir, { force: true, recursive: true });

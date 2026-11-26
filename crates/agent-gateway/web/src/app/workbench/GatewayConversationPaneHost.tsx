@@ -25,8 +25,6 @@ import { Loader2 } from "@liveagent/ui/components/IconSet";
 // 输入框挂到页面 composerRef,卸载时把未发送草稿写回缓存。
 import { DeviceConversationImageSurface } from "@liveagent/ui/components/resource-preview/DeviceConversationImageSurface";
 import { DeviceUiTranscript } from "@liveagent/ui/components/sandboxed-ui/DeviceUiTranscript";
-import type { DevicePluginsClient } from "@liveagent/ui/lib/plugins/devicePlugins";
-import type { DeviceUiSurfaceClient } from "@liveagent/ui/lib/plugins/deviceUiSurface";
 import { TrajectoryView } from "@liveagent/ui/components/trajectory/TrajectoryView";
 import { Button } from "@liveagent/ui/components/ui/button";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
@@ -51,6 +49,8 @@ import {
 } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { useScrollFollow } from "@liveagent/ui/lib/chat-scroll/useScrollFollow";
 import { useThinkingLiveVersion } from "@liveagent/ui/lib/models/useThinkingLive";
+import type { DevicePluginsClient } from "@liveagent/ui/lib/plugins/devicePlugins";
+import type { DeviceUiSurfaceClient } from "@liveagent/ui/lib/plugins/deviceUiSurface";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { toTrajectoryMessages } from "@liveagent/ui/lib/trajectory/transcriptMessages";
 import {

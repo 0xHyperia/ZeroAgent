@@ -9,7 +9,7 @@
 | PR / `main` push | `.github/workflows/ci.yml` | 跑 Gateway、WebUI、GUI、Tauri Rust 测试和 proto 一致性检查。 |
 | 每日定时 | `.github/workflows/update-model-catalog.yml` | 刷新模型能力目录；仅在数据变化时由 GitHub Actions 创建或更新待审核 PR。 |
 | `v*` tag / 手动指定 tag | `.github/workflows/gateway-docker.yml` | 构建并推送 `vX.Y.Z` 与 `latest` Gateway 镜像。 |
-| `v*` tag / 手动指定 tag | `.github/workflows/desktop-release.yml` | 并行构建 macOS Intel、macOS Apple Silicon、Windows x64 和 Linux x64 桌面包。按标签决定是否同步到 `USA-Zero/ZeroAgent`。 |
+| `v*` tag / 手动指定 tag | `.github/workflows/desktop-release.yml` | 并行构建 macOS Intel、macOS Apple Silicon、Windows x64 和 Linux x64 桌面包。按标签决定是否同步到 `USA0-Zero/ZeroAgent`。 |
 | `v*` tag / 手动构建 | `.github/workflows/android-release.yml` | 构建签名 APK，并按同一标签规则上传到对应 Release。 |
 | 桌面发布调用 / 手动指定提交 | `.github/workflows/file-runtime-packs.yml` | 按固定依赖构建四平台文件运行时，在目标系统离线验证后上传到源码仓库的私有 Actions 产物。 |
 
@@ -105,7 +105,7 @@ Gateway 一期按单实例部署，实时 conversation stream replay 与 `client
 
 桌面和 Android 工作流均在 `0xHyperia/ZeroAgent` 构建。发布路由如下。
 
-| 标签示例 | 源码仓库 | `USA-Zero/ZeroAgent` |
+| 标签示例 | 源码仓库 | `USA0-Zero/ZeroAgent` |
 | --- | --- | --- |
 | `v1.0.0-alpha.1`、`v1.0.0-rc.1` | 预发布 | 不同步 |
 | `v1.0.0-beta.1` | 预发布 | 同步为预发布 |
@@ -115,9 +115,9 @@ Gateway 一期按单实例部署，实时 conversation stream replay 与 `client
 
 | Secret | 说明 |
 |---|---|
-| `PUBLIC_RELEASE_TOKEN` | 可写入 `USA-Zero/ZeroAgent` Contents 的 fine-grained PAT，用于跨仓库创建 Release 和上传产物。 |
+| `PUBLIC_RELEASE_TOKEN` | 可写入 `USA0-Zero/ZeroAgent` Contents 的 fine-grained PAT，用于跨仓库创建 Release 和上传产物。 |
 
-源码 tag 只需存在于私有仓库。需要同步时，桌面发布工作流在公开仓库的 `main` 提交上创建同名 Release tag，Android 将 APK 附到对应 Release。正式版供公开稳定更新通道读取。仅构建 Actions 产物时，两个仓库都不会创建 Release。
+源码 tag 只需存在于源码仓库。需要同步时，桌面发布工作流在公开仓库的 `main` 提交上创建同名 Release tag，Android 将 APK 附到对应 Release。正式版供公开稳定更新通道读取。已安装的旧版仍内置原更新地址，需要通过配套安装包更新到新客户端。仅构建 Actions 产物时，两个仓库都不会创建 Release。
 
 使用 Developer ID 签名和 Apple 公证需要以下凭据。当前 GitHub Actions 的 macOS job 使用表中的 Tauri 更新密钥。本地 `make desktop-build-macos-release` 使用系统钥匙串中的 Developer ID 和公证配置。
 

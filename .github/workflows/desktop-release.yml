@@ -30,7 +30,7 @@ permissions:
 
 env:
   NODE_VERSION: 22.19.0
-  RELEASE_REPOSITORY: USA-Zero/ZeroAgent
+  RELEASE_REPOSITORY: USA0-Zero/ZeroAgent
 
 jobs:
   release-metadata:

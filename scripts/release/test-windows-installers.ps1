@@ -358,7 +358,7 @@ function Get-PortableInventory([string]$Path, [switch]$PreviousRelease) {
 
 function Read-PreviousRelease([string]$Directory, [string]$Version, $CandidateMsi) {
     $base = "ZeroAgent-v$Version-Windows-x64"
-    $releaseUrl = "https://github.com/USA-Zero/ZeroAgent/releases/download/v$Version"
+    $releaseUrl = "https://github.com/USA0-Zero/ZeroAgent/releases/download/v$Version"
     $manifestPath = Get-SafeFullPath (Join-Path $Directory 'latest.json')
     if ((Get-Item -LiteralPath $manifestPath).Length -gt 524288) { throw 'Previous release manifest exceeds size limit' }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json

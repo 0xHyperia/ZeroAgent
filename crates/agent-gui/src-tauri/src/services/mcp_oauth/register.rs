@@ -33,7 +33,7 @@ pub fn dynamic_register(
 ) -> Result<RegisteredClient, String> {
     let mut body = json!({
         "client_name": "ZeroAgent",
-        "client_uri": "https://github.com/USA-Zero/ZeroAgent",
+        "client_uri": "https://github.com/USA0-Zero/ZeroAgent",
         "redirect_uris": [redirect_uri],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],

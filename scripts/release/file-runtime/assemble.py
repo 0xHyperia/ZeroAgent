@@ -56,7 +56,7 @@ def download(asset, directory):
     return filename
 
 
-def extract_tar(archive, destination, prefixes=(), *, copy_python_aliases=False, refuse_private=False):
+def extract_tar(archive, destination, prefixes=(), *, copy_python_aliases=False, refuse_private=True):
     with tarfile.open(archive) as source:
         members = (member for member in source if not prefixes or member.name.startswith(prefixes))
 
@@ -79,7 +79,7 @@ def extract_tar(archive, destination, prefixes=(), *, copy_python_aliases=False,
         source.extractall(destination, members=members, filter=filter_member)
 
 
-def copy_component(source, destination, *, refuse_private=False):
+def copy_component(source, destination, *, refuse_private=True):
     # A runtime can be installed in any directory. Materialize aliases while the
     # entire verified dependency tree is still available.
     ignore_patterns = shutil.ignore_patterns(
@@ -89,14 +89,19 @@ def copy_component(source, destination, *, refuse_private=False):
     )
 
     def ignore_names(directory, names):
-        if refuse_private and any("licensee" in name.casefold() for name in names):
-            raise ValueError("A public runtime dependency contains a protected filename")
+        if refuse_private:
+            for name in names:
+                entry = Path(directory) / name
+                if "licensee" in name.casefold() or (
+                    entry.is_symlink() and any("licensee" in part.casefold() for part in entry.resolve().parts)
+                ):
+                    raise ValueError("A public runtime dependency contains a protected filename")
         return ignore_patterns(directory, names)
 
     shutil.copytree(source, destination, ignore=ignore_names)
 
 
-def unpack_conda(archive, prefix, notices, scratch, *, refuse_private=False):
+def unpack_conda(archive, prefix, notices, scratch, *, refuse_private=True):
     if archive.suffix == ".conda":
         with ZipFile(archive) as package:
             if refuse_private and any("licensee" in name.casefold() for name in package.namelist()):
@@ -133,7 +138,7 @@ def unpack_conda(archive, prefix, notices, scratch, *, refuse_private=False):
         copy_component(licenses, notices / archive.name, refuse_private=refuse_private)
 
 
-def unpack_office(archive, destination, system, scratch, *, refuse_private=False):
+def unpack_office(archive, destination, system, scratch, *, refuse_private=True):
     if system == "Windows":
         if refuse_private:
             script = Path(__file__).with_name("check-office-msi.ps1")
@@ -178,6 +183,12 @@ def unpack_office(archive, destination, system, scratch, *, refuse_private=False
 
     extract_tar(archive, scratch)
     for rpm in sorted(scratch.glob("*/RPMS/*.rpm")):
+        if refuse_private:
+            with subprocess.Popen(["rpm2cpio", rpm], stdout=subprocess.PIPE) as command:
+                with command.stdout:
+                    listing = subprocess.check_output(["cpio", "-itv", "--quiet"], stdin=command.stdout)
+                if command.wait() or b"licensee" in listing.lower():
+                    raise ValueError("Cannot verify LibreOffice archive filenames")
         command = subprocess.Popen(["rpm2cpio", rpm], stdout=subprocess.PIPE)
         with command.stdout:
             extracted = subprocess.run(["cpio", "-idmu", "--quiet", "--no-absolute-filenames", "./opt/*"],
@@ -230,6 +241,8 @@ def assemble(options):
         with TemporaryDirectory(dir=scratch) as node_scratch:
             if system == "Windows":
                 with ZipFile(paths["node"]) as node:
+                    if any("licensee" in name.casefold() for name in node.namelist()):
+                        raise ValueError("A public runtime dependency contains a protected filename")
                     node.extractall(node_scratch)
             else:
                 extract_tar(paths["node"], Path(node_scratch))
@@ -337,10 +350,13 @@ def assemble(options):
             raise ValueError(f"Missing runtime entry {name}: {location}")
     file_hashes = {}
     for file in sorted(dest.rglob("*")):
+        relative = file.relative_to(dest).as_posix()
+        if "licensee" in relative.casefold():
+            raise ValueError("A public runtime dependency contains a protected filename")
         if file.is_symlink():
             raise ValueError(f"Runtime contains a linked file: {file}")
         if file.is_file():
-            file_hashes[file.relative_to(dest).as_posix()] = digest(file)
+            file_hashes[relative] = digest(file)
     manifest = {"format": 1, "target": options.target, **entries, "components": components, "files": file_hashes}
     (dest / "runtime.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

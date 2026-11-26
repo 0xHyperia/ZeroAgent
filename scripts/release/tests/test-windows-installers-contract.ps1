@@ -132,7 +132,7 @@ try {
     $config = Join-Path $fixtureRoot 'candidate-updater.json'
     '{}' | Set-Content -LiteralPath $config
     $releaseName = 'ZeroAgent-v0.3.23-Windows-x64'
-    $releaseUrl = 'https://github.com/USA-Zero/ZeroAgent/releases/download/v0.3.23'
+    $releaseUrl = 'https://github.com/USA0-Zero/ZeroAgent/releases/download/v0.3.23'
     foreach ($suffix in @('.msi', '-Setup.exe', '-portable.zip')) {
         Copy-Item -LiteralPath (Join-Path $previous "ZeroAgent-test$suffix") -Destination (Join-Path $previous "$releaseName$suffix")
     }

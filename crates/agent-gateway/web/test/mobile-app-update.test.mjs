@@ -23,13 +23,13 @@ function release(version, overrides = {}) {
     tag_name: `v${version}`,
     name: `ZeroAgent v${version}`,
     body: "Release notes",
-    html_url: `https://github.com/USA-Zero/ZeroAgent/releases/tag/v${version}`,
+    html_url: `https://github.com/USA0-Zero/ZeroAgent/releases/tag/v${version}`,
     draft: false,
     prerelease: version.includes("-"),
     assets: [
       {
         name: `ZeroAgent-v${version}-Android-arm64.apk`,
-        browser_download_url: `https://github.com/USA-Zero/ZeroAgent/releases/download/v${version}/ZeroAgent-v${version}-Android-arm64.apk`,
+        browser_download_url: `https://github.com/USA0-Zero/ZeroAgent/releases/download/v${version}/ZeroAgent-v${version}-Android-arm64.apk`,
       },
     ],
     ...overrides,
@@ -128,7 +128,7 @@ test("stable mobile updates retain the latest stable endpoint and result shape",
   const result = await app.check(next);
   assert.equal(
     app.requests[0].url,
-    "https://api.github.com/repos/USA-Zero/ZeroAgent/releases/latest",
+    "https://api.github.com/repos/USA0-Zero/ZeroAgent/releases/latest",
   );
   assert.equal(app.requests[0].options.cache, "no-store");
   assert.equal(app.requests[0].options.headers.Accept, "application/vnd.github+json");
@@ -164,7 +164,7 @@ test("preview mobile updates select the highest eligible version from an unorder
   ]);
   assert.equal(
     app.requests[0].url,
-    "https://api.github.com/repos/USA-Zero/ZeroAgent/releases?per_page=20",
+    "https://api.github.com/repos/USA0-Zero/ZeroAgent/releases?per_page=20",
   );
   assert.equal(result.version, "0.4.0-beta.10");
 });
@@ -192,7 +192,7 @@ test("a newer release without its Android APK remains an explicit error", async 
 test("mobile update APK URLs retain the GitHub HTTPS boundary", async () => {
   for (const url of [
     "https://example.com/ZeroAgent-Android-arm64.apk",
-    "http://github.com/USA-Zero/ZeroAgent/Android-arm64.apk",
+    "http://github.com/USA0-Zero/ZeroAgent/Android-arm64.apk",
   ]) {
     const app = fixture();
     await assert.rejects(

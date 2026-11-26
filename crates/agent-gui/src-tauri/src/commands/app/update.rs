@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_updater::UpdaterExt;
 
-const DEFAULT_UPDATE_REPOSITORY: &str = "USA-Zero/ZeroAgent";
+const DEFAULT_UPDATE_REPOSITORY: &str = "USA0-Zero/ZeroAgent";
 const UPDATE_MANIFEST_ASSET: &str = "latest.json";
 
 #[derive(Debug, Clone, Serialize)]
@@ -781,7 +781,7 @@ mod tests {
             tag_name: tag_name.to_string(),
             title: Some(format!("ZeroAgent {tag_name}")),
             html_url: Some(format!(
-                "https://github.com/USA-Zero/ZeroAgent/releases/tag/{tag_name}"
+                "https://github.com/USA0-Zero/ZeroAgent/releases/tag/{tag_name}"
             )),
             updated: Some("2026-05-25T12:27:41Z".to_string()),
         }
@@ -794,7 +794,7 @@ mod tests {
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <updated>2026-05-25T16:00:34Z</updated>
-    <link rel="alternate" type="text/html" href="https://github.com/USA-Zero/ZeroAgent/releases/tag/v0.1.2"/>
+    <link rel="alternate" type="text/html" href="https://github.com/USA0-Zero/ZeroAgent/releases/tag/v0.1.2"/>
     <title>ZeroAgent v0.1.2</title>
   </entry>
 </feed>"#,
@@ -807,7 +807,7 @@ mod tests {
                 tag_name: "v0.1.2".to_string(),
                 title: Some("ZeroAgent v0.1.2".to_string()),
                 html_url: Some(
-                    "https://github.com/USA-Zero/ZeroAgent/releases/tag/v0.1.2".to_string()
+                    "https://github.com/USA0-Zero/ZeroAgent/releases/tag/v0.1.2".to_string()
                 ),
                 updated: Some("2026-05-25T16:00:34Z".to_string()),
             }]
@@ -838,7 +838,7 @@ mod tests {
         assert_eq!(selected[0].tag_name, "v0.1.2-beta.1");
         assert_eq!(
             selected[0].manifest_url,
-            "https://github.com/USA-Zero/ZeroAgent/releases/download/v0.1.2-beta.1/latest.json"
+            "https://github.com/USA0-Zero/ZeroAgent/releases/download/v0.1.2-beta.1/latest.json"
         );
         assert!(selected[0].prerelease);
     }
@@ -883,7 +883,7 @@ mod tests {
     fn current_release_api_url_escapes_the_tag() {
         assert_eq!(
             release_api_url(DEFAULT_UPDATE_REPOSITORY, "v1.3.6 beta").unwrap(),
-            "https://api.github.com/repos/USA-Zero/ZeroAgent/releases/tags/v1.3.6%20beta"
+            "https://api.github.com/repos/USA0-Zero/ZeroAgent/releases/tags/v1.3.6%20beta"
         );
     }
 }

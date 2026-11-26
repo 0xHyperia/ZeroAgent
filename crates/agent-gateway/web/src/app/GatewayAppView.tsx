@@ -33,7 +33,6 @@ import { TranscriptLatestButton } from "@liveagent/ui/components/chat/Transcript
 import { WorkspaceCloneModal } from "@liveagent/ui/components/chat/WorkspaceCloneModal";
 import { WorkspaceCloneTaskOverlay } from "@liveagent/ui/components/chat/WorkspaceCloneTaskOverlay";
 import { WorkspaceProjectSettingsModal } from "@liveagent/ui/components/chat/WorkspaceProjectSettingsModal";
-import { SkipToComposerLink } from "@liveagent/ui/components/ui/skip-link";
 import { SquarePen } from "@liveagent/ui/components/IconSet";
 import { ProjectToolsPanelToggle } from "@liveagent/ui/components/project-tools/ProjectToolsPanelToggle";
 import { RightDockPanel } from "@liveagent/ui/components/project-tools/RightDockPanel";
@@ -47,6 +46,7 @@ import { Button } from "@liveagent/ui/components/ui/button";
 import { DropdownMenuItem } from "@liveagent/ui/components/ui/dropdown-menu";
 import { ScrollArea } from "@liveagent/ui/components/ui/scroll-area";
 import { useSidebar } from "@liveagent/ui/components/ui/sidebar";
+import { SkipToComposerLink } from "@liveagent/ui/components/ui/skip-link";
 import { StatusNotice } from "@liveagent/ui/components/ui/status-notice";
 import { Toaster } from "@liveagent/ui/components/ui/toaster";
 import { PaneChrome } from "@liveagent/ui/components/workbench/PaneChrome";
@@ -77,27 +77,27 @@ import { searchPersistedConversations } from "@liveagent/ui/lib/chat/conversatio
 import { QUICK_OPEN_MAX_FILES } from "@liveagent/ui/lib/chat/fileQuickOpenSearch";
 import type { ChatHistorySearchResponse } from "@liveagent/ui/lib/chat/historySearch";
 import { rememberSshHostNames } from "@liveagent/ui/lib/chat/sshManagerDisplay";
+import { nextThinkingLevel } from "@liveagent/ui/lib/chat/thinkingLevels";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { mergePendingUploadedFiles } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { useWorkbenchCommandPalette } from "@liveagent/ui/lib/chat/useWorkbenchCommandPalette";
-import { nextThinkingLevel } from "@liveagent/ui/lib/chat/thinkingLevels";
 import {
   activateRightDockTab,
   isFocusInRightDock,
+  RIGHT_DOCK_TERMINAL_LAUNCHER,
   resolveCloseContextTarget,
   resolveTerminalToggle,
-  RIGHT_DOCK_TERMINAL_LAUNCHER,
 } from "@liveagent/ui/lib/chat/workbenchCommands";
-import {
-  DEVICE_WEB_HIDDEN_SETTINGS_SECTIONS,
-  getWorkbenchSettingsSections,
-} from "@liveagent/ui/lib/settings/settingsSearchIndex";
 import { parseModelValue } from "@liveagent/ui/lib/models/modelValue";
 import {
   type DevicePluginsClient,
   workspaceTrustFromDevicePlugins,
 } from "@liveagent/ui/lib/plugins/devicePlugins";
 import { kbrainResourceHostCapabilities } from "@liveagent/ui/lib/resourceHost";
+import {
+  DEVICE_WEB_HIDDEN_SETTINGS_SECTIONS,
+  getWorkbenchSettingsSections,
+} from "@liveagent/ui/lib/settings/settingsSearchIndex";
 import { cn } from "@liveagent/ui/lib/shared/utils";
 import { useSidebarSelector } from "@liveagent/ui/lib/sidebar/useSidebarSelector";
 import type { SttSettingsService } from "@liveagent/ui/lib/stt/types";
@@ -1981,13 +1981,14 @@ export function GatewayAppView({
       }
     };
   };
-  const nextThinking = activeView === "chat" && !transportInputDisabled
-    ? nextThinkingLevel({
-        reasoningOptions: chatRuntimeReasoningOptions,
-        thinkingAlwaysOn: chatRuntimeThinkingAlwaysOn,
-        controls: chatRuntimeControlsForCurrentProvider,
-      })
-    : null;
+  const nextThinking =
+    activeView === "chat" && !transportInputDisabled
+      ? nextThinkingLevel({
+          reasoningOptions: chatRuntimeReasoningOptions,
+          thinkingAlwaysOn: chatRuntimeThinkingAlwaysOn,
+          controls: chatRuntimeControlsForCurrentProvider,
+        })
+      : null;
   const { commandPalette, navigation: deviceNavigation } = useWorkbenchCommandPalette({
     scopeKey: deviceNavigationScope,
     visible: Boolean(
@@ -2028,31 +2029,33 @@ export function GatewayAppView({
       ],
       onOpenWorkspace: isAgentMode ? handleOpenCreateWorkspaceProject : undefined,
       sidebar: { open: sidebarOpen, onToggle: () => setSidebarOpen((open) => !open) },
-      projectTools: terminalClient && activeView === "chat"
-        ? { open: rightDockOpen, onToggle: () => setRightDockOpen((open) => !open) }
-        : undefined,
-      onToggleTerminal: deviceFilesAvailable && terminalClient && !terminalDisabledMessage
-        ? () => {
-            const target = resolveTerminalToggle({
-              open: activeView === "chat" && rightDockOpen && !workspaceTabs.view.activeId,
-              activeTabId: rightDockProjectState.activeTabId,
-              tabOrder: rightDockProjectState.tabOrder,
-              sessions: projectTerminalSessions.filter(
-                ({ id }) => !workbenchLeasedDockSessionIds?.has(id),
-              ),
-            });
-            if (target.kind === "close") {
-              handleRightDockClose();
-              return;
+      projectTools:
+        terminalClient && activeView === "chat"
+          ? { open: rightDockOpen, onToggle: () => setRightDockOpen((open) => !open) }
+          : undefined,
+      onToggleTerminal:
+        deviceFilesAvailable && terminalClient && !terminalDisabledMessage
+          ? () => {
+              const target = resolveTerminalToggle({
+                open: activeView === "chat" && rightDockOpen && !workspaceTabs.view.activeId,
+                activeTabId: rightDockProjectState.activeTabId,
+                tabOrder: rightDockProjectState.tabOrder,
+                sessions: projectTerminalSessions.filter(
+                  ({ id }) => !workbenchLeasedDockSessionIds?.has(id),
+                ),
+              });
+              if (target.kind === "close") {
+                handleRightDockClose();
+                return;
+              }
+              setActiveView("chat");
+              workspaceTabs.activate(null);
+              setRightDockOpen(true);
+              handleRightDockProjectStateChange((current) =>
+                activateRightDockTab(current, target.sessionId ?? RIGHT_DOCK_TERMINAL_LAUNCHER),
+              );
             }
-            setActiveView("chat");
-            workspaceTabs.activate(null);
-            setRightDockOpen(true);
-            handleRightDockProjectStateChange((current) =>
-              activateRightDockTab(current, target.sessionId ?? RIGHT_DOCK_TERMINAL_LAUNCHER),
-            );
-          }
-        : undefined,
+          : undefined,
       onCycleThinking: nextThinking
         ? () => handleChatRuntimeControlsChange(nextThinking.patch)
         : undefined,
@@ -2090,7 +2093,8 @@ export function GatewayAppView({
         : undefined,
   });
   const [executionSwitcherOpen, setExecutionSwitcherOpen] = useState(false);
-  const selectedDeviceId = selection?.runtime_kind === "device_agent" ? selection.device_id : undefined;
+  const selectedDeviceId =
+    selection?.runtime_kind === "device_agent" ? selection.device_id : undefined;
   const selectedDevice = selectedDeviceId
     ? environments.find((environment) => environment.device_id === selectedDeviceId)
     : undefined;
@@ -2638,7 +2642,9 @@ export function GatewayAppView({
                                     conversationId={displayedConversationId}
                                     workdir={displayedConversationWorkdir}
                                     running={composerIsSending}
-                                    htmlPreviews={settings.customSettings.chatTranscript.htmlPreviews}
+                                    htmlPreviews={
+                                      settings.customSettings.chatTranscript.htmlPreviews
+                                    }
                                   >
                                     <section
                                       ref={transcriptStageRef}

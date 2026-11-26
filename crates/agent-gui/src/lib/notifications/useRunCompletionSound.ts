@@ -29,7 +29,11 @@ export function useRunCompletionSound(
           ? visibleId.current
           : "";
       for (const id of runningConversationIds) {
-        if (id !== lookingAtConversation && next.byId.has(id) && !next.runningConversationIds.has(id)) {
+        if (
+          id !== lookingAtConversation &&
+          next.byId.has(id) &&
+          !next.runningConversationIds.has(id)
+        ) {
           completionSoundPlayer().play();
           return;
         }

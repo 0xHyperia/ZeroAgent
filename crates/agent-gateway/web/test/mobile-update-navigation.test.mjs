@@ -3,7 +3,7 @@ import test from "node:test";
 import { createWebDomTestEnv } from "../../test/helpers/dom-test-env.mjs";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
-const candidate = { currentVersion: "1.0.0", version: "1.1.0", title: "ZeroAgent v1.1.0", notes: "更新内容", apkUrl: "https://github.com/USA-Zero/ZeroAgent/releases/download/v1.1.0/ZeroAgent-Android-arm64.apk", releaseUrl: "https://github.com/USA-Zero/ZeroAgent/releases/tag/v1.1.0" };
+const candidate = { currentVersion: "1.0.0", version: "1.1.0", title: "ZeroAgent v1.1.0", notes: "更新内容", apkUrl: "https://github.com/USA0-Zero/ZeroAgent/releases/download/v1.1.0/ZeroAgent-Android-arm64.apk", releaseUrl: "https://github.com/USA0-Zero/ZeroAgent/releases/tag/v1.1.0" };
 
 async function setup(embedded = true) {
   let checks = 0, downloads = 0, automatic;

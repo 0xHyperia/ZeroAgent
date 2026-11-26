@@ -241,8 +241,8 @@ requireMatch("crates/agent-gui/package.json", /"name"\s*:\s*"zeroagent"/, "Deskt
 requireMatch("crates/agent-gui/src-tauri/tauri.conf.json", /"productName"\s*:\s*"ZeroAgent"/, "Tauri productName 必须为 ZeroAgent");
 requireMatch("crates/agent-gui/src-tauri/tauri.conf.json", /"identifier"\s*:\s*"top\.usa0\.zeroagent"/, "Tauri identifier 已变化");
 requireMatch("crates/agent-gui/browser-extension/manifest.json", /"name"\s*:\s*"ZeroAgent Browser Bridge"/, "随应用分发的浏览器扩展必须显示 ZeroAgent 品牌");
-requireMatch(".github/workflows/desktop-release.yml", /RELEASE_REPOSITORY:\s*USA-Zero\/ZeroAgent/, "Desktop 公开发布目标已变化");
-requireMatch(".github/workflows/android-release.yml", /RELEASE_REPOSITORY:\s*USA-Zero\/ZeroAgent/, "Android 公开发布目标已变化");
+requireMatch(".github/workflows/desktop-release.yml", /RELEASE_REPOSITORY:\s*USA0-Zero\/ZeroAgent/, "Desktop 公开发布目标已变化");
+requireMatch(".github/workflows/android-release.yml", /RELEASE_REPOSITORY:\s*USA0-Zero\/ZeroAgent/, "Android 公开发布目标已变化");
 requireMatch(".github/workflows/android-release.yml", /ZeroAgent-.*Android-arm64/, "Android 产物命名已变化");
 requireMatch("deploy/production/smoke.sh", /https:\/\/agent\.usa0\.top/, "生产环境访问地址已变化");
 requireMatch(".github/workflows/update-model-catalog.yml", /generate-model-catalog\.mjs/, "模型目录刷新流程不可执行");

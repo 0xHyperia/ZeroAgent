@@ -59,4 +59,5 @@ export type ChatTranscriptProps = {
   onQuoteSelection?: (text: string) => void;
   onCommentSelection?: TranscriptCommentHandler;
 };
+
 import type { TranscriptCommentHandler } from "@liveagent/ui/components/chat/TranscriptCommentContext";

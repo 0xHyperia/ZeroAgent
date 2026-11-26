@@ -1,18 +1,20 @@
 import { Keyboard, MonitorSmartphone, Shield } from "@liveagent/ui/components/IconSet";
 import { onDemand } from "@liveagent/ui/components/OnDemand";
 import type { SettingsSectionDefinition, UiExtensionSlots } from "@liveagent/ui/contracts/registry";
-import { settingsSectionLabel, shortcutCommandSettingsAnchor } from "@liveagent/ui/lib/settings/settingsSearchIndex";
-import { BROWSER_UNSUPPORTED_SHORTCUTS } from "@liveagent/ui/lib/shortcuts/shortcutCommands";
-import type { ShortcutCommandsSectionProps } from "@liveagent/ui/pages/settings/ShortcutCommandsSection";
 import type { KBrainWebSearchUpdate } from "@liveagent/ui/lib/providers/webSearchFallback";
 import {
   configureResourceHostCapabilities,
   kbrainResourceHostCapabilities,
 } from "@liveagent/ui/lib/resourceHost";
+import {
+  settingsSectionLabel,
+  shortcutCommandSettingsAnchor,
+} from "@liveagent/ui/lib/settings/settingsSearchIndex";
 import type {
   GatewaySettingsSyncPayload,
   GatewaySettingsSyncUpdatePayload,
 } from "@liveagent/ui/lib/settings/sync";
+import { BROWSER_UNSUPPORTED_SHORTCUTS } from "@liveagent/ui/lib/shortcuts/shortcutCommands";
 import type {
   KBrainMemoryConfig,
   KBrainMemoryOrganizerConfig,
@@ -20,6 +22,7 @@ import type {
   KBrainSettingsDocument,
   PermissionRule,
 } from "@liveagent/ui/pages/settings/kbrainSettingsAdapter";
+import type { ShortcutCommandsSectionProps } from "@liveagent/ui/pages/settings/ShortcutCommandsSection";
 import type { ReactNode } from "react";
 import { getGatewayWebSocketClient } from "../lib/gatewaySocket";
 import { loadToken } from "../lib/storage";
@@ -84,16 +87,20 @@ export function createSettingsExtension(props: SettingsPageProps): {
         ),
       },
       ...(props.runtimeKind === "device_agent"
-        ? [{
-            id: "shortcuts",
-            groupKey: "settings.groupOther",
-            groupOrder: 50,
-            order: 10,
-            labelKey: settingsSectionLabel("shortcuts"),
-            icon: <Keyboard className="size-4" />,
-            showSaveIndicator: false,
-            render: () => <ShortcutCommandsSection excludeCommandIds={BROWSER_UNSUPPORTED_SHORTCUTS} />,
-          } satisfies SettingsSectionDefinition<void>]
+        ? [
+            {
+              id: "shortcuts",
+              groupKey: "settings.groupOther",
+              groupOrder: 50,
+              order: 10,
+              labelKey: settingsSectionLabel("shortcuts"),
+              icon: <Keyboard className="size-4" />,
+              showSaveIndicator: false,
+              render: () => (
+                <ShortcutCommandsSection excludeCommandIds={BROWSER_UNSUPPORTED_SHORTCUTS} />
+              ),
+            } satisfies SettingsSectionDefinition<void>,
+          ]
         : []),
       {
         id: "devices",

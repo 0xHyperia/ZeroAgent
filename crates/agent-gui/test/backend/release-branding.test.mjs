@@ -17,7 +17,7 @@ test("release and Gateway documentation use the ZeroAgent repository and image",
 
   assert.match(workflow, /IMAGE_NAME: ghcr\.io\/\$\{\{ github\.repository_owner \}\}\/zeroagent-gateway/);
   for (const readme of readmes) {
-    assert.match(readme, /https:\/\/github\.com\/USA-Zero\/ZeroAgent\/releases\/latest/);
+    assert.match(readme, /https:\/\/github\.com\/USA0-Zero\/ZeroAgent\/releases\)/);
     assert.match(
       readme,
       /GATEWAY_IMAGE=ghcr\.io\/0xhyperia\/zeroagent-gateway@sha256:(?:[a-f0-9]{64}|REPLACE_WITH_VERIFIED_DIGEST)\b/,

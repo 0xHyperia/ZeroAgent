@@ -1,7 +1,7 @@
 import { isEmbeddedMobileRuntime, openEmbeddedExternalUrl } from "./mobileRuntime";
 
-const RELEASE_API = "https://api.github.com/repos/USA-Zero/ZeroAgent/releases/latest";
-const PREVIEW_RELEASE_API = "https://api.github.com/repos/USA-Zero/ZeroAgent/releases?per_page=20";
+const RELEASE_API = "https://api.github.com/repos/USA0-Zero/ZeroAgent/releases/latest";
+const PREVIEW_RELEASE_API = "https://api.github.com/repos/USA0-Zero/ZeroAgent/releases?per_page=20";
 const ANDROID_APK_SUFFIX = "Android-arm64.apk";
 
 export const MOBILE_UPDATE_CHECK_EVENT = "zeroagent:mobile-update-check";

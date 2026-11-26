@@ -29,7 +29,7 @@ permissions:
 env:
   NODE_VERSION: 22.19.0
   ANDROID_NDK_VERSION: 27.2.12479018
-  RELEASE_REPOSITORY: USA-Zero/ZeroAgent
+  RELEASE_REPOSITORY: USA0-Zero/ZeroAgent
 
 jobs:
   android:

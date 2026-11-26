@@ -20,8 +20,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { PaneLoadingSkeleton } from "../../../components/app/PaneLoadingSkeleton";
 import { useDesktopDeviceUiSurface } from "../../../agent-ui-adapters/devicePlugins";
+import { PaneLoadingSkeleton } from "../../../components/app/PaneLoadingSkeleton";
 import { isKBrainBackendEnabled } from "../../../lib/host";
 import { ConversationStatsBarHost } from "../components/ConversationStatsBarHost";
 import { CurrentTaskProgress } from "../components/CurrentTaskProgress";

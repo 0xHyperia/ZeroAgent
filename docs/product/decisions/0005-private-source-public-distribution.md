@@ -5,9 +5,9 @@
 
 ## 决策
 
-`0xHyperia/ZeroAgent` 构建并持有完整 Release。桌面和 Android 共用版本标签解析，只有 beta 和正式版的二进制与面向用户的更新说明由 USA-Zero 凭据同步到 `USA-Zero/ZeroAgent`。alpha、rc 和其他预发布版本仅留在源码仓库，且无需公开仓库凭据。beta 在两个仓库均标记为预发布。公开 Release 不附带私有源码归档，也不描述私有仓库拓扑、Gateway 镜像、凭据或内部部署。
+`0xHyperia/ZeroAgent` 构建并持有完整 Release。桌面和 Android 共用版本标签解析，只有 beta 和正式版的二进制与面向用户的更新说明由 USA0-Zero 凭据同步到 `USA0-Zero/ZeroAgent`。alpha、rc 和其他预发布版本仅留在源码仓库，且无需公开仓库凭据。beta 在两个仓库均标记为预发布。公开 Release 不附带私有源码归档，也不描述私有仓库拓扑、Gateway 镜像、凭据或内部部署。
 
-规则对后续工作流生效，已有 tag、Release 和资产继续可用，无需迁移。发布失败可用同一 tag 重试，沿用该 tag 的目标仓库。测试同时覆盖两个工作流与标签路由。
+2026-11-26 起，公开分发改用 `USA0-Zero/ZeroAgent`。新仓库 `main` 只承载下载仓库自身的内容。历史标签和资产保留在原位置。发布失败可用同一 tag 重试，沿用该 tag 的目标仓库。测试同时覆盖两个工作流与标签路由。
 
 ## 重新评估条件
 

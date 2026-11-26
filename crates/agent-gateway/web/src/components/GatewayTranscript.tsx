@@ -7,11 +7,6 @@ import { AssistantVisualActivity } from "@liveagent/ui/components/chat/Assistant
 import { BackgroundNoticeMessage } from "@liveagent/ui/components/chat/BackgroundNoticeMessage";
 import { ChatEmptyState } from "@liveagent/ui/components/chat/ChatEmptyState";
 import { ChatFileLinkContextMenuHost } from "@liveagent/ui/components/chat/ChatFileLinkContextMenu";
-import {
-  type TranscriptCommentHandler,
-  TranscriptCommentProvider,
-} from "@liveagent/ui/components/chat/TranscriptCommentContext";
-import { TranscriptQuoteSelection } from "@liveagent/ui/components/chat/TranscriptQuoteSelection";
 import { ContextCheckpointCard } from "@liveagent/ui/components/chat/ContextCheckpointCard";
 import { DocumentRevisionMessageBody } from "@liveagent/ui/components/chat/DocumentRevisionMessageChip";
 import { EditableUserMessageBubble } from "@liveagent/ui/components/chat/EditableUserMessageBubble";
@@ -19,9 +14,14 @@ import { ProcessDisclosureProvider } from "@liveagent/ui/components/chat/process
 import { RetryDetailsBlock } from "@liveagent/ui/components/chat/RetryDetailsBlock";
 import type { ScheduledPreviewRow } from "@liveagent/ui/components/chat/ScheduledReplyPreview";
 import {
+  type TranscriptCommentHandler,
+  TranscriptCommentProvider,
+} from "@liveagent/ui/components/chat/TranscriptCommentContext";
+import {
   TranscriptAssistantMessageActions,
   TranscriptUserMessageActions,
 } from "@liveagent/ui/components/chat/TranscriptMessageActions";
+import { TranscriptQuoteSelection } from "@liveagent/ui/components/chat/TranscriptQuoteSelection";
 import { TurnErrorNotice } from "@liveagent/ui/components/chat/TurnErrorNotice";
 import { UserAttachmentCards } from "@liveagent/ui/components/chat/UserAttachmentCards";
 import { Loader2 } from "@liveagent/ui/components/IconSet";
@@ -1517,80 +1517,80 @@ export function GatewayTranscript({
   const comments = readOnly || isLoading ? undefined : onCommentSelection;
   return (
     <TranscriptCommentProvider onComment={comments}>
-    <div className={GATEWAY_TRANSCRIPT_SHELL_CLASS}>
-      <div
-        ref={transcriptListRef}
-        className={`${GATEWAY_CHAT_COLUMN_CLASS} gateway-transcript-list col-[2] flex min-w-0 select-text flex-col gap-18px max-640:gap-14px`}
-      >
-        {/* Keyed remount per conversation: per-conversation state (measured
+      <div className={GATEWAY_TRANSCRIPT_SHELL_CLASS}>
+        <div
+          ref={transcriptListRef}
+          className={`${GATEWAY_CHAT_COLUMN_CLASS} gateway-transcript-list col-[2] flex min-w-0 select-text flex-col gap-18px max-640:gap-14px`}
+        >
+          {/* Keyed remount per conversation: per-conversation state (measured
             heights, scroll-to-end latch) initializes fresh, and row keys can
             never collide across conversations in the itemSizeCache. */}
-        <ProcessDisclosureProvider
-          expandByDefault={expandProcessByDefault}
-          detailedProgress={detailedProgress}
-          isViewportFollowing={isViewportFollowing}
-        >
-          <GatewayTranscriptListRegion
-            key={conversationId ?? "shared"}
-            conversationId={conversationId}
-            editRequest={editRequest}
-            onEditRequestHandled={onEditRequestHandled}
-            rows={rows}
-            scheduledTurn={scheduledTurn}
-            liveStartIndex={liveStartIndex}
-            activeTurnKey={activeTurnKey}
-            contentWidth={contentWidth}
-            scrollViewport={transcriptScrollViewport}
+          <ProcessDisclosureProvider
+            expandByDefault={expandProcessByDefault}
+            detailedProgress={detailedProgress}
             isViewportFollowing={isViewportFollowing}
-            viewportFollowing={viewportFollowing}
-            navRef={navRef}
-            onAnchorUserRowChange={onAnchorUserRowChange}
-            hasMoreHistory={hasMoreHistory}
-            isLoadingMoreHistory={isLoadingMoreHistory}
-            onLoadEarlierHistory={onLoadEarlierHistory}
-            isStreaming={isStreaming}
-            assistantLiveMode={assistantLiveMode}
-            showUsage={showUsage}
-            usageContextWindow={usageContextWindow}
-            workspaceRoot={workspaceRoot}
-            imagePreviewScope={imagePreviewScope}
-            gitClient={gitClient}
-            onOpenFileLink={onOpenFileLink}
-            onLoadUploadedImagePreview={onLoadUploadedImagePreview}
-            onResendFromEdit={onResendFromEdit}
-            onBranchConversation={onBranchConversation}
-            branchPendingMessageId={branchPendingMessageId}
-            resendCreatesBranch={resendCreatesBranch}
-            toolStatus={toolStatus}
-            toolStatusIsCompaction={toolStatusIsCompaction}
-            retryAttempts={retryAttempts}
-            readOnly={readOnly}
-            redactToolContent={redactToolContent}
-          />
-        </ProcessDisclosureProvider>
-        {shouldShowInlineError ? (
-          <div
-            className={cn(
-              "rounded-14px border border-solid border-destructive/16 bg-destructive/8 px-12px py-10px",
-              "text-sm text-destructive",
-            )}
           >
-            {inlineErrorText}
-          </div>
+            <GatewayTranscriptListRegion
+              key={conversationId ?? "shared"}
+              conversationId={conversationId}
+              editRequest={editRequest}
+              onEditRequestHandled={onEditRequestHandled}
+              rows={rows}
+              scheduledTurn={scheduledTurn}
+              liveStartIndex={liveStartIndex}
+              activeTurnKey={activeTurnKey}
+              contentWidth={contentWidth}
+              scrollViewport={transcriptScrollViewport}
+              isViewportFollowing={isViewportFollowing}
+              viewportFollowing={viewportFollowing}
+              navRef={navRef}
+              onAnchorUserRowChange={onAnchorUserRowChange}
+              hasMoreHistory={hasMoreHistory}
+              isLoadingMoreHistory={isLoadingMoreHistory}
+              onLoadEarlierHistory={onLoadEarlierHistory}
+              isStreaming={isStreaming}
+              assistantLiveMode={assistantLiveMode}
+              showUsage={showUsage}
+              usageContextWindow={usageContextWindow}
+              workspaceRoot={workspaceRoot}
+              imagePreviewScope={imagePreviewScope}
+              gitClient={gitClient}
+              onOpenFileLink={onOpenFileLink}
+              onLoadUploadedImagePreview={onLoadUploadedImagePreview}
+              onResendFromEdit={onResendFromEdit}
+              onBranchConversation={onBranchConversation}
+              branchPendingMessageId={branchPendingMessageId}
+              resendCreatesBranch={resendCreatesBranch}
+              toolStatus={toolStatus}
+              toolStatusIsCompaction={toolStatusIsCompaction}
+              retryAttempts={retryAttempts}
+              readOnly={readOnly}
+              redactToolContent={redactToolContent}
+            />
+          </ProcessDisclosureProvider>
+          {shouldShowInlineError ? (
+            <div
+              className={cn(
+                "rounded-14px border border-solid border-destructive/16 bg-destructive/8 px-12px py-10px",
+                "text-sm text-destructive",
+              )}
+            >
+              {inlineErrorText}
+            </div>
+          ) : null}
+          {footer}
+        </div>
+        <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
+        {!readOnly && !isLoading && onQuoteSelection ? (
+          <TranscriptQuoteSelection
+            rootRef={transcriptListRef}
+            scopeKey={JSON.stringify([imagePreviewScope, conversationId])}
+            onQuote={onQuoteSelection}
+            onComment={comments}
+          />
         ) : null}
-        {footer}
+        <ChatFileLinkContextMenuHost />
       </div>
-      <div className="col-2 h-gateway-transcript-bottom-spacer-h" />
-      {!readOnly && !isLoading && onQuoteSelection ? (
-        <TranscriptQuoteSelection
-          rootRef={transcriptListRef}
-          scopeKey={JSON.stringify([imagePreviewScope, conversationId])}
-          onQuote={onQuoteSelection}
-          onComment={comments}
-        />
-      ) : null}
-      <ChatFileLinkContextMenuHost />
-    </div>
     </TranscriptCommentProvider>
   );
 }

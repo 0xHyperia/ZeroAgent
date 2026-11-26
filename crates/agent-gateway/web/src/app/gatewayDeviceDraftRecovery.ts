@@ -8,8 +8,11 @@ import {
   normalizeComposerClipboardSegment,
   serializeDraftSegments,
 } from "@liveagent/ui/components/chat/MentionComposerInternals";
+import {
+  type ComposerCommentInput,
+  createComposerComment,
+} from "@liveagent/ui/lib/chat/composerComments";
 import { createTextComposerDraft } from "@liveagent/ui/lib/chat/composerDraft";
-import { createComposerComment, type ComposerCommentInput } from "@liveagent/ui/lib/chat/composerComments";
 import { parseFileMentionPath } from "@liveagent/ui/lib/chat/mentionReferences";
 import type { PendingUploadedFile } from "@liveagent/ui/lib/chat/uploadedFiles";
 import { normalizeWorkspaceExcerpt } from "@liveagent/ui/lib/chat/workspaceExcerpt";

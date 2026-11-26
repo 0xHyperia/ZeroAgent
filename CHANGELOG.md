@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## v1.0.1-alpha.1 - 2026-11-26
+
+此版本用于 Alpha 验证。后续 Beta 和正式版的公开下载入口迁至 [USA0-Zero/ZeroAgent](https://github.com/USA0-Zero/ZeroAgent/releases)。
+
 ### 新增功能
 
 - Windows x64 在「设置 → 系统设置 → 工作区工具」按需安装、诊断、重新安装或移除文件工具。关闭开关可保留安装文件。阅读器保留尚未提交的批注，并按实际执行电脑提示就绪状态。
