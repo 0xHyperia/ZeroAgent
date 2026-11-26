@@ -109,6 +109,26 @@ try {
       args: [],
     }, 5_000).catch(() => null);
     console.error("Native signed-out gate state", { publicSettingsRequested, startup });
+    if (startup?.hasStartupError) {
+      const nativeStage = await request("POST", `${session}/execute/async`, {
+        script: `const done = arguments[arguments.length - 1];
+          (async () => {
+            const invoke = window.__TAURI_INTERNALS__.invoke;
+            let phase = "account vault";
+            try {
+              const account = await invoke("account_session_bootstrap");
+              if (account !== null) return done({ phase, unexpectedSession: true });
+              phase = "signed-out backend";
+              await invoke("kbrain_backend_activate_profile", { accountCredential: null });
+              done({ phase: "native initialized" });
+            } catch (error) {
+              done({ phase, error: String(error).slice(0, 240) });
+            }
+          })();`,
+        args: [],
+      }, 25_000).catch(() => null);
+      console.error("Native bootstrap checks", nativeStage);
+    }
   }
   throw error;
 } finally {
